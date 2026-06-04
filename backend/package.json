@@ -1,0 +1,30 @@
+{
+  "name": "coach-management-backend",
+  "version": "1.0.0",
+  "description": "Coach Management App - Backend API",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["coach", "management", "api"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "jsonwebtoken": "^9.1.0",
+    "bcryptjs": "^2.4.3",
+    "mysql2": "^3.6.5",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.2",
+    "axios": "^1.6.0",
+    "express-validator": "^7.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
