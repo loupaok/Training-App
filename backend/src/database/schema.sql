@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   currency CHAR(3) NOT NULL DEFAULT 'EUR',
   start_date DATE NOT NULL,
   end_date DATE,
-  status ENUM('active', 'paused', 'cancelled', 'expired') NOT NULL DEFAULT 'active',
+  status ENUM('active', 'expiring_soon', 'paused', 'cancelled', 'expired') NOT NULL DEFAULT 'active',
   notes TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

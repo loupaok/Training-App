@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import mysql from 'mysql2/promise';
-import cron from 'node-cron';
 import authRoutes from './routes/auth.js';
 import coachRoutes from './routes/coaches.js';
 import clientRoutes from './routes/clients.js';
@@ -71,13 +70,6 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Cron Jobs Example
-// Run daily at 9:00 AM
-cron.schedule('0 9 * * *', () => {
-  console.log('Running daily scheduled task...');
-  // Add your scheduled tasks here
-});
-
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ message: 'Route not found' });
@@ -96,4 +88,5 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV}`);
+  import('./crons.js');
 });
