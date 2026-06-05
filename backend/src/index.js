@@ -6,6 +6,7 @@ import cron from 'node-cron';
 import authRoutes from './routes/auth.js';
 import coachRoutes from './routes/coaches.js';
 import clientRoutes from './routes/clients.js';
+import adminRoutes from './routes/admin.js';
 import { authenticateToken } from './middleware/auth.js';
 
 dotenv.config();
@@ -53,6 +54,7 @@ testConnection();
 app.use('/api/auth', authRoutes);
 app.use('/api/coaches', authenticateToken, coachRoutes);
 app.use('/api/clients', authenticateToken, clientRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

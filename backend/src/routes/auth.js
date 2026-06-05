@@ -6,12 +6,11 @@ import { pool } from '../index.js';
 
 const router = express.Router();
 
-// Register
+// Register (Clients only - Coaches created by Admin)
 router.post('/register', [
   body('email').isEmail(),
   body('password').isLength({ min: 6 }),
-  body('fullName').notEmpty(),
-  body('role').isIn(['coach', 'client'])
+  body('fullName').notEmpty()
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -19,7 +18,8 @@ router.post('/register', [
   }
 
   try {
-    const { email, password, fullName, role } = req.body;
+    const { email, password, fullName } = req.body;
+    const role = 'client'; // Auto-set as client
     const connection = await pool.getConnection();
 
     // Check if user exists

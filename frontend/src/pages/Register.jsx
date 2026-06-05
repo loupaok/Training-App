@@ -6,8 +6,7 @@ export default function Register() {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
-    fullName: '',
-    role: 'client'
+    fullName: ''
   });
   const [error, setError] = useState('');
   const { register, loading } = useAuth();
@@ -28,7 +27,7 @@ export default function Register() {
       formData.email,
       formData.password,
       formData.fullName,
-      formData.role
+      'client' // Auto-set as client
     );
 
     if (result.success) {
@@ -41,7 +40,7 @@ export default function Register() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8">
-        <h1 className="text-2xl font-bold text-center mb-6">Create Account</h1>
+        <h1 className="text-2xl font-bold text-center mb-6">Create Client Account</h1>
         
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -86,18 +85,9 @@ export default function Register() {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Role</label>
-            <select
-              name="role"
-              value={formData.role}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="client">Client</option>
-              <option value="coach">Coach</option>
-            </select>
-          </div>
+          <p className="text-sm text-gray-500">
+            You are registering as a <span className="font-semibold">Client</span>
+          </p>
 
           <button
             type="submit"
