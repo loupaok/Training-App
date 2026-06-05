@@ -7,6 +7,7 @@ import authRoutes from './routes/auth.js';
 import coachRoutes from './routes/coaches.js';
 import clientRoutes from './routes/clients.js';
 import adminRoutes from './routes/admin.js';
+import subscriptionRoutes from './routes/subscriptions.js';
 import { authenticateToken } from './middleware/auth.js';
 
 dotenv.config();
@@ -55,6 +56,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/coaches', authenticateToken, coachRoutes);
 app.use('/api/clients', authenticateToken, clientRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/subscriptions', authenticateToken, subscriptionRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
