@@ -47,7 +47,7 @@ export const api = {
     return this.request(endpoint, { method: 'DELETE' });
   },
 
-  upload(endpoint, formData) {
+  async upload(endpoint, formData) {
     const token = localStorage.getItem('token');
     const headers = {};
 
@@ -55,10 +55,18 @@ export const api = {
       headers.Authorization = `Bearer ${token}`;
     }
 
-    return fetch(`${API_BASE_URL}${endpoint}`, {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'POST',
       headers,
       body: formData,
-    }).then(res => res.json());
+    });
+
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Upload failed');
+    }
+
+    return data;
   },
 };

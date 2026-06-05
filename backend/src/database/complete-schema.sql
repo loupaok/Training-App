@@ -279,6 +279,29 @@ CREATE TABLE IF NOT EXISTS coach_clients (
 );
 
 -- ========================================
+-- 14. EXERCISES LIBRARY TABLE
+-- ========================================
+CREATE TABLE IF NOT EXISTS exercises (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL UNIQUE,
+  muscle_group VARCHAR(120) NOT NULL,
+  secondary_muscles VARCHAR(255),
+  equipment VARCHAR(255) NOT NULL,
+  level ENUM('Αρχάριο', 'Μεσαίο', 'Δύσκολο') DEFAULT 'Αρχάριο',
+  type VARCHAR(120) NOT NULL,
+  image_url VARCHAR(600),
+  video_url VARCHAR(600),
+  instructions TEXT,
+  programs_count INT DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_muscle_group (muscle_group),
+  INDEX idx_equipment (equipment),
+  INDEX idx_level (level),
+  INDEX idx_type (type)
+);
+
+-- ========================================
 -- VERIFICATION QUERIES
 -- ========================================
 -- Check all tables created

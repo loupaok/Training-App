@@ -4,6 +4,11 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import Clients from './pages/Clients';
+import ClientDetail from './pages/ClientDetail';
+import ClientUpdates from './pages/ClientUpdates';
+import Exercises from './pages/Exercises';
+import MediaLibrary from './pages/MediaLibrary';
 import AdminDashboard from './pages/AdminDashboard';
 import './index.css';
 
@@ -24,6 +29,46 @@ function App() {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/clients"
+            element={
+              <ProtectedRoute>
+                <Clients />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/clients/:clientId"
+            element={
+              <ProtectedRoute>
+                <ClientDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/updates"
+            element={
+              <ProtectedRoute>
+                <ClientUpdates />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/exercises"
+            element={
+              <ProtectedRoute>
+                <Exercises />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/media-library"
+            element={
+              <ProtectedRoute>
+                <MediaLibrary />
               </ProtectedRoute>
             }
           />
