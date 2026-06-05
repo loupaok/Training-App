@@ -9,6 +9,9 @@ import clientRoutes from './routes/clients.js';
 import adminRoutes from './routes/admin.js';
 import subscriptionRoutes from './routes/subscriptions.js';
 import progressRoutes from './routes/progress.js';
+import trainingPlanRoutes from './routes/trainingPlans.js';
+import nutritionPlanRoutes from './routes/nutritionPlans.js';
+import repsRoutes from './routes/reps.js';
 import { authenticateToken } from './middleware/auth.js';
 
 dotenv.config();
@@ -59,6 +62,9 @@ app.use('/api/clients', authenticateToken, clientRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/subscriptions', authenticateToken, subscriptionRoutes);
 app.use('/api/progress', authenticateToken, progressRoutes);
+app.use('/api/training-plans', authenticateToken, trainingPlanRoutes);
+app.use('/api/nutrition-plans', authenticateToken, nutritionPlanRoutes);
+app.use('/api/reps', authenticateToken, repsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
