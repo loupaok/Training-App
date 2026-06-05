@@ -3,7 +3,9 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('user')); } catch { return null; }
+  });
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [loading, setLoading] = useState(false);
 
@@ -12,6 +14,8 @@ export function AuthProvider({ children }) {
       localStorage.setItem('token', token);
     } else {
       localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('user');
     }
   }, [token]);
 
@@ -23,10 +27,13 @@ export function AuthProvider({ children }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
-      
+
       const data = await response.json();
       if (response.ok) {
-        setToken(data.token);
+        localStorage.setItem('token', data.accessToken);
+        localStorage.setItem('refreshToken', data.refreshToken);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        setToken(data.accessToken);
         setUser(data.user);
         return { success: true };
       }
@@ -38,17 +45,18 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const register = async (email, password, fullName, role) => {
+  const register = async (email, password, fullName) => {
     setLoading(true);
     try {
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, fullName, role })
+        body: JSON.stringify({ email, password, fullName })
       });
-      
+
       const data = await response.json();
       if (response.ok) {
+        localStorage.setItem('token', data.token);
         setToken(data.token);
         return { success: true };
       }
@@ -60,7 +68,15 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    const refreshToken = localStorage.getItem('refreshToken');
+    if (refreshToken) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken })
+      }).catch(() => {});
+    }
     setUser(null);
     setToken(null);
   };
