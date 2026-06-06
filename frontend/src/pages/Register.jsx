@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -31,7 +31,7 @@ export default function Register() {
     );
 
     if (result.success) {
-      navigate('/dashboard');
+      navigate('/client-onboarding');
     } else {
       setError(result.message);
     }
@@ -77,6 +77,7 @@ export default function Register() {
             <label className="block text-sm font-medium text-gray-700">Password</label>
             <input
               type="password"
+              autoComplete="new-password"
               name="password"
               value={formData.password}
               onChange={handleChange}

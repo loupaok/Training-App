@@ -83,7 +83,7 @@ async function archiveCurrentExerciseImage(connection, exerciseId, nextImageUrl)
   );
 }
 
-router.get('/', authorizeRole(['coach', 'admin']), async (req, res) => {
+router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   const { search = '', muscleGroup = '', equipment = '', level = '' } = req.query;
   const filters = [];
   const values = [];
@@ -125,14 +125,15 @@ router.get('/', authorizeRole(['coach', 'admin']), async (req, res) => {
   }
 });
 
-router.get('/filters', authorizeRole(['coach', 'admin']), async (req, res) => {
+router.get('/filters', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     const [muscleGroups] = await connection.query('SELECT DISTINCT muscle_group AS value FROM exercises ORDER BY muscle_group');
     const [equipment] = await connection.query('SELECT DISTINCT equipment AS value FROM exercises ORDER BY equipment');
     const [levels] = await connection.query('SELECT DISTINCT level AS value FROM exercises ORDER BY level');
+    const [types] = await connection.query('SELECT DISTINCT type AS value FROM exercises ORDER BY type');
     connection.release();
-    res.json({ muscleGroups, equipment, levels });
+    res.json({ muscleGroups, equipment, levels, types });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });

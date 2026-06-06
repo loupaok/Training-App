@@ -1,24 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+
+const roleOptions = [
+  { value: 'admin', label: 'Admin / Coach', description: 'Ο βασικός coach/admin. Βλέπει και διαχειρίζεται τα πάντα.' },
+  { value: 'moderator', label: 'Moderator', description: 'Βλέπει επιλεγμένες ενότητες. Τα permissions θα τα εξειδικεύσουμε μετά.' },
+];
+
+const emptyForm = {
+  fullName: '',
+  email: '',
+  password: '',
+  role: 'moderator',
+  specializations: '',
+};
 
 export default function AdminDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [coaches, setCoaches] = useState([]);
-  const [clients, setClients] = useState([]);
+  const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
-  const [showAddCoach, setShowAddCoach] = useState(false);
-  const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    password: '',
-    specializations: ''
-  });
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [formData, setFormData] = useState(emptyForm);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
 
   useEffect(() => {
     fetchData();
@@ -26,50 +34,55 @@ export default function AdminDashboard() {
 
   const fetchData = async () => {
     try {
-      const [coachesData, clientsData, statsData] = await Promise.all([
-        api.get('/admin/coaches'),
-        api.get('/admin/clients'),
-        api.get('/admin/stats')
+      setLoading(true);
+      const [usersData, statsData] = await Promise.all([
+        api.get('/admin/users'),
+        api.get('/admin/stats'),
       ]);
-      setCoaches(coachesData);
-      setClients(clientsData);
+      setUsers(usersData);
       setStats(statsData);
     } catch (err) {
-      setError('Failed to load data');
-      console.error(err);
+      setError(err.message || 'Δεν φορτώθηκαν οι χρήστες.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleAddCoach = async (e) => {
-    e.preventDefault();
+  const filteredUsers = useMemo(() => {
+    if (roleFilter === 'all') return users;
+    return users.filter((row) => row.role === roleFilter);
+  }, [roleFilter, users]);
+
+  const handleAddUser = async (event) => {
+    event.preventDefault();
     setError('');
     setMessage('');
 
     try {
-      await api.post('/admin/coaches', {
+      await api.post('/admin/users', {
         fullName: formData.fullName,
         email: formData.email,
         password: formData.password,
-        specializations: formData.specializations
+        role: formData.role,
+        specializations: formData.specializations,
       });
 
-      setMessage('Coach created successfully!');
-      setFormData({ fullName: '', email: '', password: '', specializations: '' });
-      setShowAddCoach(false);
+      setMessage('Ο χρήστης δημιουργήθηκε.');
+      setFormData(emptyForm);
+      setShowAddUser(false);
       fetchData();
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const deleteCoach = async (coachId) => {
-    if (!window.confirm('Are you sure?')) return;
+  const updateUser = async (targetUser, changes) => {
+    setError('');
+    setMessage('');
 
     try {
-      await api.delete(`/admin/coaches/${coachId}`);
-      setMessage('Coach deleted');
+      await api.put(`/admin/users/${targetUser.id}`, changes);
+      setMessage('Ο χρήστης ενημερώθηκε.');
       fetchData();
     } catch (err) {
       setError(err.message);
@@ -78,15 +91,12 @@ export default function AdminDashboard() {
 
   if (user?.role !== 'admin') {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm">
           <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
-          <p>You don't have permission to access this page</p>
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
-          >
-            Go to Dashboard
+          <p className="mt-2 text-slate-600">Δεν έχεις δικαίωμα πρόσβασης σε αυτή τη σελίδα.</p>
+          <button onClick={() => navigate('/dashboard')} className="mt-5 rounded-md bg-red-600 px-5 py-3 font-bold text-white">
+            Dashboard
           </button>
         </div>
       </div>
@@ -94,189 +104,167 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Navigation */}
-      <nav className="bg-white shadow">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Admin Panel</h1>
-          <button
-            onClick={logout}
-            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-          >
-            Logout
-          </button>
+    <div className="min-h-screen bg-slate-50 text-slate-950">
+      <header className="border-b border-slate-200 bg-white px-8 py-5 shadow-sm">
+        <div className="mx-auto flex max-w-7xl items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-black">Admin Panel</h1>
+            <p className="mt-1 text-sm font-semibold text-slate-500">Χρήστες, ρόλοι και πρόσβαση.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate('/dashboard')} className="rounded-md border border-slate-200 px-4 py-2 font-bold hover:border-red-200 hover:text-red-600">
+              Dashboard
+            </button>
+            <button onClick={logout} className="rounded-md bg-red-600 px-4 py-2 font-bold text-white hover:bg-red-700">
+              Logout
+            </button>
+          </div>
         </div>
-      </nav>
+      </header>
 
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Messages */}
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            {error}
-          </div>
-        )}
-        {message && (
-          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
-            {message}
-          </div>
-        )}
+      <main className="mx-auto max-w-7xl px-8 py-8">
+        {error && <Alert tone="red">{error}</Alert>}
+        {message && <Alert tone="green">{message}</Alert>}
 
-        {/* Stats */}
         {stats && (
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            <div className="bg-blue-50 p-6 rounded-lg border border-blue-200">
-              <h3 className="text-lg font-semibold text-blue-900">Total Coaches</h3>
-              <p className="text-3xl font-bold text-blue-600">{stats.coaches}</p>
-            </div>
-            <div className="bg-green-50 p-6 rounded-lg border border-green-200">
-              <h3 className="text-lg font-semibold text-green-900">Total Clients</h3>
-              <p className="text-3xl font-bold text-green-600">{stats.clients}</p>
-            </div>
-            <div className="bg-purple-50 p-6 rounded-lg border border-purple-200">
-              <h3 className="text-lg font-semibold text-purple-900">Total Users</h3>
-              <p className="text-3xl font-bold text-purple-600">{stats.totalUsers}</p>
-            </div>
+          <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-5">
+            <StatCard title="Admins" value={stats.admins || 0} />
+            <StatCard title="Moderators" value={stats.moderators || 0} />
+            <StatCard title="Coaches" value={stats.coaches || 0} />
+            <StatCard title="Clients" value={stats.clients || 0} />
+            <StatCard title="Total Users" value={stats.totalUsers || 0} />
           </div>
         )}
 
-        {/* Add Coach Section */}
-        <div className="bg-white rounded-lg shadow mb-8">
-          <div className="p-6 border-b flex justify-between items-center">
-            <h2 className="text-xl font-bold">Manage Coaches</h2>
-            <button
-              onClick={() => setShowAddCoach(!showAddCoach)}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              {showAddCoach ? 'Cancel' : 'Add Coach'}
+        <section className="mb-8 rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-200 p-6">
+            <div>
+              <h2 className="text-xl font-black">Προσθήκη ατόμου</h2>
+              <p className="mt-1 text-sm text-slate-500">Ο διαχειριστής ορίζει από εδώ μόνο την εσωτερική ομάδα. Οι πελάτες μπαίνουν από τη σελίδα Πελάτες.</p>
+            </div>
+            <button onClick={() => setShowAddUser((value) => !value)} className="rounded-md bg-red-600 px-5 py-3 font-bold text-white hover:bg-red-700">
+              {showAddUser ? 'Κλείσιμο' : 'Προσθήκη Χρήστη'}
             </button>
           </div>
 
-          {showAddCoach && (
-            <form onSubmit={handleAddCoach} className="p-6 border-b bg-gray-50">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                  <input
-                    type="text"
-                    value={formData.fullName}
-                    onChange={(e) => setFormData({...formData, fullName: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                  <input
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({...formData, password: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Specializations</label>
-                  <input
-                    type="text"
-                    value={formData.specializations}
-                    onChange={(e) => setFormData({...formData, specializations: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                    placeholder="e.g. Fitness, Nutrition"
-                  />
-                </div>
+          {showAddUser && (
+            <form onSubmit={handleAddUser} className="grid grid-cols-1 gap-4 bg-slate-50 p-6 md:grid-cols-2">
+              <Input label="Ονοματεπώνυμο" value={formData.fullName} onChange={(value) => setFormData({ ...formData, fullName: value })} required />
+              <Input label="Email" type="email" value={formData.email} onChange={(value) => setFormData({ ...formData, email: value })} required />
+              <Input label="Password" type="password" autoComplete="new-password" value={formData.password} onChange={(value) => setFormData({ ...formData, password: value })} required />
+              <label className="block">
+                <span className="text-sm font-bold text-slate-700">Ρόλος</span>
+                <select value={formData.role} onChange={(event) => setFormData({ ...formData, role: event.target.value })} className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 outline-none focus:border-red-300">
+                  {roleOptions.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+                </select>
+              </label>
+              <Input label="Specializations / σημείωση" value={formData.specializations} onChange={(value) => setFormData({ ...formData, specializations: value })} />
+              <div className="md:col-span-2">
+                <button type="submit" className="rounded-md bg-slate-950 px-5 py-3 font-bold text-white hover:bg-slate-800">
+                  Δημιουργία Χρήστη
+                </button>
               </div>
-              <button
-                type="submit"
-                className="mt-4 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-              >
-                Create Coach
-              </button>
             </form>
           )}
+        </section>
 
-          {/* Coaches List */}
-          <div className="p-6">
-            {coaches.length === 0 ? (
-              <p className="text-gray-500">No coaches yet</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-100 border-b">
-                    <tr>
-                      <th className="px-4 py-2 text-left">Name</th>
-                      <th className="px-4 py-2 text-left">Email</th>
-                      <th className="px-4 py-2 text-left">Specializations</th>
-                      <th className="px-4 py-2 text-left">Created</th>
-                      <th className="px-4 py-2 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {coaches.map((coach) => (
-                      <tr key={coach.id} className="border-b hover:bg-gray-50">
-                        <td className="px-4 py-2">{coach.full_name}</td>
-                        <td className="px-4 py-2">{coach.email}</td>
-                        <td className="px-4 py-2">{coach.specializations || '-'}</td>
-                        <td className="px-4 py-2">{new Date(coach.created_at).toLocaleDateString()}</td>
-                        <td className="px-4 py-2 text-center">
-                          <button
-                            onClick={() => deleteCoach(coach.id)}
-                            className="text-red-600 hover:text-red-800 text-sm"
-                          >
-                            Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
+        <section className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-4">
+          {roleOptions.map((role) => (
+            <div key={role.value} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="text-lg font-black">{role.label}</div>
+              <p className="mt-2 text-sm leading-6 text-slate-500">{role.description}</p>
+            </div>
+          ))}
+        </section>
 
-        {/* Clients List */}
-        <div className="bg-white rounded-lg shadow">
-          <div className="p-6 border-b">
-            <h2 className="text-xl font-bold">All Clients</h2>
+        <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-200 p-6">
+            <h2 className="text-xl font-black">Όλοι οι χρήστες</h2>
+            <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="h-11 rounded-md border border-slate-200 px-3 font-semibold outline-none focus:border-red-300">
+              <option value="all">Όλη η ομάδα</option>
+              {roleOptions.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+            </select>
           </div>
-          <div className="p-6">
-            {clients.length === 0 ? (
-              <p className="text-gray-500">No clients yet</p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-100 border-b">
-                    <tr>
-                      <th className="px-4 py-2 text-left">Name</th>
-                      <th className="px-4 py-2 text-left">Email</th>
-                      <th className="px-4 py-2 text-left">Created</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {clients.map((client) => (
-                      <tr key={client.id} className="border-b hover:bg-gray-50">
-                        <td className="px-4 py-2">{client.full_name}</td>
-                        <td className="px-4 py-2">{client.email}</td>
-                        <td className="px-4 py-2">{new Date(client.created_at).toLocaleDateString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-slate-200 bg-slate-50">
+                <tr>
+                  <th className="px-5 py-4">Όνομα</th>
+                  <th className="px-5 py-4">Email</th>
+                  <th className="px-5 py-4">Ρόλος</th>
+                  <th className="px-5 py-4">Status</th>
+                  <th className="px-5 py-4">Specializations</th>
+                  <th className="px-5 py-4">Ενέργειες</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading && (
+                  <tr><td colSpan="6" className="px-5 py-8 text-center font-semibold text-slate-500">Φόρτωση...</td></tr>
+                )}
+                {!loading && filteredUsers.map((row) => (
+                  <tr key={row.id} className="hover:bg-slate-50">
+                    <td className="px-5 py-4 font-bold">{row.full_name}</td>
+                    <td className="px-5 py-4 text-slate-600">{row.email}</td>
+                    <td className="px-5 py-4">
+                      <select value={row.role} onChange={(event) => updateUser(row, { role: event.target.value })} className="h-10 rounded-md border border-slate-200 px-3 font-bold outline-none focus:border-red-300">
+                        {roleOptions.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className={`rounded-md px-3 py-1 text-xs font-black ${row.is_active ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                        {row.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-slate-600">{row.specializations || '-'}</td>
+                    <td className="px-5 py-4">
+                      <button onClick={() => updateUser(row, { isActive: !row.is_active })} className="rounded-md border border-slate-200 px-3 py-2 font-bold text-slate-700 hover:border-red-200 hover:text-red-600">
+                        {row.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {!loading && filteredUsers.length === 0 && (
+                  <tr><td colSpan="6" className="px-5 py-8 text-center font-semibold text-slate-500">Δεν βρέθηκαν χρήστες.</td></tr>
+                )}
+              </tbody>
+            </table>
           </div>
-        </div>
-      </div>
+        </section>
+      </main>
     </div>
+  );
+}
+
+function Alert({ children, tone }) {
+  const className = tone === 'red'
+    ? 'border-red-200 bg-red-50 text-red-700'
+    : 'border-green-200 bg-green-50 text-green-700';
+
+  return <div className={`mb-5 rounded-lg border px-5 py-4 text-sm font-bold ${className}`}>{children}</div>;
+}
+
+function StatCard({ title, value }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="text-sm font-bold text-slate-500">{title}</div>
+      <div className="mt-2 text-3xl font-black">{value}</div>
+    </div>
+  );
+}
+
+function Input({ label, type = 'text', value, onChange, required = false, autoComplete }) {
+  return (
+    <label className="block">
+      <span className="text-sm font-bold text-slate-700">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        required={required}
+        autoComplete={autoComplete}
+        className="mt-2 h-11 w-full rounded-md border border-slate-200 px-3 outline-none focus:border-red-300"
+      />
+    </label>
   );
 }

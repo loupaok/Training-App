@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { MenuToggle, TopbarActions } from '../components/TopbarControls';
 import { api } from '../services/api';
 import { compressImageFile } from '../services/imageCompression';
 import PaginationControls from '../components/PaginationControls';
@@ -12,12 +13,11 @@ const navSections = [
   { label: 'Πελάτες', path: '/clients' },
   { label: 'Βιβλιοθήκη Ασκήσεων', path: '/exercises' },
   { label: 'Media Library', path: '/media-library', active: true },
-  { label: 'Πρόοδος Πελατών', path: '/dashboard#progress' },
+  { label: 'Team', path: '/team' },
+  { label: 'Analytics', path: '/analytics' },
   { label: 'Updates Πελατών', path: '/updates' },
-  { label: 'Επιβράβευση' },
   { label: 'Discord' },
-  { label: 'Ειδοποιήσεις' },
-  { label: 'Αναφορές' },
+  { label: 'Ειδοποιήσεις', path: '/notifications' },
   { label: 'Ρυθμίσεις' },
 ];
 
@@ -53,23 +53,21 @@ function Sidebar({ user }) {
   );
 }
 
-function Topbar({ user, logout }) {
+function Topbar({ user, logout, sidebarOpen, onToggleSidebar }) {
   return (
-    <header className="fixed left-[300px] right-0 top-0 z-10 flex h-[86px] items-center justify-between border-b border-slate-200 bg-white px-10 shadow-sm">
+    <header className={`fixed ${sidebarOpen ? 'left-[300px]' : 'left-0'} right-0 top-0 z-10 flex h-[86px] items-center justify-between border-b border-slate-200 bg-white px-10 shadow-sm transition-all duration-200`}>
       <div className="flex items-center gap-9">
-        <button className="grid h-10 w-10 place-items-center rounded-md text-2xl text-slate-900 hover:bg-slate-100">≡</button>
+        <MenuToggle onClick={onToggleSidebar} />
         <h1 className="text-2xl font-extrabold">Media Library</h1>
       </div>
-      <button onClick={logout} className="flex items-center gap-3 rounded-md px-2 py-1 hover:bg-slate-100">
-        <Avatar initials={(user?.fullName || 'CA').slice(0, 2).toUpperCase()} tone="bg-slate-900" size="h-11 w-11" />
-        <span className="font-bold">{user?.fullName || 'Coach Admin'}</span>
-      </button>
+      <TopbarActions user={user} logout={logout} Avatar={Avatar} />
     </header>
   );
 }
 
 export default function MediaLibrary() {
   const { user, logout } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [assets, setAssets] = useState([]);
   const [folders, setFolders] = useState([]);
   const [selectedFolder, setSelectedFolder] = useState('');
@@ -283,10 +281,10 @@ export default function MediaLibrary() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
-      <Sidebar user={user} />
-      <Topbar user={user} logout={logout} />
+      {sidebarOpen && <Sidebar user={user} />}
+      <Topbar user={user} logout={logout} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((value) => !value)} />
 
-      <main className="ml-[300px] pt-[86px]">
+      <main className={`${sidebarOpen ? 'ml-[300px]' : 'ml-0'} pt-[86px] transition-all duration-200`}>
         <div className="px-10 py-7">
           <div className="mb-7 flex items-center justify-between">
             <div>

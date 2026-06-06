@@ -69,7 +69,7 @@ async function ensureMediaTable(connection) {
   }
 }
 
-router.get('/', authorizeRole(['coach', 'admin']), async (req, res) => {
+router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await ensureMediaTable(connection);
@@ -99,7 +99,7 @@ router.get('/', authorizeRole(['coach', 'admin']), async (req, res) => {
   }
 });
 
-router.get('/folders', authorizeRole(['coach', 'admin']), async (req, res) => {
+router.get('/folders', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await ensureMediaTable(connection);

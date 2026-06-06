@@ -8,6 +8,7 @@ export function AuthProvider({ children }) {
   });
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [loading, setLoading] = useState(false);
+  const [refreshingProfile, setRefreshingProfile] = useState(Boolean(localStorage.getItem('token')));
 
   useEffect(() => {
     if (token) {
@@ -17,6 +18,37 @@ export function AuthProvider({ children }) {
       localStorage.removeItem('refreshToken');
       localStorage.removeItem('user');
     }
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) {
+      setRefreshingProfile(false);
+      return;
+    }
+
+    let ignore = false;
+    setRefreshingProfile(true);
+    fetch('/api/auth/me', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Profile refresh failed');
+        return data;
+      })
+      .then((data) => {
+        if (ignore) return;
+        localStorage.setItem('user', JSON.stringify(data.user));
+        setUser(data.user);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!ignore) setRefreshingProfile(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
   }, [token]);
 
   const login = async (email, password) => {
@@ -57,7 +89,9 @@ export function AuthProvider({ children }) {
       const data = await response.json();
       if (response.ok) {
         localStorage.setItem('token', data.token);
+        if (data.user) localStorage.setItem('user', JSON.stringify(data.user));
         setToken(data.token);
+        if (data.user) setUser(data.user);
         return { success: true };
       }
       return { success: false, message: data.message };
@@ -81,8 +115,13 @@ export function AuthProvider({ children }) {
     setToken(null);
   };
 
+  const updateUser = (nextUser) => {
+    localStorage.setItem('user', JSON.stringify(nextUser));
+    setUser(nextUser);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, authReady: !refreshingProfile, login, register, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

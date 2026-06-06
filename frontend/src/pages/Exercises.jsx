@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { MenuToggle, TopbarActions } from '../components/TopbarControls';
 import { api } from '../services/api';
 import { compressImageFile } from '../services/imageCompression';
 import PaginationControls from '../components/PaginationControls';
@@ -12,12 +13,11 @@ const navSections = [
   { label: 'Πελάτες', path: '/clients' },
   { label: 'Βιβλιοθήκη Ασκήσεων', path: '/exercises', active: true },
   { label: 'Media Library', path: '/media-library' },
-  { label: 'Πρόοδος Πελατών', path: '/dashboard#progress' },
+  { label: 'Team', path: '/team' },
+  { label: 'Analytics', path: '/analytics' },
   { label: 'Updates Πελατών', path: '/updates' },
-  { label: 'Επιβράβευση' },
   { label: 'Discord' },
-  { label: 'Ειδοποιήσεις' },
-  { label: 'Αναφορές' },
+  { label: 'Ειδοποιήσεις', path: '/notifications' },
   { label: 'Ρυθμίσεις' },
 ];
 
@@ -108,28 +108,23 @@ function Sidebar({ user }) {
   );
 }
 
-function Topbar({ user, logout }) {
+function Topbar({ user, logout, sidebarOpen, onToggleSidebar }) {
   return (
-    <header className="fixed left-[300px] right-0 top-0 z-10 flex h-[86px] items-center justify-between border-b border-slate-200 bg-white px-10 shadow-sm">
+    <header className={`fixed ${sidebarOpen ? 'left-[300px]' : 'left-0'} right-0 top-0 z-10 flex h-[86px] items-center justify-between border-b border-slate-200 bg-white px-10 shadow-sm transition-all duration-200`}>
       <div className="flex items-center gap-9">
-        <button className="grid h-10 w-10 place-items-center rounded-md text-slate-900 hover:bg-slate-100"><Icon name="menu" /></button>
+        <MenuToggle onClick={onToggleSidebar} />
         <h1 className="text-2xl font-extrabold">Βιβλιοθήκη Ασκήσεων</h1>
       </div>
-      <div className="flex items-center gap-5 text-slate-900">
-        {['search', 'bell', 'mail'].map((icon) => <button key={icon} className="grid h-10 w-10 place-items-center rounded-md hover:bg-slate-100"><Icon name={icon} /></button>)}
-        <button onClick={logout} className="flex items-center gap-3 rounded-md px-2 py-1 hover:bg-slate-100">
-          <Avatar initials={(user?.fullName || 'CA').slice(0, 2).toUpperCase()} tone="bg-slate-900" size="h-11 w-11" />
-          <span className="font-bold">{user?.fullName || 'Coach Admin'}</span>
-        </button>
-      </div>
+      <TopbarActions user={user} logout={logout} Avatar={Avatar} />
     </header>
   );
 }
 
 export default function Exercises() {
   const { user, logout } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [exercises, setExercises] = useState([]);
-  const [filters, setFilters] = useState({ muscleGroups: [], equipment: [], levels: [] });
+  const [filters, setFilters] = useState({ muscleGroups: [], equipment: [], levels: [], types: [] });
   const [search, setSearch] = useState('');
   const [muscleGroup, setMuscleGroup] = useState('');
   const [equipment, setEquipment] = useState('');
@@ -155,11 +150,13 @@ export default function Exercises() {
         muscleGroups: data.muscleGroups.map((item) => item.value),
         equipment: data.equipment.map((item) => item.value),
         levels: data.levels.map((item) => item.value),
+        types: data.types?.map((item) => item.value) || [],
       }))
       .catch(() => setFilters({
         muscleGroups: uniqueOptions(fallbackExercises, 'muscleGroup'),
         equipment: uniqueOptions(fallbackExercises, 'equipment'),
         levels: uniqueOptions(fallbackExercises, 'level'),
+        types: uniqueOptions(fallbackExercises, 'type'),
       }));
   }, []);
 
@@ -197,6 +194,9 @@ export default function Exercises() {
     equipment: filters.equipment.length,
     inPrograms: exercises.reduce((sum, exercise) => sum + Number(exercise.programsCount || 0), 0),
   }), [exercises, filters]);
+  const muscleGroupOptions = useMemo(() => withDefaults(filters.muscleGroups, ['Στήθος', 'Πλάτη', 'Ώμοι', 'Δικέφαλοι', 'Τρικέφαλοι', 'Τετρακέφαλοι', 'Οπίσθιοι Μηριαίοι', 'Γλουτοί', 'Γάμπες', 'Κοιλιακοί', 'Core', 'Full Body', 'Γενική']), [filters.muscleGroups]);
+  const equipmentOptions = useMemo(() => withDefaults(filters.equipment, ['Χωρίς εξοπλισμό', 'Σωματικό βάρος', 'Μπάρα', 'Αλτήρες', 'Μηχάνημα', 'Τροχαλία', 'Πάγκος', 'Kettlebell', 'Λάστιχα', 'TRX']), [filters.equipment]);
+  const typeOptions = useMemo(() => withDefaults(filters.types, ['Δύναμη', 'Υπερτροφία', 'Αντοχή', 'Κινητικότητα', 'Cardio', 'Core', 'Αποκατάσταση']), [filters.types]);
 
   const paginatedExercises = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
@@ -395,9 +395,9 @@ export default function Exercises() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
-      <Sidebar user={user} />
-      <Topbar user={user} logout={logout} />
-      <main className="ml-[300px] pt-[86px]">
+      {sidebarOpen && <Sidebar user={user} />}
+      <Topbar user={user} logout={logout} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((value) => !value)} />
+      <main className={`${sidebarOpen ? 'ml-[300px]' : 'ml-0'} pt-[86px] transition-all duration-200`}>
         <div className="px-10 py-7">
           <div className="mb-7 flex items-center justify-between">
             <div className="flex items-center gap-3 text-sm">
@@ -545,8 +545,8 @@ export default function Exercises() {
                   <>
                     <div className="grid grid-cols-2 gap-4">
                       <EditInput label="Όνομα" value={editForm.name} onChange={(value) => updateEditField('name', value)} />
-                      <EditInput label="Μυϊκή ομάδα" value={editForm.muscleGroup} onChange={(value) => updateEditField('muscleGroup', value)} />
-                      <EditInput label="Εξοπλισμός" value={editForm.equipment} onChange={(value) => updateEditField('equipment', value)} />
+                      <EditSelect label="Μυϊκή ομάδα" value={editForm.muscleGroup} onChange={(value) => updateEditField('muscleGroup', value)} options={muscleGroupOptions} />
+                      <EditSelect label="Εξοπλισμός" value={editForm.equipment} onChange={(value) => updateEditField('equipment', value)} options={equipmentOptions} />
                       <label className="block">
                         <span className="text-sm font-bold text-slate-700">Επίπεδο</span>
                         <select value={editForm.level} onChange={(event) => updateEditField('level', event.target.value)} className="mt-2 h-11 w-full rounded-md border border-slate-200 px-4 outline-none focus:border-red-300">
@@ -555,7 +555,7 @@ export default function Exercises() {
                           <option value="Δύσκολο">Δύσκολο</option>
                         </select>
                       </label>
-                      <EditInput label="Τύπος" value={editForm.type} onChange={(value) => updateEditField('type', value)} />
+                      <EditSelect label="Τύπος" value={editForm.type} onChange={(value) => updateEditField('type', value)} options={typeOptions} />
                       <EditInput label="Σε προγράμματα" type="number" value={editForm.programsCount} onChange={(value) => updateEditField('programsCount', value)} />
                     </div>
 
@@ -668,6 +668,24 @@ function EditInput({ label, value, onChange, type = 'text' }) {
         onChange={(event) => onChange(event.target.value)}
         className="mt-2 h-11 w-full rounded-md border border-slate-200 px-4 outline-none focus:border-red-300"
       />
+    </label>
+  );
+}
+
+function EditSelect({ label, value, onChange, options }) {
+  const selectOptions = value && !options.includes(value) ? [value, ...options] : options;
+
+  return (
+    <label className="block">
+      <span className="text-sm font-bold text-slate-700">{label}</span>
+      <select
+        value={value || ''}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-2 h-11 w-full rounded-md border border-slate-200 bg-white px-4 outline-none focus:border-red-300"
+      >
+        <option value="">Επιλογή</option>
+        {selectOptions.map((option) => <option key={option} value={option}>{option}</option>)}
+      </select>
     </label>
   );
 }
@@ -802,6 +820,10 @@ function filterLocal(items, selectedFilters) {
 
 function uniqueOptions(items, key) {
   return [...new Set(items.map((item) => item[key]).filter(Boolean))].sort();
+}
+
+function withDefaults(values, defaults) {
+  return [...new Set([...(values || []), ...defaults].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'el'));
 }
 
 function formatBytes(bytes) {

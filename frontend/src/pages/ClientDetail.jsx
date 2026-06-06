@@ -1,18 +1,18 @@
 ﻿import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { MenuToggle, TopbarActions } from '../components/TopbarControls';
 
 const navSections = [
   { label: 'Dashboard', path: '/dashboard' },
   { label: 'Πελάτες', path: '/clients', active: true },
   { label: 'Βιβλιοθήκη Ασκήσεων', path: '/exercises' },
   { label: 'Media Library', path: '/media-library' },
-  { label: 'Πρόοδος Πελατών', path: '/dashboard#progress' },
+  { label: 'Team', path: '/team' },
+  { label: 'Analytics', path: '/analytics' },
   { label: 'Updates Πελατών', path: '/updates' },
-  { label: 'Επιβράβευση' },
   { label: 'Discord' },
-  { label: 'Ειδοποιήσεις' },
-  { label: 'Αναφορές' },
+  { label: 'Ειδοποιήσεις', path: '/notifications' },
   { label: 'Ρυθμίσεις' },
 ];
 
@@ -81,8 +81,8 @@ function Avatar({ initials, tone = 'bg-slate-900', size = 'h-12 w-12' }) {
   return <div className={`${size} ${tone} grid place-items-center rounded-full text-xs font-bold text-white shadow-sm`}>{initials}</div>;
 }
 
-function Card({ children, className = '' }) {
-  return <section className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}>{children}</section>;
+function Card({ children, className = '', id }) {
+  return <section id={id} className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}>{children}</section>;
 }
 
 function Sidebar({ user }) {
@@ -119,37 +119,46 @@ function Sidebar({ user }) {
   );
 }
 
-function Topbar({ user, logout }) {
+function Topbar({ user, logout, sidebarOpen, onToggleSidebar }) {
   return (
-    <header className="fixed left-[300px] right-0 top-0 z-10 flex h-[86px] items-center justify-between border-b border-slate-200 bg-white px-10 shadow-sm">
+    <header className={`fixed ${sidebarOpen ? 'left-[300px]' : 'left-0'} right-0 top-0 z-10 flex h-[86px] items-center justify-between border-b border-slate-200 bg-white px-10 shadow-sm transition-all duration-200`}>
       <div className="flex items-center gap-9">
-        <button className="grid h-10 w-10 place-items-center rounded-md text-2xl text-slate-900 hover:bg-slate-100">≡</button>
+        <MenuToggle onClick={onToggleSidebar} />
         <h1 className="text-2xl font-extrabold">Πελάτες</h1>
       </div>
-      <div className="flex items-center gap-5 text-slate-900">
-        {['⌕', '♢', '✉'].map((icon) => <button key={icon} className="grid h-10 w-10 place-items-center rounded-md text-xl hover:bg-slate-100">{icon}</button>)}
-        <button onClick={logout} className="flex items-center gap-3 rounded-md px-2 py-1 hover:bg-slate-100">
-          <Avatar initials={(user?.fullName || 'CA').slice(0, 2).toUpperCase()} tone="bg-slate-900" size="h-11 w-11" />
-          <span className="font-bold">{user?.fullName || 'Coach Admin'}</span>
-          <span className="text-sm">⌄</span>
-        </button>
-      </div>
+      <TopbarActions user={user} logout={logout} Avatar={Avatar} />
     </header>
   );
 }
 
 export default function ClientDetail() {
   const { user, logout } = useAuth();
+  const location = useLocation();
+  const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [activeTab, setActiveTab] = useState('Επισκόπηση');
   const [selectedPhoto, setSelectedPhoto] = useState(photos[0]);
   const [coachNote, setCoachNote] = useState('Πολύ καλή συνέπεια στις προπονήσεις και στη διατροφή. Να προσέξει λίγο περισσότερο τον ύπνο και την ενυδάτωση.');
+  const [messageDraft, setMessageDraft] = useState('');
+
+  React.useEffect(() => {
+    const action = new URLSearchParams(location.search).get('action');
+    if (action === 'message') setActiveTab('Social & Discord');
+    if (action === 'subscription' || action === 'notes' || action === 'edit') setActiveTab('Επισκόπηση');
+    if (action === 'update') setActiveTab('Progress Updates');
+
+    window.setTimeout(() => {
+      if (!location.hash) return;
+      const target = document.querySelector(location.hash);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 80);
+  }, [location.hash, location.search]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
-      <Sidebar user={user} />
-      <Topbar user={user} logout={logout} />
+      {sidebarOpen && <Sidebar user={user} />}
+      <Topbar user={user} logout={logout} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((value) => !value)} />
 
-      <main className="ml-[300px] pt-[86px]">
+      <main className={`${sidebarOpen ? 'ml-[300px]' : 'ml-0'} pt-[86px] transition-all duration-200`}>
         <div className="px-10 py-6">
           <div className="mb-5 flex items-center justify-between">
             <div className="flex items-center gap-3 text-sm">
@@ -190,7 +199,7 @@ export default function ClientDetail() {
             {activeTab === 'Training Plan' && <Plans type="training" />}
             {activeTab === 'Nutrition Plan' && <Plans type="nutrition" />}
             {activeTab === 'Reps Tracking' && <RepsTracking />}
-            {activeTab === 'Social & Discord' && <SocialDiscord />}
+            {activeTab === 'Social & Discord' && <SocialDiscord messageDraft={messageDraft} setMessageDraft={setMessageDraft} />}
           </div>
         </div>
       </main>
@@ -215,7 +224,7 @@ function ProfileHeader() {
         <div className="col-span-10 grid grid-cols-4 divide-x divide-slate-200">
           <InfoGroup title={client.name} items={[client.email, client.phone, `Discord: ${client.discord}`, `Update days: ${client.updateDays.join(', ')}`]} />
           <InfoGroup title="Στόχος" items={[client.goal, `Τρέχον: ${client.currentWeight}`, `Στόχος βάρους: ${client.targetWeight}`, 'Πρόοδος: -2.4 kg']} highlightLast />
-          <InfoGroup title="Συνδρομή & Status" items={[client.subscription, `Έναρξη: ${client.startDate}`, `Λήξη: ${client.endDate}`, `Κατάσταση: ${client.status}`]} />
+          <InfoGroup id="client-subscription-section" title="Συνδρομή & Status" items={[client.subscription, `Έναρξη: ${client.startDate}`, `Λήξη: ${client.endDate}`, `Κατάσταση: ${client.status}`]} />
           <div className="px-8">
             <h3 className="font-extrabold">Social Media</h3>
             <div className="mt-5 space-y-3">
@@ -240,7 +249,7 @@ function Overview({ coachNote, setCoachNote, setActiveTab }) {
     <div className="grid grid-cols-12 gap-5">
       <div className="col-span-4 space-y-5">
         <WeightChart />
-        <Card className="p-5">
+        <Card id="client-notes-section" className="p-5 scroll-mt-28">
           <h3 className="font-extrabold">Σημειώσεις Coach</h3>
           <textarea value={coachNote} onChange={(e) => setCoachNote(e.target.value)} className="mt-4 min-h-32 w-full rounded-lg border border-slate-200 bg-amber-50 p-4 text-sm leading-7 outline-none focus:border-red-300" />
         </Card>
@@ -350,9 +359,21 @@ function RepsTracking() {
   );
 }
 
-function SocialDiscord() {
+function SocialDiscord({ messageDraft, setMessageDraft }) {
   return (
-    <div className="grid grid-cols-2 gap-5">
+    <div className="grid grid-cols-3 gap-5">
+      <Card id="client-message-section" className="p-5 scroll-mt-28">
+        <h3 className="font-extrabold">Αποστολή Μηνύματος</h3>
+        <textarea
+          value={messageDraft}
+          onChange={(event) => setMessageDraft(event.target.value)}
+          placeholder="Γράψε μήνυμα προς τον πελάτη..."
+          className="mt-5 min-h-36 w-full rounded-lg border border-slate-200 p-4 text-sm leading-6 outline-none focus:border-red-300"
+        />
+        <button className="mt-4 h-11 rounded-md bg-red-600 px-5 text-sm font-bold text-white hover:bg-red-700">
+          Αποστολή
+        </button>
+      </Card>
       <Card className="p-5">
         <h3 className="font-extrabold">Social Links</h3>
         <div className="mt-5 space-y-3">
@@ -400,9 +421,9 @@ function WeightChart() {
   );
 }
 
-function InfoGroup({ title, items, highlightLast = false }) {
+function InfoGroup({ id, title, items, highlightLast = false }) {
   return (
-    <div className="px-8">
+    <div id={id} className="scroll-mt-28 px-8">
       <h2 className="text-xl font-extrabold">{title}</h2>
       <div className="mt-5 space-y-4 text-sm">
         {items.map((item, index) => <p key={item} className={highlightLast && index === items.length - 1 ? 'font-bold text-emerald-600' : 'font-semibold text-slate-700'}>{item}</p>)}

@@ -4,8 +4,57 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
+
+async function getOnboardingCompleted(connection, userId, role) {
+  if (role !== 'client') return true;
+
+  try {
+    const [rows] = await connection.query(
+      'SELECT onboarding_completed FROM client_onboarding WHERE client_id = ?',
+      [userId]
+    );
+
+    return Boolean(rows[0]?.onboarding_completed);
+  } catch (error) {
+    if (error.code === 'ER_NO_SUCH_TABLE') return false;
+    throw error;
+  }
+}
+
+router.get('/me', authenticateToken, async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    const [rows] = await connection.query(
+      'SELECT id, email, role, full_name, specializations FROM users WHERE id = ? AND is_active = 1',
+      [req.user.id]
+    );
+    if (rows.length === 0) {
+      connection.release();
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const user = rows[0];
+    const onboardingCompleted = await getOnboardingCompleted(connection, user.id, user.role);
+    connection.release();
+
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        fullName: user.full_name,
+        profileTitle: user.specializations,
+        onboardingCompleted
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 function generateAccessToken(user) {
   return jwt.sign(
@@ -52,10 +101,22 @@ router.post('/register', [
 
     connection.release();
 
-    const user = { id: result.insertId, email, role: 'client' };
+    const user = { id: result.insertId, email, role: 'client', fullName, onboardingCompleted: false };
     const accessToken = generateAccessToken(user);
 
-    res.status(201).json({ message: 'User registered successfully', token: accessToken });
+    res.status(201).json({
+      message: 'User registered successfully',
+      token: accessToken,
+      accessToken,
+      user: {
+        id: user.id,
+        email,
+        role: 'client',
+        fullName,
+        profileTitle: null,
+        onboardingCompleted: false
+      }
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -77,7 +138,7 @@ router.post('/login', [
     const connection = await pool.getConnection();
 
     const [users] = await connection.query(
-      'SELECT id, email, password, role, full_name FROM users WHERE email = ? AND is_active = 1',
+      'SELECT id, email, password, role, full_name, specializations FROM users WHERE email = ? AND is_active = 1',
       [email]
     );
 
@@ -103,12 +164,59 @@ router.post('/login', [
       [user.id, refreshToken, expiresAt]
     );
 
+    const onboardingCompleted = await getOnboardingCompleted(connection, user.id, user.role);
     connection.release();
 
     res.json({
       accessToken,
       refreshToken,
-      user: { id: user.id, email: user.email, role: user.role, fullName: user.full_name }
+      user: { id: user.id, email: user.email, role: user.role, fullName: user.full_name, profileTitle: user.specializations, onboardingCompleted }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PUT /auth/profile — update current user's display profile
+router.put('/profile', authenticateToken, [
+  body('fullName').notEmpty().withMessage('Full name required'),
+  body('profileTitle').optional().isString()
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  try {
+    const { fullName, profileTitle } = req.body;
+    const connection = await pool.getConnection();
+
+    await connection.query(
+      'UPDATE users SET full_name = ?, specializations = ? WHERE id = ?',
+      [fullName, profileTitle || null, req.user.id]
+    );
+
+    const [rows] = await connection.query(
+      'SELECT id, email, role, full_name, specializations FROM users WHERE id = ?',
+      [req.user.id]
+    );
+
+    connection.release();
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const user = rows[0];
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        fullName: user.full_name,
+        profileTitle: user.specializations
+      }
     });
   } catch (error) {
     console.error(error);

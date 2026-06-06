@@ -1,20 +1,45 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import ClientOnboarding from './pages/ClientOnboarding';
 import Dashboard from './pages/Dashboard';
 import Clients from './pages/Clients';
 import ClientDetail from './pages/ClientDetail';
 import ClientUpdates from './pages/ClientUpdates';
 import Exercises from './pages/Exercises';
 import MediaLibrary from './pages/MediaLibrary';
+import Analytics from './pages/Analytics';
+import Notifications from './pages/Notifications';
+import Team from './pages/Team';
 import AdminDashboard from './pages/AdminDashboard';
 import './index.css';
 
 function ProtectedRoute({ children }) {
-  const { token } = useAuth();
-  return token ? children : <Navigate to="/login" />;
+  const { token, user, authReady } = useAuth();
+  const location = useLocation();
+
+  if (!token) return <Navigate to="/login" />;
+
+  if (!authReady) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-slate-50 text-sm font-bold text-slate-500">
+        Φόρτωση...
+      </div>
+    );
+  }
+
+  const needsOnboarding = user?.role === 'client' && !user?.onboardingCompleted;
+  if (needsOnboarding && location.pathname !== '/client-onboarding') {
+    return <Navigate to="/client-onboarding" replace />;
+  }
+
+  if (user?.role === 'client' && user?.onboardingCompleted && location.pathname === '/client-onboarding') {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  return children;
 }
 
 function App() {
@@ -24,6 +49,14 @@ function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route
+            path="/client-onboarding"
+            element={
+              <ProtectedRoute>
+                <ClientOnboarding />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/dashboard"
             element={
@@ -69,6 +102,30 @@ function App() {
             element={
               <ProtectedRoute>
                 <MediaLibrary />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <Analytics />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/notifications"
+            element={
+              <ProtectedRoute>
+                <Notifications />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/team"
+            element={
+              <ProtectedRoute>
+                <Team />
               </ProtectedRoute>
             }
           />

@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(255) UNIQUE NOT NULL,
   password VARCHAR(255) NOT NULL,
   full_name VARCHAR(255) NOT NULL,
-  role ENUM('admin', 'coach', 'client') NOT NULL DEFAULT 'client',
+  role ENUM('admin', 'moderator', 'coach', 'client') NOT NULL DEFAULT 'client',
   profile_photo VARCHAR(255),
   bio TEXT,
   specializations VARCHAR(255),
