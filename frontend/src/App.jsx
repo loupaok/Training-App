@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ClientOnboarding from './pages/ClientOnboarding';
+import ClientDashboard from './pages/ClientDashboard';
 import Dashboard from './pages/Dashboard';
 import Clients from './pages/Clients';
 import ClientDetail from './pages/ClientDetail';
@@ -36,7 +37,11 @@ function ProtectedRoute({ children }) {
   }
 
   if (user?.role === 'client' && user?.onboardingCompleted && location.pathname === '/client-onboarding') {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/client-dashboard" replace />;
+  }
+
+  if (user?.role === 'client' && user?.onboardingCompleted && location.pathname === '/dashboard') {
+    return <Navigate to="/client-dashboard" replace />;
   }
 
   return children;
@@ -62,6 +67,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/client-dashboard"
+            element={
+              <ProtectedRoute>
+                <ClientDashboard />
               </ProtectedRoute>
             }
           />
