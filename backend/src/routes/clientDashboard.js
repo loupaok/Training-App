@@ -140,12 +140,37 @@ async function ensureClientDashboardSchema(connection) {
       id INT AUTO_INCREMENT PRIMARY KEY,
       client_id INT NOT NULL UNIQUE,
       source_onboarding_id INT,
+      goal VARCHAR(120),
+      level VARCHAR(120),
+      available_days VARCHAR(255),
+      injuries TEXT,
+      dietary_restrictions TEXT,
+      additional_notes TEXT,
+      visible_to_client TINYINT(1) NOT NULL DEFAULT 0,
+      submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       completed_at TIMESTAMP NULL,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+
+  for (const statement of [
+    'ALTER TABLE onboarding_forms ADD COLUMN submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP',
+    'ALTER TABLE onboarding_forms ADD COLUMN visible_to_client TINYINT(1) NOT NULL DEFAULT 0',
+    'ALTER TABLE onboarding_forms ADD COLUMN goal VARCHAR(120)',
+    'ALTER TABLE onboarding_forms ADD COLUMN level VARCHAR(120)',
+    'ALTER TABLE onboarding_forms ADD COLUMN available_days VARCHAR(255)',
+    'ALTER TABLE onboarding_forms ADD COLUMN injuries TEXT',
+    'ALTER TABLE onboarding_forms ADD COLUMN dietary_restrictions TEXT',
+    'ALTER TABLE onboarding_forms ADD COLUMN additional_notes TEXT'
+  ]) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+  }
 
   await connection.query(`
     CREATE TABLE IF NOT EXISTS notifications (
@@ -262,6 +287,10 @@ router.get('/', authorizeRole(['client']), async (req, res) => {
       'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 10',
       [req.user.id]
     );
+    const [paymentRows] = await connection.query(
+      'SELECT id, subscription_id, amount, currency, method, status, paid_at, created_at FROM payments WHERE client_id = ? ORDER BY created_at DESC LIMIT 12',
+      [req.user.id]
+    );
 
     connection.release();
 
@@ -276,6 +305,7 @@ router.get('/', authorizeRole(['client']), async (req, res) => {
         schedule
       },
       notifications: notificationRows,
+      payments: paymentRows,
       unreadNotifications: notificationRows.filter((item) => !item.read_at).length
     });
   } catch (error) {

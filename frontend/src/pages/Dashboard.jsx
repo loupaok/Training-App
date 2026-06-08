@@ -6,14 +6,21 @@ import { MenuToggle, TopbarActions } from '../components/TopbarControls';
 const navSections = [
   { label: 'Dashboard', path: '/dashboard', active: true },
   { label: 'Πελάτες', path: '/clients' },
+  { label: 'Updates Πελατών', path: '/updates' },
   { label: 'Βιβλιοθήκη Ασκήσεων', path: '/exercises' },
+  { label: 'Analytics', path: '/analytics' },
   { label: 'Media Library', path: '/media-library' },
   { label: 'Team', path: '/team' },
-  { label: 'Analytics', path: '/analytics' },
-  { label: 'Updates Πελατών', path: '/updates' },
-  { label: 'Discord' },
-  { label: 'Ειδοποιήσεις', path: '/notifications' },
-  { label: 'Ρυθμίσεις' },
+  { label: 'Ειδοποιήσεις', path: '/notifications', spacerBefore: true },
+  {
+    label: 'Ρυθμίσεις',
+    adminOnly: true,
+    children: [
+      { label: 'Discord' },
+      { label: 'Πλάνα & Τιμές', path: '/pricing-plans' },
+      { label: 'Branding' },
+    ],
+  },
 ];
 
 const stats = [
@@ -90,6 +97,9 @@ function ViewAllButton({ children = 'Προβολή όλων' }) {
 }
 
 function Sidebar({ user }) {
+  const settingsIsActive = navSections.some((section) => section.children?.some((child) => child.active));
+  const [settingsOpen, setSettingsOpen] = React.useState(settingsIsActive);
+
   return (
     <aside className="fixed inset-y-0 left-0 flex w-[300px] flex-col bg-[#07131d] text-white shadow-2xl">
       <div className="flex h-[86px] items-center gap-3 px-8">
@@ -101,21 +111,43 @@ function Sidebar({ user }) {
 
       <nav className="flex-1 overflow-y-auto px-4 pb-6">
         <div className="space-y-1">
-          {navSections.map((section) => {
+          {navSections.filter((section) => !section.adminOnly || user?.role === 'admin').map((section) => {
             const className = `flex h-12 w-full items-center rounded-md px-4 text-left text-[15px] font-semibold ${
               section.active
                 ? 'bg-red-600 text-white shadow-lg shadow-red-950/30'
                 : 'text-slate-100 hover:bg-white/10'
             }`;
 
-            return section.path ? (
-              <Link key={section.label} to={section.path} className={className}>
+            const item = section.children ? (
+              <button onClick={() => setSettingsOpen((value) => !value)} className={className}>
+                <span className="truncate">{section.label}</span>
+                <span className={`ml-auto text-xs transition-transform ${settingsOpen ? 'rotate-180' : ''}`}>⌄</span>
+              </button>
+            ) : section.path ? (
+              <Link to={section.path} className={className}>
                 <span className="truncate">{section.label}</span>
               </Link>
             ) : (
-              <button key={section.label} className={className}>
+              <button className={className}>
                 <span className="truncate">{section.label}</span>
               </button>
+            );
+
+            return (
+              <div key={section.label} className={section.spacerBefore ? 'mt-6' : ''}>
+                {item}
+                {section.children && user?.role === 'admin' && (
+                  <div className={`ml-4 overflow-hidden border-l border-white/10 pl-3 transition-all duration-200 ${settingsOpen ? 'mt-1 max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
+                    {section.children.map((child) => (
+                      child.path ? (
+                        <Link key={child.label} to={child.path} className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">{child.label}</Link>
+                      ) : (
+                        <button key={child.label} className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">{child.label}</button>
+                      )
+                    ))}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>

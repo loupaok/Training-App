@@ -13,11 +13,11 @@ async function getOnboardingCompleted(connection, userId, role) {
 
   try {
     const [rows] = await connection.query(
-      'SELECT onboarding_completed FROM client_onboarding WHERE client_id = ?',
+      'SELECT id FROM onboarding_forms WHERE client_id = ?',
       [userId]
     );
 
-    return Boolean(rows[0]?.onboarding_completed);
+    return rows.length > 0;
   } catch (error) {
     if (error.code === 'ER_NO_SUCH_TABLE') return false;
     throw error;

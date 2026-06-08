@@ -14,6 +14,7 @@ import repsRoutes from './routes/reps.js';
 import exerciseRoutes from './routes/exercises.js';
 import mediaRoutes from './routes/media.js';
 import clientDashboardRoutes from './routes/clientDashboard.js';
+import pricingPlanRoutes from './routes/pricingPlans.js';
 import { authenticateToken } from './middleware/auth.js';
 
 dotenv.config();
@@ -70,6 +71,7 @@ app.use('/api/reps', authenticateToken, repsRoutes);
 app.use('/api/exercises', authenticateToken, exerciseRoutes);
 app.use('/api/media', authenticateToken, mediaRoutes);
 app.use('/api/client-dashboard', authenticateToken, clientDashboardRoutes);
+app.use('/api/pricing-plans', authenticateToken, pricingPlanRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

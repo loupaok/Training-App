@@ -12,10 +12,18 @@ export const authenticateToken = async (req, res, next) => {
   try {
     const user = jwt.verify(token, process.env.JWT_SECRET);
     const connection = await pool.getConnection();
+    try {
+      await connection.query('ALTER TABLE users ADD COLUMN last_seen_at TIMESTAMP NULL');
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
     const [rows] = await connection.query(
       'SELECT id, email, role, is_active FROM users WHERE id = ?',
       [user.id]
     );
+    if (rows.length > 0 && rows[0].is_active) {
+      await connection.query('UPDATE users SET last_seen_at = CURRENT_TIMESTAMP WHERE id = ?', [user.id]);
+    }
     connection.release();
 
     if (rows.length === 0 || !rows[0].is_active) {

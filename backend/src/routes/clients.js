@@ -50,7 +50,184 @@ const subscriptionPackages = {
   '4_months': { label: '4 μήνες', months: 4, price: 320 }
 };
 
+async function ensurePricingPlansSchema(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS pricing_plans (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      slug VARCHAR(80) NOT NULL UNIQUE,
+      name VARCHAR(120) NOT NULL,
+      badge VARCHAR(120),
+      description TEXT,
+      price DECIMAL(10,2) NOT NULL DEFAULT 0,
+      currency VARCHAR(10) NOT NULL DEFAULT 'EUR',
+      period VARCHAR(80) NOT NULL DEFAULT 'Μηνιαίο',
+      theme_color VARCHAR(20) NOT NULL DEFAULT '#EF4444',
+      features_json JSON,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+}
+
+function monthsFromPeriod(period, fallback = 1) {
+  const value = String(period || '').toLowerCase();
+  if (value.includes('3') || value.includes('τρίμη') || value.includes('quarter')) return 3;
+  if (value.includes('6') || value.includes('εξάμη')) return 6;
+  if (value.includes('12') || value.includes('έτος') || value.includes('year')) return 12;
+  if (value.includes('4')) return 4;
+  if (value.includes('2')) return 2;
+  return fallback;
+}
+
+async function getSelectedSubscriptionPlan(connection, slug) {
+  await ensurePricingPlansSchema(connection);
+  const [rows] = await connection.query(
+    'SELECT slug, name, price, currency, period FROM pricing_plans WHERE slug = ? AND is_active = 1 LIMIT 1',
+    [slug]
+  );
+  if (rows.length) {
+    return {
+      label: rows[0].name,
+      months: monthsFromPeriod(rows[0].period),
+      price: Number(rows[0].price),
+      currency: rows[0].currency || 'EUR'
+    };
+  }
+
+  return subscriptionPackages[slug] || null;
+}
+
 async function ensureOnboardingSchema(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS onboarding_forms (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      client_id INT NOT NULL UNIQUE,
+      goal VARCHAR(120),
+      level VARCHAR(120),
+      available_days VARCHAR(255),
+      injuries TEXT,
+      dietary_restrictions TEXT,
+      additional_notes TEXT,
+      date_of_birth DATE,
+      age INT,
+      height_cm DECIMAL(5,2),
+      weight_kg DECIMAL(6,2),
+      update_day TINYINT,
+      occupation_schedule TEXT,
+      health_problem TEXT,
+      cycle_history TEXT,
+      cardio_sessions_per_week TEXT,
+      sleep_schedule TEXT,
+      blood_tests_pdf VARCHAR(500),
+      current_training_plan TEXT,
+      current_nutrition_plan TEXT,
+      previous_plan_history TEXT,
+      current_training_pdf VARCHAR(500),
+      current_nutrition_pdf VARCHAR(500),
+      previous_plan_pdf VARCHAR(500),
+      selected_package VARCHAR(50),
+      payment_method ENUM('bank_transfer', 'stripe_card') DEFAULT 'bank_transfer',
+      visible_to_client TINYINT(1) NOT NULL DEFAULT 0,
+      submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_client_id (client_id)
+    )
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS client_onboarding (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      client_id INT NOT NULL UNIQUE,
+      goal VARCHAR(120),
+      date_of_birth DATE,
+      age INT,
+      height_cm DECIMAL(5,2),
+      update_day TINYINT,
+      occupation_schedule TEXT,
+      health_problem TEXT,
+      injuries TEXT,
+      cycle_history TEXT,
+      cardio_sessions_per_week TEXT,
+      sleep_schedule TEXT,
+      blood_tests_pdf VARCHAR(500),
+      current_training_plan TEXT,
+      current_nutrition_plan TEXT,
+      previous_plan_history TEXT,
+      current_training_pdf VARCHAR(500),
+      current_nutrition_pdf VARCHAR(500),
+      previous_plan_pdf VARCHAR(500),
+      selected_package VARCHAR(50),
+      payment_method ENUM('bank_transfer', 'stripe_card') DEFAULT 'bank_transfer',
+      onboarding_completed TINYINT(1) NOT NULL DEFAULT 0,
+      completed_at TIMESTAMP NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_client_id (client_id)
+    )
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS weekly_updates (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      client_id INT NOT NULL,
+      coach_id INT,
+      weight_kg DECIMAL(6,2),
+      training_score TINYINT,
+      nutrition_score TINYINT,
+      notes TEXT,
+      submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      week_start DATE NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (coach_id) REFERENCES users(id) ON DELETE SET NULL,
+      UNIQUE KEY unique_client_week (client_id, week_start),
+      INDEX idx_client_id (client_id),
+      INDEX idx_week_start (week_start)
+    )
+  `);
+
+  for (const statement of [
+    'ALTER TABLE users ADD COLUMN last_seen_at TIMESTAMP NULL',
+    'ALTER TABLE clients ADD COLUMN coach_notes TEXT',
+    'ALTER TABLE onboarding_forms ADD COLUMN level VARCHAR(120)',
+    'ALTER TABLE onboarding_forms ADD COLUMN available_days VARCHAR(255)',
+    'ALTER TABLE onboarding_forms ADD COLUMN dietary_restrictions TEXT',
+    'ALTER TABLE onboarding_forms ADD COLUMN additional_notes TEXT',
+    'ALTER TABLE onboarding_forms ADD COLUMN date_of_birth DATE',
+    'ALTER TABLE onboarding_forms ADD COLUMN age INT',
+    'ALTER TABLE onboarding_forms ADD COLUMN height_cm DECIMAL(5,2)',
+    'ALTER TABLE onboarding_forms ADD COLUMN weight_kg DECIMAL(6,2)',
+    'ALTER TABLE onboarding_forms ADD COLUMN update_day TINYINT',
+    'ALTER TABLE onboarding_forms ADD COLUMN occupation_schedule TEXT',
+    'ALTER TABLE onboarding_forms ADD COLUMN health_problem TEXT',
+    'ALTER TABLE onboarding_forms ADD COLUMN cycle_history TEXT',
+    'ALTER TABLE onboarding_forms ADD COLUMN cardio_sessions_per_week TEXT',
+    'ALTER TABLE onboarding_forms ADD COLUMN sleep_schedule TEXT',
+    'ALTER TABLE onboarding_forms ADD COLUMN blood_tests_pdf VARCHAR(500)',
+    'ALTER TABLE onboarding_forms ADD COLUMN current_training_plan TEXT',
+    'ALTER TABLE onboarding_forms ADD COLUMN current_nutrition_plan TEXT',
+    'ALTER TABLE onboarding_forms ADD COLUMN previous_plan_history TEXT',
+    'ALTER TABLE onboarding_forms ADD COLUMN current_training_pdf VARCHAR(500)',
+    'ALTER TABLE onboarding_forms ADD COLUMN current_nutrition_pdf VARCHAR(500)',
+    'ALTER TABLE onboarding_forms ADD COLUMN previous_plan_pdf VARCHAR(500)',
+    'ALTER TABLE onboarding_forms ADD COLUMN selected_package VARCHAR(50)',
+    "ALTER TABLE onboarding_forms ADD COLUMN payment_method ENUM('bank_transfer', 'stripe_card') DEFAULT 'bank_transfer'",
+    'ALTER TABLE onboarding_forms ADD COLUMN visible_to_client TINYINT(1) NOT NULL DEFAULT 0',
+    'ALTER TABLE onboarding_forms ADD COLUMN submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
+  ]) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+  }
+
   await connection.query(`
     CREATE TABLE IF NOT EXISTS client_onboarding (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -165,12 +342,12 @@ router.get('/me/onboarding', authorizeRole(['client']), async (req, res) => {
     await ensureOnboardingSchema(connection);
 
     const [rows] = await connection.query(
-      'SELECT * FROM client_onboarding WHERE client_id = ?',
+      'SELECT submitted_at FROM onboarding_forms WHERE client_id = ?',
       [req.user.id]
     );
 
     connection.release();
-    res.json({ onboarding: rows[0] || null });
+    res.json({ completed: rows.length > 0, submittedAt: rows[0]?.submitted_at || null });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -220,8 +397,8 @@ router.post('/me/onboarding', authorizeRole(['client']), (req, res, next) => {
     return res.status(400).json({ message: 'Συμπλήρωσε όλα τα απαραίτητα πεδία.' });
   }
 
-  const selectedPackage = subscriptionPackages[subscriptionPackage];
-  if (!selectedPackage) {
+  let selectedPackage = subscriptionPackages[subscriptionPackage];
+  if (false && !selectedPackage) {
     return res.status(400).json({ message: 'Μη έγκυρο πακέτο συνδρομής.' });
   }
 
@@ -229,6 +406,12 @@ router.post('/me/onboarding', authorizeRole(['client']), (req, res, next) => {
 
   try {
     await ensureOnboardingSchema(connection);
+    selectedPackage = await getSelectedSubscriptionPlan(connection, subscriptionPackage);
+    if (!selectedPackage) {
+      connection.release();
+      return res.status(400).json({ message: 'Μη έγκυρο πακέτο συνδρομής.' });
+    }
+
     await connection.beginTransaction();
 
     const coachId = await getDefaultCoachId(connection);
@@ -255,6 +438,66 @@ router.post('/me/onboarding', authorizeRole(['client']), (req, res, next) => {
          fitness_goal = VALUES(fitness_goal),
          medical_notes = VALUES(medical_notes)`,
       [req.user.id, fullPhone, dateOfBirth || null, parsedHeightCm, parsedWeightKg, goal, [healthProblem, injuries].filter(Boolean).join('\n\n') || null]
+    );
+
+    await connection.query(
+      `INSERT INTO onboarding_forms
+         (client_id, goal, injuries, additional_notes, date_of_birth, age, height_cm, weight_kg,
+          update_day, occupation_schedule, health_problem, cycle_history, cardio_sessions_per_week,
+          sleep_schedule, blood_tests_pdf, current_training_plan, current_nutrition_plan,
+          previous_plan_history, current_training_pdf, current_nutrition_pdf, previous_plan_pdf,
+          selected_package, payment_method, visible_to_client, submitted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, NOW())
+       ON DUPLICATE KEY UPDATE
+         goal = VALUES(goal),
+         injuries = VALUES(injuries),
+         additional_notes = VALUES(additional_notes),
+         date_of_birth = VALUES(date_of_birth),
+         age = VALUES(age),
+         height_cm = VALUES(height_cm),
+         weight_kg = VALUES(weight_kg),
+         update_day = VALUES(update_day),
+         occupation_schedule = VALUES(occupation_schedule),
+         health_problem = VALUES(health_problem),
+         cycle_history = VALUES(cycle_history),
+         cardio_sessions_per_week = VALUES(cardio_sessions_per_week),
+         sleep_schedule = VALUES(sleep_schedule),
+         blood_tests_pdf = COALESCE(VALUES(blood_tests_pdf), blood_tests_pdf),
+         current_training_plan = VALUES(current_training_plan),
+         current_nutrition_plan = VALUES(current_nutrition_plan),
+         previous_plan_history = VALUES(previous_plan_history),
+         current_training_pdf = COALESCE(VALUES(current_training_pdf), current_training_pdf),
+         current_nutrition_pdf = COALESCE(VALUES(current_nutrition_pdf), current_nutrition_pdf),
+         previous_plan_pdf = COALESCE(VALUES(previous_plan_pdf), previous_plan_pdf),
+         selected_package = VALUES(selected_package),
+         payment_method = VALUES(payment_method),
+         visible_to_client = 0,
+         submitted_at = COALESCE(submitted_at, NOW())`,
+      [
+        req.user.id,
+        goal,
+        injuries || null,
+        [currentTrainingPlan, currentNutritionPlan, previousPlanHistory].filter(Boolean).join('\n\n') || null,
+        dateOfBirth || null,
+        calculatedAge,
+        parsedHeightCm,
+        parsedWeightKg,
+        updateDay,
+        occupationSchedule || null,
+        healthProblem || null,
+        cycleHistory || null,
+        cardioSessionsPerWeek || null,
+        sleepSchedule || null,
+        req.files?.bloodTestsPdf?.[0]?.path.replace(/\\/g, '/') || null,
+        currentTrainingPlan || null,
+        currentNutritionPlan || null,
+        previousPlanHistory || null,
+        req.files?.trainingPlanPdf?.[0]?.path.replace(/\\/g, '/') || null,
+        req.files?.nutritionPlanPdf?.[0]?.path.replace(/\\/g, '/') || null,
+        req.files?.previousPlanPdf?.[0]?.path.replace(/\\/g, '/') || null,
+        subscriptionPackage,
+        paymentMethod || 'bank_transfer'
+      ]
     );
 
     await connection.query(
@@ -344,12 +587,13 @@ router.post('/me/onboarding', authorizeRole(['client']), (req, res, next) => {
 
     const [subscriptionResult] = await connection.query(
       `INSERT INTO subscriptions (client_id, coach_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes)
-       VALUES (?, ?, ?, 'custom', ?, 'EUR', ?, ?, 'active', ?)`,
+       VALUES (?, ?, ?, 'custom', ?, ?, ?, ?, 'active', ?)`,
       [
         req.user.id,
         coachId,
         selectedPackage.label,
         selectedPackage.price,
+        selectedPackage.currency || 'EUR',
         startDate,
         endDate,
         paymentMethod === 'stripe_card' ? 'Stripe card selected - integration pending' : 'Bank transfer selected'
@@ -358,12 +602,13 @@ router.post('/me/onboarding', authorizeRole(['client']), (req, res, next) => {
 
     await connection.query(
       `INSERT INTO payments (client_id, coach_id, subscription_id, amount, currency, method, status, notes)
-       VALUES (?, ?, ?, ?, 'EUR', ?, 'pending', ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
       [
         req.user.id,
         coachId,
         subscriptionResult.insertId,
         selectedPackage.price,
+        selectedPackage.currency || 'EUR',
         paymentMethod === 'stripe_card' ? 'stripe' : 'bank_transfer',
         paymentMethod === 'stripe_card' ? 'Stripe θα συνδεθεί αργότερα.' : 'Αναμένεται τραπεζικό έμβασμα.'
       ]
@@ -426,12 +671,13 @@ router.post('/me/onboarding', authorizeRole(['client']), (req, res, next) => {
 router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
+    await ensureOnboardingSchema(connection);
     const search = String(req.query.search || '').trim();
     const searchLimit = search ? ' LIMIT 12' : '';
 
     let rows;
     if (req.user.role === 'admin' || req.user.role === 'moderator') {
-      const filters = ["u.role = 'client'"];
+      const filters = ["u.role = 'client'", "u.is_active = 1"];
       const values = [];
 
       if (search) {
@@ -441,18 +687,50 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
 
       [rows] = await connection.query(
         `SELECT u.id, u.email, u.full_name, u.profile_photo, u.is_active,
-                c.phone, c.gender, c.date_of_birth, c.height_cm, c.weight_kg, c.fitness_goal,
-                cc.status AS coaching_status, cc.coach_id
+                u.created_at, u.last_seen_at,
+                CASE WHEN u.last_seen_at >= DATE_SUB(NOW(), INTERVAL 15 MINUTE) THEN 1 ELSE 0 END AS is_online,
+                c.phone, c.gender, c.date_of_birth, c.height_cm, c.weight_kg, c.fitness_goal, c.coach_notes,
+                cc.status AS coaching_status, cc.coach_id,
+                COALESCE(us.day_of_week, ofm.update_day) AS update_day,
+                COALESCE(us.next_due_date, CASE WHEN ofm.update_day IS NOT NULL THEN DATE_ADD(CURDATE(), INTERVAL ((ofm.update_day - DAYOFWEEK(CURDATE()) + 1 + 7) % 7) DAY) ELSE NULL END) AS next_update_date,
+                ofm.submitted_at AS onboarding_submitted_at,
+                wu.weight_kg AS latest_update_weight,
+                wu.submitted_at AS latest_update_at,
+                lp.status AS payment_status,
+                lp.method AS payment_method,
+                s.status AS subscription_status,
+                CASE
+                  WHEN lp.status = 'completed' AND (s.status IS NULL OR s.status IN ('active', 'expiring_soon')) THEN 'active'
+                  WHEN lp.status = 'pending' THEN 'pending'
+                  ELSE 'inactive'
+                END AS client_status_key
          FROM users u
          LEFT JOIN clients c ON c.user_id = u.id
          LEFT JOIN coach_clients cc ON cc.client_id = u.id
+         LEFT JOIN onboarding_forms ofm ON ofm.client_id = u.id
+         LEFT JOIN update_schedule us ON us.client_id = u.id
+         LEFT JOIN subscriptions s ON s.client_id = u.id AND s.id = (
+           SELECT s2.id FROM subscriptions s2 WHERE s2.client_id = u.id ORDER BY s2.created_at DESC LIMIT 1
+         )
+         LEFT JOIN payments lp ON lp.client_id = u.id AND lp.id = (
+           SELECT p2.id FROM payments p2 WHERE p2.client_id = u.id ORDER BY p2.created_at DESC LIMIT 1
+         )
+         LEFT JOIN (
+           SELECT w1.client_id, w1.weight_kg, w1.submitted_at
+           FROM weekly_updates w1
+           INNER JOIN (
+             SELECT client_id, MAX(submitted_at) AS submitted_at
+             FROM weekly_updates
+             GROUP BY client_id
+           ) w2 ON w2.client_id = w1.client_id AND w2.submitted_at = w1.submitted_at
+         ) wu ON wu.client_id = u.id
          WHERE ${filters.join(' AND ')}
          ORDER BY u.full_name
          ${searchLimit}`,
         values
       );
     } else {
-      const filters = ["u.role = 'client'"];
+      const filters = ["u.role = 'client'", "u.is_active = 1"];
       const values = [req.user.id];
 
       if (search) {
@@ -462,11 +740,43 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
 
       [rows] = await connection.query(
         `SELECT u.id, u.email, u.full_name, u.profile_photo, u.is_active,
+                u.created_at, u.last_seen_at,
+                CASE WHEN u.last_seen_at >= DATE_SUB(NOW(), INTERVAL 15 MINUTE) THEN 1 ELSE 0 END AS is_online,
                 c.phone, c.gender, c.date_of_birth, c.height_cm, c.weight_kg, c.fitness_goal,
-                cc.status AS coaching_status
+                cc.status AS coaching_status,
+                COALESCE(us.day_of_week, ofm.update_day) AS update_day,
+                COALESCE(us.next_due_date, CASE WHEN ofm.update_day IS NOT NULL THEN DATE_ADD(CURDATE(), INTERVAL ((ofm.update_day - DAYOFWEEK(CURDATE()) + 1 + 7) % 7) DAY) ELSE NULL END) AS next_update_date,
+                ofm.submitted_at AS onboarding_submitted_at,
+                wu.weight_kg AS latest_update_weight,
+                wu.submitted_at AS latest_update_at,
+                lp.status AS payment_status,
+                lp.method AS payment_method,
+                s.status AS subscription_status,
+                CASE
+                  WHEN lp.status = 'completed' AND (s.status IS NULL OR s.status IN ('active', 'expiring_soon')) THEN 'active'
+                  WHEN lp.status = 'pending' THEN 'pending'
+                  ELSE 'inactive'
+                END AS client_status_key
          FROM users u
          INNER JOIN coach_clients cc ON cc.client_id = u.id AND cc.coach_id = ?
          LEFT JOIN clients c ON c.user_id = u.id
+         LEFT JOIN onboarding_forms ofm ON ofm.client_id = u.id
+         LEFT JOIN update_schedule us ON us.client_id = u.id
+         LEFT JOIN subscriptions s ON s.client_id = u.id AND s.id = (
+           SELECT s2.id FROM subscriptions s2 WHERE s2.client_id = u.id ORDER BY s2.created_at DESC LIMIT 1
+         )
+         LEFT JOIN payments lp ON lp.client_id = u.id AND lp.id = (
+           SELECT p2.id FROM payments p2 WHERE p2.client_id = u.id ORDER BY p2.created_at DESC LIMIT 1
+         )
+         LEFT JOIN (
+           SELECT w1.client_id, w1.weight_kg, w1.submitted_at
+           FROM weekly_updates w1
+           INNER JOIN (
+             SELECT client_id, MAX(submitted_at) AS submitted_at
+             FROM weekly_updates
+             GROUP BY client_id
+           ) w2 ON w2.client_id = w1.client_id AND w2.submitted_at = w1.submitted_at
+         ) wu ON wu.client_id = u.id
          WHERE ${filters.join(' AND ')}
          ORDER BY u.full_name
          ${searchLimit}`,
@@ -486,11 +796,12 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
 router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
+    await ensureOnboardingSchema(connection);
 
     const [rows] = await connection.query(
       `SELECT u.id, u.email, u.full_name, u.profile_photo, u.bio, u.is_active,
               c.date_of_birth, c.gender, c.phone, c.height_cm, c.weight_kg,
-              c.fitness_goal, c.medical_notes,
+              c.fitness_goal, c.medical_notes, c.coach_notes,
               c.emergency_contact_name, c.emergency_contact_phone,
               cc.status AS coaching_status, cc.coach_id
        FROM users u
@@ -511,10 +822,8 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
       return res.status(403).json({ message: 'Access denied' });
     }
 
-    await ensureOnboardingSchema(connection);
-
     const [onboardingRows] = await connection.query(
-      'SELECT * FROM client_onboarding WHERE client_id = ?',
+      'SELECT * FROM onboarding_forms WHERE client_id = ?',
       [req.params.id]
     );
     const [socialRows] = await connection.query(
@@ -531,6 +840,14 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
     );
     const [progressRows] = await connection.query(
       'SELECT * FROM progress_updates WHERE client_id = ? ORDER BY submitted_at DESC LIMIT 5',
+      [req.params.id]
+    );
+    const [paymentRows] = await connection.query(
+      'SELECT id, subscription_id, amount, currency, method, status, reference_number, paid_at, created_at FROM payments WHERE client_id = ? ORDER BY created_at DESC',
+      [req.params.id]
+    );
+    const [weeklyRows] = await connection.query(
+      'SELECT id, weight_kg, training_score, nutrition_score, notes, submitted_at, week_start FROM weekly_updates WHERE client_id = ? ORDER BY submitted_at DESC LIMIT 12',
       [req.params.id]
     );
 
@@ -556,8 +873,10 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
       onboarding: onboardingRows[0] || null,
       socialLinks: socialRows,
       subscription: subscriptionRows[0] || null,
+      payments: paymentRows,
       updateSchedule: scheduleRows[0] || null,
-      progressUpdates: progressRows
+      progressUpdates: progressRows,
+      weeklyUpdates: weeklyRows
     });
   } catch (error) {
     console.error(error);
@@ -586,6 +905,7 @@ router.post('/', authorizeRole(['coach', 'admin']), [
   const connection = await pool.getConnection();
 
   try {
+    await ensureOnboardingSchema(connection);
     await connection.beginTransaction();
 
     const [existing] = await connection.query(
@@ -648,6 +968,7 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
   const connection = await pool.getConnection();
 
   try {
+    await ensureOnboardingSchema(connection);
     // Verify client exists and coach has access
     const [rows] = await connection.query(
       `SELECT u.id, cc.coach_id
@@ -690,13 +1011,13 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
 
     const {
       phone, gender, dateOfBirth, heightCm, weightKg,
-      fitnessGoal, medicalNotes, emergencyContactName, emergencyContactPhone
+      fitnessGoal, medicalNotes, coachNotes, emergencyContactName, emergencyContactPhone
     } = req.body;
 
     await connection.query(
       `INSERT INTO clients (user_id, phone, gender, date_of_birth, height_cm, weight_kg,
-         fitness_goal, medical_notes, emergency_contact_name, emergency_contact_phone)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         fitness_goal, medical_notes, coach_notes, emergency_contact_name, emergency_contact_phone)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          phone = COALESCE(VALUES(phone), phone),
          gender = COALESCE(VALUES(gender), gender),
@@ -705,11 +1026,12 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
          weight_kg = COALESCE(VALUES(weight_kg), weight_kg),
          fitness_goal = COALESCE(VALUES(fitness_goal), fitness_goal),
          medical_notes = COALESCE(VALUES(medical_notes), medical_notes),
+         coach_notes = COALESCE(VALUES(coach_notes), coach_notes),
          emergency_contact_name = COALESCE(VALUES(emergency_contact_name), emergency_contact_name),
          emergency_contact_phone = COALESCE(VALUES(emergency_contact_phone), emergency_contact_phone)`,
       [req.params.id, phone || null, gender || null, dateOfBirth || null,
        heightCm || null, weightKg || null, fitnessGoal || null,
-       medicalNotes || null, emergencyContactName || null, emergencyContactPhone || null]
+       medicalNotes || null, coachNotes || null, emergencyContactName || null, emergencyContactPhone || null]
     );
 
     await connection.commit();
@@ -724,13 +1046,30 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
   }
 });
 
-// DELETE /clients/:id — admin only (soft delete via is_active)
-router.delete('/:id', authorizeRole(['admin']), async (req, res) => {
+// PUT /clients/:id/update-day — update weekly check-in day from admin/coach
+router.put('/:id/update-day', authorizeRole(['coach', 'admin']), [
+  body('updateDay').isInt({ min: 0, max: 6 }).withMessage('Valid update day required')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const connection = await pool.getConnection();
+
   try {
-    const connection = await pool.getConnection();
+    await ensureOnboardingSchema(connection);
+    const clientId = Number(req.params.id);
+    const updateDay = Number(req.body.updateDay);
 
     const [rows] = await connection.query(
-      'SELECT id FROM users WHERE id = ? AND role = "client"', [req.params.id]
+      `SELECT u.id, COALESCE(cc.coach_id, us.coach_id, ?) AS coach_id
+       FROM users u
+       LEFT JOIN coach_clients cc ON cc.client_id = u.id
+       LEFT JOIN update_schedule us ON us.client_id = u.id
+       WHERE u.id = ? AND u.role = 'client'
+       LIMIT 1`,
+      [req.user.id, clientId]
     );
 
     if (rows.length === 0) {
@@ -738,13 +1077,89 @@ router.delete('/:id', authorizeRole(['admin']), async (req, res) => {
       return res.status(404).json({ message: 'Client not found' });
     }
 
+    if (req.user.role === 'coach' && rows[0].coach_id !== req.user.id) {
+      connection.release();
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const coachId = rows[0].coach_id || req.user.id;
+    const nextDueDate = nextDateForWeekday(updateDay);
+
+    await connection.beginTransaction();
     await connection.query(
-      'UPDATE users SET is_active = 0 WHERE id = ?', [req.params.id]
+      `INSERT INTO onboarding_forms (client_id, update_day)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE update_day = VALUES(update_day)`,
+      [clientId, updateDay]
+    );
+    await connection.query(
+      `INSERT INTO update_schedule (coach_id, client_id, frequency, day_of_week, reminder_enabled, next_due_date)
+       VALUES (?, ?, 'weekly', ?, 1, ?)
+       ON DUPLICATE KEY UPDATE day_of_week = VALUES(day_of_week), next_due_date = VALUES(next_due_date), reminder_enabled = 1`,
+      [coachId, clientId, updateDay, nextDueDate]
+    );
+    await connection.commit();
+    connection.release();
+
+    res.json({ message: 'Update day changed', updateDay, nextUpdateDate: nextDueDate });
+  } catch (error) {
+    await connection.rollback();
+    connection.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// DELETE /clients/:id — admin only, permanent delete of client and related data
+router.delete('/:id', authorizeRole(['admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+
+  try {
+    await ensureOnboardingSchema(connection);
+    const clientId = Number(req.params.id);
+
+    const [rows] = await connection.query(
+      'SELECT id FROM users WHERE id = ? AND role = "client"', [clientId]
     );
 
+    if (rows.length === 0) {
+      connection.release();
+      return res.status(404).json({ message: 'Client not found' });
+    }
+
+    const ignoreDelete = async (sql, values) => {
+      try {
+        await connection.query(sql, values);
+      } catch (error) {
+        if (!['ER_NO_SUCH_TABLE', 'ER_BAD_FIELD_ERROR'].includes(error.code)) throw error;
+      }
+    };
+
+    await connection.beginTransaction();
+
+    await ignoreDelete('DELETE FROM weekly_update_photos WHERE client_id = ?', [clientId]);
+    await ignoreDelete('DELETE FROM progress_photos WHERE client_id = ?', [clientId]);
+    await ignoreDelete('DELETE FROM payments WHERE client_id = ?', [clientId]);
+    await ignoreDelete('DELETE FROM subscriptions WHERE client_id = ?', [clientId]);
+    await ignoreDelete('DELETE FROM weekly_updates WHERE client_id = ?', [clientId]);
+    await ignoreDelete('DELETE FROM progress_updates WHERE client_id = ?', [clientId]);
+    await ignoreDelete('DELETE FROM update_schedule WHERE client_id = ?', [clientId]);
+    await ignoreDelete('DELETE FROM onboarding_forms WHERE client_id = ?', [clientId]);
+    await ignoreDelete('DELETE FROM client_onboarding WHERE client_id = ?', [clientId]);
+    await ignoreDelete('DELETE FROM coach_clients WHERE client_id = ?', [clientId]);
+    await ignoreDelete('DELETE FROM social_links WHERE user_id = ?', [clientId]);
+    await ignoreDelete('DELETE FROM training_plans WHERE client_id = ?', [clientId]);
+    await ignoreDelete('DELETE FROM nutrition_plans WHERE client_id = ?', [clientId]);
+    await ignoreDelete('DELETE FROM notifications WHERE user_id = ? OR client_id = ?', [clientId, clientId]);
+    await ignoreDelete('DELETE FROM clients WHERE user_id = ?', [clientId]);
+    await connection.query('DELETE FROM users WHERE id = ? AND role = "client"', [clientId]);
+
+    await connection.commit();
     connection.release();
-    res.json({ message: 'Client deactivated successfully' });
+    res.json({ message: 'Client permanently deleted' });
   } catch (error) {
+    await connection.rollback();
+    connection.release();
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }

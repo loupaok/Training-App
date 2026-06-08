@@ -8,14 +8,21 @@ import { api } from '../services/api';
 const navSections = [
   { label: 'Dashboard', path: '/dashboard' },
   { label: 'Πελάτες', path: '/clients', active: true },
+  { label: 'Updates Πελατών', path: '/updates' },
   { label: 'Βιβλιοθήκη Ασκήσεων', path: '/exercises' },
+  { label: 'Analytics', path: '/analytics' },
   { label: 'Media Library', path: '/media-library' },
   { label: 'Team', path: '/team' },
-  { label: 'Analytics', path: '/analytics' },
-  { label: 'Updates Πελατών', path: '/updates' },
-  { label: 'Discord' },
-  { label: 'Ειδοποιήσεις', path: '/notifications' },
-  { label: 'Ρυθμίσεις' },
+  { label: 'Ειδοποιήσεις', path: '/notifications', spacerBefore: true },
+  {
+    label: 'Ρυθμίσεις',
+    adminOnly: true,
+    children: [
+      { label: 'Discord' },
+      { label: 'Πλάνα & Τιμές', path: '/pricing-plans' },
+      { label: 'Branding' },
+    ],
+  },
 ];
 
 const clients = [
@@ -149,6 +156,16 @@ const emptyClientForm = {
   fitnessGoal: '',
 };
 
+const updateDayOptions = [
+  { value: 1, label: 'Δευτέρα' },
+  { value: 2, label: 'Τρίτη' },
+  { value: 3, label: 'Τετάρτη' },
+  { value: 4, label: 'Πέμπτη' },
+  { value: 5, label: 'Παρασκευή' },
+  { value: 6, label: 'Σάββατο' },
+  { value: 0, label: 'Κυριακή' },
+];
+
 function getInitials(name) {
   return String(name || 'CL')
     .split(' ')
@@ -159,21 +176,39 @@ function getInitials(name) {
     .toUpperCase() || 'CL';
 }
 
+function formatDate(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('el-GR');
+}
+
 function mapApiClient(row) {
-  const statusKey = row.is_active === 0 || row.coaching_status === 'inactive' ? 'inactive' : 'active';
+  const statusKey = row.client_status_key || (row.is_active === 0 || row.coaching_status === 'inactive' ? 'inactive' : 'active');
+  const statusMeta = {
+    active: { label: 'Ενεργός', style: 'bg-emerald-50 text-emerald-700' },
+    pending: { label: 'Εκκρεμής', style: 'bg-amber-50 text-amber-700' },
+    inactive: { label: 'Ανενεργός', style: 'bg-red-50 text-red-700' },
+  }[statusKey] || { label: 'Ανενεργός', style: 'bg-red-50 text-red-700' };
+  const currentWeight = row.latest_update_weight || row.weight_kg;
+  const updateDay = row.update_day === null || row.update_day === undefined ? '' : String(row.update_day);
   return {
     id: row.id,
     name: row.full_name || row.email || 'Χωρίς όνομα',
     email: row.email || '',
-    status: statusKey === 'inactive' ? 'Ανενεργός' : 'Ενεργός',
+    status: statusMeta.label,
     statusKey,
     program: row.fitness_goal || 'Manual Client',
     programKey: 'manual',
-    statusStyle: statusKey === 'inactive' ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700',
-    currentWeight: row.weight_kg ? `${row.weight_kg} kg` : '-',
+    statusStyle: statusMeta.style,
+    currentWeight: currentWeight ? `${currentWeight} kg` : '-',
     goal: row.fitness_goal || '-',
-    nextUpdate: '-',
-    nextUpdateDate: '2099-12-31',
+    updateDay,
+    updateDayLabel: updateDayOptions.find((item) => String(item.value) === updateDay)?.label || '-',
+    nextUpdate: formatDate(row.next_update_date),
+    nextUpdateDate: row.next_update_date || '2099-12-31',
+    onlineStatus: row.is_online ? 'Online' : 'Offline',
+    isOnline: Boolean(row.is_online),
     createdAt: row.created_at || new Date().toISOString(),
     initials: getInitials(row.full_name || row.email),
     tone: 'bg-slate-900',
@@ -189,6 +224,9 @@ function Avatar({ initials, tone = 'bg-slate-900', size = 'h-12 w-12' }) {
 }
 
 function Sidebar({ user }) {
+  const settingsIsActive = navSections.some((section) => section.children?.some((child) => child.active));
+  const [settingsOpen, setSettingsOpen] = React.useState(settingsIsActive);
+
   return (
     <aside className="fixed inset-y-0 left-0 flex w-[300px] flex-col bg-[#07131d] text-white shadow-2xl">
       <div className="flex h-[86px] items-center gap-3 px-8">
@@ -200,21 +238,43 @@ function Sidebar({ user }) {
 
       <nav className="flex-1 overflow-y-auto px-4 pb-6">
         <div className="space-y-1">
-          {navSections.map((section) => {
+          {navSections.filter((section) => !section.adminOnly || user?.role === 'admin').map((section) => {
             const className = `flex h-12 w-full items-center rounded-md px-4 text-left text-[15px] font-semibold ${
               section.active
                 ? 'bg-red-600 text-white shadow-lg shadow-red-950/30'
                 : 'text-slate-100 hover:bg-white/10'
             }`;
 
-            return section.path ? (
-              <Link key={section.label} to={section.path} className={className}>
+            const item = section.children ? (
+              <button onClick={() => setSettingsOpen((value) => !value)} className={className}>
+                <span className="truncate">{section.label}</span>
+                <span className={`ml-auto text-xs transition-transform ${settingsOpen ? 'rotate-180' : ''}`}>⌄</span>
+              </button>
+            ) : section.path ? (
+              <Link to={section.path} className={className}>
                 <span className="truncate">{section.label}</span>
               </Link>
             ) : (
-              <button key={section.label} className={className}>
+              <button className={className}>
                 <span className="truncate">{section.label}</span>
               </button>
+            );
+
+            return (
+              <div key={section.label} className={section.spacerBefore ? 'mt-6' : ''}>
+                {item}
+                {section.children && user?.role === 'admin' && (
+                  <div className={`ml-4 overflow-hidden border-l border-white/10 pl-3 transition-all duration-200 ${settingsOpen ? 'mt-1 max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
+                    {section.children.map((child) => (
+                      child.path ? (
+                        <Link key={child.label} to={child.path} className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">{child.label}</Link>
+                      ) : (
+                        <button key={child.label} className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">{child.label}</button>
+                      )
+                    ))}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
@@ -252,6 +312,7 @@ function Topbar({ user, logout, sidebarOpen, onToggleSidebar }) {
 const actionIcons = {
   edit: 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z',
   calendar: 'M7 3v4M17 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v14H4V6a1 1 0 0 1 1-1Z',
+  trash: 'M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 11v6M14 11v6',
   more: 'M12 5h.01M12 12h.01M12 19h.01',
   search: 'M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 1 1 0-15 7.5 7.5 0 0 1 0 15Z',
   chevron: 'M6 9l6 6 6-6',
@@ -316,7 +377,7 @@ function getWeightNumber(value) {
 export default function Clients() {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
-  const [clientRows, setClientRows] = useState(clients);
+  const [clientRows, setClientRows] = useState([]);
   const [loadingClients, setLoadingClients] = useState(false);
   const [clientMessage, setClientMessage] = useState('');
   const [clientError, setClientError] = useState('');
@@ -326,9 +387,9 @@ export default function Clients() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [programFilter, setProgramFilter] = useState('all');
   const [sortBy, setSortBy] = useState('newest');
-  const [openActions, setOpenActions] = useState(null);
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
+  const [deletingClientId, setDeletingClientId] = useState(null);
 
   const loadClients = React.useCallback(async () => {
     setLoadingClients(true);
@@ -337,8 +398,8 @@ export default function Clients() {
       const rows = await api.get('/clients');
       setClientRows(rows.map(mapApiClient));
     } catch (error) {
-      setClientError('Δεν φορτώθηκαν οι πελάτες από τη βάση. Προβάλλονται προσωρινά demo δεδομένα.');
-      setClientRows(clients);
+      setClientError('Δεν φορτώθηκαν οι πελάτες από τη βάση.');
+      setClientRows([]);
     } finally {
       setLoadingClients(false);
     }
@@ -395,7 +456,6 @@ export default function Clients() {
     setStatusFilter('all');
     setProgramFilter('all');
     setSortBy('newest');
-    setOpenActions(null);
     setCurrentPage(1);
   };
 
@@ -419,6 +479,25 @@ export default function Clients() {
       loadClients();
     } catch (error) {
       setClientError(error.message || 'Δεν έγινε προσθήκη πελάτη.');
+    }
+  };
+
+  const handleDeleteClient = async (client) => {
+    const confirmed = window.confirm(`Θέλεις σίγουρα να διαγραφεί οριστικά ο πελάτης ${client.name}; Θα διαγραφούν και όλα τα δεδομένα του από τη βάση.`);
+    if (!confirmed) return;
+
+    setDeletingClientId(client.id);
+    setClientError('');
+    setClientMessage('');
+
+    try {
+      await api.delete(`/clients/${client.id}`);
+      setClientRows((rows) => rows.filter((row) => row.id !== client.id));
+      setClientMessage('Ο πελάτης διαγράφηκε οριστικά από τη βάση.');
+    } catch (error) {
+      setClientError(error.message || 'Δεν διαγράφηκε ο πελάτης.');
+    } finally {
+      setDeletingClientId(null);
     }
   };
 
@@ -470,7 +549,7 @@ export default function Clients() {
                 options={[
                   { value: 'all', label: 'Κατάσταση: Όλα' },
                   { value: 'active', label: 'Ενεργοί Πελάτες' },
-                  { value: 'expiring', label: 'Λήγουν Σύντομα' },
+                  { value: 'pending', label: 'Εκκρεμείς Πληρωμές' },
                   { value: 'inactive', label: 'Ανενεργοί Πελάτες' },
                 ]}
               />
@@ -531,17 +610,17 @@ export default function Clients() {
             <table className="w-full border-collapse">
               <thead>
                 <tr className="h-[72px] border-b border-slate-200 text-left text-base font-extrabold">
-                  <th className="w-[27%] px-8">Πελάτης</th>
-                  <th className="w-[14%] px-5">Κατάσταση</th>
-                  <th className="w-[14%] px-5">Τρέχον Βάρος</th>
-                  <th className="w-[12%] px-5">Στόχος</th>
-                  <th className="w-[16%] px-5">Επόμενο Update</th>
-                  <th className="w-[17%] px-5">Ενέργειες</th>
+                  <th className="w-[30%] px-8">Πελάτης</th>
+                  <th className="w-[13%] px-5">Κατάσταση</th>
+                  <th className="w-[13%] px-5">Τρέχον Βάρος</th>
+                  <th className="w-[20%] px-5">Επόμενο Update</th>
+                  <th className="w-[10%] px-5">Status</th>
+                  <th className="w-[14%] px-5">Ενέργειες</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedClients.map((client) => (
-                  <tr key={client.email} className="h-[94px] border-b border-slate-200 last:border-b-0">
+                  <tr key={client.id} className="h-[104px] border-b border-slate-200 last:border-b-0">
                     <td className="px-8">
                       <Link to={`/clients/${client.id}`} className="flex items-center gap-4 text-slate-950 hover:text-red-600">
                         <Avatar initials={client.initials} tone={client.tone} />
@@ -558,30 +637,27 @@ export default function Clients() {
                       </span>
                     </td>
                     <td className="px-5 text-base">{client.currentWeight}</td>
-                    <td className="px-5 text-base">{client.goal}</td>
-                    <td className="px-5 text-base">{client.nextUpdate}</td>
+                    <td className="px-5">
+                      <div>
+                        <div className="font-bold text-slate-900">{client.nextUpdate}</div>
+                        <div className="mt-1 text-xs font-bold text-slate-500">{client.updateDayLabel}</div>
+                      </div>
+                    </td>
+                    <td className="px-5">
+                      <span className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-bold ${client.isOnline ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                        <span className={`h-2 w-2 rounded-full ${client.isOnline ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                        {client.onlineStatus}
+                      </span>
+                    </td>
                     <td className="px-5">
                       <div className="relative flex items-center gap-2">
                         <LinkActionButton icon="edit" label="Επεξεργασία πελάτη" to={`/clients/${client.id}?action=edit`} />
                         <LinkActionButton icon="calendar" label="Προσθήκη update" to={`/clients/${client.id}?action=update`} />
                         <ActionButton
-                          icon="more"
-                          label="Περισσότερες ενέργειες"
-                          onClick={() => setOpenActions((value) => (value === client.id ? null : client.id))}
+                          icon="trash"
+                          label="Οριστική διαγραφή πελάτη"
+                          onClick={() => handleDeleteClient(client)}
                         />
-                        {openActions === client.id && (
-                          <div className="absolute right-0 top-10 z-20 w-52 overflow-hidden rounded-lg border border-slate-200 bg-white py-2 shadow-xl">
-                            <Link to={`/clients/${client.id}?action=message#client-message-section`} className="block px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 hover:text-red-600">
-                              Αποστολή μηνύματος
-                            </Link>
-                            <Link to={`/clients/${client.id}?action=subscription#client-subscription-section`} className="block px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 hover:text-red-600">
-                              Συνδρομή
-                            </Link>
-                            <Link to={`/clients/${client.id}?action=notes#client-notes-section`} className="block px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 hover:text-red-600">
-                              Σημειώσεις
-                            </Link>
-                          </div>
-                        )}
                       </div>
                     </td>
                   </tr>
@@ -589,7 +665,7 @@ export default function Clients() {
                 {!paginatedClients.length && (
                   <tr>
                     <td colSpan="6" className="px-8 py-12 text-center font-semibold text-slate-500">
-                      {loadingClients ? 'Φόρτωση πελατών...' : 'Δεν βρέθηκαν πελάτες με αυτά τα φίλτρα.'}
+                      {loadingClients ? 'Φόρτωση πελατών...' : 'Δεν υπάρχουν εγγεγραμμένοι πελάτες με αυτά τα φίλτρα.'}
                     </td>
                   </tr>
                 )}

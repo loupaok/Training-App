@@ -14,6 +14,7 @@ import MediaLibrary from './pages/MediaLibrary';
 import Analytics from './pages/Analytics';
 import Notifications from './pages/Notifications';
 import Team from './pages/Team';
+import PricingPlans from './pages/PricingPlans';
 import AdminDashboard from './pages/AdminDashboard';
 import './index.css';
 
@@ -139,6 +140,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Team />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pricing-plans"
+            element={
+              <ProtectedRoute>
+                <PricingPlans />
               </ProtectedRoute>
             }
           />

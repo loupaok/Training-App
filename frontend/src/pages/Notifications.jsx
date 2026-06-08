@@ -16,6 +16,17 @@ const navSections = [
   { label: 'Ρυθμίσεις' },
 ];
 
+const menuSections = [
+  { label: 'Dashboard', path: '/dashboard' },
+  { label: 'Πελάτες', path: '/clients' },
+  { label: 'Updates Πελατών', path: '/updates' },
+  { label: 'Βιβλιοθήκη Ασκήσεων', path: '/exercises' },
+  { label: 'Analytics', path: '/analytics' },
+  { label: 'Media Library', path: '/media-library' },
+  { label: 'Team', path: '/team' },
+  { label: 'Ειδοποιήσεις', path: '/notifications', active: true, spacerBefore: true },
+];
+
 const notificationGroups = [
   {
     label: 'Σήμερα',
@@ -128,6 +139,8 @@ function Avatar({ initials, tone = 'bg-slate-900', size = 'h-12 w-12' }) {
 }
 
 function Sidebar({ user }) {
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+
   return (
     <aside className="fixed inset-y-0 left-0 flex w-[300px] flex-col bg-[#07131d] text-white shadow-2xl">
       <div className="flex h-[86px] items-center gap-3 px-8">
@@ -136,10 +149,25 @@ function Sidebar({ user }) {
       </div>
       <nav className="flex-1 overflow-y-auto px-4 pb-6">
         <div className="space-y-1">
-          {navSections.map((section) => {
+          {menuSections.map((section) => {
             const className = `flex h-12 w-full items-center rounded-md px-4 text-left text-[15px] font-semibold ${section.active ? 'bg-red-600 text-white shadow-lg shadow-red-950/30' : 'text-slate-100 hover:bg-white/10'}`;
-            return section.path ? <Link key={section.label} to={section.path} className={className}>{section.label}</Link> : <button key={section.label} className={className}>{section.label}</button>;
+            return <Link key={section.label} to={section.path} className={`${className} ${section.spacerBefore ? 'mt-6' : ''}`}>{section.label}</Link>;
           })}
+          {user?.role === 'admin' && (
+            <div>
+              <button onClick={() => setSettingsOpen((value) => !value)} className="flex h-12 w-full items-center rounded-md px-4 text-left text-[15px] font-semibold text-slate-100 hover:bg-white/10">
+                <span>Ρυθμίσεις</span>
+                <span className={`ml-auto text-xs transition-transform ${settingsOpen ? 'rotate-180' : ''}`}>⌄</span>
+              </button>
+              <div className={`ml-4 overflow-hidden border-l border-white/10 pl-3 transition-all duration-200 ${settingsOpen ? 'mt-1 max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
+                {['Discord', 'Πλάνα & Τιμές', 'Branding'].map((label) => (
+                  label === 'Πλάνα & Τιμές'
+                    ? <Link key={label} to="/pricing-plans" className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">{label}</Link>
+                    : <button key={label} className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">{label}</button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </nav>
       <div className="border-t border-white/10 p-7">
