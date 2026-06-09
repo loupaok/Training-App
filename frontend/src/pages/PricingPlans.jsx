@@ -334,7 +334,7 @@ function PlanPreview({ plan }) {
         <div className="mx-auto grid h-12 w-12 place-items-center rounded-full text-2xl" style={{ backgroundColor: `${plan.themeColor}18`, color: plan.themeColor }}>🏆</div>
         <h4 className="mt-4 text-2xl font-black" style={{ color: plan.themeColor }}>{plan.name || 'Πλάνο'}</h4>
         <p className="mx-auto mt-3 max-w-56 text-sm leading-6 text-slate-600">{plan.description}</p>
-        <div className="mt-5 text-3xl font-black">€{plan.price}<span className="text-base font-bold text-slate-500"> /μήνα</span></div>
+        <div className="mt-5 text-3xl font-black">€{plan.price}<span className="text-base font-bold text-slate-500"> /{formatPlanPeriod(plan.period)}</span></div>
         <button className="mt-5 h-11 w-full rounded-md font-black text-white" style={{ backgroundColor: plan.themeColor }}>Επιλέγω {plan.name}</button>
       </div>
       <div className="space-y-4 py-3">
@@ -347,6 +347,13 @@ function PlanPreview({ plan }) {
       </div>
     </div>
   );
+}
+
+function formatPlanPeriod(period) {
+  if (!period) return 'μήνα';
+  const normalized = String(period).toLowerCase();
+  if (normalized.includes('μηνια') || normalized.includes('monthly')) return 'μήνα';
+  return period;
 }
 
 function Input({ label, value, onChange, type = 'text', placeholder = '' }) {

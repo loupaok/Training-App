@@ -44,6 +44,47 @@ const onboardingUpload = multer({
   }
 });
 
+const profilePhotoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join('uploads', 'media');
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '.jpg').toLowerCase() || '.jpg';
+    cb(null, `profile-${req.user.id}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
+  }
+});
+
+const profilePhotoUpload = multer({
+  storage: profilePhotoStorage,
+  limits: { fileSize: 3 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    cb(null, /^image\/(jpeg|png|webp)$/.test(file.mimetype));
+  }
+});
+
+const paymentProofStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join('uploads', 'payments', String(req.user.id));
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase();
+    cb(null, `payment-proof-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
+  }
+});
+
+const paymentProofUpload = multer({
+  storage: paymentProofStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = /^image\/(jpeg|png|webp)$/.test(file.mimetype) || file.mimetype === 'application/pdf';
+    cb(null, allowed);
+  }
+});
+
 const subscriptionPackages = {
   '2_months': { label: '2 μήνες', months: 2, price: 190 },
   '3_months': { label: '3 μήνες', months: 3, price: 270 },
@@ -335,6 +376,65 @@ async function getDefaultCoachId(connection) {
   return rows[0]?.id || null;
 }
 
+async function ensureMediaTable(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS media_folders (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      name VARCHAR(255) NOT NULL,
+      parent_id INT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (parent_id) REFERENCES media_folders(id) ON DELETE SET NULL,
+      INDEX idx_parent_id (parent_id)
+    )
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS media_assets (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      title VARCHAR(255) NOT NULL,
+      asset_type ENUM('photo', 'icon') DEFAULT 'photo',
+      url VARCHAR(600) NOT NULL,
+      source VARCHAR(80) DEFAULT 'upload',
+      folder_id INT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (folder_id) REFERENCES media_folders(id) ON DELETE SET NULL,
+      INDEX idx_asset_type (asset_type),
+      INDEX idx_source (source),
+      INDEX idx_folder_id (folder_id)
+    )
+  `);
+}
+
+async function ensureProfilePhotoFolder(connection) {
+  await ensureMediaTable(connection);
+  const [folders] = await connection.query(
+    'SELECT id FROM media_folders WHERE LOWER(name) = LOWER(?) LIMIT 1',
+    ['foto profil']
+  );
+  if (folders.length) return folders[0].id;
+
+  const [result] = await connection.query(
+    'INSERT INTO media_folders (name, parent_id) VALUES (?, NULL)',
+    ['foto profil']
+  );
+  return result.insertId;
+}
+
+async function ensurePaymentProofColumns(connection) {
+  for (const statement of [
+    'ALTER TABLE payments ADD COLUMN proof_url VARCHAR(500)',
+    'ALTER TABLE payments ADD COLUMN proof_uploaded_at TIMESTAMP NULL'
+  ]) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+  }
+}
+
 // GET /clients/me/onboarding — current client's onboarding state
 router.get('/me/onboarding', authorizeRole(['client']), async (req, res) => {
   try {
@@ -393,30 +493,18 @@ router.post('/me/onboarding', authorizeRole(['client']), (req, res, next) => {
     paymentMethod
   } = req.body;
 
-  if (!fullName || !email || !phone || !goal || updateDay === undefined || !weightKg || !subscriptionPackage) {
+  if (!fullName || !email || !phone || !goal || updateDay === undefined || !weightKg) {
     return res.status(400).json({ message: 'Συμπλήρωσε όλα τα απαραίτητα πεδία.' });
-  }
-
-  let selectedPackage = subscriptionPackages[subscriptionPackage];
-  if (false && !selectedPackage) {
-    return res.status(400).json({ message: 'Μη έγκυρο πακέτο συνδρομής.' });
   }
 
   const connection = await pool.getConnection();
 
   try {
     await ensureOnboardingSchema(connection);
-    selectedPackage = await getSelectedSubscriptionPlan(connection, subscriptionPackage);
-    if (!selectedPackage) {
-      connection.release();
-      return res.status(400).json({ message: 'Μη έγκυρο πακέτο συνδρομής.' });
-    }
 
     await connection.beginTransaction();
 
     const coachId = await getDefaultCoachId(connection);
-    const startDate = new Date().toISOString().slice(0, 10);
-    const endDate = addMonths(new Date(), selectedPackage.months);
     const fullPhone = `${countryCode || ''}${phone}`.trim();
     const calculatedAge = calculateAge(dateOfBirth);
     const parsedHeightCm = parseDecimalText(heightCm);
@@ -495,8 +583,8 @@ router.post('/me/onboarding', authorizeRole(['client']), (req, res, next) => {
         req.files?.trainingPlanPdf?.[0]?.path.replace(/\\/g, '/') || null,
         req.files?.nutritionPlanPdf?.[0]?.path.replace(/\\/g, '/') || null,
         req.files?.previousPlanPdf?.[0]?.path.replace(/\\/g, '/') || null,
-        subscriptionPackage,
-        paymentMethod || 'bank_transfer'
+        subscriptionPackage || null,
+        paymentMethod || null
       ]
     );
 
@@ -551,8 +639,8 @@ router.post('/me/onboarding', authorizeRole(['client']), (req, res, next) => {
         req.files?.trainingPlanPdf?.[0]?.path.replace(/\\/g, '/') || null,
         req.files?.nutritionPlanPdf?.[0]?.path.replace(/\\/g, '/') || null,
         req.files?.previousPlanPdf?.[0]?.path.replace(/\\/g, '/') || null,
-        subscriptionPackage,
-        paymentMethod || 'bank_transfer'
+        subscriptionPackage || null,
+        paymentMethod || null
       ]
     );
 
@@ -584,35 +672,6 @@ router.post('/me/onboarding', authorizeRole(['client']), (req, res, next) => {
         [coachId, req.user.id, updateDay, nextDateForWeekday(updateDay)]
       );
     }
-
-    const [subscriptionResult] = await connection.query(
-      `INSERT INTO subscriptions (client_id, coach_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes)
-       VALUES (?, ?, ?, 'custom', ?, ?, ?, ?, 'active', ?)`,
-      [
-        req.user.id,
-        coachId,
-        selectedPackage.label,
-        selectedPackage.price,
-        selectedPackage.currency || 'EUR',
-        startDate,
-        endDate,
-        paymentMethod === 'stripe_card' ? 'Stripe card selected - integration pending' : 'Bank transfer selected'
-      ]
-    );
-
-    await connection.query(
-      `INSERT INTO payments (client_id, coach_id, subscription_id, amount, currency, method, status, notes)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
-      [
-        req.user.id,
-        coachId,
-        subscriptionResult.insertId,
-        selectedPackage.price,
-        selectedPackage.currency || 'EUR',
-        paymentMethod === 'stripe_card' ? 'stripe' : 'bank_transfer',
-        paymentMethod === 'stripe_card' ? 'Stripe θα συνδεθεί αργότερα.' : 'Αναμένεται τραπεζικό έμβασμα.'
-      ]
-    );
 
     const [progressResult] = await connection.query(
       `INSERT INTO progress_updates (client_id, coach_id, weight_kg, notes)
@@ -667,7 +726,419 @@ router.post('/me/onboarding', authorizeRole(['client']), (req, res, next) => {
   }
 });
 
+// POST /clients/me/billing — select subscription package after onboarding
+// GET /clients/me/profile — editable profile data for the logged-in client
+router.get('/me/profile', authorizeRole(['client']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureOnboardingSchema(connection);
+
+    const [rows] = await connection.query(
+      `SELECT u.id, u.email, u.full_name, u.profile_photo,
+              c.phone, c.gender, c.date_of_birth, c.height_cm, c.weight_kg, c.fitness_goal,
+              ofm.update_day, ofm.occupation_schedule, ofm.health_problem, ofm.injuries,
+              ofm.cycle_history, ofm.cardio_sessions_per_week, ofm.sleep_schedule,
+              ofm.current_training_plan, ofm.current_nutrition_plan, ofm.previous_plan_history
+       FROM users u
+       LEFT JOIN clients c ON c.user_id = u.id
+       LEFT JOIN onboarding_forms ofm ON ofm.client_id = u.id
+       WHERE u.id = ? AND u.role = 'client'
+       LIMIT 1`,
+      [req.user.id]
+    );
+
+    if (!rows.length) {
+      connection.release();
+      return res.status(404).json({ message: 'Client not found' });
+    }
+
+    const [socialRows] = await connection.query(
+      'SELECT platform, url FROM social_links WHERE user_id = ? ORDER BY platform',
+      [req.user.id]
+    );
+
+    connection.release();
+    const row = rows[0];
+    res.json({
+      id: row.id,
+      fullName: row.full_name || '',
+      email: row.email || '',
+      phone: row.phone || '',
+      gender: row.gender || '',
+      dateOfBirth: row.date_of_birth || '',
+      age: calculateAge(row.date_of_birth),
+      heightCm: row.height_cm || '',
+      weightKg: row.weight_kg || '',
+      goal: row.fitness_goal || '',
+      updateDay: row.update_day ?? '',
+      occupationSchedule: row.occupation_schedule || '',
+      healthProblem: row.health_problem || '',
+      injuries: row.injuries || '',
+      cycleHistory: row.cycle_history || '',
+      cardioSessionsPerWeek: row.cardio_sessions_per_week || '',
+      sleepSchedule: row.sleep_schedule || '',
+      currentTrainingPlan: row.current_training_plan || '',
+      currentNutritionPlan: row.current_nutrition_plan || '',
+      previousPlanHistory: row.previous_plan_history || '',
+      profilePhoto: row.profile_photo || '',
+      socialLinks: socialRows
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PUT /clients/me/profile — client can edit only their own personal details
+router.put('/me/profile', authorizeRole(['client']), [
+  body('email').isEmail().withMessage('Valid email required'),
+  body('fullName').trim().notEmpty().withMessage('Full name required')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const {
+    fullName,
+    email,
+    phone,
+    gender,
+    dateOfBirth,
+    heightCm,
+    weightKg,
+    goal,
+    updateDay,
+    occupationSchedule,
+    healthProblem,
+    injuries,
+    cycleHistory,
+    cardioSessionsPerWeek,
+    sleepSchedule,
+    currentTrainingPlan,
+    currentNutritionPlan,
+    previousPlanHistory,
+    socialLinks = []
+  } = req.body;
+
+  const connection = await pool.getConnection();
+
+  try {
+    await ensureOnboardingSchema(connection);
+    await connection.beginTransaction();
+
+    const [existingEmail] = await connection.query(
+      'SELECT id FROM users WHERE email = ? AND id <> ? LIMIT 1',
+      [email, req.user.id]
+    );
+    if (existingEmail.length) {
+      await connection.rollback();
+      connection.release();
+      return res.status(400).json({ message: 'Email already registered' });
+    }
+
+    const parsedHeightCm = parseDecimalText(heightCm);
+    const parsedWeightKg = parseDecimalText(weightKg);
+    const calculatedAge = calculateAge(dateOfBirth);
+
+    await connection.query(
+      'UPDATE users SET full_name = ?, email = ? WHERE id = ?',
+      [fullName, email, req.user.id]
+    );
+
+    await connection.query(
+      `INSERT INTO clients (user_id, phone, gender, date_of_birth, height_cm, weight_kg, fitness_goal, medical_notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         phone = VALUES(phone),
+         gender = VALUES(gender),
+         date_of_birth = VALUES(date_of_birth),
+         height_cm = VALUES(height_cm),
+         weight_kg = VALUES(weight_kg),
+         fitness_goal = VALUES(fitness_goal),
+         medical_notes = VALUES(medical_notes)`,
+      [req.user.id, phone || null, gender || null, dateOfBirth || null, parsedHeightCm, parsedWeightKg, goal || null, [healthProblem, injuries].filter(Boolean).join('\n\n') || null]
+    );
+
+    await connection.query(
+      `INSERT INTO onboarding_forms
+         (client_id, goal, injuries, date_of_birth, age, height_cm, weight_kg, update_day,
+          occupation_schedule, health_problem, cycle_history, cardio_sessions_per_week,
+          sleep_schedule, current_training_plan, current_nutrition_plan, previous_plan_history, visible_to_client)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+       ON DUPLICATE KEY UPDATE
+         goal = VALUES(goal),
+         injuries = VALUES(injuries),
+         date_of_birth = VALUES(date_of_birth),
+         age = VALUES(age),
+         height_cm = VALUES(height_cm),
+         weight_kg = VALUES(weight_kg),
+         update_day = VALUES(update_day),
+         occupation_schedule = VALUES(occupation_schedule),
+         health_problem = VALUES(health_problem),
+         cycle_history = VALUES(cycle_history),
+         cardio_sessions_per_week = VALUES(cardio_sessions_per_week),
+         sleep_schedule = VALUES(sleep_schedule),
+         current_training_plan = VALUES(current_training_plan),
+         current_nutrition_plan = VALUES(current_nutrition_plan),
+         previous_plan_history = VALUES(previous_plan_history),
+         visible_to_client = 0`,
+      [
+        req.user.id,
+        goal || null,
+        injuries || null,
+        dateOfBirth || null,
+        calculatedAge,
+        parsedHeightCm,
+        parsedWeightKg,
+        updateDay === '' || updateDay === null || updateDay === undefined ? null : Number(updateDay),
+        occupationSchedule || null,
+        healthProblem || null,
+        cycleHistory || null,
+        cardioSessionsPerWeek || null,
+        sleepSchedule || null,
+        currentTrainingPlan || null,
+        currentNutritionPlan || null,
+        previousPlanHistory || null
+      ]
+    );
+
+    await connection.query('DELETE FROM social_links WHERE user_id = ?', [req.user.id]);
+    const validLinks = Array.isArray(socialLinks) ? socialLinks.filter((item) => item.platform && item.url) : [];
+    if (validLinks.length) {
+      await connection.query(
+        'INSERT INTO social_links (user_id, platform, url) VALUES ?',
+        [validLinks.map((item) => [req.user.id, item.platform, item.url])]
+      );
+    }
+
+    if (updateDay !== '' && updateDay !== null && updateDay !== undefined) {
+      const coachId = await getDefaultCoachId(connection);
+      await connection.query(
+        `INSERT INTO update_schedule (coach_id, client_id, frequency, day_of_week, reminder_enabled, next_due_date)
+         VALUES (?, ?, 'weekly', ?, 1, ?)
+         ON DUPLICATE KEY UPDATE day_of_week = VALUES(day_of_week), next_due_date = VALUES(next_due_date), reminder_enabled = 1`,
+        [coachId, req.user.id, Number(updateDay), nextDateForWeekday(Number(updateDay))]
+      );
+    }
+
+    await connection.commit();
+    connection.release();
+
+    res.json({
+      message: 'Profile updated',
+      user: { id: req.user.id, email, role: 'client', fullName, onboardingCompleted: true }
+    });
+  } catch (error) {
+    await connection.rollback();
+    connection.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /clients/me/profile-photo — compressed/cropped image from frontend, saved to Media Library
+router.post('/me/profile-photo', authorizeRole(['client']), (req, res, next) => {
+  profilePhotoUpload.single('photo')(req, res, (err) => {
+    if (err) return res.status(400).json({ message: err.message });
+    next();
+  });
+}, async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: 'Profile photo required' });
+  }
+
+  const url = `/uploads/media/${req.file.filename}`;
+  const connection = await pool.getConnection();
+
+  try {
+    const folderId = await ensureProfilePhotoFolder(connection);
+
+    await connection.beginTransaction();
+    await connection.query('UPDATE users SET profile_photo = ? WHERE id = ?', [url, req.user.id]);
+    await connection.query(
+      'INSERT INTO media_assets (title, asset_type, url, source, folder_id) VALUES (?, "photo", ?, "profile_photo", ?)',
+      [`Profile photo - client ${req.user.id}`, url, folderId]
+    );
+    await connection.commit();
+    connection.release();
+
+    res.status(201).json({ message: 'Profile photo uploaded', profilePhoto: url });
+  } catch (error) {
+    await connection.rollback();
+    connection.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// DELETE /clients/me/profile-photo — remove profile photo from user and return to default avatar
+router.delete('/me/profile-photo', authorizeRole(['client']), async (req, res) => {
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.query('UPDATE users SET profile_photo = NULL WHERE id = ?', [req.user.id]);
+    connection.release();
+    res.json({ message: 'Profile photo removed', profilePhoto: null });
+  } catch (error) {
+    connection.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/me/billing', authorizeRole(['client']), [
+  body('subscriptionPackage').notEmpty().withMessage('Subscription package required'),
+  body('paymentMethod').isIn(['bank_transfer', 'stripe_card']).withMessage('Valid payment method required')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const { subscriptionPackage, paymentMethod } = req.body;
+  const connection = await pool.getConnection();
+
+  try {
+    await ensureOnboardingSchema(connection);
+    const selectedPackage = await getSelectedSubscriptionPlan(connection, subscriptionPackage);
+    if (!selectedPackage) {
+      connection.release();
+      return res.status(400).json({ message: 'Μη έγκυρο πακέτο συνδρομής.' });
+    }
+
+    const [onboardingRows] = await connection.query(
+      'SELECT id FROM onboarding_forms WHERE client_id = ? LIMIT 1',
+      [req.user.id]
+    );
+    if (!onboardingRows.length) {
+      connection.release();
+      return res.status(400).json({ message: 'Πρέπει πρώτα να ολοκληρωθεί η φόρμα εισαγωγής.' });
+    }
+
+    await connection.beginTransaction();
+
+    const coachId = await getDefaultCoachId(connection);
+    const startDate = new Date().toISOString().slice(0, 10);
+    const endDate = addMonths(new Date(), selectedPackage.months);
+    const referenceNumber = `KAIZEN-${String(req.user.id).padStart(4, '0')}-${Date.now().toString().slice(-4)}`;
+
+    await connection.query(
+      `UPDATE onboarding_forms
+       SET selected_package = ?, payment_method = ?
+       WHERE client_id = ?`,
+      [subscriptionPackage, paymentMethod, req.user.id]
+    );
+    await connection.query(
+      `UPDATE client_onboarding
+       SET selected_package = ?, payment_method = ?
+       WHERE client_id = ?`,
+      [subscriptionPackage, paymentMethod, req.user.id]
+    );
+
+    const [subscriptionResult] = await connection.query(
+      `INSERT INTO subscriptions (client_id, coach_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes)
+       VALUES (?, ?, ?, 'custom', ?, ?, ?, ?, 'active', ?)`,
+      [
+        req.user.id,
+        coachId,
+        selectedPackage.label,
+        selectedPackage.price,
+        selectedPackage.currency || 'EUR',
+        startDate,
+        endDate,
+        paymentMethod === 'stripe_card' ? 'Stripe card selected - integration pending' : 'Bank transfer selected'
+      ]
+    );
+
+    await connection.query(
+      `INSERT INTO payments (client_id, coach_id, subscription_id, amount, currency, method, status, reference_number, notes)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      [
+        req.user.id,
+        coachId,
+        subscriptionResult.insertId,
+        selectedPackage.price,
+        selectedPackage.currency || 'EUR',
+        paymentMethod === 'stripe_card' ? 'stripe' : 'bank_transfer',
+        referenceNumber,
+        paymentMethod === 'stripe_card' ? 'Stripe θα συνδεθεί αργότερα.' : 'Αναμένεται τραπεζικό έμβασμα.'
+      ]
+    );
+
+    await connection.commit();
+    connection.release();
+
+    res.status(201).json({
+      message: 'Η πληρωμή καταχωρήθηκε ως εκκρεμής.',
+      paymentStatus: 'pending',
+      paymentMethod,
+      referenceNumber,
+      amount: selectedPackage.price,
+      currency: selectedPackage.currency || 'EUR',
+      planName: selectedPackage.label
+    });
+  } catch (error) {
+    await connection.rollback();
+    connection.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // GET /clients — coaches see their own clients, admins see all
+// POST /clients/me/billing-proof — upload bank transfer proof for latest pending payment
+router.post('/me/billing-proof', authorizeRole(['client']), (req, res, next) => {
+  paymentProofUpload.single('proof')(req, res, (err) => {
+    if (err) return res.status(400).json({ message: err.message });
+    next();
+  });
+}, async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: 'Payment proof required' });
+  }
+
+  const proofUrl = req.file.path.replace(/\\/g, '/');
+  const connection = await pool.getConnection();
+
+  try {
+    await ensurePaymentProofColumns(connection);
+
+    const [payments] = await connection.query(
+      `SELECT id, reference_number
+       FROM payments
+       WHERE client_id = ? AND method = 'bank_transfer' AND status = 'pending'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [req.user.id]
+    );
+
+    if (!payments.length) {
+      connection.release();
+      return res.status(404).json({ message: 'No pending bank transfer payment found' });
+    }
+
+    await connection.query(
+      `UPDATE payments
+       SET proof_url = ?, proof_uploaded_at = NOW(), notes = CONCAT(COALESCE(notes, ''), '\nΑνέβηκε αποδεικτικό πληρωμής.')
+       WHERE id = ?`,
+      [proofUrl, payments[0].id]
+    );
+
+    connection.release();
+    res.status(201).json({
+      message: 'Payment proof uploaded',
+      paymentId: payments[0].id,
+      referenceNumber: payments[0].reference_number,
+      proofUrl
+    });
+  } catch (error) {
+    connection.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   try {
     const connection = await pool.getConnection();

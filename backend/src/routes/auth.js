@@ -28,7 +28,7 @@ router.get('/me', authenticateToken, async (req, res) => {
   try {
     const connection = await pool.getConnection();
     const [rows] = await connection.query(
-      'SELECT id, email, role, full_name, specializations FROM users WHERE id = ? AND is_active = 1',
+      'SELECT id, email, role, full_name, profile_photo, specializations FROM users WHERE id = ? AND is_active = 1',
       [req.user.id]
     );
     if (rows.length === 0) {
@@ -46,6 +46,7 @@ router.get('/me', authenticateToken, async (req, res) => {
         email: user.email,
         role: user.role,
         fullName: user.full_name,
+        profilePhoto: user.profile_photo,
         profileTitle: user.specializations,
         onboardingCompleted
       }
@@ -113,6 +114,7 @@ router.post('/register', [
         email,
         role: 'client',
         fullName,
+        profilePhoto: null,
         profileTitle: null,
         onboardingCompleted: false
       }
@@ -138,7 +140,7 @@ router.post('/login', [
     const connection = await pool.getConnection();
 
     const [users] = await connection.query(
-      'SELECT id, email, password, role, full_name, specializations FROM users WHERE email = ? AND is_active = 1',
+      'SELECT id, email, password, role, full_name, profile_photo, specializations FROM users WHERE email = ? AND is_active = 1',
       [email]
     );
 
@@ -170,7 +172,7 @@ router.post('/login', [
     res.json({
       accessToken,
       refreshToken,
-      user: { id: user.id, email: user.email, role: user.role, fullName: user.full_name, profileTitle: user.specializations, onboardingCompleted }
+      user: { id: user.id, email: user.email, role: user.role, fullName: user.full_name, profilePhoto: user.profile_photo, profileTitle: user.specializations, onboardingCompleted }
     });
   } catch (error) {
     console.error(error);
@@ -198,7 +200,7 @@ router.put('/profile', authenticateToken, [
     );
 
     const [rows] = await connection.query(
-      'SELECT id, email, role, full_name, specializations FROM users WHERE id = ?',
+      'SELECT id, email, role, full_name, profile_photo, specializations FROM users WHERE id = ?',
       [req.user.id]
     );
 
@@ -215,6 +217,7 @@ router.put('/profile', authenticateToken, [
         email: user.email,
         role: user.role,
         fullName: user.full_name,
+        profilePhoto: user.profile_photo,
         profileTitle: user.specializations
       }
     });

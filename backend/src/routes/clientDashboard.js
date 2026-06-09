@@ -291,10 +291,17 @@ router.get('/', authorizeRole(['client']), async (req, res) => {
       'SELECT id, subscription_id, amount, currency, method, status, paid_at, created_at FROM payments WHERE client_id = ? ORDER BY created_at DESC LIMIT 12',
       [req.user.id]
     );
+    const [subscriptionRows] = await connection.query(
+      'SELECT id, plan_name, status, start_date, end_date, price, currency FROM subscriptions WHERE client_id = ? ORDER BY created_at DESC LIMIT 1',
+      [req.user.id]
+    );
+    const paymentApproved = paymentRows.some((payment) => payment.status === 'completed');
 
     connection.release();
 
     res.json({
+      paymentApproved,
+      subscription: subscriptionRows[0] || null,
       training,
       nutrition,
       progress: progressRows,

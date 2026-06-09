@@ -4,6 +4,9 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ClientOnboarding from './pages/ClientOnboarding';
+import ClientBilling from './pages/ClientBilling';
+import ClientNotifications from './pages/ClientNotifications';
+import ClientProfile from './pages/ClientProfile';
 import ClientDashboard from './pages/ClientDashboard';
 import Dashboard from './pages/Dashboard';
 import Clients from './pages/Clients';
@@ -38,7 +41,7 @@ function ProtectedRoute({ children }) {
   }
 
   if (user?.role === 'client' && user?.onboardingCompleted && location.pathname === '/client-onboarding') {
-    return <Navigate to="/client-dashboard" replace />;
+    return <Navigate to="/client-billing" replace />;
   }
 
   if (user?.role === 'client' && user?.onboardingCompleted && location.pathname === '/dashboard') {
@@ -76,6 +79,30 @@ function App() {
             element={
               <ProtectedRoute>
                 <ClientDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/client-billing"
+            element={
+              <ProtectedRoute>
+                <ClientBilling />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/client-notifications"
+            element={
+              <ProtectedRoute>
+                <ClientNotifications />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/client-profile"
+            element={
+              <ProtectedRoute>
+                <ClientProfile />
               </ProtectedRoute>
             }
           />

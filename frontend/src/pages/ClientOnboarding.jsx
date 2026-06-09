@@ -6,7 +6,6 @@ import { api } from '../services/api';
 const steps = [
   { key: 'details', title: 'Στοιχεία' },
   { key: 'questions', title: 'Ερωτήσεις' },
-  { key: 'plans', title: 'Πλάνα & Τιμές' },
 ];
 
 const countryCodes = ['+30', '+357', '+44', '+49', '+1'];
@@ -112,7 +111,7 @@ export default function ClientOnboarding() {
   const validateStep = () => {
     if (activeStep.key === 'details') return form.firstName && form.lastName && form.email && form.phone && form.dateOfBirth && form.heightCm && form.weightKg;
     if (activeStep.key === 'questions') return form.goal && form.updateDay !== '';
-    return form.subscriptionPackage && form.paymentMethod;
+    return true;
   };
 
   const next = () => {
@@ -162,8 +161,6 @@ export default function ClientOnboarding() {
       currentTrainingPlan: form.currentTrainingPlan,
       currentNutritionPlan: form.currentNutritionPlan,
       previousPlanHistory: form.previousPlanHistory,
-      subscriptionPackage: form.subscriptionPackage,
-      paymentMethod: form.paymentMethod,
       socialLinks: JSON.stringify(socialLinks),
     }).forEach(([key, value]) => data.append(key, value || ''));
     Object.entries(files).forEach(([key, file]) => {
@@ -173,7 +170,7 @@ export default function ClientOnboarding() {
     try {
       await api.upload('/clients/me/onboarding', data);
       updateUser({ ...user, fullName, email: form.email, onboardingCompleted: true });
-      navigate('/client-dashboard');
+      navigate('/client-billing');
     } catch (err) {
       setError(err.message || 'Δεν αποθηκεύτηκε το ερωτηματολόγιο.');
     } finally {
@@ -207,7 +204,6 @@ export default function ClientOnboarding() {
           <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:p-12">
             {activeStep.key === 'details' && <DetailsStep form={form} updateForm={updateForm} />}
             {activeStep.key === 'questions' && <QuestionsStep form={form} flags={flags} files={files} socials={socials} updateForm={updateForm} updateFlag={updateFlag} updateFile={updateFile} setSocials={setSocials} />}
-            {activeStep.key === 'plans' && <PlansStep form={form} updateForm={updateForm} subscriptionOptions={subscriptionOptions} />}
 
             <div className="mt-8 flex flex-col gap-4 rounded-xl bg-slate-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-center gap-3 text-sm font-semibold text-slate-500">
@@ -219,7 +215,7 @@ export default function ClientOnboarding() {
                 {stepIndex < steps.length - 1 ? (
                   <button type="button" onClick={next} className="h-12 rounded-md bg-red-600 px-8 font-black text-white shadow-lg shadow-red-200 hover:bg-red-700">Συνέχεια →</button>
                 ) : (
-                  <button disabled={saving} className="h-12 rounded-md bg-red-600 px-8 font-black text-white shadow-lg shadow-red-200 hover:bg-red-700 disabled:bg-slate-400">{saving ? 'Αποθήκευση...' : 'Ολοκλήρωση'}</button>
+                  <button disabled={saving} className="h-12 rounded-md bg-red-600 px-8 font-black text-white shadow-lg shadow-red-200 hover:bg-red-700 disabled:bg-slate-400">{saving ? 'Αποθήκευση...' : 'Συνέχεια στην πληρωμή'}</button>
                 )}
               </div>
             </div>
