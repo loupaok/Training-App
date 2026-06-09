@@ -25,128 +25,6 @@ const navSections = [
   },
 ];
 
-const clients = [
-  {
-    id: 'nikos-antoniou',
-    name: 'Νίκος Αντωνίου',
-    email: 'nikos@example.com',
-    status: 'Ενεργός',
-    statusKey: 'active',
-    program: 'Premium Coaching',
-    programKey: 'premium',
-    statusStyle: 'bg-emerald-50 text-emerald-700',
-    currentWeight: '78.4 kg',
-    goal: '75 kg',
-    nextUpdate: '25/05/2024',
-    nextUpdateDate: '2024-05-25',
-    createdAt: '2024-04-01',
-    initials: 'ΝΑ',
-    tone: 'bg-slate-900',
-  },
-  {
-    id: 'maria-karali',
-    name: 'Μαρία Καραλή',
-    email: 'maria@example.com',
-    status: 'Ενεργός',
-    statusKey: 'active',
-    program: 'Nutrition + Training',
-    programKey: 'nutrition-training',
-    statusStyle: 'bg-emerald-50 text-emerald-700',
-    currentWeight: '65.2 kg',
-    goal: '60 kg',
-    nextUpdate: '26/05/2024',
-    nextUpdateDate: '2024-05-26',
-    createdAt: '2024-04-04',
-    initials: 'ΜΚ',
-    tone: 'bg-zinc-900',
-  },
-  {
-    id: 'kostas-dimitriou',
-    name: 'Κώστας Δημητρίου',
-    email: 'kostas@example.com',
-    status: 'Ενεργός',
-    statusKey: 'active',
-    program: 'Premium Coaching',
-    programKey: 'premium',
-    statusStyle: 'bg-emerald-50 text-emerald-700',
-    currentWeight: '84.1 kg',
-    goal: '80 kg',
-    nextUpdate: '25/05/2024',
-    nextUpdateDate: '2024-05-25',
-    createdAt: '2024-03-28',
-    initials: 'ΚΔ',
-    tone: 'bg-orange-600',
-  },
-  {
-    id: 'elena-papadaki',
-    name: 'Έλενα Παπαδάκη',
-    email: 'elena@example.com',
-    status: 'Ενεργός',
-    statusKey: 'active',
-    program: 'Training Plan',
-    programKey: 'training',
-    statusStyle: 'bg-emerald-50 text-emerald-700',
-    currentWeight: '58.6 kg',
-    goal: '55 kg',
-    nextUpdate: '24/05/2024',
-    nextUpdateDate: '2024-05-24',
-    createdAt: '2024-05-02',
-    initials: 'ΕΠ',
-    tone: 'bg-zinc-800',
-  },
-  {
-    id: 'alexandros-papadopoulos',
-    name: 'Αλέξανδρος Παπαδόπουλος',
-    email: 'alex@example.com',
-    status: 'Ανενεργός',
-    statusKey: 'inactive',
-    program: 'Nutrition Plan',
-    programKey: 'nutrition',
-    statusStyle: 'bg-red-50 text-red-700',
-    currentWeight: '92.3 kg',
-    goal: '85 kg',
-    nextUpdate: '10/05/2024',
-    nextUpdateDate: '2024-05-10',
-    createdAt: '2024-02-17',
-    initials: 'ΑΠ',
-    tone: 'bg-slate-700',
-  },
-  {
-    id: 'giannis-papadopoulos',
-    name: 'Γιάννης Παπαδόπουλος',
-    email: 'giannis@example.com',
-    status: 'Λήγει Σύντομα',
-    statusKey: 'expiring',
-    program: 'Premium Coaching',
-    programKey: 'premium',
-    statusStyle: 'bg-orange-50 text-orange-600',
-    currentWeight: '88.7 kg',
-    goal: '82 kg',
-    nextUpdate: '20/05/2024',
-    nextUpdateDate: '2024-05-20',
-    createdAt: '2024-01-22',
-    initials: 'ΓΠ',
-    tone: 'bg-stone-900',
-  },
-  {
-    id: 'dimitra-ioannou',
-    name: 'Δήμητρα Ιωάννου',
-    email: 'dimitra@example.com',
-    status: 'Ενεργός',
-    statusKey: 'active',
-    program: 'Nutrition + Training',
-    programKey: 'nutrition-training',
-    statusStyle: 'bg-emerald-50 text-emerald-700',
-    currentWeight: '61.3 kg',
-    goal: '58 kg',
-    nextUpdate: '27/05/2024',
-    nextUpdateDate: '2024-05-27',
-    createdAt: '2024-05-11',
-    initials: 'ΔΙ',
-    tone: 'bg-zinc-900',
-  },
-];
-
 const emptyClientForm = {
   fullName: '',
   email: '',
@@ -176,6 +54,15 @@ function getInitials(name) {
     .toUpperCase() || 'CL';
 }
 
+function slugify(value) {
+  return String(value || 'manual')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9α-ω]+/gi, '-')
+    .replace(/^-+|-+$/g, '') || 'manual';
+}
+
 function formatDate(value) {
   if (!value) return '-';
   const date = new Date(value);
@@ -198,8 +85,8 @@ function mapApiClient(row) {
     email: row.email || '',
     status: statusMeta.label,
     statusKey,
-    program: row.fitness_goal || 'Manual Client',
-    programKey: 'manual',
+    program: row.fitness_goal || 'Χωρίς στόχο',
+    programKey: slugify(row.fitness_goal || 'Χωρίς στόχο'),
     statusStyle: statusMeta.style,
     currentWeight: currentWeight ? `${currentWeight} kg` : '-',
     goal: row.fitness_goal || '-',
@@ -224,6 +111,7 @@ function Avatar({ initials, tone = 'bg-slate-900', size = 'h-12 w-12' }) {
 }
 
 function Sidebar({ user }) {
+  const canSeeAdmin = user?.role === 'admin' || user?.role === 'coach';
   const settingsIsActive = navSections.some((section) => section.children?.some((child) => child.active));
   const [settingsOpen, setSettingsOpen] = React.useState(settingsIsActive);
 
@@ -238,7 +126,7 @@ function Sidebar({ user }) {
 
       <nav className="flex-1 overflow-y-auto px-4 pb-6">
         <div className="space-y-1">
-          {navSections.filter((section) => !section.adminOnly || user?.role === 'admin').map((section) => {
+          {navSections.filter((section) => !section.adminOnly || canSeeAdmin).map((section) => {
             const className = `flex h-12 w-full items-center rounded-md px-4 text-left text-[15px] font-semibold ${
               section.active
                 ? 'bg-red-600 text-white shadow-lg shadow-red-950/30'
@@ -263,7 +151,7 @@ function Sidebar({ user }) {
             return (
               <div key={section.label} className={section.spacerBefore ? 'mt-6' : ''}>
                 {item}
-                {section.children && user?.role === 'admin' && (
+                {section.children && canSeeAdmin && (
                   <div className={`ml-4 overflow-hidden border-l border-white/10 pl-3 transition-all duration-200 ${settingsOpen ? 'mt-1 max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
                     {section.children.map((child) => (
                       child.path ? (
@@ -430,6 +318,19 @@ export default function Clients() {
     });
   }, [clientRows, programFilter, search, sortBy, statusFilter]);
 
+  const programOptions = useMemo(() => {
+    const seen = new Map();
+    clientRows.forEach((client) => {
+      if (!seen.has(client.programKey)) {
+        seen.set(client.programKey, client.program);
+      }
+    });
+    return [
+      { value: 'all', label: 'Στόχος: Όλοι' },
+      ...Array.from(seen.entries()).map(([value, label]) => ({ value, label })),
+    ];
+  }, [clientRows]);
+
   const paginatedClients = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return filteredClients.slice(start, start + pageSize);
@@ -560,13 +461,7 @@ export default function Clients() {
                 label="Πρόγραμμα"
                 value={programFilter}
                 onChange={setProgramFilter}
-                options={[
-                  { value: 'all', label: 'Πρόγραμμα: Όλα' },
-                  { value: 'premium', label: 'Premium Coaching' },
-                  { value: 'nutrition-training', label: 'Nutrition + Training' },
-                  { value: 'training', label: 'Training Plan' },
-                  { value: 'nutrition', label: 'Nutrition Plan' },
-                ]}
+                options={programOptions}
               />
             </FilterBox>
 

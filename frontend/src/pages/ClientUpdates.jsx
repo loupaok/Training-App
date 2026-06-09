@@ -25,21 +25,13 @@ const navSections = [
 ];
 
 const stats = [
-  { label: 'Νέα Updates', value: '7', note: 'Περιμένουν έλεγχο', icon: '▤', tone: 'bg-blue-50 text-blue-600' },
-  { label: 'Εκκρεμή Updates', value: '3', note: 'Σε επεξεργασία', icon: '◷', tone: 'bg-amber-50 text-amber-600' },
-  { label: 'Εγκεκριμένα Σήμερα', value: '12', note: 'Ολοκληρώθηκαν', icon: '✓', tone: 'bg-emerald-50 text-emerald-600' },
-  { label: 'Σύνολο Αυτής της Εβδομάδας', value: '22', note: '+12% από την προηγ. εβδομάδα', icon: '↗', tone: 'bg-violet-50 text-violet-600' },
+  { label: 'Νέα Updates', value: '0', note: 'Περιμένουν έλεγχο', icon: '▤', tone: 'bg-blue-50 text-blue-600' },
+  { label: 'Εκκρεμή Updates', value: '0', note: 'Σε επεξεργασία', icon: '◷', tone: 'bg-amber-50 text-amber-600' },
+  { label: 'Εγκεκριμένα Σήμερα', value: '0', note: 'Ολοκληρώθηκαν', icon: '✓', tone: 'bg-emerald-50 text-emerald-600' },
+  { label: 'Σύνολο Αυτής της Εβδομάδας', value: '0', note: 'Από πραγματικές υποβολές', icon: '↗', tone: 'bg-violet-50 text-violet-600' },
 ];
 
-const updates = [
-  { name: 'Νίκος Αντωνίου', date: '18/05/2024', time: '10:23', type: 'Βάρος', icon: '⚖', status: 'Νέο', initials: 'ΝΑ', tone: 'bg-slate-900' },
-  { name: 'Μαρία Καραλή', date: '18/05/2024', time: '09:47', type: 'Φωτογραφίες', icon: '▣', status: 'Νέο', initials: 'ΜΚ', tone: 'bg-zinc-900' },
-  { name: 'Κώστας Δημητρίου', date: '18/05/2024', time: '09:15', type: 'Μετρήσεις', icon: '↗', status: 'Νέο', initials: 'ΚΔ', tone: 'bg-orange-600' },
-  { name: 'Έλενα Παπαδάκη', date: '18/05/2024', time: '08:58', type: 'Φωτογραφίες', icon: '▣', status: 'Νέο', initials: 'ΕΠ', tone: 'bg-zinc-800' },
-  { name: 'Αλέξανδρος Παπαδόπουλος', date: '18/05/2024', time: '08:31', type: 'Βάρος', icon: '⚖', status: 'Νέο', initials: 'ΑΠ', tone: 'bg-slate-700' },
-  { name: 'Δήμητρα Ιωάννου', date: '18/05/2024', time: '07:52', type: 'Μετρήσεις', icon: '↗', status: 'Νέο', initials: 'ΔΙ', tone: 'bg-zinc-900' },
-  { name: 'Γιάννης Παπαδόπουλος', date: '18/05/2024', time: '07:21', type: 'Φωτογραφίες', icon: '▣', status: 'Νέο', initials: 'ΓΠ', tone: 'bg-stone-900' },
-];
+const updates = [];
 
 function Avatar({ initials, tone = 'bg-slate-900', size = 'h-12 w-12' }) {
   return (
@@ -50,6 +42,7 @@ function Avatar({ initials, tone = 'bg-slate-900', size = 'h-12 w-12' }) {
 }
 
 function Sidebar({ user }) {
+  const canSeeAdmin = user?.role === 'admin' || user?.role === 'coach';
   const settingsIsActive = navSections.some((section) => section.children?.some((child) => child.active));
   const [settingsOpen, setSettingsOpen] = React.useState(settingsIsActive);
 
@@ -64,7 +57,7 @@ function Sidebar({ user }) {
 
       <nav className="flex-1 overflow-y-auto px-4 pb-6">
         <div className="space-y-1">
-          {navSections.filter((section) => !section.adminOnly || user?.role === 'admin').map((section) => {
+          {navSections.filter((section) => !section.adminOnly || canSeeAdmin).map((section) => {
             const className = `flex h-12 w-full items-center rounded-md px-4 text-left text-[15px] font-semibold ${
               section.active
                 ? 'bg-red-600 text-white shadow-lg shadow-red-950/30'
@@ -89,7 +82,7 @@ function Sidebar({ user }) {
             return (
               <div key={section.label} className={section.spacerBefore ? 'mt-6' : ''}>
                 {item}
-                {section.children && user?.role === 'admin' && (
+                {section.children && canSeeAdmin && (
                   <div className={`ml-4 overflow-hidden border-l border-white/10 pl-3 transition-all duration-200 ${settingsOpen ? 'mt-1 max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
                     {section.children.map((child) => (
                       child.path ? (
@@ -260,6 +253,13 @@ export default function ClientUpdates() {
                       </td>
                     </tr>
                   ))}
+                  {!paginatedUpdates.length && (
+                    <tr>
+                      <td colSpan="5" className="px-6 py-12 text-center font-semibold text-slate-500">
+                        Δεν υπάρχουν πραγματικά updates για έλεγχο.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
 
@@ -281,69 +281,8 @@ export default function ClientUpdates() {
                 <button className="text-2xl text-slate-700 hover:text-red-600">×</button>
               </div>
 
-              <div className="mt-8 flex items-center gap-4">
-                <Avatar initials="ΝΑ" tone="bg-slate-900" />
-                <div>
-                  <div className="text-lg font-extrabold">Νίκος Αντωνίου</div>
-                  <div className="mt-1 text-sm text-slate-600">18/05/2024 - 10:23</div>
-                </div>
-              </div>
-
-              <div className="my-7 h-px bg-slate-200" />
-
-              <div>
-                <h4 className="mb-4 font-extrabold">Τύπος Update</h4>
-                <div className="flex items-center gap-3 text-sm text-slate-700">
-                  <span className="text-lg text-indigo-600">⚖</span>
-                  Βάρος
-                </div>
-              </div>
-
-              <div className="my-7 h-px bg-slate-200" />
-
-              <div>
-                <h4 className="mb-4 font-extrabold">Μετρήσεις</h4>
-                <div className="rounded-lg bg-slate-50 p-4">
-                  <div className="grid grid-cols-3 gap-4">
-                    <Metric label="Τρέχον Βάρος" value="78.4 kg" />
-                    <Metric label="Προηγούμενο" value="80.2 kg" />
-                    <Metric label="Διαφορά" value="-1.8 kg" positive />
-                  </div>
-                  <div className="mt-5 flex items-end justify-between text-sm">
-                    <div>
-                      <div className="text-slate-600">Στόχος</div>
-                      <div className="font-bold">75 kg</div>
-                    </div>
-                    <div className="w-[70%]">
-                      <div className="mb-2 text-right font-bold">78%</div>
-                      <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
-                        <div className="h-full w-[78%] rounded-full bg-emerald-600" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="my-7 h-px bg-slate-200" />
-
-              <div>
-                <h4 className="mb-4 font-extrabold">Σημειώσεις Πελάτη</h4>
-                <div className="rounded-lg bg-slate-50 p-4 text-sm leading-7 text-slate-700">
-                  Νιώθω πολύ καλύτερα την τελευταία εβδομάδα. Η ενέργειά μου είναι ανεβασμένη και η προπόνηση πάει πολύ καλά!
-                </div>
-              </div>
-
-              <div className="my-7 h-px bg-slate-200" />
-
-              <div>
-                <h4 className="mb-4 font-extrabold">Ενέργειες</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <button className="h-11 rounded-md bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700">✓ Έγκριση Update</button>
-                  <button className="h-11 rounded-md border border-slate-200 px-4 text-sm font-bold text-slate-700 hover:border-slate-300">Αίτημα για Διόρθωση</button>
-                </div>
-                <button className="mt-4 h-11 w-full rounded-md border border-red-500 px-4 text-sm font-bold text-red-600 hover:bg-red-50">
-                  × Απόρριψη Update
-                </button>
+              <div className="mt-8 rounded-lg border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm font-semibold text-slate-500">
+                Επίλεξε ένα πραγματικό update από τη λίστα για να δεις λεπτομέρειες.
               </div>
             </Card>
           </div>

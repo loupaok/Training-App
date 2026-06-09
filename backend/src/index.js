@@ -15,7 +15,7 @@ import exerciseRoutes from './routes/exercises.js';
 import mediaRoutes from './routes/media.js';
 import clientDashboardRoutes from './routes/clientDashboard.js';
 import pricingPlanRoutes from './routes/pricingPlans.js';
-import { authenticateToken } from './middleware/auth.js';
+import { authenticateToken, isClient, isCoach } from './middleware/auth.js';
 
 dotenv.config();
 
@@ -60,7 +60,7 @@ testConnection();
 
 // Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/coaches', authenticateToken, coachRoutes);
+app.use('/api/coaches', authenticateToken, isCoach, coachRoutes);
 app.use('/api/clients', authenticateToken, clientRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/subscriptions', authenticateToken, subscriptionRoutes);
@@ -70,7 +70,7 @@ app.use('/api/nutrition-plans', authenticateToken, nutritionPlanRoutes);
 app.use('/api/reps', authenticateToken, repsRoutes);
 app.use('/api/exercises', authenticateToken, exerciseRoutes);
 app.use('/api/media', authenticateToken, mediaRoutes);
-app.use('/api/client-dashboard', authenticateToken, clientDashboardRoutes);
+app.use('/api/client-dashboard', authenticateToken, isClient, clientDashboardRoutes);
 app.use('/api/pricing-plans', authenticateToken, pricingPlanRoutes);
 
 // Health check

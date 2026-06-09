@@ -1147,7 +1147,7 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
     const searchLimit = search ? ' LIMIT 12' : '';
 
     let rows;
-    if (req.user.role === 'admin' || req.user.role === 'moderator') {
+    if (req.user.role === 'admin' || req.user.role === 'moderator' || req.user.role === 'coach') {
       const filters = ["u.role = 'client'", "u.is_active = 1"];
       const values = [];
 
@@ -1157,7 +1157,7 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
       }
 
       [rows] = await connection.query(
-        `SELECT u.id, u.email, u.full_name, u.profile_photo, u.is_active,
+        `SELECT u.id, u.email, u.full_name, u.profile_photo, u.is_active, u.status AS user_status,
                 u.created_at, u.last_seen_at,
                 CASE WHEN u.last_seen_at >= DATE_SUB(NOW(), INTERVAL 15 MINUTE) THEN 1 ELSE 0 END AS is_online,
                 c.phone, c.gender, c.date_of_birth, c.height_cm, c.weight_kg, c.fitness_goal, c.coach_notes,
@@ -1171,6 +1171,9 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
                 lp.method AS payment_method,
                 s.status AS subscription_status,
                 CASE
+                  WHEN u.status = 'active' THEN 'active'
+                  WHEN u.status = 'expired' THEN 'inactive'
+                  WHEN u.status = 'pending_payment' THEN 'pending'
                   WHEN lp.status = 'completed' AND (s.status IS NULL OR s.status IN ('active', 'expiring_soon')) THEN 'active'
                   WHEN lp.status = 'pending' THEN 'pending'
                   ELSE 'inactive'
@@ -1210,7 +1213,7 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
       }
 
       [rows] = await connection.query(
-        `SELECT u.id, u.email, u.full_name, u.profile_photo, u.is_active,
+        `SELECT u.id, u.email, u.full_name, u.profile_photo, u.is_active, u.status AS user_status,
                 u.created_at, u.last_seen_at,
                 CASE WHEN u.last_seen_at >= DATE_SUB(NOW(), INTERVAL 15 MINUTE) THEN 1 ELSE 0 END AS is_online,
                 c.phone, c.gender, c.date_of_birth, c.height_cm, c.weight_kg, c.fitness_goal,
@@ -1224,6 +1227,9 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
                 lp.method AS payment_method,
                 s.status AS subscription_status,
                 CASE
+                  WHEN u.status = 'active' THEN 'active'
+                  WHEN u.status = 'expired' THEN 'inactive'
+                  WHEN u.status = 'pending_payment' THEN 'pending'
                   WHEN lp.status = 'completed' AND (s.status IS NULL OR s.status IN ('active', 'expiring_soon')) THEN 'active'
                   WHEN lp.status = 'pending' THEN 'pending'
                   ELSE 'inactive'
@@ -1271,6 +1277,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
 
     const [rows] = await connection.query(
       `SELECT u.id, u.email, u.full_name, u.profile_photo, u.bio, u.is_active,
+              u.status AS user_status, u.created_at, u.last_seen_at,
               c.date_of_birth, c.gender, c.phone, c.height_cm, c.weight_kg,
               c.fitness_goal, c.medical_notes, c.coach_notes,
               c.emergency_contact_name, c.emergency_contact_phone,
@@ -1287,11 +1294,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
       return res.status(404).json({ message: 'Client not found' });
     }
 
-    // Coaches can only view their own clients
-    if (req.user.role === 'coach' && rows[0].coach_id !== req.user.id) {
-      connection.release();
-      return res.status(403).json({ message: 'Access denied' });
-    }
+    // The current admin/coach role owns the coach panel and can inspect all clients.
 
     const [onboardingRows] = await connection.query(
       'SELECT * FROM onboarding_forms WHERE client_id = ?',

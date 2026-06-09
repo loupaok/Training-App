@@ -134,28 +134,9 @@ const periodData = {
   },
 };
 
-const payments = [
-  { client: 'Νίκος Αντωνίου', plan: 'Premium Coaching', amount: 120, date: '01/06/2026', status: 'paid', renewal: true, subscription: 'active' },
-  { client: 'Μαρία Καραλή', plan: 'Nutrition + Training', amount: 95, date: '02/06/2026', status: 'paid', renewal: true, subscription: 'active' },
-  { client: 'Κώστας Δημητρίου', plan: 'Premium Coaching', amount: 120, date: '03/06/2026', status: 'pending', renewal: false, subscription: 'ending' },
-  { client: 'Έλενα Παπαδάκη', plan: 'Training Plan', amount: 70, date: '04/06/2026', status: 'paid', renewal: true, subscription: 'active' },
-  { client: 'Αλέξανδρος Παπαδόπουλος', plan: 'Nutrition Plan', amount: 65, date: '05/06/2026', status: 'failed', renewal: false, subscription: 'inactive' },
-  { client: 'Δήμητρα Ιωάννου', plan: 'Premium Coaching', amount: 120, date: '06/06/2026', status: 'pending', renewal: false, subscription: 'ending' },
-  { client: 'Γιάννης Παπαδόπουλος', plan: 'Training Plan', amount: 70, date: '07/06/2026', status: 'paid', renewal: true, subscription: 'active' },
-  { client: 'Σοφία Νικολάου', plan: 'Premium Coaching', amount: 120, date: '08/06/2026', status: 'paid', renewal: true, subscription: 'active' },
-  { client: 'Πέτρος Λάμπρου', plan: 'Nutrition + Training', amount: 95, date: '09/06/2026', status: 'failed', renewal: false, subscription: 'inactive' },
-  { client: 'Άννα Γεωργίου', plan: 'Premium Coaching', amount: 120, date: '10/06/2026', status: 'paid', renewal: true, subscription: 'active' },
-  { client: 'Μιχάλης Σταύρου', plan: 'Training Plan', amount: 70, date: '11/06/2026', status: 'pending', renewal: false, subscription: 'ending' },
-  { client: 'Ιωάννα Πέτρου', plan: 'Nutrition Plan', amount: 65, date: '12/06/2026', status: 'paid', renewal: true, subscription: 'active' },
-];
+const payments = [];
 
-const clientRevenue = [
-  { client: 'Νίκος Αντωνίου', revenue: '€480', payments: 4 },
-  { client: 'Μαρία Καραλή', revenue: '€380', payments: 4 },
-  { client: 'Κώστας Δημητρίου', revenue: '€360', payments: 3 },
-  { client: 'Έλενα Παπαδάκη', revenue: '€280', payments: 4 },
-  { client: 'Δήμητρα Ιωάννου', revenue: '€240', payments: 2 },
-];
+const clientRevenue = [];
 
 function Avatar() {
   return (

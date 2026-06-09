@@ -14,6 +14,7 @@ export const api = {
 
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
+      credentials: 'include',
       headers,
     });
 
@@ -57,6 +58,7 @@ export const api = {
 
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
       method: 'POST',
+      credentials: 'include',
       headers,
       body: formData,
     });

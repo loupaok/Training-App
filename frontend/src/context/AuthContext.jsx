@@ -1,6 +1,17 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 
 const AuthContext = createContext();
+
+export function getAuthRedirect(user) {
+  if (!user) return '/login';
+  if (user.redirectTo) return user.redirectTo;
+  if (user.role === 'coach' || user.role === 'admin') return '/coach/dashboard';
+  if (user.role === 'client' && !user.onboardingCompleted) return '/client-onboarding';
+  if (user.role === 'client' && user.status === 'active') return '/client/dashboard';
+  if (user.role === 'client' && user.status === 'expired') return '/client/expired';
+  if (user.role === 'client') return '/client/pending';
+  return '/login';
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
@@ -8,40 +19,60 @@ export function AuthProvider({ children }) {
   });
   const [token, setToken] = useState(localStorage.getItem('token'));
   const [loading, setLoading] = useState(false);
-  const [refreshingProfile, setRefreshingProfile] = useState(Boolean(localStorage.getItem('token')));
+  const [refreshingProfile, setRefreshingProfile] = useState(true);
 
   useEffect(() => {
     if (token) {
       localStorage.setItem('token', token);
     } else {
       localStorage.removeItem('token');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('user');
     }
   }, [token]);
 
   useEffect(() => {
-    if (!token) {
-      setRefreshingProfile(false);
-      return;
-    }
-
     let ignore = false;
     setRefreshingProfile(true);
-    fetch('/api/auth/me', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || 'Profile refresh failed');
-        return data;
-      })
+
+    const loadMe = async () => {
+      const headers = {};
+      const storedToken = localStorage.getItem('token');
+      if (storedToken) headers.Authorization = `Bearer ${storedToken}`;
+
+      const response = await fetch('/api/auth/me', {
+        credentials: 'include',
+        headers,
+      });
+
+      if (!response.ok) {
+        const refreshResponse = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken: localStorage.getItem('refreshToken') })
+        });
+        const refreshData = await refreshResponse.json().catch(() => ({}));
+        if (!refreshResponse.ok) throw new Error(refreshData.message || 'Profile refresh failed');
+        if (refreshData.accessToken) {
+          localStorage.setItem('token', refreshData.accessToken);
+          setToken(refreshData.accessToken);
+        }
+        return loadMe();
+      }
+
+      return response.json();
+    };
+
+    loadMe()
       .then((data) => {
         if (ignore) return;
         localStorage.setItem('user', JSON.stringify(data.user));
         setUser(data.user);
       })
-      .catch(() => {})
+      .catch(() => {
+        if (ignore) return;
+        localStorage.removeItem('user');
+        setUser(null);
+      })
       .finally(() => {
         if (!ignore) setRefreshingProfile(false);
       });
@@ -49,13 +80,14 @@ export function AuthProvider({ children }) {
     return () => {
       ignore = true;
     };
-  }, [token]);
+  }, []);
 
   const login = async (email, password) => {
     setLoading(true);
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
@@ -63,11 +95,11 @@ export function AuthProvider({ children }) {
       const data = await response.json();
       if (response.ok) {
         localStorage.setItem('token', data.accessToken);
-        localStorage.setItem('refreshToken', data.refreshToken);
+        if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
         localStorage.setItem('user', JSON.stringify(data.user));
         setToken(data.accessToken);
         setUser(data.user);
-        return { success: true };
+        return { success: true, redirectTo: data.redirectTo || getAuthRedirect(data.user) };
       }
       return { success: false, message: data.message };
     } catch (error) {
@@ -82,17 +114,19 @@ export function AuthProvider({ children }) {
     try {
       const response = await fetch('/api/auth/register', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, fullName })
       });
 
       const data = await response.json();
       if (response.ok) {
-        localStorage.setItem('token', data.token);
+        localStorage.setItem('token', data.accessToken || data.token);
+        if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
         if (data.user) localStorage.setItem('user', JSON.stringify(data.user));
-        setToken(data.token);
+        setToken(data.accessToken || data.token);
         if (data.user) setUser(data.user);
-        return { success: true };
+        return { success: true, redirectTo: data.redirectTo || getAuthRedirect(data.user) };
       }
       return { success: false, message: data.message };
     } catch (error) {
@@ -104,13 +138,16 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     const refreshToken = localStorage.getItem('refreshToken');
-    if (refreshToken) {
-      fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken })
-      }).catch(() => {});
-    }
+    fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken })
+    }).catch(() => {});
+
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
     setUser(null);
     setToken(null);
   };

@@ -2,6 +2,7 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { MenuToggle, TopbarActions } from '../components/TopbarControls';
+import { api } from '../services/api';
 
 const navSections = [
   { label: 'Dashboard', path: '/dashboard', active: true },
@@ -21,27 +22,6 @@ const navSections = [
       { label: 'Branding' },
     ],
   },
-];
-
-const stats = [
-  { label: 'Σύνολο Πελατών', value: '124', note: '+8 αυτόν τον μήνα', icon: '👥', color: 'text-blue-600' },
-  { label: 'Ενεργοί Πελάτες', value: '98', note: '79% του συνόλου', icon: '◌', color: 'text-indigo-600' },
-  { label: 'Λήγουν Σύντομα', value: '12', note: 'Εντός 7 ημερών', icon: '◷', color: 'text-amber-500' },
-  { label: 'Ανενεργοί Πελάτες', value: '14', note: 'Ανενεργοί', icon: '⊖', color: 'text-red-500' },
-  { label: 'Νέα Updates', value: '7', note: 'Εκκρεμούν έλεγχος', icon: '☑', color: 'text-sky-600' },
-];
-
-const updates = [
-  { name: 'Νίκος Αντωνίου', date: '18/05/2024', weight: '78.4 kg', initials: 'ΝΑ', tone: 'bg-slate-900' },
-  { name: 'Μαρία Καραλή', date: '18/05/2024', weight: '65.2 kg', initials: 'ΜΚ', tone: 'bg-rose-500' },
-  { name: 'Κώστας Δημητρίου', date: '18/05/2024', weight: '84.1 kg', initials: 'ΚΔ', tone: 'bg-orange-600' },
-  { name: 'Έλενα Παπαδάκη', date: '18/05/2024', weight: '58.6 kg', initials: 'ΕΠ', tone: 'bg-zinc-800' },
-];
-
-const topClients = [
-  { name: 'Νίκος Αντωνίου', change: '-2.4 kg', initials: 'ΝΑ', tone: 'bg-slate-900' },
-  { name: 'Κώστας Δημητρίου', change: '-1.8 kg', initials: 'ΚΔ', tone: 'bg-orange-600' },
-  { name: 'Μαρία Καραλή', change: '-1.2 kg', initials: 'ΜΚ', tone: 'bg-rose-500' },
 ];
 
 const tasks = [
@@ -72,6 +52,16 @@ const chartPoints = [
   [98, 60],
 ];
 
+function getInitials(name) {
+  return String(name || 'CL')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase() || 'CL';
+}
+
 function Avatar({ initials, tone = 'bg-slate-900', size = 'h-10 w-10' }) {
   return (
     <div className={`${size} ${tone} grid place-items-center rounded-full text-xs font-bold text-white shadow-sm`}>
@@ -97,6 +87,7 @@ function ViewAllButton({ children = 'Προβολή όλων' }) {
 }
 
 function Sidebar({ user }) {
+  const canSeeAdmin = user?.role === 'admin' || user?.role === 'coach';
   const settingsIsActive = navSections.some((section) => section.children?.some((child) => child.active));
   const [settingsOpen, setSettingsOpen] = React.useState(settingsIsActive);
 
@@ -111,7 +102,7 @@ function Sidebar({ user }) {
 
       <nav className="flex-1 overflow-y-auto px-4 pb-6">
         <div className="space-y-1">
-          {navSections.filter((section) => !section.adminOnly || user?.role === 'admin').map((section) => {
+          {navSections.filter((section) => !section.adminOnly || canSeeAdmin).map((section) => {
             const className = `flex h-12 w-full items-center rounded-md px-4 text-left text-[15px] font-semibold ${
               section.active
                 ? 'bg-red-600 text-white shadow-lg shadow-red-950/30'
@@ -136,7 +127,7 @@ function Sidebar({ user }) {
             return (
               <div key={section.label} className={section.spacerBefore ? 'mt-6' : ''}>
                 {item}
-                {section.children && user?.role === 'admin' && (
+                {section.children && canSeeAdmin && (
                   <div className={`ml-4 overflow-hidden border-l border-white/10 pl-3 transition-all duration-200 ${settingsOpen ? 'mt-1 max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
                     {section.children.map((child) => (
                       child.path ? (
@@ -223,23 +214,27 @@ function WeightChart() {
   );
 }
 
-function SubscriptionCard() {
+function SubscriptionCard({ total, active, pending, inactive }) {
+  const activePercent = total ? Math.round((active / total) * 100) : 0;
+  const pendingPercent = total ? Math.round((pending / total) * 100) : 0;
+  const background = total ? 'conic-gradient(#22c55e 0 ' + activePercent + '%, #fbbf24 ' + activePercent + '% ' + (activePercent + pendingPercent) + '%, #ef4444 ' + (activePercent + pendingPercent) + '% 100%)' : '#e2e8f0';
+
   return (
     <Card className="p-6 lg:col-span-4">
-      <h2 className="text-lg font-extrabold">Κατάσταση Συνδρομών</h2>
+      <h2 className="text-lg font-extrabold">????????? ?????????</h2>
       <div className="mt-9 flex items-center gap-10">
-        <div className="relative h-44 w-44 shrink-0 rounded-full bg-[conic-gradient(#22c55e_0_79%,#fbbf24_79%_89%,#ef4444_89%_100%)]">
+        <div className="relative h-44 w-44 shrink-0 rounded-full" style={{ background }}>
           <div className="absolute inset-5 grid place-items-center rounded-full bg-white text-center">
             <div>
-              <div className="text-sm text-slate-500">Σύνολο</div>
-              <div className="text-3xl font-extrabold">124</div>
+              <div className="text-sm text-slate-500">??????</div>
+              <div className="text-3xl font-extrabold">{total}</div>
             </div>
           </div>
         </div>
         <div className="space-y-5 text-sm">
-          <div className="flex items-center gap-3"><span className="h-4 w-4 rounded-full bg-green-500" /> Ενεργοί <span className="ml-5 text-slate-500">98 (79%)</span></div>
-          <div className="flex items-center gap-3"><span className="h-4 w-4 rounded-full bg-amber-400" /> Λήγουν <span className="ml-6 text-slate-500">12 (10%)</span></div>
-          <div className="flex items-center gap-3"><span className="h-4 w-4 rounded-full bg-red-500" /> Ανενεργοί <span className="ml-2 text-slate-500">14 (11%)</span></div>
+          <div className="flex items-center gap-3"><span className="h-4 w-4 rounded-full bg-green-500" /> ??????? <span className="ml-5 text-slate-500">{active}</span></div>
+          <div className="flex items-center gap-3"><span className="h-4 w-4 rounded-full bg-amber-400" /> ????????? <span className="ml-2 text-slate-500">{pending}</span></div>
+          <div className="flex items-center gap-3"><span className="h-4 w-4 rounded-full bg-red-500" /> ????????? <span className="ml-2 text-slate-500">{inactive}</span></div>
         </div>
       </div>
       <ViewAllButton />
@@ -288,7 +283,7 @@ export default function Dashboard() {
             <Card className="p-6 lg:col-span-3">
               <h2 className="text-lg font-extrabold">Τελευταία Updates</h2>
               <div className="mt-5 space-y-4">
-                {updates.map((update) => (
+                {latestUpdates.map((update) => (
                   <div key={update.name} className="flex items-center gap-4">
                     <Avatar initials={update.initials} tone={update.tone} />
                     <div className="min-w-0 flex-1">
@@ -298,11 +293,12 @@ export default function Dashboard() {
                     <div className="font-extrabold">{update.weight}</div>
                   </div>
                 ))}
+                {!latestUpdates.length && <div className="rounded-md bg-slate-50 p-5 text-sm font-semibold text-slate-500">??? ???????? ?????????? updates ?????.</div>}
               </div>
               <ViewAllButton />
             </Card>
 
-            <SubscriptionCard />
+            <SubscriptionCard total={totalClients} active={activeClients} pending={pendingClients} inactive={inactiveClients} />
 
             <Card className="p-6 lg:col-span-4">
               <h2 className="text-lg font-extrabold">Κορυφαίοι Πελάτες (Αυτόν τον Μήνα)</h2>
@@ -315,6 +311,7 @@ export default function Dashboard() {
                     <div className="font-extrabold text-emerald-600">{client.change}</div>
                   </div>
                 ))}
+                {!topClients.length && <div className="rounded-md bg-slate-50 p-5 text-sm font-semibold text-slate-500">??? ???????? ?????? ?????????? ???????? progress ?????.</div>}
               </div>
               <ViewAllButton />
             </Card>
