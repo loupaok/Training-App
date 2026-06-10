@@ -4,7 +4,7 @@ import { MenuToggle, TopbarActions } from './TopbarControls';
 
 const clientNavSections = [
   { label: 'Αρχική', path: '/client-dashboard', key: 'dashboard' },
-  { label: 'Πρόγραμμα', locked: true, key: 'training' },
+  { label: 'Πρόγραμμα', path: '/client-program', locked: true, key: 'training' },
   { label: 'Διατροφή', locked: true, key: 'nutrition' },
   { label: 'Progress', locked: true, key: 'progress' },
   { label: 'Πληρωμές και Συνδρομή', path: '/client-billing', key: 'billing' },

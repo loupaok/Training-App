@@ -5,6 +5,8 @@ import { MenuToggle, TopbarActions } from '../components/TopbarControls';
 import PaginationControls from '../components/PaginationControls';
 import { api } from '../services/api';
 
+const API_ORIGIN = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
+
 const navSections = [
   { label: 'Dashboard', path: '/dashboard' },
   { label: 'Πελάτες', path: '/clients', active: true },
@@ -70,6 +72,13 @@ function formatDate(value) {
   return date.toLocaleDateString('el-GR');
 }
 
+function resolveMediaUrl(url) {
+  if (!url) return '';
+  if (/^https?:\/\//.test(url)) return url;
+  if (url.startsWith('/uploads')) return `${API_ORIGIN}${url}`;
+  return `${API_ORIGIN}/${String(url).replace(/^\/+/, '')}`;
+}
+
 function mapApiClient(row) {
   const statusKey = row.client_status_key || (row.is_active === 0 || row.coaching_status === 'inactive' ? 'inactive' : 'active');
   const statusMeta = {
@@ -97,12 +106,18 @@ function mapApiClient(row) {
     onlineStatus: row.is_online ? 'Online' : 'Offline',
     isOnline: Boolean(row.is_online),
     createdAt: row.created_at || new Date().toISOString(),
+    profilePhoto: row.profile_photo || null,
     initials: getInitials(row.full_name || row.email),
     tone: 'bg-slate-900',
   };
 }
 
-function Avatar({ initials, tone = 'bg-slate-900', size = 'h-12 w-12' }) {
+function Avatar({ initials, tone = 'bg-slate-900', size = 'h-12 w-12', photoUrl }) {
+  const src = resolveMediaUrl(photoUrl);
+  if (src) {
+    return <img src={src} alt="" className={`${size} rounded-full object-cover shadow-sm`} />;
+  }
+
   return (
     <div className={`${size} ${tone} grid place-items-center rounded-full text-xs font-bold text-white shadow-sm`}>
       {initials}
@@ -518,7 +533,7 @@ export default function Clients() {
                   <tr key={client.id} className="h-[104px] border-b border-slate-200 last:border-b-0">
                     <td className="px-8">
                       <Link to={`/clients/${client.id}`} className="flex items-center gap-4 text-slate-950 hover:text-red-600">
-                        <Avatar initials={client.initials} tone={client.tone} />
+                        <Avatar initials={client.initials} tone={client.tone} photoUrl={client.profilePhoto} />
                         <div>
                           <div className="font-extrabold">{client.name}</div>
                           <div className="mt-1 text-sm text-slate-600">{client.email}</div>

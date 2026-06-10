@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ClientSidebar, ClientTopbar } from '../components/ClientShell';
+import WorkoutProgramView from '../components/WorkoutProgramView';
 import { api } from '../services/api';
 
 const API_ORIGIN = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
@@ -140,7 +141,7 @@ export default function ClientDashboard() {
                   <WeeklyUpdateCard data={data.weeklyUpdate} onOpen={() => setWeeklyOpen(true)} />
                 </section>
 
-                <WorkoutView training={data.training} />
+                <WorkoutProgramView training={data.training} />
 
                 <section className="grid gap-6 xl:grid-cols-2">
                   <NutritionView nutrition={data.nutrition} />

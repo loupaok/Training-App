@@ -47,7 +47,7 @@ async function ensureTrainingPlanBuilderSchema(connection) {
       exercise_name VARCHAR(255) NOT NULL,
       sets VARCHAR(50),
       reps VARCHAR(50),
-      rest_seconds INT,
+      rest_seconds VARCHAR(50),
       target_weight VARCHAR(50),
       notes TEXT,
       sort_order INT DEFAULT 0,
@@ -63,6 +63,66 @@ async function ensureTrainingPlanBuilderSchema(connection) {
   } catch (error) {
     if (error.code !== 'ER_DUP_FIELDNAME') throw error;
   }
+
+  await connection.query('ALTER TABLE training_plan_exercises MODIFY rest_seconds VARCHAR(50)');
+}
+
+async function ensureExerciseImagesTable(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS exercise_images (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      exercise_id INT NOT NULL,
+      image_url VARCHAR(600) NOT NULL,
+      alt_text VARCHAR(255),
+      sort_order INT DEFAULT 0,
+      is_primary TINYINT(1) DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE,
+      INDEX idx_exercise_id (exercise_id),
+      INDEX idx_is_primary (is_primary)
+    )
+  `);
+
+  await connection.query(`
+    INSERT INTO exercise_images (exercise_id, image_url, sort_order, is_primary)
+    SELECT e.id, e.image_url, 0, 1
+    FROM exercises e
+    WHERE e.image_url IS NOT NULL
+      AND e.image_url <> ''
+      AND NOT EXISTS (
+        SELECT 1 FROM exercise_images ei
+        WHERE ei.exercise_id = e.id AND ei.image_url = e.image_url
+      )
+  `);
+}
+
+async function getExerciseImagesMap(connection, exerciseIds) {
+  const ids = [...new Set(exerciseIds.filter(Boolean).map(Number))];
+  if (!ids.length) return new Map();
+
+  await ensureExerciseImagesTable(connection);
+  const [rows] = await connection.query(
+    `SELECT id, exercise_id AS exerciseId, image_url AS imageUrl, alt_text AS altText,
+            sort_order AS sortOrder, is_primary AS isPrimary
+     FROM exercise_images
+     WHERE exercise_id IN (?)
+     ORDER BY is_primary DESC, sort_order ASC, id ASC`,
+    [ids]
+  );
+
+  return rows.reduce((map, image) => {
+    const list = map.get(image.exerciseId) || [];
+    list.push({
+      id: image.id,
+      imageUrl: image.imageUrl,
+      altText: image.altText || '',
+      sortOrder: image.sortOrder || 0,
+      isPrimary: Boolean(image.isPrimary),
+    });
+    map.set(image.exerciseId, list);
+    return map;
+  }, new Map());
 }
 
 async function getFullTrainingPlan(connection, clientId) {
@@ -85,6 +145,7 @@ async function getFullTrainingPlan(connection, clientId) {
   );
 
   let exercises = [];
+  let imagesMap = new Map();
   if (days.length) {
     [exercises] = await connection.query(
       `SELECT tpe.*, e.muscle_group AS muscle_group, e.equipment, e.image_url AS image_url
@@ -94,12 +155,22 @@ async function getFullTrainingPlan(connection, clientId) {
        ORDER BY tpe.sort_order`,
       [days.map((day) => day.id)]
     );
+    imagesMap = await getExerciseImagesMap(connection, exercises.map((exercise) => exercise.exercise_id));
   }
 
   return {
     ...plan,
     days: days.map((day) => {
-      const dayExercises = exercises.filter((exercise) => exercise.day_id === day.id);
+      const dayExercises = exercises
+        .filter((exercise) => exercise.day_id === day.id)
+        .map((exercise) => {
+          const images = imagesMap.get(exercise.exercise_id) || [];
+          return {
+            ...exercise,
+            images,
+            imageUrls: images.map((image) => image.imageUrl),
+          };
+        });
       const muscleGroups = [...new Set(dayExercises.map((exercise) => exercise.muscle_group).filter(Boolean))];
       return { ...day, muscleGroups, exercises: dayExercises };
     }),

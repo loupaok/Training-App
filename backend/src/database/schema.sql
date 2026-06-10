@@ -218,7 +218,7 @@ CREATE TABLE IF NOT EXISTS reps (
   exercise_name VARCHAR(255) NOT NULL,
   sets TINYINT UNSIGNED,
   reps_per_set VARCHAR(50),  -- e.g. "8-12" or "AMRAP"
-  rest_seconds SMALLINT UNSIGNED,
+  rest_seconds VARCHAR(50),
   weight_kg DECIMAL(6,2),
   duration_seconds SMALLINT UNSIGNED,
   distance_m INT UNSIGNED,

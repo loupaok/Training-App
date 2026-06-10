@@ -34,7 +34,6 @@ const fallbackExercises = [
     name: 'Bench Press',
     muscleGroup: 'Στήθος',
     equipment: 'Μπάρα, Πάγκος',
-    level: 'Μεσαίο',
     type: 'Δύναμη',
     programsCount: 24,
     instructions: 'Πίεσε τη μπάρα από το στήθος προς τα πάνω κρατώντας τις ωμοπλάτες σταθερές και τα πόδια πατημένα.',
@@ -44,7 +43,6 @@ const fallbackExercises = [
     name: 'Back Squat',
     muscleGroup: 'Τετρακέφαλοι',
     equipment: 'Μπάρα',
-    level: 'Δύσκολο',
     type: 'Δύναμη',
     programsCount: 31,
     instructions: 'Κράτα κορμό σταθερό, λύγισε γόνατα και ισχία, και ανέβα πιέζοντας όλο το πέλμα στο έδαφος.',
@@ -155,11 +153,10 @@ export default function Exercises() {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [exercises, setExercises] = useState([]);
-  const [filters, setFilters] = useState({ muscleGroups: [], equipment: [], levels: [], types: [] });
+  const [filters, setFilters] = useState({ muscleGroups: [], equipment: [], types: [] });
   const [search, setSearch] = useState('');
   const [muscleGroup, setMuscleGroup] = useState('');
   const [equipment, setEquipment] = useState('');
-  const [level, setLevel] = useState('');
   const [selected, setSelected] = useState(null);
   const [modalMode, setModalMode] = useState('view');
   const [isCreating, setIsCreating] = useState(false);
@@ -180,13 +177,11 @@ export default function Exercises() {
       .then((data) => setFilters({
         muscleGroups: data.muscleGroups.map((item) => item.value),
         equipment: data.equipment.map((item) => item.value),
-        levels: data.levels.map((item) => item.value),
         types: data.types?.map((item) => item.value) || [],
       }))
       .catch(() => setFilters({
         muscleGroups: uniqueOptions(fallbackExercises, 'muscleGroup'),
         equipment: uniqueOptions(fallbackExercises, 'equipment'),
-        levels: uniqueOptions(fallbackExercises, 'level'),
         types: uniqueOptions(fallbackExercises, 'type'),
       }));
   }, []);
@@ -200,17 +195,16 @@ export default function Exercises() {
     if (search.trim()) params.set('search', search.trim());
     if (muscleGroup) params.set('muscleGroup', muscleGroup);
     if (equipment) params.set('equipment', equipment);
-    if (level) params.set('level', level);
 
     api.get(`/exercises?${params.toString()}`)
       .then((data) => { if (!ignore) setExercises(data); })
       .catch(() => {
-        if (!ignore) setExercises(filterLocal(fallbackExercises, { search, muscleGroup, equipment, level }));
+        if (!ignore) setExercises(filterLocal(fallbackExercises, { search, muscleGroup, equipment }));
       })
       .finally(() => { if (!ignore) setLoading(false); });
 
     return () => { ignore = true; };
-  }, [search, muscleGroup, equipment, level]);
+  }, [search, muscleGroup, equipment]);
 
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(exercises.length / pageSize));
@@ -249,7 +243,6 @@ export default function Exercises() {
       name: exercise.name || '',
       muscleGroup: exercise.muscleGroup || '',
       equipment: exercise.equipment || '',
-      level: exercise.level || 'Μεσαίο',
       type: exercise.type || 'Δύναμη',
       instructions: exercise.instructions || '',
       programsCount: exercise.programsCount || 0,
@@ -265,7 +258,6 @@ export default function Exercises() {
       name: '',
       muscleGroup: '',
       equipment: '',
-      level: 'Μεσαίο',
       type: 'Δύναμη',
       programsCount: 0,
       instructions: '',
@@ -284,6 +276,19 @@ export default function Exercises() {
   const updateSelected = (patch) => {
     setSelected((current) => current ? { ...current, ...patch } : current);
     setExercises((items) => items.map((item) => item.id === selected?.id ? { ...item, ...patch } : item));
+  };
+
+  const updateExerciseImages = (images, preferredImageUrl = '') => {
+    const normalizedImages = normalizeExerciseImages({ images, imageUrl: preferredImageUrl });
+    const primaryImage = normalizedImages.find((image) => image.isPrimary) || normalizedImages[0];
+    const nextImageUrl = preferredImageUrl || primaryImage?.imageUrl || '';
+    setImageUrl(nextImageUrl);
+    setEditForm((current) => current ? { ...current, imageUrl: nextImageUrl } : current);
+    updateSelected({
+      imageUrl: nextImageUrl,
+      images: normalizedImages,
+      imageUrls: normalizedImages.map((image) => image.imageUrl),
+    });
   };
 
   const saveMedia = async () => {
@@ -318,7 +323,6 @@ export default function Exercises() {
         name: editForm.name?.trim() || 'Νέα Άσκηση',
         muscleGroup: editForm.muscleGroup?.trim() || 'Γενική',
         equipment: editForm.equipment?.trim() || 'Χωρίς εξοπλισμό',
-        level: editForm.level || 'Μεσαίο',
         type: editForm.type?.trim() || 'Δύναμη',
         programsCount: Number(editForm.programsCount || 0),
       };
@@ -335,7 +339,6 @@ export default function Exercises() {
         name: updated.name || '',
         muscleGroup: updated.muscleGroup || '',
         equipment: updated.equipment || '',
-        level: updated.level || 'Μεσαίο',
         type: updated.type || 'Δύναμη',
         instructions: updated.instructions || '',
         programsCount: updated.programsCount || 0,
@@ -385,10 +388,12 @@ export default function Exercises() {
 
     try {
       const response = await api.upload(`/exercises/${selected.id}/image`, formData);
-      setImageUrl(response.imageUrl);
-      setEditForm((current) => ({ ...current, imageUrl: response.imageUrl }));
-      updateSelected({ imageUrl: response.imageUrl });
-      setMediaMessage(`Η φωτογραφία συμπιέστηκε και αποθηκεύτηκε στην άσκηση. ${formatBytes(file.size)} → ${formatBytes(compressedFile.size)}`);
+      const nextImages = [
+        { id: response.imageId || `new-${Date.now()}`, imageUrl: response.imageUrl, isPrimary: true },
+        ...normalizeExerciseImages(selected).filter((image) => image.imageUrl !== response.imageUrl).map((image) => ({ ...image, isPrimary: false })),
+      ];
+      updateExerciseImages(nextImages, response.imageUrl);
+      setMediaMessage(`Η φωτογραφία συμπιέστηκε και προστέθηκε στο gallery. ${formatBytes(file.size)} → ${formatBytes(compressedFile.size)}`);
     } catch (error) {
       setMediaMessage(error.message || 'Το upload απέτυχε.');
     } finally {
@@ -408,15 +413,48 @@ export default function Exercises() {
     }
   };
 
-  const chooseMediaAsset = (asset) => {
-    updateEditField('imageUrl', asset.url);
-    setMediaMessage(`Επιλέχθηκε εικόνα από Media Library: ${asset.title}`);
+  const chooseMediaAsset = async (asset) => {
     setMediaPickerOpen(false);
+
+    if (isCreating || !selected || String(selected.id).startsWith('fallback')) {
+      updateEditField('imageUrl', asset.url);
+      setMediaMessage(`Επιλέχθηκε εικόνα από Media Library: ${asset.title}`);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await api.post(`/exercises/${selected.id}/images`, { imageUrl: asset.url, primary: true });
+      updateExerciseImages(response.images || [], asset.url);
+      setMediaMessage(`Προστέθηκε στο gallery από Media Library: ${asset.title}`);
+    } catch (error) {
+      updateEditField('imageUrl', asset.url);
+      setMediaMessage(error.message || 'Δεν προστέθηκε η εικόνα στο gallery.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const clearThumbnail = () => {
     updateEditField('imageUrl', '');
     setMediaMessage('Το thumbnail αφαιρέθηκε. Πάτησε αποθήκευση για να ενημερωθεί η άσκηση.');
+  };
+
+  const deleteExerciseImage = async (image) => {
+    if (!image?.id || !selected || isCreating || String(image.id).startsWith('local') || String(selected.id).startsWith('fallback')) return;
+    const confirmed = window.confirm('Να διαγραφεί αυτή η φωτογραφία από την άσκηση;');
+    if (!confirmed) return;
+
+    setSaving(true);
+    try {
+      const response = await api.delete(`/exercises/${selected.id}/images/${image.id}`);
+      updateExerciseImages(response.images || []);
+      setMediaMessage('Η φωτογραφία διαγράφηκε από την άσκηση.');
+    } catch (error) {
+      setMediaMessage(error.message || 'Δεν διαγράφηκε η φωτογραφία.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const filteredMediaAssets = mediaAssets.filter((asset) => {
@@ -448,9 +486,8 @@ export default function Exercises() {
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Αναζήτηση άσκησης..." className="w-full bg-transparent outline-none placeholder:text-slate-500" />
             </div>
             <SelectFilter label="Μυϊκή Ομάδα" value={muscleGroup} onChange={setMuscleGroup} options={filters.muscleGroups} className="col-span-3" />
-            <SelectFilter label="Εξοπλισμός" value={equipment} onChange={setEquipment} options={filters.equipment} className="col-span-2" />
-            <SelectFilter label="Επίπεδο" value={level} onChange={setLevel} options={filters.levels} className="col-span-2" />
-            <button onClick={() => { setSearch(''); setMuscleGroup(''); setEquipment(''); setLevel(''); }} className="col-span-1 flex h-14 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white font-bold text-slate-700 shadow-sm hover:border-red-200 hover:text-red-600">
+            <SelectFilter label="Εξοπλισμός" value={equipment} onChange={setEquipment} options={filters.equipment} className="col-span-3" />
+            <button onClick={() => { setSearch(''); setMuscleGroup(''); setEquipment(''); }} className="col-span-2 flex h-14 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white font-bold text-slate-700 shadow-sm hover:border-red-200 hover:text-red-600">
               <Icon name="filter" />
               Reset
             </button>
@@ -482,7 +519,6 @@ export default function Exercises() {
                   <th className="px-6">Άσκηση</th>
                   <th className="px-5">Μυϊκή Ομάδα</th>
                   <th className="px-5">Εξοπλισμός</th>
-                  <th className="px-5">Επίπεδο</th>
                   <th className="px-5">Τύπος</th>
                   <th className="px-5">Σε Προγράμματα</th>
                   <th className="px-5">Ενέργειες</th>
@@ -499,7 +535,6 @@ export default function Exercises() {
                     </td>
                     <td className="px-5 text-sm text-slate-700">{exercise.muscleGroup}</td>
                     <td className="px-5 text-sm text-slate-700">{exercise.equipment}</td>
-                    <td className="px-5"><LevelBadge level={exercise.level} /></td>
                     <td className="px-5 text-sm text-slate-700">{exercise.type}</td>
                     <td className="px-5 text-sm font-bold text-slate-700">{exercise.programsCount || 0}</td>
                     <td className="px-5">
@@ -513,7 +548,7 @@ export default function Exercises() {
                 ))}
                 {!loading && exercises.length === 0 && (
                   <tr>
-                    <td colSpan="7" className="h-32 px-6 text-center font-semibold text-slate-500">Δεν βρέθηκαν ασκήσεις με αυτά τα φίλτρα.</td>
+                    <td colSpan="6" className="h-32 px-6 text-center font-semibold text-slate-500">Δεν βρέθηκαν ασκήσεις με αυτά τα φίλτρα.</td>
                   </tr>
                 )}
               </tbody>
@@ -546,10 +581,9 @@ export default function Exercises() {
             <div className="grid grid-cols-12 gap-6 p-6">
               <div className="col-span-5">
                 <div className="h-72 overflow-hidden rounded-lg bg-slate-100">
-                  <ExerciseImage exercise={{ ...selected, name: editForm.name, imageUrl: editForm.imageUrl }} large />
+                  <ExerciseImageSlider exercise={{ ...selected, name: editForm.name, imageUrl: editForm.imageUrl }} large />
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                  <Info label="Επίπεδο" value={editForm.level} />
                   <Info label="Τύπος" value={editForm.type} />
                   <Info label="Σε Προγράμματα" value={editForm.programsCount || 0} />
                   <Info label="Video" value={editForm.videoUrl ? 'Έτοιμο για embed' : 'Δεν έχει μπει ακόμα'} />
@@ -562,7 +596,6 @@ export default function Exercises() {
                       <Info label="Όνομα" value={editForm.name} />
                       <Info label="Μυϊκή ομάδα" value={editForm.muscleGroup} />
                       <Info label="Εξοπλισμός" value={editForm.equipment} />
-                      <Info label="Επίπεδο" value={editForm.level} />
                       <Info label="Τύπος" value={editForm.type} />
                       <Info label="Σε προγράμματα" value={editForm.programsCount || 0} />
                     </div>
@@ -578,14 +611,6 @@ export default function Exercises() {
                       <EditInput label="Όνομα" value={editForm.name} onChange={(value) => updateEditField('name', value)} />
                       <EditSelect label="Μυϊκή ομάδα" value={editForm.muscleGroup} onChange={(value) => updateEditField('muscleGroup', value)} options={muscleGroupOptions} />
                       <EditSelect label="Εξοπλισμός" value={editForm.equipment} onChange={(value) => updateEditField('equipment', value)} options={equipmentOptions} />
-                      <label className="block">
-                        <span className="text-sm font-bold text-slate-700">Επίπεδο</span>
-                        <select value={editForm.level} onChange={(event) => updateEditField('level', event.target.value)} className="mt-2 h-11 w-full rounded-md border border-slate-200 px-4 outline-none focus:border-red-300">
-                          <option value="Αρχάριο">Αρχάριο</option>
-                          <option value="Μεσαίο">Μεσαίο</option>
-                          <option value="Δύσκολο">Δύσκολο</option>
-                        </select>
-                      </label>
                       <EditSelect label="Τύπος" value={editForm.type} onChange={(value) => updateEditField('type', value)} options={typeOptions} />
                       <EditInput label="Σε προγράμματα" type="number" value={editForm.programsCount} onChange={(value) => updateEditField('programsCount', value)} />
                     </div>
@@ -601,24 +626,39 @@ export default function Exercises() {
 
                     <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
                       <div className="flex items-center justify-between gap-4">
-                        <span className="text-sm font-bold text-slate-700">Thumbnail άσκησης</span>
-                        <span className={`rounded-md px-3 py-1 text-xs font-bold ${editForm.imageUrl ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
-                          {editForm.imageUrl ? 'Έχει εικόνα' : 'Χωρίς εικόνα'}
+                        <span className="text-sm font-bold text-slate-700">Φωτογραφίες άσκησης</span>
+                        <span className={`rounded-md px-3 py-1 text-xs font-bold ${normalizeExerciseImages({ ...selected, imageUrl: editForm.imageUrl }).length ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
+                          {normalizeExerciseImages({ ...selected, imageUrl: editForm.imageUrl }).length ? `${normalizeExerciseImages({ ...selected, imageUrl: editForm.imageUrl }).length} εικόνες` : 'Χωρίς εικόνα'}
                         </span>
                       </div>
                       <div className="mt-4 grid grid-cols-3 gap-3">
                         <button onClick={openMediaPicker} className="flex h-11 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 text-sm font-bold hover:border-red-200 hover:text-red-600">
                           <Icon name="image" />
-                          Media Library
+                          Προσθήκη από Media Library
                         </button>
                         <label className={`flex h-11 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 text-sm font-bold ${isCreating ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-red-200 hover:text-red-600'}`}>
                           <Icon name="upload" />
-                          Upload thumbnail
+                          Upload φωτογραφίας
                           <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={uploadImage} disabled={isCreating || saving} className="hidden" />
                         </label>
                         <button onClick={clearThumbnail} disabled={!editForm.imageUrl || saving} className="h-11 rounded-md border border-red-200 bg-white px-4 text-sm font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40">
-                          Αφαίρεση
+                          Καθαρισμός primary
                         </button>
+                      </div>
+                      <div className="mt-4 grid grid-cols-4 gap-3">
+                        {normalizeExerciseImages({ ...selected, imageUrl: editForm.imageUrl }).map((image, index) => (
+                          <div key={`${image.id}-${image.imageUrl}`} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+                            <div className="relative h-24 bg-slate-100">
+                              <img src={normalizeImageUrl(image.imageUrl)} alt="" className="h-full w-full object-cover" />
+                              {(image.isPrimary || image.imageUrl === editForm.imageUrl || index === 0) && (
+                                <span className="absolute left-2 top-2 rounded bg-red-600 px-2 py-1 text-[10px] font-black text-white">PRIMARY</span>
+                              )}
+                            </div>
+                            <button onClick={() => deleteExerciseImage(image)} disabled={saving || !image.id || String(image.id).startsWith('local')} className="h-9 w-full text-xs font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:text-slate-400">
+                              Διαγραφή
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     </div>
 
@@ -744,10 +784,77 @@ function IconButton({ label, icon, onClick, className = '' }) {
   );
 }
 
+function normalizeExerciseImages(exercise = {}) {
+  const rawImages = Array.isArray(exercise.images) ? exercise.images : [];
+  const fromUrls = Array.isArray(exercise.imageUrls)
+    ? exercise.imageUrls.map((imageUrl, index) => ({ id: `local-${index}-${imageUrl}`, imageUrl, isPrimary: index === 0 }))
+    : [];
+  const images = rawImages.length ? rawImages : fromUrls;
+  const hasPrimary = images.some((image) => image.imageUrl === exercise.imageUrl || image.isPrimary);
+  const normalized = images
+    .map((image, index) => ({
+      id: image.id || `local-${index}-${image.imageUrl}`,
+      imageUrl: image.imageUrl || image.image_url || image.url || '',
+      altText: image.altText || image.alt_text || '',
+      isPrimary: Boolean(image.isPrimary || image.is_primary || image.imageUrl === exercise.imageUrl),
+    }))
+    .filter((image) => image.imageUrl);
+
+  if (exercise.imageUrl && !normalized.some((image) => image.imageUrl === exercise.imageUrl)) {
+    normalized.unshift({ id: `local-primary-${exercise.imageUrl}`, imageUrl: exercise.imageUrl, altText: '', isPrimary: true });
+  }
+
+  if (!hasPrimary && normalized[0]) {
+    normalized[0].isPrimary = true;
+  }
+
+  return normalized;
+}
+
+function ExerciseImageSlider({ exercise, large = false }) {
+  const images = normalizeExerciseImages(exercise);
+  const [index, setIndex] = useState(0);
+  const activeImage = images[index] || images[0];
+
+  useEffect(() => setIndex(0), [exercise?.id, images.length]);
+
+  if (!activeImage) {
+    return <ExerciseImage exercise={exercise} large={large} />;
+  }
+
+  return (
+    <div className="relative h-full w-full overflow-hidden rounded-lg bg-slate-100">
+      <img src={normalizeImageUrl(activeImage.imageUrl)} alt={exercise.name} className="h-full w-full object-cover" />
+      {images.length > 1 && (
+        <>
+          <button type="button" onClick={() => setIndex((value) => (value - 1 + images.length) % images.length)} className="absolute left-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-lg font-black text-slate-900 shadow hover:bg-white">
+            ‹
+          </button>
+          <button type="button" onClick={() => setIndex((value) => (value + 1) % images.length)} className="absolute right-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-lg font-black text-slate-900 shadow hover:bg-white">
+            ›
+          </button>
+          <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
+            {images.map((image, imageIndex) => (
+              <button
+                key={`${image.id}-${imageIndex}`}
+                type="button"
+                onClick={() => setIndex(imageIndex)}
+                className={`h-2 rounded-full transition-all ${imageIndex === index ? 'w-7 bg-red-600' : 'w-2 bg-white/80'}`}
+                aria-label={`Φωτογραφία ${imageIndex + 1}`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function ExerciseImage({ exercise, large = false }) {
   const [failed, setFailed] = useState(false);
   const sizeClass = large ? 'h-full w-full' : 'h-14 w-20 rounded-md';
-  const src = normalizeImageUrl(exercise.imageUrl);
+  const firstImage = normalizeExerciseImages(exercise)[0];
+  const src = normalizeImageUrl(firstImage?.imageUrl || exercise.imageUrl);
 
   useEffect(() => setFailed(false), [src]);
 
@@ -772,15 +879,6 @@ function PickerImage({ asset }) {
   }
 
   return <img src={src} alt={asset.title} onError={() => setFailed(true)} className="h-full w-full object-cover" />;
-}
-
-function LevelBadge({ level }) {
-  const styles = {
-    'Αρχάριο': 'bg-emerald-50 text-emerald-700',
-    'Μεσαίο': 'bg-amber-50 text-amber-700',
-    'Δύσκολο': 'bg-red-50 text-red-700',
-  };
-  return <span className={`rounded-md px-3 py-1.5 text-sm font-bold ${styles[level] || 'bg-slate-100 text-slate-700'}`}>{level}</span>;
 }
 
 function Info({ label, value }) {
@@ -844,8 +942,7 @@ function filterLocal(items, selectedFilters) {
     const matchesSearch = !searchValue || [exercise.name, exercise.muscleGroup, exercise.equipment].some((value) => value?.toLowerCase().includes(searchValue));
     const matchesMuscle = !selectedFilters.muscleGroup || exercise.muscleGroup === selectedFilters.muscleGroup;
     const matchesEquipment = !selectedFilters.equipment || exercise.equipment === selectedFilters.equipment;
-    const matchesLevel = !selectedFilters.level || exercise.level === selectedFilters.level;
-    return matchesSearch && matchesMuscle && matchesEquipment && matchesLevel;
+    return matchesSearch && matchesMuscle && matchesEquipment;
   });
 }
 

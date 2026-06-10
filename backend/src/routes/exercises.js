@@ -57,6 +57,120 @@ async function ensureMediaArchiveTable(connection) {
   `);
 }
 
+async function ensureExerciseImagesTable(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS exercise_images (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      exercise_id INT NOT NULL,
+      image_url VARCHAR(600) NOT NULL,
+      alt_text VARCHAR(255),
+      sort_order INT DEFAULT 0,
+      is_primary TINYINT(1) DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (exercise_id) REFERENCES exercises(id) ON DELETE CASCADE,
+      INDEX idx_exercise_id (exercise_id),
+      INDEX idx_is_primary (is_primary)
+    )
+  `);
+
+  await connection.query(`
+    INSERT INTO exercise_images (exercise_id, image_url, sort_order, is_primary)
+    SELECT e.id, e.image_url, 0, 1
+    FROM exercises e
+    WHERE e.image_url IS NOT NULL
+      AND e.image_url <> ''
+      AND NOT EXISTS (
+        SELECT 1 FROM exercise_images ei
+        WHERE ei.exercise_id = e.id AND ei.image_url = e.image_url
+      )
+  `);
+}
+
+async function addExerciseImage(connection, exerciseId, imageUrl, options = {}) {
+  if (!imageUrl) return null;
+
+  await ensureExerciseImagesTable(connection);
+  const [[existing]] = await connection.query(
+    'SELECT id FROM exercise_images WHERE exercise_id = ? AND image_url = ? LIMIT 1',
+    [exerciseId, imageUrl]
+  );
+
+  const [[countRow]] = await connection.query(
+    'SELECT COUNT(*) AS total FROM exercise_images WHERE exercise_id = ?',
+    [exerciseId]
+  );
+  const isPrimary = Boolean(options.primary) || Number(countRow?.total || 0) === 0;
+
+  if (isPrimary) {
+    await connection.query('UPDATE exercise_images SET is_primary = 0 WHERE exercise_id = ?', [exerciseId]);
+  }
+
+  if (existing) {
+    if (isPrimary) {
+      await connection.query(
+        'UPDATE exercise_images SET is_primary = 1 WHERE id = ?',
+        [existing.id]
+      );
+      await connection.query('UPDATE exercises SET image_url = ? WHERE id = ?', [imageUrl, exerciseId]);
+    }
+    return existing.id;
+  }
+
+  const [[sortRow]] = await connection.query(
+    'SELECT COALESCE(MAX(sort_order), -1) + 1 AS nextSort FROM exercise_images WHERE exercise_id = ?',
+    [exerciseId]
+  );
+  const [result] = await connection.query(
+    'INSERT INTO exercise_images (exercise_id, image_url, sort_order, is_primary) VALUES (?, ?, ?, ?)',
+    [exerciseId, imageUrl, Number(sortRow?.nextSort || 0), isPrimary ? 1 : 0]
+  );
+
+  if (isPrimary) {
+    await connection.query('UPDATE exercises SET image_url = ? WHERE id = ?', [imageUrl, exerciseId]);
+  }
+
+  return result.insertId;
+}
+
+async function getExerciseImagesMap(connection, exerciseIds) {
+  if (!exerciseIds.length) return new Map();
+
+  await ensureExerciseImagesTable(connection);
+  const [rows] = await connection.query(
+    `SELECT id, exercise_id AS exerciseId, image_url AS imageUrl, alt_text AS altText,
+            sort_order AS sortOrder, is_primary AS isPrimary
+     FROM exercise_images
+     WHERE exercise_id IN (?)
+     ORDER BY is_primary DESC, sort_order ASC, id ASC`,
+    [exerciseIds]
+  );
+
+  return rows.reduce((map, image) => {
+    const list = map.get(image.exerciseId) || [];
+    list.push({
+      id: image.id,
+      imageUrl: image.imageUrl,
+      altText: image.altText || '',
+      sortOrder: image.sortOrder || 0,
+      isPrimary: Boolean(image.isPrimary),
+    });
+    map.set(image.exerciseId, list);
+    return map;
+  }, new Map());
+}
+
+function attachImages(rows, imagesMap) {
+  return rows.map((row) => {
+    const images = imagesMap.get(row.id) || [];
+    return {
+      ...row,
+      images,
+      imageUrls: images.map((image) => image.imageUrl),
+    };
+  });
+}
+
 async function archiveCurrentExerciseImage(connection, exerciseId, nextImageUrl) {
   const [[exercise]] = await connection.query(
     'SELECT name, image_url AS imageUrl FROM exercises WHERE id = ?',
@@ -67,6 +181,7 @@ async function archiveCurrentExerciseImage(connection, exerciseId, nextImageUrl)
     return;
   }
 
+  await addExerciseImage(connection, exerciseId, exercise.imageUrl);
   await ensureMediaArchiveTable(connection);
   const [[existingAsset]] = await connection.query(
     'SELECT id FROM media_assets WHERE url = ? LIMIT 1',
@@ -107,6 +222,7 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
 
   try {
     const connection = await pool.getConnection();
+    await ensureExerciseImagesTable(connection);
     const where = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
     const [rows] = await connection.query(
       `SELECT id, name, muscle_group AS muscleGroup, secondary_muscles AS secondaryMuscles,
@@ -117,8 +233,9 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
        ORDER BY name`,
       values
     );
+    const imagesMap = await getExerciseImagesMap(connection, rows.map((row) => row.id));
     connection.release();
-    res.json(rows);
+    res.json(attachImages(rows, imagesMap));
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -164,6 +281,7 @@ router.post('/', authorizeRole(['coach', 'admin']), [
 
   try {
     const connection = await pool.getConnection();
+    await ensureExerciseImagesTable(connection);
     const [result] = await connection.query(
       `INSERT INTO exercises
         (name, muscle_group, secondary_muscles, equipment, level, type,
@@ -181,9 +299,13 @@ router.post('/', authorizeRole(['coach', 'admin']), [
        WHERE id = ?`,
       [result.insertId]
     );
+    if (imageUrl) {
+      await addExerciseImage(connection, result.insertId, imageUrl, { primary: true });
+    }
+    const imagesMap = await getExerciseImagesMap(connection, [result.insertId]);
 
     connection.release();
-    res.status(201).json(rows[0]);
+    res.status(201).json(attachImages(rows, imagesMap)[0]);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -214,6 +336,9 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
   try {
     const connection = await pool.getConnection();
     await archiveCurrentExerciseImage(connection, req.params.id, imageUrl || null);
+    if (imageUrl) {
+      await addExerciseImage(connection, req.params.id, imageUrl, { primary: true });
+    }
 
     await connection.query(
       `UPDATE exercises
@@ -251,6 +376,7 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
        WHERE id = ?`,
       [req.params.id]
     );
+    const imagesMap = await getExerciseImagesMap(connection, rows.map((row) => row.id));
 
     connection.release();
 
@@ -258,7 +384,7 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
       return res.status(404).json({ message: 'Exercise not found' });
     }
 
-    res.json(rows[0]);
+    res.json(attachImages(rows, imagesMap)[0]);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -296,6 +422,9 @@ router.put('/:id/media', authorizeRole(['coach', 'admin']), [
   try {
     const connection = await pool.getConnection();
     await archiveCurrentExerciseImage(connection, req.params.id, req.body.imageUrl || null);
+    if (req.body.imageUrl) {
+      await addExerciseImage(connection, req.params.id, req.body.imageUrl, { primary: true });
+    }
     await connection.query(
       'UPDATE exercises SET image_url = ?, video_url = ? WHERE id = ?',
       [req.body.imageUrl || null, req.body.videoUrl || null, req.params.id]
@@ -322,9 +451,72 @@ router.post('/:id/image', authorizeRole(['coach', 'admin']), upload.single('imag
   try {
     const connection = await pool.getConnection();
     await archiveCurrentExerciseImage(connection, req.params.id, imageUrl);
-    await connection.query('UPDATE exercises SET image_url = ? WHERE id = ?', [imageUrl, req.params.id]);
+    const imageId = await addExerciseImage(connection, req.params.id, imageUrl, { primary: true });
     connection.release();
-    res.json({ message: 'Exercise image uploaded', imageUrl });
+    res.json({ message: 'Exercise image uploaded', imageId, imageUrl });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/:id/images', authorizeRole(['coach', 'admin']), [
+  body('imageUrl').notEmpty().isString(),
+  body('primary').optional().isBoolean(),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  try {
+    const connection = await pool.getConnection();
+    const imageId = await addExerciseImage(connection, req.params.id, req.body.imageUrl, { primary: Boolean(req.body.primary) });
+    const imagesMap = await getExerciseImagesMap(connection, [Number(req.params.id)]);
+    connection.release();
+    res.status(201).json({
+      message: 'Exercise image added',
+      imageId,
+      images: imagesMap.get(Number(req.params.id)) || [],
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.delete('/:id/images/:imageId', authorizeRole(['coach', 'admin']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureExerciseImagesTable(connection);
+    const [[image]] = await connection.query(
+      'SELECT image_url AS imageUrl, is_primary AS isPrimary FROM exercise_images WHERE id = ? AND exercise_id = ?',
+      [req.params.imageId, req.params.id]
+    );
+
+    if (!image) {
+      connection.release();
+      return res.status(404).json({ message: 'Image not found' });
+    }
+
+    await connection.query('DELETE FROM exercise_images WHERE id = ? AND exercise_id = ?', [req.params.imageId, req.params.id]);
+
+    if (image.isPrimary) {
+      const [[nextImage]] = await connection.query(
+        'SELECT id, image_url AS imageUrl FROM exercise_images WHERE exercise_id = ? ORDER BY sort_order ASC, id ASC LIMIT 1',
+        [req.params.id]
+      );
+      if (nextImage) {
+        await connection.query('UPDATE exercise_images SET is_primary = 1 WHERE id = ?', [nextImage.id]);
+        await connection.query('UPDATE exercises SET image_url = ? WHERE id = ?', [nextImage.imageUrl, req.params.id]);
+      } else {
+        await connection.query('UPDATE exercises SET image_url = NULL WHERE id = ?', [req.params.id]);
+      }
+    }
+
+    const imagesMap = await getExerciseImagesMap(connection, [Number(req.params.id)]);
+    connection.release();
+    res.json({ message: 'Exercise image deleted', images: imagesMap.get(Number(req.params.id)) || [] });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });

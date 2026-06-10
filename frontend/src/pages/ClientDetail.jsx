@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { MenuToggle, TopbarActions } from '../components/TopbarControls';
+import WorkoutProgramView from '../components/WorkoutProgramView';
 import { api } from '../services/api';
 
 const API_ORIGIN = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
@@ -120,13 +121,15 @@ function normalizeTrainingPlan(plan) {
   const base = defaultTrainingPlan();
   if (!plan?.id && !plan?.days?.length) return base;
   const daysByWeek = new Map((plan.days || []).map((day) => [Number(day.day_of_week ?? day.dayOfWeek), day]));
+  const dayCount = Number(plan.day_count || plan.dayCount || plan.days?.length || base.days.length);
 
   return {
     title: plan.title || base.title,
     description: plan.description || '',
     durationWeeks: plan.duration_weeks || plan.durationWeeks || 4,
     difficulty: plan.difficulty || 'intermediate',
-    days: base.days.map((defaultDay) => {
+    dayCount,
+    days: base.days.slice(0, dayCount).map((defaultDay) => {
       const source = daysByWeek.get(defaultDay.dayOfWeek);
       return {
         dayOfWeek: defaultDay.dayOfWeek,
@@ -136,6 +139,8 @@ function normalizeTrainingPlan(plan) {
           exerciseId: exercise.exercise_id || exercise.exerciseId || '',
           exerciseName: exercise.exercise_name || exercise.exerciseName || '',
           muscleGroup: exercise.muscle_group || exercise.muscleGroup || '',
+          imageUrl: exercise.image_url || exercise.imageUrl || '',
+          videoUrl: exercise.video_url || exercise.videoUrl || '',
           sets: exercise.sets || '',
           reps: exercise.reps || '',
           tempo: exercise.tempo || '',
@@ -670,6 +675,25 @@ function PaymentStatus({ status }) {
 }
 
 function TrainingPlanEditor({ plan, setPlan, exercises, onSave, saving }) {
+  const initialIndex = plan.days?.findIndex((day) => day.exercises?.length) ?? 0;
+  const [activeDayIndex, setActiveDayIndex] = useState(Math.max(0, initialIndex));
+  const visibleDays = (plan.days || []).slice(0, plan.dayCount || plan.days?.length || 1);
+  const selectedDay = visibleDays[activeDayIndex] || visibleDays[0];
+  const muscleGroups = [...new Set((selectedDay?.exercises || []).map((exercise) => exercise.muscleGroup).filter(Boolean))];
+
+  const setDayCount = (count) => {
+    const nextCount = Number(count);
+    setPlan((current) => {
+      const nextDays = [...current.days];
+      while (nextDays.length < nextCount) {
+        const dayOfWeek = nextDays.length + 1 > 6 ? 0 : nextDays.length + 1;
+        nextDays.push(emptyTrainingDay(dayOfWeek));
+      }
+      return { ...current, dayCount: nextCount, days: nextDays.slice(0, nextCount) };
+    });
+    setActiveDayIndex((index) => Math.min(index, nextCount - 1));
+  };
+
   const updateDay = (dayIndex, patch) => {
     setPlan((current) => ({
       ...current,
@@ -679,7 +703,131 @@ function TrainingPlanEditor({ plan, setPlan, exercises, onSave, saving }) {
 
   const addExercise = (dayIndex) => {
     updateDay(dayIndex, {
-      exercises: [...plan.days[dayIndex].exercises, { exerciseId: '', exerciseName: '', muscleGroup: '', sets: '', reps: '', tempo: '', restSeconds: '', targetWeight: '', notes: '' }],
+      exercises: [
+        ...(plan.days[dayIndex]?.exercises || []),
+        { exerciseId: '', exerciseName: '', muscleGroup: '', imageUrl: '', videoUrl: '', sets: '', reps: '', tempo: '', restSeconds: '', targetWeight: '', notes: '' },
+      ],
+    });
+  };
+
+  const updateExercise = (dayIndex, exerciseIndex, patch) => {
+    const day = plan.days[dayIndex];
+    updateDay(dayIndex, {
+      exercises: day.exercises.map((exercise, index) => index === exerciseIndex ? { ...exercise, ...patch } : exercise),
+    });
+  };
+
+  const removeExercise = (dayIndex, exerciseIndex) => {
+    const day = plan.days[dayIndex];
+    updateDay(dayIndex, { exercises: day.exercises.filter((_, index) => index !== exerciseIndex) });
+  };
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+      <PlanHeader
+        title="Πρόγραμμα Προπόνησης"
+        subtitle="Διάλεξε ημέρες, βάλε ασκήσεις από τη βιβλιοθήκη και συμπλήρωσε Σετ, Επαναλ., Tempo και Rest."
+        onSave={onSave}
+        saving={saving}
+      />
+
+      <div className="space-y-6 p-6">
+        <div className="grid gap-4 xl:grid-cols-[1.2fr_0.7fr_0.7fr_1fr]">
+          <Field label="Τίτλος" value={plan.title} onChange={(value) => setPlan({ ...plan, title: value })} />
+          <label className="block">
+            <span className="text-xs font-black text-slate-500">Ημέρες προγράμματος</span>
+            <select value={plan.dayCount || visibleDays.length} onChange={(event) => setDayCount(event.target.value)} className="mt-1 h-11 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-red-300">
+              {[1, 2, 3, 4, 5, 6, 7].map((count) => <option key={count} value={count}>{count} ημέρες</option>)}
+            </select>
+          </label>
+          <SelectField label="Επίπεδο" value={plan.difficulty} onChange={(value) => setPlan({ ...plan, difficulty: value })} options={[['beginner', 'Αρχάριο'], ['intermediate', 'Μεσαίο'], ['advanced', 'Προχωρημένο']]} />
+          <Field label="Διάρκεια εβδομάδες" type="number" value={plan.durationWeeks} onChange={(value) => setPlan({ ...plan, durationWeeks: value })} />
+        </div>
+
+        <div className="flex gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
+          {visibleDays.map((day, index) => {
+            const groups = [...new Set((day.exercises || []).map((exercise) => exercise.muscleGroup).filter(Boolean))];
+            return (
+              <button
+                key={`${day.dayOfWeek}-${index}`}
+                type="button"
+                onClick={() => setActiveDayIndex(index)}
+                className={`min-w-[132px] rounded-md px-4 py-3 text-left transition ${activeDayIndex === index ? 'bg-red-600 text-white shadow-sm' : 'bg-white text-slate-700 hover:bg-slate-100'}`}
+              >
+                <div className="text-sm font-black">Ημέρα {index + 1}</div>
+                <div className={`mt-1 truncate text-xs font-bold ${activeDayIndex === index ? 'text-white/90' : 'text-slate-500'}`}>
+                  {groups.length ? groups.join(' / ') : 'Χωρίς ασκήσεις'}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {selectedDay && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-xl font-black">Ημέρα {activeDayIndex + 1}</h3>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {muscleGroups.length ? muscleGroups.map((group) => (
+                    <span key={group} className="rounded-full bg-red-50 px-3 py-1 text-xs font-black text-red-700">{group}</span>
+                  )) : (
+                    <span className="text-sm font-semibold text-slate-500">Οι μυϊκές ομάδες θα μπουν αυτόματα από τις ασκήσεις.</span>
+                  )}
+                </div>
+              </div>
+              <button type="button" onClick={() => addExercise(activeDayIndex)} className="h-10 rounded-md bg-red-600 px-4 text-sm font-black text-white hover:bg-red-700">
+                + Προσθήκη άσκησης
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {(selectedDay.exercises || []).map((exercise, exerciseIndex) => (
+                <div key={`${selectedDay.dayOfWeek}-${exerciseIndex}`} className="grid gap-3 rounded-md border border-slate-200 bg-white p-3 xl:grid-cols-[minmax(240px,2fr)_88px_100px_100px_96px_auto]">
+                  <ExercisePicker
+                    exercises={exercises}
+                    value={exercise}
+                    onSelect={(selected) => updateExercise(activeDayIndex, exerciseIndex, {
+                      exerciseId: selected?.id || '',
+                      exerciseName: selected?.name || '',
+                      muscleGroup: selected?.muscleGroup || '',
+                      imageUrl: selected?.imageUrl || selected?.image_url || '',
+                      videoUrl: selected?.videoUrl || selected?.video_url || '',
+                    })}
+                  />
+                  <Field compact label="Σετ" value={exercise.sets} onChange={(value) => updateExercise(activeDayIndex, exerciseIndex, { sets: value })} />
+                  <Field compact label="Επαναλ." value={exercise.reps} onChange={(value) => updateExercise(activeDayIndex, exerciseIndex, { reps: value })} />
+                  <Field compact label="Tempo" value={exercise.tempo} onChange={(value) => updateExercise(activeDayIndex, exerciseIndex, { tempo: value })} />
+                  <Field compact label="Rest" value={exercise.restSeconds} onChange={(value) => updateExercise(activeDayIndex, exerciseIndex, { restSeconds: value })} />
+                  <button type="button" onClick={() => removeExercise(activeDayIndex, exerciseIndex)} className="self-end rounded-md border border-red-200 px-3 py-2 text-sm font-black text-red-600 hover:bg-red-50">Διαγραφή</button>
+                </div>
+              ))}
+              {!selectedDay.exercises?.length && (
+                <div className="rounded-md border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500">
+                  Πρόσθεσε την πρώτη άσκηση για αυτή την ημέρα.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <Field label="Γενικές σημειώσεις προγράμματος" value={plan.description} onChange={(value) => setPlan({ ...plan, description: value })} />
+      </div>
+    </section>
+  );
+}
+
+function LegacyTrainingPlanEditor({ plan, setPlan, exercises, onSave, saving }) {
+  const updateDay = (dayIndex, patch) => {
+    setPlan((current) => ({
+      ...current,
+      days: current.days.map((day, index) => index === dayIndex ? { ...day, ...patch } : day),
+    }));
+  };
+
+  const addExercise = (dayIndex) => {
+    updateDay(dayIndex, {
+      exercises: [...plan.days[dayIndex].exercises, { exerciseId: '', exerciseName: '', muscleGroup: '', imageUrl: '', videoUrl: '', sets: '', reps: '', tempo: '', restSeconds: '', targetWeight: '', notes: '' }],
     });
   };
 
@@ -704,6 +852,14 @@ function TrainingPlanEditor({ plan, setPlan, exercises, onSave, saving }) {
         saving={saving}
       />
       <div className="space-y-6 p-6">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-5">
+          <div className="mb-4">
+            <div className="text-xs font-black uppercase text-slate-500">Preview πελάτη</div>
+            <h3 className="mt-1 text-lg font-black text-slate-950">Έτσι θα εμφανιστεί στη σελίδα Πρόγραμμα</h3>
+          </div>
+          <WorkoutProgramView training={plan} />
+        </div>
+
         <div className="grid gap-4 lg:grid-cols-4">
           <Field label="Τίτλος" value={plan.title} onChange={(value) => setPlan({ ...plan, title: value })} />
           <Field label="Διάρκεια εβδομάδες" type="number" value={plan.durationWeeks} onChange={(value) => setPlan({ ...plan, durationWeeks: value })} />
@@ -741,6 +897,8 @@ function TrainingPlanEditor({ plan, setPlan, exercises, onSave, saving }) {
                             exerciseId: selected?.id || '',
                             exerciseName: selected?.name || '',
                             muscleGroup: selected?.muscleGroup || '',
+                            imageUrl: selected?.imageUrl || selected?.image_url || '',
+                            videoUrl: selected?.videoUrl || selected?.video_url || '',
                           });
                         }}
                         className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-red-300"
@@ -864,6 +1022,78 @@ function PlanHeader({ title, subtitle, onSave, saving }) {
         {saving ? 'Αποθήκευση...' : 'Αποθήκευση'}
       </button>
     </div>
+  );
+}
+
+function ExercisePicker({ exercises, value, onSelect }) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const selectedLabel = value?.exerciseName || '';
+  const searchValue = open ? query : selectedLabel;
+  const normalizedQuery = searchValue.trim().toLowerCase();
+  const filteredExercises = (exercises || [])
+    .filter((item) => {
+      if (!normalizedQuery) return true;
+      return [item.name, item.muscleGroup, item.equipment, item.type]
+        .join(' ')
+        .toLowerCase()
+        .includes(normalizedQuery);
+    })
+    .slice(0, 12);
+
+  const chooseExercise = (exercise) => {
+    onSelect(exercise);
+    setQuery('');
+    setOpen(false);
+  };
+
+  return (
+    <label className="relative block">
+      <span className="text-xs font-black text-slate-500">Άσκηση</span>
+      <input
+        value={searchValue}
+        onFocus={() => {
+          setQuery('');
+          setOpen(true);
+        }}
+        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setOpen(true);
+        }}
+        placeholder="Αναζήτηση άσκησης..."
+        className="mt-1 h-10 w-full rounded-md border border-slate-200 px-3 text-sm font-semibold outline-none focus:border-red-300"
+      />
+      {open && (
+        <div className="absolute left-0 right-0 top-[62px] z-30 max-h-72 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-xl">
+          {filteredExercises.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => chooseExercise(item)}
+              className="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-3 text-left last:border-b-0 hover:bg-slate-50"
+            >
+              <span className="h-12 w-16 shrink-0 overflow-hidden rounded-md bg-slate-100">
+                {(item.imageUrl || item.image_url) ? (
+                  <img src={resolveMediaUrl(item.imageUrl || item.image_url)} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="grid h-full w-full place-items-center text-[10px] font-black text-slate-400">PHOTO</span>
+                )}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-black text-slate-950">{item.name}</span>
+                <span className="mt-1 block truncate text-xs font-bold text-slate-500">{item.muscleGroup || 'Χωρίς μυϊκή ομάδα'}</span>
+              </span>
+              {item.equipment && <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-500">{item.equipment}</span>}
+            </button>
+          ))}
+          {!filteredExercises.length && (
+            <div className="px-3 py-4 text-center text-sm font-bold text-slate-500">Δεν βρέθηκε άσκηση.</div>
+          )}
+        </div>
+      )}
+    </label>
   );
 }
 

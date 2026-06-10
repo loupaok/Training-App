@@ -8,6 +8,7 @@ import ClientBilling from './pages/ClientBilling';
 import ClientNotifications from './pages/ClientNotifications';
 import ClientProfile from './pages/ClientProfile';
 import ClientDashboard from './pages/ClientDashboard';
+import ClientProgram from './pages/ClientProgram';
 import ClientPending from './pages/ClientPending';
 import ClientExpired from './pages/ClientExpired';
 import Dashboard from './pages/Dashboard';
@@ -115,6 +116,14 @@ function App() {
             element={
               <ProtectedRoute allow="client-active">
                 <ClientDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/client-program"
+            element={
+              <ProtectedRoute allow="client-active">
+                <ClientProgram />
               </ProtectedRoute>
             }
           />
