@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { ClientSidebar, ClientTopbar } from '../components/ClientShell';
 import { api } from '../services/api';
 
+const API_ORIGIN = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
 const dayNames = ['Κυριακή', 'Δευτέρα', 'Τρίτη', 'Τετάρτη', 'Πέμπτη', 'Παρασκευή', 'Σάββατο'];
 const mealLabels = {
   breakfast: 'Πρωινό',
@@ -12,6 +13,20 @@ const mealLabels = {
   dinner: 'Βραδινό',
   other: 'Άλλο',
 };
+
+function resolveMediaUrl(url) {
+  if (!url) return '';
+  if (/^https?:\/\//.test(url)) return url;
+  if (url.startsWith('/uploads')) return `${API_ORIGIN}${url}`;
+  return `${API_ORIGIN}/${String(url).replace(/^\/+/, '')}`;
+}
+
+function formatRest(seconds) {
+  if (!seconds) return '-';
+  const value = Number(seconds);
+  if (!Number.isFinite(value)) return seconds;
+  return `${value}″`;
+}
 
 export default function ClientDashboard() {
   const { user, logout } = useAuth();
@@ -31,6 +46,7 @@ export default function ClientDashboard() {
 
   const loadDashboard = async () => {
     setLoading(true);
+    setError('');
     try {
       const result = await api.get('/client-dashboard');
       setData(result);
@@ -46,10 +62,7 @@ export default function ClientDashboard() {
   }, []);
 
   const weights = useMemo(() => {
-    return (data?.progress || [])
-      .filter((item) => item.weight_kg)
-      .slice()
-      .reverse();
+    return (data?.progress || []).filter((item) => item.weight_kg).slice().reverse();
   }, [data]);
 
   const paymentApproved = Boolean(data?.paymentApproved);
@@ -92,23 +105,11 @@ export default function ClientDashboard() {
         logout={logout}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen((value) => !value)}
-        title="Αρχική"
+        title="Η Προπόνησή μου"
       />
 
       <main className={`${sidebarOpen ? 'ml-[300px]' : 'ml-0'} pt-[86px] transition-all duration-200`}>
         <div className="px-10 py-8">
-          <div className="mb-7 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <h2 className="text-3xl font-extrabold">Καλωσήρθες, {user?.fullName || 'Πελάτη'}</h2>
-              <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
-                Η προσωπική σου σελίδα για πρόγραμμα, διατροφή και πρόοδο.
-              </p>
-            </div>
-            <Link to="/client-billing" className="grid h-12 place-items-center rounded-md border border-slate-200 bg-white px-5 text-sm font-black text-slate-700 shadow-sm hover:border-red-200 hover:text-red-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-              Πληρωμές και Συνδρομή
-            </Link>
-          </div>
-
           {error && <Alert tone="red">{error}</Alert>}
           {message && <Alert tone="green">{message}</Alert>}
           {loading && <div className="rounded-lg border border-slate-200 bg-white p-8 text-center font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-900">Φόρτωση...</div>}
@@ -139,99 +140,199 @@ export default function ClientDashboard() {
                   <WeeklyUpdateCard data={data.weeklyUpdate} onOpen={() => setWeeklyOpen(true)} />
                 </section>
 
-                <section className="grid gap-6 xl:grid-cols-2">
-                  <Card title="Εβδομαδιαίο πρόγραμμα προπόνησης">
-                    {data.training?.days?.length ? (
-                      <div className="space-y-4">
-                        {data.training.days.map((day) => (
-                          <div key={day.id} className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
-                            <h3 className="font-black">{dayNames[day.day_of_week]} - {day.title || 'Προπόνηση'}</h3>
-                            <div className="mt-3 space-y-2">
-                              {day.exercises.map((exercise) => (
-                                <div key={exercise.id} className="rounded-md bg-slate-50 p-3 text-sm dark:bg-slate-950">
-                                  <div className="font-black">{exercise.exercise_name}</div>
-                                  <div className="mt-1 text-slate-600 dark:text-slate-400">
-                                    {exercise.sets || '-'} sets x {exercise.reps || '-'} reps · Ξεκούραση {exercise.rest_seconds || '-'} sec · Στόχος {exercise.target_weight || '-'}
-                                  </div>
-                                  {exercise.notes && <div className="mt-1 text-slate-500">{exercise.notes}</div>}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <EmptyState text="Ο coach δεν έχει δημιουργήσει ακόμα εβδομαδιαίο πλάνο." />
-                    )}
-                  </Card>
+                <WorkoutView training={data.training} />
 
-                  <Card title="Πρόγραμμα διατροφής">
-                    {data.nutrition ? (
-                      <div>
-                        <div className="grid grid-cols-4 gap-3">
-                          <Macro label="Θερμίδες" value={data.nutrition.daily_calories || '-'} />
-                          <Macro label="Πρωτεΐνη" value={`${data.nutrition.protein_g || '-'}g`} />
-                          <Macro label="Υδατ/κες" value={`${data.nutrition.carbs_g || '-'}g`} />
-                          <Macro label="Λίπη" value={`${data.nutrition.fat_g || '-'}g`} />
-                        </div>
-                        <div className="mt-5 space-y-3">
-                          {(data.nutrition.meals || []).map((meal) => (
-                            <div key={meal.id} className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
-                              <h3 className="font-black">{dayNames[meal.day_of_week]} - {mealLabels[meal.meal_type]}</h3>
-                              <div className="mt-3 space-y-2">
-                                {meal.foods.map((food) => (
-                                  <div key={food.id} className="flex items-center justify-between rounded-md bg-slate-50 p-3 text-sm dark:bg-slate-950">
-                                    <span className="font-bold">{food.food_name} · {food.quantity || '-'}</span>
-                                    <span className="text-slate-500">{food.calories || '-'} kcal</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <EmptyState text="Ο coach δεν έχει δημιουργήσει ακόμα πρόγραμμα διατροφής." />
-                    )}
+                <section className="grid gap-6 xl:grid-cols-2">
+                  <NutritionView nutrition={data.nutrition} />
+                  <Card title="Πρόοδος">
+                    {weights.length ? <WeightChart rows={weights} /> : <EmptyState text="Δεν υπάρχουν ακόμα αρκετά δεδομένα προόδου." />}
                   </Card>
                 </section>
-
-                <Card title="Πρόοδος">
-                  {weights.length ? <WeightChart rows={weights} /> : <EmptyState text="Δεν υπάρχουν ακόμα αρκετά δεδομένα προόδου." />}
-                </Card>
               </div>
 
               {weeklyOpen && (
-                <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-6">
-                  <form onSubmit={submitWeeklyUpdate} className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-2xl dark:bg-slate-900">
-                    <div className="flex items-center justify-between">
-                      <h2 className="text-2xl font-black">Εβδομαδιαίο update</h2>
-                      <button type="button" onClick={() => setWeeklyOpen(false)} className="text-2xl text-slate-500 hover:text-red-600">×</button>
-                    </div>
-                    <div className="mt-5 grid gap-4 md:grid-cols-2">
-                      <Input label="Τρέχον βάρος" value={weeklyForm.weightKg} onChange={(value) => setWeeklyForm({ ...weeklyForm, weightKg: value })} required />
-                      <Score label="Πώς πήγαν οι προπονήσεις;" value={weeklyForm.trainingScore} onChange={(value) => setWeeklyForm({ ...weeklyForm, trainingScore: value })} />
-                      <Score label="Πώς ήταν η διατροφή;" value={weeklyForm.nutritionScore} onChange={(value) => setWeeklyForm({ ...weeklyForm, nutritionScore: value })} />
-                      <label className="block">
-                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Φωτογραφίες προόδου (max 3)</span>
-                        <input type="file" accept="image/*" multiple onChange={(event) => setWeeklyForm({ ...weeklyForm, photos: Array.from(event.target.files || []).slice(0, 3) })} className="mt-2 block w-full rounded-md border border-slate-200 p-3 dark:border-slate-700 dark:bg-slate-950" />
-                      </label>
-                      <label className="md:col-span-2">
-                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Σημειώσεις / ερωτήσεις προς τον coach</span>
-                        <textarea value={weeklyForm.notes} onChange={(event) => setWeeklyForm({ ...weeklyForm, notes: event.target.value })} className="mt-2 min-h-32 w-full rounded-md border border-slate-200 p-3 outline-none focus:border-red-300 dark:border-slate-700 dark:bg-slate-950" />
-                      </label>
-                    </div>
-                    <div className="mt-6 flex justify-end gap-3">
-                      <button type="button" onClick={() => setWeeklyOpen(false)} className="h-11 rounded-md border border-slate-200 px-5 font-bold dark:border-slate-700">Άκυρο</button>
-                      <button className="h-11 rounded-md bg-red-600 px-5 font-black text-white">Υποβολή</button>
-                    </div>
-                  </form>
-                </div>
+                <WeeklyUpdateModal
+                  form={weeklyForm}
+                  setForm={setWeeklyForm}
+                  onClose={() => setWeeklyOpen(false)}
+                  onSubmit={submitWeeklyUpdate}
+                />
               )}
             </div>
           )}
         </div>
       </main>
+    </div>
+  );
+}
+
+function WorkoutView({ training }) {
+  const visibleDays = (training?.days || []).filter((day) => day.exercises?.length || day.title || day.notes);
+  const [activeDayId, setActiveDayId] = useState(null);
+
+  useEffect(() => {
+    if (!activeDayId && visibleDays.length) {
+      setActiveDayId(visibleDays[0].id);
+    }
+  }, [activeDayId, visibleDays]);
+
+  if (!training || !visibleDays.length) {
+    return (
+      <Card title="Πρόγραμμα Προπόνησης">
+        <EmptyState text="Ο coach δεν έχει δημιουργήσει ακόμα εβδομαδιαίο πλάνο." />
+      </Card>
+    );
+  }
+
+  const activeDay = visibleDays.find((day) => day.id === activeDayId) || visibleDays[0];
+  const totalSets = activeDay.exercises.reduce((sum, exercise) => sum + (Number.parseInt(exercise.sets, 10) || 0), 0);
+  const estimatedMinutes = Math.max(30, Math.min(90, activeDay.exercises.length * 10 + totalSets * 2));
+  const muscleGroups = [...new Set(activeDay.exercises.map((exercise) => exercise.muscle_group).filter(Boolean))];
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-6 dark:border-slate-800 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="text-2xl font-black">Πρόγραμμα Προπόνησης</h2>
+          <p className="mt-2 text-lg font-bold text-slate-600 dark:text-slate-300">{training.title}</p>
+        </div>
+        <div className="flex h-14 items-center gap-3 rounded-lg border border-slate-200 px-5 text-sm font-black text-slate-700 dark:border-slate-700 dark:text-slate-200">
+          <span className="text-xl">◷</span>
+          Περίπου {estimatedMinutes} λεπτά
+        </div>
+      </div>
+
+      <div className="border-b border-slate-200 p-2 dark:border-slate-800">
+        <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-5">
+          {visibleDays.map((day, index) => (
+            <button
+              key={day.id}
+              type="button"
+              onClick={() => setActiveDayId(day.id)}
+              className={`min-h-20 rounded-lg border px-4 py-3 text-center transition ${
+                activeDay.id === day.id
+                  ? 'border-red-600 bg-red-600 text-white shadow-lg shadow-red-200'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-red-200 hover:text-red-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200'
+              }`}
+            >
+              <div className="font-black">Ημέρα {index + 1}</div>
+              <div className="mt-1 text-sm font-bold opacity-80">{day.title || dayNames[day.day_of_week]}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="p-6">
+        <div className="mb-6 flex flex-wrap items-center gap-3">
+          <span className="grid h-10 w-10 place-items-center rounded-full bg-red-50 text-xl text-red-600">✿</span>
+          <h3 className="text-2xl font-black">{activeDay.title || dayNames[activeDay.day_of_week]}</h3>
+          {muscleGroups.map((group) => (
+            <span key={group} className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">{group}</span>
+          ))}
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
+          <div className="grid grid-cols-[minmax(260px,1fr)_80px_100px_100px_90px_48px] bg-slate-50 px-5 py-4 text-sm font-black text-slate-500 dark:bg-slate-950">
+            <div>Άσκηση</div>
+            <div className="text-center">Σετ</div>
+            <div className="text-center">Επαναλ.</div>
+            <div className="text-center">Tempo</div>
+            <div className="text-center">Rest</div>
+            <div />
+          </div>
+
+          {activeDay.exercises.map((exercise) => (
+            <div key={exercise.id} className="grid grid-cols-[minmax(260px,1fr)_80px_100px_100px_90px_48px] items-center border-t border-slate-200 px-5 py-4 dark:border-slate-800">
+              <div className="flex items-center gap-4">
+                <ExerciseImage url={exercise.image_url} name={exercise.exercise_name} />
+                <div>
+                  <div className="font-black">{exercise.exercise_name}</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-500">{exercise.muscle_group || '-'}</div>
+                  {exercise.notes && <div className="mt-1 text-xs font-semibold text-slate-500">{exercise.notes}</div>}
+                </div>
+              </div>
+              <div className="text-center text-lg font-black">{exercise.sets || '-'}</div>
+              <div className="text-center text-lg font-black">{exercise.reps || '-'}</div>
+              <div className="text-center text-lg font-black">{exercise.tempo || '-'}</div>
+              <div className="text-center text-lg font-black">{formatRest(exercise.rest_seconds)}</div>
+              <div className="text-center">
+                {exercise.video_url ? (
+                  <a href={exercise.video_url} target="_blank" rel="noreferrer" className="grid h-9 w-9 place-items-center rounded-md border border-slate-300 text-slate-700 hover:border-red-300 hover:text-red-600">▷</a>
+                ) : (
+                  <span className="grid h-9 w-9 place-items-center rounded-md border border-slate-200 text-slate-300">▷</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {activeDay.notes && (
+          <div className="mt-6 rounded-lg border border-red-100 bg-red-50 p-5 dark:border-red-900 dark:bg-red-950/30">
+            <div className="font-black text-red-700 dark:text-red-200">Οδηγίες</div>
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-700 dark:text-slate-200">{activeDay.notes}</p>
+          </div>
+        )}
+
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <SummaryItem icon="◷" label="Διάρκεια Προπόνησης" value={`~ ${estimatedMinutes} λεπτά`} />
+          <SummaryItem icon="♨" label="Εκτιμώμενες Θερμίδες" value="450-550 kcal" />
+          <SummaryItem icon="▥" label="Επίπεδο" value={training.difficulty || 'Μεσαίο'} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function NutritionView({ nutrition }) {
+  return (
+    <Card title="Πρόγραμμα Διατροφής">
+      {nutrition ? (
+        <div>
+          <div className="grid grid-cols-4 gap-3">
+            <Macro label="Θερμίδες" value={nutrition.daily_calories || '-'} />
+            <Macro label="Πρωτεΐνη" value={`${nutrition.protein_g || '-'}g`} />
+            <Macro label="Υδατ/κες" value={`${nutrition.carbs_g || '-'}g`} />
+            <Macro label="Λίπη" value={`${nutrition.fat_g || '-'}g`} />
+          </div>
+          {nutrition.notes && <div className="mt-4 rounded-md bg-slate-50 p-4 text-sm font-semibold text-slate-600 dark:bg-slate-950 dark:text-slate-300">{nutrition.notes}</div>}
+          <div className="mt-5 space-y-3">
+            {(nutrition.meals || []).map((meal) => (
+              <div key={meal.id} className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
+                <h3 className="font-black">{meal.title || mealLabels[meal.meal_type] || 'Γεύμα'}</h3>
+                {meal.notes && <div className="mt-1 text-sm font-semibold text-slate-500">{meal.notes}</div>}
+                <div className="mt-3 space-y-2">
+                  {meal.foods.map((food) => (
+                    <div key={food.id} className="flex items-center justify-between rounded-md bg-slate-50 p-3 text-sm dark:bg-slate-950">
+                      <span className="font-bold">{food.food_name} · {food.quantity || '-'}</span>
+                      <span className="text-slate-500">{food.calories || '-'} kcal</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <EmptyState text="Ο coach δεν έχει δημιουργήσει ακόμα πρόγραμμα διατροφής." />
+      )}
+    </Card>
+  );
+}
+
+function ExerciseImage({ url, name }) {
+  const src = resolveMediaUrl(url);
+  if (src) return <img src={src} alt={name} className="h-24 w-32 rounded-lg object-cover" />;
+  return <div className="grid h-24 w-32 place-items-center rounded-lg bg-slate-200 text-xs font-black text-slate-500 dark:bg-slate-800">NO IMAGE</div>;
+}
+
+function SummaryItem({ icon, label, value }) {
+  return (
+    <div className="flex items-center gap-4 rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-950">
+      <span className="text-3xl text-red-600">{icon}</span>
+      <div>
+        <div className="text-sm font-bold text-slate-500">{label}</div>
+        <div className="mt-1 font-black">{value}</div>
+      </div>
     </div>
   );
 }
@@ -302,6 +403,36 @@ function WeightChart({ rows }) {
         return <circle key={point} cx={x} cy={y} r="1.8" fill="#2563eb" />;
       })}
     </svg>
+  );
+}
+
+function WeeklyUpdateModal({ form, setForm, onClose, onSubmit }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-6">
+      <form onSubmit={onSubmit} className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-2xl dark:bg-slate-900">
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-black">Εβδομαδιαίο update</h2>
+          <button type="button" onClick={onClose} className="text-2xl text-slate-500 hover:text-red-600">×</button>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <Input label="Τρέχον βάρος" value={form.weightKg} onChange={(value) => setForm({ ...form, weightKg: value })} required />
+          <Score label="Πώς πήγαν οι προπονήσεις;" value={form.trainingScore} onChange={(value) => setForm({ ...form, trainingScore: value })} />
+          <Score label="Πώς ήταν η διατροφή;" value={form.nutritionScore} onChange={(value) => setForm({ ...form, nutritionScore: value })} />
+          <label className="block">
+            <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Φωτογραφίες προόδου (max 3)</span>
+            <input type="file" accept="image/*" multiple onChange={(event) => setForm({ ...form, photos: Array.from(event.target.files || []).slice(0, 3) })} className="mt-2 block w-full rounded-md border border-slate-200 p-3 dark:border-slate-700 dark:bg-slate-950" />
+          </label>
+          <label className="md:col-span-2">
+            <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Σημειώσεις / ερωτήσεις προς τον coach</span>
+            <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} className="mt-2 min-h-32 w-full rounded-md border border-slate-200 p-3 outline-none focus:border-red-300 dark:border-slate-700 dark:bg-slate-950" />
+          </label>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" onClick={onClose} className="h-11 rounded-md border border-slate-200 px-5 font-bold dark:border-slate-700">Άκυρο</button>
+          <button className="h-11 rounded-md bg-red-600 px-5 font-black text-white">Υποβολή</button>
+        </div>
+      </form>
+    </div>
   );
 }
 

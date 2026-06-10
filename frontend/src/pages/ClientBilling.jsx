@@ -25,9 +25,7 @@ export default function ClientBilling() {
   const [selectedPackage, setSelectedPackage] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('bank_transfer');
   const [pendingPayment, setPendingPayment] = useState(null);
-  const [proofFile, setProofFile] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [uploadingProof, setUploadingProof] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -86,34 +84,11 @@ export default function ClientBilling() {
         paymentMethod,
       });
       setPendingPayment(data);
-      setMessage('Δημιουργήθηκε εκκρεμής πληρωμή. Ακολούθησε τα στοιχεία κατάθεσης και ανέβασε το αποδεικτικό.');
+      setMessage('Η αίτηση πληρωμής καταχωρήθηκε. Κατάθεσε το ποσό και ο coach θα εγκρίνει τη συνδρομή σου manually.');
     } catch (err) {
       setError(err.message || 'Δεν αποθηκεύτηκε η πληρωμή.');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const uploadProof = async () => {
-    if (!proofFile) {
-      setError('Επίλεξε πρώτα το αποδεικτικό πληρωμής.');
-      return;
-    }
-
-    setError('');
-    setMessage('');
-    setUploadingProof(true);
-
-    try {
-      const formData = new FormData();
-      formData.append('proof', proofFile);
-      await api.upload('/clients/me/billing-proof', formData);
-      setMessage('Το αποδεικτικό ανέβηκε. Ο coach θα ελέγξει την πληρωμή και θα ενεργοποιήσει τη συνδρομή σου.');
-      setProofFile(null);
-    } catch (err) {
-      setError(err.message || 'Δεν ανέβηκε το αποδεικτικό.');
-    } finally {
-      setUploadingProof(false);
     }
   };
 
@@ -129,8 +104,8 @@ export default function ClientBilling() {
             <h2 className="mt-2 text-3xl font-extrabold">{pendingPayment ? 'Ολοκλήρωση Πληρωμής' : 'Επιλέξτε το πακέτο σας'}</h2>
             <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-500">
               {pendingPayment
-                ? 'Για να ενεργοποιηθεί η συνδρομή σου, ολοκλήρωσε την κατάθεση και ανέβασε το αποδεικτικό πληρωμής.'
-                : 'Διάλεξε πρόγραμμα και τρόπο πληρωμής. Μέχρι να εγκριθεί, τα προγράμματα και το progress παραμένουν κλειδωμένα.'}
+                ? 'Για να ενεργοποιηθεί η συνδρομή σου, ολοκλήρωσε την κατάθεση. Ο coach θα εγκρίνει χειροκίνητα.'
+                : 'Διάλεξε πρόγραμμα και τρόπο πληρωμής. Με τραπεζικό έμβασμα, ο coach εγκρίνει χειροκίνητα. Μέχρι την έγκριση, τα προγράμματα παραμένουν κλειδωμένα.'}
             </p>
           </div>
 
@@ -143,10 +118,6 @@ export default function ClientBilling() {
               amount={selectedAmount}
               currency={selectedCurrency}
               referenceNumber={referenceNumber}
-              proofFile={proofFile}
-              setProofFile={setProofFile}
-              uploadingProof={uploadingProof}
-              uploadProof={uploadProof}
             />
           ) : (
             <>
@@ -160,7 +131,7 @@ export default function ClientBilling() {
                 <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
                   <h2 className="text-xl font-black">Τρόπος Πληρωμής</h2>
                   <div className="mt-5 space-y-3">
-                    <PaymentOption active={paymentMethod === 'bank_transfer'} title="Τραπεζικό έμβασμα" text="Θα δεις τα στοιχεία κατάθεσης και θα ανεβάσεις αποδεικτικό." onClick={() => setPaymentMethod('bank_transfer')} />
+                    <PaymentOption active={paymentMethod === 'bank_transfer'} title="Τραπεζικό έμβασμα" text="Θα δεις τα στοιχεία κατάθεσης. Ο coach θα εγκρίνει τη συνδρομή manually." onClick={() => setPaymentMethod('bank_transfer')} />
                     <PaymentOption active={paymentMethod === 'stripe_card'} title="Κάρτα μέσω Stripe" text="Προς το παρόν δεν είναι ενεργό." onClick={() => setPaymentMethod('stripe_card')} disabledNote />
                   </div>
                 </div>
@@ -185,7 +156,7 @@ export default function ClientBilling() {
   );
 }
 
-function BankTransferPanel({ selectedPlan, amount, currency, referenceNumber, proofFile, setProofFile, uploadingProof, uploadProof }) {
+function BankTransferPanel({ selectedPlan, amount, currency, referenceNumber }) {
   const formattedAmount = `${Number(amount || 0).toFixed(2)} ${currency === 'EUR' ? '€' : currency}`;
 
   const copyIban = async () => {
@@ -219,31 +190,23 @@ function BankTransferPanel({ selectedPlan, amount, currency, referenceNumber, pr
         </div>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-7 shadow-sm">
-        <h2 className="text-xl font-black">Ανέβασε το αποδεικτικό πληρωμής</h2>
-        <p className="mt-2 text-sm font-semibold leading-6 text-slate-500">
-          Ανέβασε φωτογραφία ή PDF της κατάθεσης για να μπορέσει ο coach να την ελέγξει.
-        </p>
-
-        <label className="mt-6 flex min-h-[170px] cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 px-6 text-center hover:border-blue-300 hover:bg-blue-50/50">
-          <div className="grid h-14 w-14 place-items-center rounded-full bg-blue-100 text-2xl text-blue-700">↑</div>
-          <div className="mt-4 text-lg font-black">{proofFile ? proofFile.name : 'Επιλογή Αρχείου'}</div>
-          <div className="mt-1 text-sm font-semibold text-slate-500">JPG, PNG, WEBP ή PDF έως 5MB</div>
-          <input type="file" accept="image/*,.pdf" onChange={(event) => setProofFile(event.target.files?.[0] || null)} className="hidden" />
-        </label>
-
-        <div className="mt-6 flex justify-center">
-          <button disabled={uploadingProof || !proofFile} onClick={uploadProof} className="h-12 min-w-[320px] rounded-md bg-blue-700 px-8 font-black text-white shadow-lg shadow-blue-100 hover:bg-blue-800 disabled:bg-slate-400">
-            {uploadingProof ? 'Ανέβασμα...' : 'Υπέβαλα την πληρωμή μου'}
-          </button>
+      <section className="rounded-xl border border-amber-100 bg-amber-50 p-7 shadow-sm">
+        <div className="flex items-start gap-5">
+          <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-amber-200 text-2xl text-amber-800">⏳</div>
+          <div>
+            <h2 className="text-xl font-black text-amber-900">Αναμονή χειροκίνητης έγκρισης</h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-amber-800">
+              Η αίτησή σου καταχωρήθηκε. Μόλις πραγματοποιήσεις την κατάθεση, ο coach θα ελέγξει και θα εγκρίνει τη συνδρομή σου χειροκίνητα. Δεν χρειάζεται να ανεβάσεις αποδεικτικό.
+            </p>
+          </div>
         </div>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-7 shadow-sm">
         <h2 className="text-xl font-black">Τι συμβαίνει μετά;</h2>
         <div className="mt-6 grid gap-5 md:grid-cols-3">
-          <NextStep title="Ελέγχουμε την πληρωμή σου" text="Ο coach ελέγχει το αποδεικτικό και τα στοιχεία της κατάθεσης." />
-          <NextStep title="Εγκρίνεται η συνδρομή" text="Μόλις εγκριθεί, ενεργοποιούνται τα προγράμματα και το progress." />
+          <NextStep title="Κάνεις την κατάθεση" text="Κατάθεσε το ποσό με την αιτιολογία που βλέπεις παραπάνω." />
+          <NextStep title="Ο coach εγκρίνει χειροκίνητα" text="Μόλις επαληθευτεί η κατάθεση, ο coach ενεργοποιεί τη συνδρομή σου." />
           <NextStep title="Ενημερώνεσαι" text="Θα λάβεις ειδοποίηση όταν η συνδρομή σου γίνει ενεργή." />
         </div>
       </section>

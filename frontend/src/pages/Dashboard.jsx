@@ -221,20 +221,20 @@ function SubscriptionCard({ total, active, pending, inactive }) {
 
   return (
     <Card className="p-6 lg:col-span-4">
-      <h2 className="text-lg font-extrabold">????????? ?????????</h2>
+      <h2 className="text-lg font-extrabold">Κατάσταση Συνδρομών</h2>
       <div className="mt-9 flex items-center gap-10">
         <div className="relative h-44 w-44 shrink-0 rounded-full" style={{ background }}>
           <div className="absolute inset-5 grid place-items-center rounded-full bg-white text-center">
             <div>
-              <div className="text-sm text-slate-500">??????</div>
+              <div className="text-sm text-slate-500">Σύνολο</div>
               <div className="text-3xl font-extrabold">{total}</div>
             </div>
           </div>
         </div>
         <div className="space-y-5 text-sm">
-          <div className="flex items-center gap-3"><span className="h-4 w-4 rounded-full bg-green-500" /> ??????? <span className="ml-5 text-slate-500">{active}</span></div>
-          <div className="flex items-center gap-3"><span className="h-4 w-4 rounded-full bg-amber-400" /> ????????? <span className="ml-2 text-slate-500">{pending}</span></div>
-          <div className="flex items-center gap-3"><span className="h-4 w-4 rounded-full bg-red-500" /> ????????? <span className="ml-2 text-slate-500">{inactive}</span></div>
+          <div className="flex items-center gap-3"><span className="h-4 w-4 rounded-full bg-green-500" /> Ενεργοί <span className="ml-5 text-slate-500">{active}</span></div>
+          <div className="flex items-center gap-3"><span className="h-4 w-4 rounded-full bg-amber-400" /> Εκκρεμείς <span className="ml-2 text-slate-500">{pending}</span></div>
+          <div className="flex items-center gap-3"><span className="h-4 w-4 rounded-full bg-red-500" /> Ανενεργοί <span className="ml-2 text-slate-500">{inactive}</span></div>
         </div>
       </div>
       <ViewAllButton />
@@ -245,6 +245,40 @@ function SubscriptionCard({ total, active, pending, inactive }) {
 export default function Dashboard() {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
+  const [clients, setClients] = React.useState([]);
+
+  React.useEffect(() => {
+    api.get('/clients')
+      .then((rows) => setClients(Array.isArray(rows) ? rows : []))
+      .catch(() => setClients([]));
+  }, []);
+
+  const totalClients = clients.length;
+  const activeClients = clients.filter((client) => client.client_status_key === 'active').length;
+  const pendingClients = clients.filter((client) => client.client_status_key === 'pending').length;
+  const inactiveClients = clients.filter((client) => client.client_status_key === 'inactive').length;
+  const activePercentText = totalClients ? `${Math.round((activeClients / totalClients) * 100)}% του συνόλου` : '0% του συνόλου';
+
+  const stats = [
+    { label: 'Σύνολο Πελατών', value: totalClients, note: 'Πραγματικές εγγραφές', icon: '👥', color: 'text-blue-600' },
+    { label: 'Ενεργοί Πελάτες', value: activeClients, note: activePercentText, icon: '◌', color: 'text-indigo-600' },
+    { label: 'Εκκρεμείς Πληρωμές', value: pendingClients, note: 'Αναμονή έγκρισης', icon: '◷', color: 'text-amber-500' },
+    { label: 'Ανενεργοί Πελάτες', value: inactiveClients, note: 'Χωρίς ενεργή πληρωμή', icon: '⊖', color: 'text-red-500' },
+    { label: 'Νέα Updates', value: 0, note: 'Από πραγματικές υποβολές', icon: '☑', color: 'text-sky-600' },
+  ];
+
+  const latestUpdates = clients
+    .filter((client) => client.latest_update_at)
+    .slice(0, 4)
+    .map((client) => ({
+      name: client.full_name || client.email || 'Πελάτης',
+      date: new Date(client.latest_update_at).toLocaleDateString('el-GR'),
+      weight: client.latest_update_weight ? `${client.latest_update_weight} kg` : '-',
+      initials: getInitials(client.full_name || client.email),
+      tone: 'bg-slate-900',
+    }));
+
+  const topClients = [];
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
@@ -293,7 +327,7 @@ export default function Dashboard() {
                     <div className="font-extrabold">{update.weight}</div>
                   </div>
                 ))}
-                {!latestUpdates.length && <div className="rounded-md bg-slate-50 p-5 text-sm font-semibold text-slate-500">??? ???????? ?????????? updates ?????.</div>}
+                {!latestUpdates.length && <div className="rounded-md bg-slate-50 p-5 text-sm font-semibold text-slate-500">Δεν υπάρχουν πραγματικά updates ακόμα.</div>}
               </div>
               <ViewAllButton />
             </Card>
@@ -311,7 +345,7 @@ export default function Dashboard() {
                     <div className="font-extrabold text-emerald-600">{client.change}</div>
                   </div>
                 ))}
-                {!topClients.length && <div className="rounded-md bg-slate-50 p-5 text-sm font-semibold text-slate-500">??? ???????? ?????? ?????????? ???????? progress ?????.</div>}
+                {!topClients.length && <div className="rounded-md bg-slate-50 p-5 text-sm font-semibold text-slate-500">Δεν υπάρχουν αρκετά πραγματικά δεδομένα progress ακόμα.</div>}
               </div>
               <ViewAllButton />
             </Card>

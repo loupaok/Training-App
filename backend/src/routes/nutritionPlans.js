@@ -21,6 +21,172 @@ async function coachOwnsPlan(connection, coachId, planId) {
   return rows.length > 0;
 }
 
+
+async function ensureNutritionPlanBuilderSchema(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS nutrition_plan_meals (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      nutrition_plan_id INT NOT NULL,
+      day_of_week TINYINT NOT NULL DEFAULT 1,
+      meal_type ENUM('breakfast', 'lunch', 'snack', 'dinner', 'other') NOT NULL DEFAULT 'other',
+      title VARCHAR(255),
+      notes TEXT,
+      sort_order INT DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (nutrition_plan_id) REFERENCES nutrition_plans(id) ON DELETE CASCADE,
+      INDEX idx_nutrition_plan_id (nutrition_plan_id)
+    )
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS nutrition_plan_foods (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      meal_id INT NOT NULL,
+      food_name VARCHAR(255) NOT NULL,
+      quantity VARCHAR(100),
+      calories INT,
+      protein_g DECIMAL(6,1),
+      carbs_g DECIMAL(6,1),
+      fat_g DECIMAL(6,1),
+      sort_order INT DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (meal_id) REFERENCES nutrition_plan_meals(id) ON DELETE CASCADE,
+      INDEX idx_meal_id (meal_id)
+    )
+  `);
+}
+
+async function getFullNutritionPlan(connection, clientId) {
+  await ensureNutritionPlanBuilderSchema(connection);
+
+  const [plans] = await connection.query(
+    `SELECT * FROM nutrition_plans
+     WHERE client_id = ? AND status = 'active'
+     ORDER BY updated_at DESC, created_at DESC
+     LIMIT 1`,
+    [clientId]
+  );
+
+  if (!plans.length) return null;
+
+  const plan = plans[0];
+  const [meals] = await connection.query(
+    'SELECT * FROM nutrition_plan_meals WHERE nutrition_plan_id = ? ORDER BY sort_order, id',
+    [plan.id]
+  );
+
+  let foods = [];
+  if (meals.length) {
+    [foods] = await connection.query(
+      'SELECT * FROM nutrition_plan_foods WHERE meal_id IN (?) ORDER BY sort_order, id',
+      [meals.map((meal) => meal.id)]
+    );
+  }
+
+  return {
+    ...plan,
+    meals: meals.map((meal) => ({
+      ...meal,
+      foods: foods.filter((food) => food.meal_id === meal.id),
+    })),
+  };
+}
+
+router.get('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    const plan = await getFullNutritionPlan(connection, req.params.clientId);
+    connection.release();
+    res.json(plan || { meals: [] });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+
+  try {
+    await ensureNutritionPlanBuilderSchema(connection);
+    await connection.beginTransaction();
+
+    const clientId = Number(req.params.clientId);
+    const {
+      title = '????????? ?????????',
+      description = '',
+      dailyCalories = null,
+      proteinG = null,
+      carbsG = null,
+      fatG = null,
+      notes = '',
+      startDate = null,
+      endDate = null,
+      meals = [],
+    } = req.body;
+
+    const coachId = req.user.id;
+    const [existing] = await connection.query(
+      "SELECT id FROM nutrition_plans WHERE client_id = ? AND status = 'active' ORDER BY updated_at DESC, created_at DESC LIMIT 1",
+      [clientId]
+    );
+
+    let planId = existing[0]?.id;
+    if (planId) {
+      await connection.query(
+        `UPDATE nutrition_plans
+         SET coach_id = ?, title = ?, description = ?, daily_calories = ?, protein_g = ?, carbs_g = ?, fat_g = ?, notes = ?, start_date = ?, end_date = ?, status = 'active'
+         WHERE id = ?`,
+        [coachId, title, description || null, dailyCalories || null, proteinG || null, carbsG || null, fatG || null, notes || null, startDate || null, endDate || null, planId]
+      );
+      await connection.query('DELETE FROM nutrition_plan_meals WHERE nutrition_plan_id = ?', [planId]);
+    } else {
+      const [result] = await connection.query(
+        `INSERT INTO nutrition_plans
+          (coach_id, client_id, title, description, daily_calories, protein_g, carbs_g, fat_g, notes, is_template, status, start_date, end_date)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'active', ?, ?)`,
+        [coachId, clientId, title, description || null, dailyCalories || null, proteinG || null, carbsG || null, fatG || null, notes || null, startDate || null, endDate || null]
+      );
+      planId = result.insertId;
+    }
+
+    for (const [mealIndex, meal] of meals.entries()) {
+      const foods = Array.isArray(meal.foods) ? meal.foods : [];
+      const hasContent = meal.title || meal.notes || foods.length;
+      if (!hasContent) continue;
+
+      const [mealResult] = await connection.query(
+        `INSERT INTO nutrition_plan_meals (nutrition_plan_id, day_of_week, meal_type, title, notes, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [planId, Number(meal.dayOfWeek ?? meal.day_of_week ?? 1), meal.mealType || meal.meal_type || 'other', meal.title || null, meal.notes || null, mealIndex]
+      );
+
+      for (const [foodIndex, food] of foods.entries()) {
+        const foodName = food.foodName || food.food_name;
+        if (!foodName) continue;
+        await connection.query(
+          `INSERT INTO nutrition_plan_foods
+            (meal_id, food_name, quantity, calories, protein_g, carbs_g, fat_g, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [mealResult.insertId, foodName, food.quantity || null, food.calories || null, food.proteinG || food.protein_g || null, food.carbsG || food.carbs_g || null, food.fatG || food.fat_g || null, foodIndex]
+        );
+      }
+    }
+
+    await connection.commit();
+    const plan = await getFullNutritionPlan(connection, clientId);
+    connection.release();
+    res.json({ message: 'Nutrition plan saved', plan });
+  } catch (error) {
+    await connection.rollback();
+    connection.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // GET /nutrition-plans/:clientId — all plans for a client
 router.get('/:clientId', authorizeRole(['coach', 'admin']), async (req, res) => {
   try {

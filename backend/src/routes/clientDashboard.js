@@ -223,7 +223,11 @@ async function getCurrentPlans(connection, clientId) {
     let exercises = [];
     if (dayIds.length) {
       [exercises] = await connection.query(
-        'SELECT * FROM training_plan_exercises WHERE day_id IN (?) ORDER BY sort_order',
+        `SELECT tpe.*, e.muscle_group, e.image_url, e.video_url
+         FROM training_plan_exercises tpe
+         LEFT JOIN exercises e ON e.id = tpe.exercise_id
+         WHERE tpe.day_id IN (?)
+         ORDER BY tpe.sort_order`,
         [dayIds]
       );
     }

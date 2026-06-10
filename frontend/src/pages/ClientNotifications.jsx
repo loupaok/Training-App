@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ClientSidebar, ClientTopbar } from '../components/ClientShell';
+import { clearUnreadNotifications } from '../components/TopbarControls';
 import { api } from '../services/api';
 
 export default function ClientNotifications() {
@@ -12,7 +13,9 @@ export default function ClientNotifications() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.get('/client-dashboard')
+    clearUnreadNotifications()
+      .catch(() => {})
+      .then(() => api.get('/clients/me/notifications'))
       .then(setData)
       .catch((err) => setError(err.message || 'Δεν φορτώθηκαν οι ειδοποιήσεις.'))
       .finally(() => setLoading(false));

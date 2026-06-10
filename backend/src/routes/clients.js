@@ -212,6 +212,36 @@ async function ensureOnboardingSchema(connection) {
     )
   `);
 
+  const createUpdateScheduleTable = async () => connection.query(`
+    CREATE TABLE IF NOT EXISTS update_schedule (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      coach_id INT NULL,
+      client_id INT NOT NULL UNIQUE,
+      frequency ENUM('weekly', 'biweekly', 'monthly') NOT NULL DEFAULT 'weekly',
+      day_of_week TINYINT NULL,
+      reminder_enabled TINYINT(1) NOT NULL DEFAULT 1,
+      next_due_date DATE NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (coach_id) REFERENCES users(id) ON DELETE SET NULL,
+      FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_client_id (client_id),
+      INDEX idx_next_due_date (next_due_date)
+    )
+  `);
+
+  await createUpdateScheduleTable();
+  try {
+    await connection.query('SELECT id FROM update_schedule LIMIT 1');
+  } catch (error) {
+    if (String(error.sqlMessage || error.message || '').includes("doesn't exist in engine")) {
+      await connection.query('DROP TABLE IF EXISTS update_schedule');
+      await createUpdateScheduleTable();
+    } else {
+      throw error;
+    }
+  }
+
   await connection.query(`
     CREATE TABLE IF NOT EXISTS weekly_updates (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -371,7 +401,7 @@ function normalizeSocialLinks(raw) {
 
 async function getDefaultCoachId(connection) {
   const [rows] = await connection.query(
-    "SELECT id FROM users WHERE role = 'admin' AND is_active = 1 ORDER BY id LIMIT 1"
+    "SELECT id FROM users WHERE role IN ('admin', 'coach') AND is_active = 1 ORDER BY FIELD(role, 'coach', 'admin'), id LIMIT 1"
   );
   return rows[0]?.id || null;
 }
@@ -423,6 +453,7 @@ async function ensureProfilePhotoFolder(connection) {
 }
 
 async function ensurePaymentProofColumns(connection) {
+  await ensureNotificationsSchema(connection);
   for (const statement of [
     'ALTER TABLE payments ADD COLUMN proof_url VARCHAR(500)',
     'ALTER TABLE payments ADD COLUMN proof_uploaded_at TIMESTAMP NULL'
@@ -435,11 +466,109 @@ async function ensurePaymentProofColumns(connection) {
   }
 }
 
+async function ensureNotificationsSchema(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      type VARCHAR(80) NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      body TEXT,
+      link_url VARCHAR(500),
+      read_at TIMESTAMP NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_user_id (user_id),
+      INDEX idx_read_at (read_at)
+    )
+  `);
+
+  for (const statement of [
+    'ALTER TABLE notifications ADD COLUMN client_id INT NULL',
+    'ALTER TABLE notifications ADD COLUMN payment_id INT NULL'
+  ]) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+  }
+}
+
+async function notifyCoaches(connection, notification) {
+  await ensureNotificationsSchema(connection);
+  const [coaches] = await connection.query(
+    "SELECT id FROM users WHERE role IN ('admin', 'coach') AND is_active = 1"
+  );
+
+  for (const coach of coaches) {
+    await connection.query(
+      `INSERT INTO notifications (user_id, client_id, payment_id, type, title, body, link_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        coach.id,
+        notification.clientId || null,
+        notification.paymentId || null,
+        notification.type,
+        notification.title,
+        notification.body || null,
+        notification.linkUrl || null,
+      ]
+    );
+  }
+}
+
+async function notifyUser(connection, userId, notification) {
+  await ensureNotificationsSchema(connection);
+  await connection.query(
+    `INSERT INTO notifications (user_id, client_id, payment_id, type, title, body, link_url)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      userId,
+      notification.clientId || null,
+      notification.paymentId || null,
+      notification.type,
+      notification.title,
+      notification.body || null,
+      notification.linkUrl || null,
+    ]
+  );
+}
+
+async function refreshClientPaymentStatus(connection, clientId) {
+  const [[completed]] = await connection.query(
+    'SELECT id FROM payments WHERE client_id = ? AND status = "completed" LIMIT 1',
+    [clientId]
+  );
+  const [[pending]] = await connection.query(
+    'SELECT id FROM payments WHERE client_id = ? AND status = "pending" LIMIT 1',
+    [clientId]
+  );
+
+  if (completed) {
+    await connection.query(
+      'UPDATE users SET status = "active" WHERE id = ? AND role = "client"',
+      [clientId]
+    );
+  } else if (pending) {
+    await connection.query(
+      'UPDATE users SET status = "pending_payment" WHERE id = ? AND role = "client"',
+      [clientId]
+    );
+  } else {
+    await connection.query(
+      'UPDATE users SET status = "expired" WHERE id = ? AND role = "client"',
+      [clientId]
+    );
+  }
+}
+
 // GET /clients/me/onboarding — current client's onboarding state
 router.get('/me/onboarding', authorizeRole(['client']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await ensureOnboardingSchema(connection);
+    await ensurePaymentProofColumns(connection);
 
     const [rows] = await connection.query(
       'SELECT submitted_at FROM onboarding_forms WHERE client_id = ?',
@@ -1051,7 +1180,7 @@ router.post('/me/billing', authorizeRole(['client']), [
       ]
     );
 
-    await connection.query(
+    const [paymentResult] = await connection.query(
       `INSERT INTO payments (client_id, coach_id, subscription_id, amount, currency, method, status, reference_number, notes)
        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
       [
@@ -1065,6 +1194,21 @@ router.post('/me/billing', authorizeRole(['client']), [
         paymentMethod === 'stripe_card' ? 'Stripe θα συνδεθεί αργότερα.' : 'Αναμένεται τραπεζικό έμβασμα.'
       ]
     );
+
+    const [[clientUser]] = await connection.query(
+      'SELECT full_name, email FROM users WHERE id = ? LIMIT 1',
+      [req.user.id]
+    );
+    const clientName = clientUser?.full_name || clientUser?.email || 'Client';
+
+    await notifyCoaches(connection, {
+      clientId: req.user.id,
+      paymentId: paymentResult.insertId,
+      type: 'payment_request_created',
+      title: 'Νέο αίτημα πληρωμής',
+      body: `${clientName} επέλεξε ${selectedPackage.label} με ποσό ${Number(selectedPackage.price || 0).toFixed(2)} ${selectedPackage.currency || 'EUR'} (${paymentMethod === 'stripe_card' ? 'Stripe' : 'Τραπεζικό έμβασμα'}).`,
+      linkUrl: `/clients/${req.user.id}`,
+    });
 
     await connection.commit();
     connection.release();
@@ -1105,7 +1249,7 @@ router.post('/me/billing-proof', authorizeRole(['client']), (req, res, next) => 
     await ensurePaymentProofColumns(connection);
 
     const [payments] = await connection.query(
-      `SELECT id, reference_number
+      `SELECT id, reference_number, amount, currency
        FROM payments
        WHERE client_id = ? AND method = 'bank_transfer' AND status = 'pending'
        ORDER BY created_at DESC
@@ -1124,6 +1268,30 @@ router.post('/me/billing-proof', authorizeRole(['client']), (req, res, next) => 
        WHERE id = ?`,
       [proofUrl, payments[0].id]
     );
+
+    const [[clientUser]] = await connection.query(
+      'SELECT full_name, email FROM users WHERE id = ? LIMIT 1',
+      [req.user.id]
+    );
+    const clientName = clientUser?.full_name || clientUser?.email || 'Πελάτης';
+
+    await notifyCoaches(connection, {
+      clientId: req.user.id,
+      paymentId: payments[0].id,
+      type: 'payment_proof_uploaded',
+      title: 'Νέα πληρωμή με τραπεζικό έμβασμα',
+      body: `${clientName} ανέβασε αποδεικτικό πληρωμής ${Number(payments[0].amount || 0).toFixed(2)} ${payments[0].currency || 'EUR'}. Χρειάζεται manual έγκριση.`,
+      linkUrl: `/clients/${req.user.id}`,
+    });
+
+    await notifyUser(connection, req.user.id, {
+      clientId: req.user.id,
+      paymentId: payments[0].id,
+      type: 'payment_proof_uploaded',
+      title: 'Το αποδεικτικό πληρωμής στάλθηκε',
+      body: 'Ο coach θα ελέγξει την πληρωμή σου και θα ενεργοποιήσει τη συνδρομή σου.',
+      linkUrl: '/client-billing',
+    });
 
     connection.release();
     res.status(201).json({
@@ -1269,11 +1437,103 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
   }
 });
 
+// GET /clients/admin/notifications — notifications for coach/admin
+router.get('/admin/notifications', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureNotificationsSchema(connection);
+
+    const [rows] = await connection.query(
+      `SELECT n.*, u.full_name AS client_name, u.email AS client_email
+       FROM notifications n
+       LEFT JOIN users u ON u.id = n.client_id
+       WHERE n.user_id = ?
+       ORDER BY n.created_at DESC
+       LIMIT 100`,
+      [req.user.id]
+    );
+
+    connection.release();
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // GET /clients/:id — full profile
+router.get('/notifications/unread-count', authorizeRole(['coach', 'admin', 'moderator', 'client']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureNotificationsSchema(connection);
+    const [[row]] = await connection.query(
+      'SELECT COUNT(id) AS unread FROM notifications WHERE user_id = ? AND read_at IS NULL',
+      [req.user.id]
+    );
+    connection.release();
+    res.json({ unread: Number(row?.unread || 0) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/notifications/read', authorizeRole(['coach', 'admin', 'moderator', 'client']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureNotificationsSchema(connection);
+    await connection.query(
+      'UPDATE notifications SET read_at = COALESCE(read_at, NOW()) WHERE user_id = ? AND read_at IS NULL',
+      [req.user.id]
+    );
+    connection.release();
+    res.json({ unread: 0 });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/me/notifications', authorizeRole(['client']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureNotificationsSchema(connection);
+    await ensurePaymentProofColumns(connection);
+
+    const [notificationRows] = await connection.query(
+      'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 100',
+      [req.user.id]
+    );
+    const [paymentRows] = await connection.query(
+      'SELECT id, subscription_id, amount, currency, method, status, reference_number, proof_url, proof_uploaded_at, paid_at, created_at FROM payments WHERE client_id = ? ORDER BY created_at DESC LIMIT 20',
+      [req.user.id]
+    );
+    const [subscriptionRows] = await connection.query(
+      'SELECT * FROM subscriptions WHERE client_id = ? ORDER BY created_at DESC LIMIT 1',
+      [req.user.id]
+    );
+
+    const paymentApproved = paymentRows.some((payment) => payment.status === 'completed') || req.user.status === 'active';
+
+    connection.release();
+    res.json({
+      notifications: notificationRows,
+      payments: paymentRows,
+      subscription: subscriptionRows[0] || null,
+      paymentApproved,
+      unreadNotifications: notificationRows.filter((item) => !item.read_at).length,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await ensureOnboardingSchema(connection);
+    await ensurePaymentProofColumns(connection);
 
     const [rows] = await connection.query(
       `SELECT u.id, u.email, u.full_name, u.profile_photo, u.bio, u.is_active,
@@ -1317,7 +1577,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
       [req.params.id]
     );
     const [paymentRows] = await connection.query(
-      'SELECT id, subscription_id, amount, currency, method, status, reference_number, paid_at, created_at FROM payments WHERE client_id = ? ORDER BY created_at DESC',
+      'SELECT id, subscription_id, amount, currency, method, status, reference_number, proof_url, proof_uploaded_at, paid_at, created_at FROM payments WHERE client_id = ? ORDER BY created_at DESC',
       [req.params.id]
     );
     const [weeklyRows] = await connection.query(
@@ -1429,7 +1689,190 @@ router.post('/', authorizeRole(['coach', 'admin']), [
   }
 });
 
+// POST /clients/:id/approve-payment — manual bank transfer approval
+router.post('/:id/approve-payment', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+
+  try {
+    await ensureNotificationsSchema(connection);
+    await ensurePaymentProofColumns(connection);
+
+    const clientId = Number(req.params.id);
+    const paymentId = req.body?.paymentId ? Number(req.body.paymentId) : null;
+    const [clients] = await connection.query(
+      'SELECT id, full_name, email FROM users WHERE id = ? AND role = "client" LIMIT 1',
+      [clientId]
+    );
+
+    if (!clients.length) {
+      connection.release();
+      return res.status(404).json({ message: 'Client not found' });
+    }
+
+    const [payments] = await connection.query(
+      `SELECT id, subscription_id, amount, currency, method, status, proof_url
+       FROM payments
+       WHERE client_id = ? AND status = 'pending' AND (? IS NULL OR id = ?)
+       ORDER BY proof_uploaded_at DESC, created_at DESC
+       LIMIT 1`,
+      [clientId, paymentId, paymentId]
+    );
+
+    if (!payments.length) {
+      connection.release();
+      return res.status(400).json({ message: 'Δεν υπάρχει εκκρεμής πληρωμή για έγκριση.' });
+    }
+
+    await connection.beginTransaction();
+
+    await connection.query(
+      `UPDATE payments
+       SET status = 'completed', paid_at = NOW(), notes = CONCAT(COALESCE(notes, ''), '\nΕγκρίθηκε χειροκίνητα από coach/admin.')
+       WHERE id = ?`,
+      [payments[0].id]
+    );
+
+    if (payments[0].subscription_id) {
+      await connection.query(
+        "UPDATE subscriptions SET status = 'active' WHERE id = ?",
+        [payments[0].subscription_id]
+      );
+    }
+
+    await connection.query(
+      'UPDATE users SET status = "active", approved_at = NOW(), approved_by = ? WHERE id = ?',
+      [req.user.id, clientId]
+    );
+
+    await notifyUser(connection, clientId, {
+      clientId,
+      paymentId: payments[0].id,
+      type: 'payment_approved',
+      title: 'Η πληρωμή σου εγκρίθηκε',
+      body: 'Η συνδρομή σου είναι ενεργή. Τα προγράμματα και το progress ξεκλειδώθηκαν.',
+      linkUrl: '/client-dashboard',
+    });
+
+    await notifyCoaches(connection, {
+      clientId,
+      paymentId: payments[0].id,
+      type: 'payment_approved',
+      title: 'Πληρωμή εγκρίθηκε',
+      body: `${clients[0].full_name || clients[0].email} ενεργοποιήθηκε χειροκίνητα.`,
+      linkUrl: `/clients/${clientId}`,
+    });
+
+    await connection.query(
+      'UPDATE notifications SET read_at = COALESCE(read_at, NOW()) WHERE client_id = ? AND payment_id = ? AND type IN (?, ?)',
+      [clientId, payments[0].id, 'payment_proof_uploaded', 'payment_request_created']
+    );
+
+    await connection.commit();
+    connection.release();
+
+    res.json({
+      message: 'Η πληρωμή εγκρίθηκε και ο πελάτης ενεργοποιήθηκε.',
+      clientId,
+      paymentId: payments[0].id,
+      status: 'active',
+    });
+  } catch (error) {
+    await connection.rollback();
+    connection.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // PUT /clients/:id — update client profile
+router.post('/:id/reject-payment', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+
+  try {
+    await ensureNotificationsSchema(connection);
+    await ensurePaymentProofColumns(connection);
+
+    const clientId = Number(req.params.id);
+    const paymentId = Number(req.body?.paymentId);
+    if (!paymentId) {
+      connection.release();
+      return res.status(400).json({ message: 'Payment id required' });
+    }
+
+    const [clients] = await connection.query(
+      'SELECT id, full_name, email FROM users WHERE id = ? AND role = "client" LIMIT 1',
+      [clientId]
+    );
+    if (!clients.length) {
+      connection.release();
+      return res.status(404).json({ message: 'Client not found' });
+    }
+
+    const [payments] = await connection.query(
+      `SELECT id, subscription_id, amount, currency, method, status
+       FROM payments
+       WHERE id = ? AND client_id = ? AND status = 'pending'
+       LIMIT 1`,
+      [paymentId, clientId]
+    );
+    if (!payments.length) {
+      connection.release();
+      return res.status(400).json({ message: 'Δεν υπάρχει εκκρεμής πληρωμή για απόρριψη.' });
+    }
+
+    await connection.beginTransaction();
+
+    await connection.query(
+      `UPDATE payments
+       SET status = 'failed', notes = CONCAT(COALESCE(notes, ''), '\nΑπορρίφθηκε χειροκίνητα από coach/admin.')
+       WHERE id = ?`,
+      [paymentId]
+    );
+
+    if (payments[0].subscription_id) {
+      await connection.query(
+        "UPDATE subscriptions SET status = 'cancelled' WHERE id = ?",
+        [payments[0].subscription_id]
+      );
+    }
+
+    await refreshClientPaymentStatus(connection, clientId);
+
+    await notifyUser(connection, clientId, {
+      clientId,
+      paymentId,
+      type: 'payment_rejected',
+      title: 'Η πληρωμή σου απορρίφθηκε',
+      body: 'Ο coach απέρριψε την πληρωμή. Μπορείς να ανεβάσεις νέο αποδεικτικό ή να επικοινωνήσεις μαζί του για διόρθωση.',
+      linkUrl: '/client-billing',
+    });
+
+    await notifyCoaches(connection, {
+      clientId,
+      paymentId,
+      type: 'payment_rejected',
+      title: 'Πληρωμή απορρίφθηκε',
+      body: `${clients[0].full_name || clients[0].email} παραμένει σε κατάσταση πληρωμής μετά την απόρριψη.`,
+      linkUrl: `/clients/${clientId}`,
+    });
+
+    await connection.query(
+      'UPDATE notifications SET read_at = COALESCE(read_at, NOW()) WHERE client_id = ? AND payment_id = ? AND type IN (?, ?)',
+      [clientId, paymentId, 'payment_proof_uploaded', 'payment_request_created']
+    );
+
+    await connection.commit();
+    connection.release();
+
+    res.json({ message: 'Η πληρωμή απορρίφθηκε.', clientId, paymentId });
+  } catch (error) {
+    await connection.rollback();
+    connection.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.put('/:id', authorizeRole(['coach', 'admin']), [
   body('email').optional().isEmail(),
   body('fullName').optional().notEmpty()

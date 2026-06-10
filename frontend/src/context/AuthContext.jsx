@@ -1,6 +1,21 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { API_BASE_URL } from '../services/api';
 
 const AuthContext = createContext();
+
+async function authFetch(endpoint, options = {}) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+
+  try {
+    return await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
 
 export function getAuthRedirect(user) {
   if (!user) return '/login';
@@ -33,22 +48,32 @@ export function AuthProvider({ children }) {
     let ignore = false;
     setRefreshingProfile(true);
 
-    const loadMe = async () => {
+    const loadMe = async (allowRefresh = true) => {
       const headers = {};
       const storedToken = localStorage.getItem('token');
+      const storedRefreshToken = localStorage.getItem('refreshToken');
+
+      if (!storedToken && !storedRefreshToken) {
+        throw new Error('No stored session');
+      }
+
       if (storedToken) headers.Authorization = `Bearer ${storedToken}`;
 
-      const response = await fetch('/api/auth/me', {
+      const response = await authFetch('/auth/me', {
         credentials: 'include',
         headers,
       });
 
       if (!response.ok) {
-        const refreshResponse = await fetch('/api/auth/refresh', {
+        if (!allowRefresh || !storedRefreshToken) {
+          throw new Error('Profile refresh failed');
+        }
+
+        const refreshResponse = await authFetch('/auth/refresh', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken: localStorage.getItem('refreshToken') })
+          body: JSON.stringify({ refreshToken: storedRefreshToken })
         });
         const refreshData = await refreshResponse.json().catch(() => ({}));
         if (!refreshResponse.ok) throw new Error(refreshData.message || 'Profile refresh failed');
@@ -56,7 +81,7 @@ export function AuthProvider({ children }) {
           localStorage.setItem('token', refreshData.accessToken);
           setToken(refreshData.accessToken);
         }
-        return loadMe();
+        return loadMe(false);
       }
 
       return response.json();
@@ -85,7 +110,7 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     setLoading(true);
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await authFetch('/auth/login', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -112,7 +137,7 @@ export function AuthProvider({ children }) {
   const register = async (email, password, fullName) => {
     setLoading(true);
     try {
-      const response = await fetch('/api/auth/register', {
+      const response = await authFetch('/auth/register', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -138,7 +163,7 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     const refreshToken = localStorage.getItem('refreshToken');
-    fetch('/api/auth/logout', {
+    authFetch('/auth/logout', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },

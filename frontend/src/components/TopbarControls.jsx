@@ -4,7 +4,7 @@ import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 const NOTIFICATION_COUNT_KEY = 'coachUnreadNotifications';
-const DEFAULT_NOTIFICATION_COUNT = 7;
+const DEFAULT_NOTIFICATION_COUNT = 0;
 
 export function getUnreadNotificationCount() {
   const stored = window.localStorage.getItem(NOTIFICATION_COUNT_KEY);
@@ -16,8 +16,18 @@ export function getUnreadNotificationCount() {
 }
 
 export function clearUnreadNotifications() {
-  window.localStorage.setItem(NOTIFICATION_COUNT_KEY, '0');
-  window.dispatchEvent(new CustomEvent('coach-notifications-read'));
+  return api.post('/clients/notifications/read', {})
+    .finally(() => {
+      window.localStorage.setItem(NOTIFICATION_COUNT_KEY, '0');
+      window.dispatchEvent(new CustomEvent('coach-notifications-read'));
+    });
+}
+
+async function loadUnreadNotificationCount() {
+  const data = await api.get('/clients/notifications/unread-count');
+  const nextCount = Number(data?.unread || 0);
+  window.localStorage.setItem(NOTIFICATION_COUNT_KEY, String(nextCount));
+  return nextCount;
 }
 
 const icons = {
@@ -56,15 +66,21 @@ export function TopbarActions({ user, logout, Avatar }) {
   const location = useLocation();
   const isClient = user?.role === 'client';
   const notificationsPath = isClient ? '/client-notifications' : '/notifications';
-  const visibleUnreadNotifications = isClient ? 0 : unreadNotifications;
+  const visibleUnreadNotifications = unreadNotifications;
 
   useEffect(() => {
-    const updateCount = () => setUnreadNotifications(getUnreadNotificationCount());
+    const updateCount = () => {
+      loadUnreadNotificationCount()
+        .then(setUnreadNotifications)
+        .catch(() => setUnreadNotifications(getUnreadNotificationCount()));
+    };
+    const clearCount = () => setUnreadNotifications(0);
+    updateCount();
     window.addEventListener('storage', updateCount);
-    window.addEventListener('coach-notifications-read', updateCount);
+    window.addEventListener('coach-notifications-read', clearCount);
     return () => {
       window.removeEventListener('storage', updateCount);
-      window.removeEventListener('coach-notifications-read', updateCount);
+      window.removeEventListener('coach-notifications-read', clearCount);
     };
   }, []);
 

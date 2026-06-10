@@ -1,20 +1,8 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { MenuToggle, TopbarActions, clearUnreadNotifications } from '../components/TopbarControls';
-
-const navSections = [
-  { label: 'Dashboard', path: '/dashboard' },
-  { label: 'Πελάτες', path: '/clients' },
-  { label: 'Βιβλιοθήκη Ασκήσεων', path: '/exercises' },
-  { label: 'Media Library', path: '/media-library' },
-  { label: 'Team', path: '/team' },
-  { label: 'Analytics', path: '/analytics' },
-  { label: 'Updates Πελατών', path: '/updates' },
-  { label: 'Discord' },
-  { label: 'Ειδοποιήσεις', path: '/notifications', active: true },
-  { label: 'Ρυθμίσεις' },
-];
+import { api } from '../services/api';
 
 const menuSections = [
   { label: 'Dashboard', path: '/dashboard' },
@@ -26,8 +14,6 @@ const menuSections = [
   { label: 'Team', path: '/team' },
   { label: 'Ειδοποιήσεις', path: '/notifications', active: true, spacerBefore: true },
 ];
-
-const notificationGroups = [];
 
 const filters = [
   { label: 'Όλες', value: 'all' },
@@ -42,7 +28,8 @@ function Avatar({ initials, tone = 'bg-slate-900', size = 'h-12 w-12' }) {
 }
 
 function Sidebar({ user }) {
-  const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const canSeeAdmin = user?.role === 'admin' || user?.role === 'coach';
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <aside className="fixed inset-y-0 left-0 flex w-[300px] flex-col bg-[#07131d] text-white shadow-2xl">
@@ -56,18 +43,16 @@ function Sidebar({ user }) {
             const className = `flex h-12 w-full items-center rounded-md px-4 text-left text-[15px] font-semibold ${section.active ? 'bg-red-600 text-white shadow-lg shadow-red-950/30' : 'text-slate-100 hover:bg-white/10'}`;
             return <Link key={section.label} to={section.path} className={`${className} ${section.spacerBefore ? 'mt-6' : ''}`}>{section.label}</Link>;
           })}
-          {user?.role === 'admin' && (
+          {canSeeAdmin && (
             <div>
-              <button onClick={() => setSettingsOpen((value) => !value)} className="flex h-12 w-full items-center rounded-md px-4 text-left text-[15px] font-semibold text-slate-100 hover:bg-white/10">
+              <button type="button" onClick={() => setSettingsOpen((value) => !value)} className="flex h-12 w-full items-center rounded-md px-4 text-left text-[15px] font-semibold text-slate-100 hover:bg-white/10">
                 <span>Ρυθμίσεις</span>
                 <span className={`ml-auto text-xs transition-transform ${settingsOpen ? 'rotate-180' : ''}`}>⌄</span>
               </button>
               <div className={`ml-4 overflow-hidden border-l border-white/10 pl-3 transition-all duration-200 ${settingsOpen ? 'mt-1 max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
-                {['Discord', 'Πλάνα & Τιμές', 'Branding'].map((label) => (
-                  label === 'Πλάνα & Τιμές'
-                    ? <Link key={label} to="/pricing-plans" className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">{label}</Link>
-                    : <button key={label} className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">{label}</button>
-                ))}
+                <button className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">Discord</button>
+                <Link to="/pricing-plans" className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">Πλάνα & Τιμές</Link>
+                <button className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">Branding</button>
               </div>
             </div>
           )}
@@ -100,22 +85,26 @@ function Topbar({ user, logout, sidebarOpen, onToggleSidebar }) {
 
 export default function Notifications() {
   const { user, logout } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = React.useState(true);
-  const [activeFilter, setActiveFilter] = React.useState('all');
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeFilter, setActiveFilter] = useState('all');
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  React.useEffect(() => {
-    clearUnreadNotifications();
+  useEffect(() => {
+    clearUnreadNotifications()
+      .catch(() => {})
+      .then(() => api.get('/clients/admin/notifications'))
+      .then((rows) => setNotifications(Array.isArray(rows) ? rows : []))
+      .catch((err) => setError(err.message || 'Δεν φορτώθηκαν οι ειδοποιήσεις.'))
+      .finally(() => setLoading(false));
   }, []);
 
-  const visibleGroups = notificationGroups
-    .map((group) => ({
-      ...group,
-      items: group.items.filter((item) => matchesFilter(item, activeFilter)),
-    }))
-    .filter((group) => group.items.length > 0);
+  const visibleNotifications = useMemo(() => {
+    return notifications.filter((item) => matchesFilter(item, activeFilter));
+  }, [activeFilter, notifications]);
 
-  const totalNotifications = notificationGroups.reduce((sum, group) => sum + group.items.length, 0);
-  const visibleNotifications = visibleGroups.reduce((sum, group) => sum + group.items.length, 0);
+  const grouped = useMemo(() => groupNotifications(visibleNotifications), [visibleNotifications]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950">
@@ -135,8 +124,8 @@ export default function Notifications() {
               <p className="mt-2 text-slate-600">Πληρωμές, συνδρομές, updates πελατών και νέα συμβάντα.</p>
             </div>
             <div className="grid grid-cols-2 gap-3 md:flex">
-              <SummaryCard label="Σύνολο" value={totalNotifications} />
-              <SummaryCard label="Σε προβολή" value={visibleNotifications} />
+              <SummaryCard label="Σύνολο" value={notifications.length} />
+              <SummaryCard label="Σε προβολή" value={visibleNotifications.length} />
             </div>
           </div>
 
@@ -154,25 +143,28 @@ export default function Notifications() {
             </div>
           </section>
 
-          <section className="max-w-5xl space-y-5">
-            {visibleGroups.map((group) => (
-              <div key={group.label} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="mb-4 text-xs font-extrabold uppercase tracking-wide text-slate-500">{group.label}</div>
-                <div className="divide-y divide-slate-200">
-                  {group.items.map((item) => (
-                    <NotificationRow key={item.id} item={item} />
-                  ))}
-                </div>
-              </div>
-            ))}
+          {error && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">{error}</div>}
+          {loading && <div className="rounded-lg border border-slate-200 bg-white p-8 text-center font-bold text-slate-500">Φόρτωση...</div>}
 
-            {!visibleGroups.length && (
-              <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center">
-                <div className="text-lg font-extrabold">Δεν υπάρχουν ειδοποιήσεις για αυτό το φίλτρο.</div>
-                <p className="mt-2 text-sm text-slate-500">Δοκίμασε διαφορετική κατηγορία.</p>
-              </div>
-            )}
-          </section>
+          {!loading && (
+            <section className="max-w-5xl space-y-5">
+              {grouped.map((group) => (
+                <div key={group.label} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="mb-4 text-xs font-extrabold uppercase tracking-wide text-slate-500">{group.label}</div>
+                  <div className="divide-y divide-slate-200">
+                    {group.items.map((item) => <NotificationRow key={item.id} item={item} />)}
+                  </div>
+                </div>
+              ))}
+
+              {!grouped.length && (
+                <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center">
+                  <div className="text-lg font-extrabold">Δεν υπάρχουν ειδοποιήσεις για αυτό το φίλτρο.</div>
+                  <p className="mt-2 text-sm text-slate-500">Οι νέες πληρωμές και ενέργειες πελατών θα εμφανίζονται εδώ.</p>
+                </div>
+              )}
+            </section>
+          )}
         </div>
       </main>
     </div>
@@ -191,51 +183,73 @@ function SummaryCard({ label, value }) {
 function NotificationRow({ item }) {
   return (
     <div className="flex items-start gap-4 py-4 first:pt-0 last:pb-0">
-      <div className={`mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-full ${toneClasses[item.tone]?.bubble || toneClasses.slate.bubble}`}>
-        <NotificationIcon type={item.type} tone={item.tone} />
+      <div className={`mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-full ${toneForType(item.type).bubble}`}>
+        <span className={`text-sm font-black ${toneForType(item.type).text}`}>{iconForType(item.type)}</span>
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-[15px] leading-6">
           <span className="font-extrabold">{item.title}</span>
-          <span className="font-semibold text-slate-800"> — {item.detail}</span>
+          {item.client_name && <span className="font-semibold text-slate-800"> — {item.client_name}</span>}
         </div>
-        <div className="mt-1 text-sm font-semibold text-slate-500">{item.time}</div>
+        <div className="mt-1 text-sm font-semibold leading-6 text-slate-600">{item.body}</div>
+        <div className="mt-1 text-xs font-bold text-slate-400">{formatDateTime(item.created_at)}</div>
       </div>
-      <Link to={`/clients/${item.clientId}`} className="hidden rounded-md border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:border-red-200 hover:text-red-600 md:block">
-        Προβολή
-      </Link>
+      {item.client_id && (
+        <Link to={`/clients/${item.client_id}`} className="hidden rounded-md border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:border-red-200 hover:text-red-600 md:block">
+          Προβολή
+        </Link>
+      )}
     </div>
   );
 }
 
-function NotificationIcon({ type, tone }) {
-  const labels = {
-    paymentFailed: '€',
-    paymentPaid: '€',
-    subscription: '⏱',
-    updateMissing: '!',
-    reward: '%',
-    newClient: '+',
-    message: '@',
-  };
+function groupNotifications(rows) {
+  const today = [];
+  const older = [];
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
 
-  return <span className={`text-sm font-black ${toneClasses[tone]?.text || toneClasses.slate.text}`}>{labels[type] || '•'}</span>;
+  rows.forEach((item) => {
+    const created = new Date(item.created_at);
+    if (!Number.isNaN(created.getTime()) && created >= start) today.push(item);
+    else older.push(item);
+  });
+
+  return [
+    today.length ? { label: 'Σήμερα', items: today } : null,
+    older.length ? { label: 'Προηγούμενες', items: older } : null,
+  ].filter(Boolean);
 }
 
 function matchesFilter(item, filter) {
   if (filter === 'all') return true;
-  if (filter === 'payments') return item.type === 'paymentFailed' || item.type === 'paymentPaid';
-  if (filter === 'subscriptions') return item.type === 'subscription';
-  if (filter === 'updates') return item.type === 'updateMissing' || item.type === 'message';
-  if (filter === 'clients') return item.type === 'newClient' || item.type === 'reward';
+  if (filter === 'payments') return String(item.type || '').includes('payment');
+  if (filter === 'subscriptions') return String(item.type || '').includes('subscription');
+  if (filter === 'updates') return String(item.type || '').includes('update');
+  if (filter === 'clients') return String(item.type || '').includes('client');
   return true;
 }
 
-const toneClasses = {
-  red: { bubble: 'bg-red-50', text: 'text-red-600' },
-  amber: { bubble: 'bg-amber-50', text: 'text-amber-600' },
-  green: { bubble: 'bg-green-50', text: 'text-green-600' },
-  purple: { bubble: 'bg-violet-50', text: 'text-violet-600' },
-  blue: { bubble: 'bg-blue-50', text: 'text-blue-600' },
-  slate: { bubble: 'bg-slate-100', text: 'text-slate-600' },
-};
+function iconForType(type = '') {
+  if (type.includes('payment')) return '€';
+  if (type.includes('subscription')) return '⏱';
+  if (type.includes('message')) return '@';
+  if (type.includes('update')) return '!';
+  if (type.includes('client')) return '+';
+  return '•';
+}
+
+function toneForType(type = '') {
+  if (type.includes('approved')) return { bubble: 'bg-green-50', text: 'text-green-600' };
+  if (type.includes('payment')) return { bubble: 'bg-amber-50', text: 'text-amber-600' };
+  if (type.includes('subscription')) return { bubble: 'bg-red-50', text: 'text-red-600' };
+  if (type.includes('update')) return { bubble: 'bg-blue-50', text: 'text-blue-600' };
+  return { bubble: 'bg-slate-100', text: 'text-slate-600' };
+}
+
+function formatDateTime(value) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleString('el-GR', { dateStyle: 'short', timeStyle: 'short' });
+}
