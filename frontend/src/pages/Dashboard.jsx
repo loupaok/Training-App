@@ -1,28 +1,7 @@
-﻿import React from 'react';
-import { Link } from 'react-router-dom';
+import React from 'react';
 import { useAuth } from '../context/AuthContext';
-import { MenuToggle, TopbarActions } from '../components/TopbarControls';
 import { api } from '../services/api';
-
-const navSections = [
-  { label: 'Dashboard', path: '/dashboard', active: true },
-  { label: 'Πελάτες', path: '/clients' },
-  { label: 'Updates Πελατών', path: '/updates' },
-  { label: 'Βιβλιοθήκη Ασκήσεων', path: '/exercises' },
-  { label: 'Analytics', path: '/analytics' },
-  { label: 'Media Library', path: '/media-library' },
-  { label: 'Team', path: '/team' },
-  { label: 'Ειδοποιήσεις', path: '/notifications', spacerBefore: true },
-  {
-    label: 'Ρυθμίσεις',
-    adminOnly: true,
-    children: [
-      { label: 'Discord' },
-      { label: 'Πλάνα & Τιμές', path: '/pricing-plans' },
-      { label: 'Branding' },
-    ],
-  },
-];
+import { CoachShell, Card, Avatar, ViewAllButton, getInitials } from '../components/CoachShell';
 
 const tasks = [
   { label: 'Έλεγχος 7 νέων updates', done: true },
@@ -51,127 +30,6 @@ const chartPoints = [
   [96, 60],
   [98, 60],
 ];
-
-function getInitials(name) {
-  return String(name || 'CL')
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase() || 'CL';
-}
-
-function Avatar({ initials, tone = 'bg-slate-900', size = 'h-10 w-10' }) {
-  return (
-    <div className={`${size} ${tone} grid place-items-center rounded-full text-xs font-bold text-white shadow-sm`}>
-      {initials}
-    </div>
-  );
-}
-
-function Card({ children, className = '' }) {
-  return (
-    <section className={`rounded-lg border border-slate-200 bg-white shadow-sm ${className}`}>
-      {children}
-    </section>
-  );
-}
-
-function ViewAllButton({ children = 'Προβολή όλων' }) {
-  return (
-    <button className="mt-5 h-11 w-full rounded-md border border-slate-200 text-sm font-semibold text-slate-700 hover:border-red-200 hover:text-red-600">
-      {children}
-    </button>
-  );
-}
-
-function Sidebar({ user }) {
-  const canSeeAdmin = user?.role === 'admin' || user?.role === 'coach';
-  const settingsIsActive = navSections.some((section) => section.children?.some((child) => child.active));
-  const [settingsOpen, setSettingsOpen] = React.useState(settingsIsActive);
-
-  return (
-    <aside className="fixed inset-y-0 left-0 flex w-[300px] flex-col bg-[#07131d] text-white shadow-2xl">
-      <div className="flex h-[86px] items-center gap-3 px-8">
-        <div className="grid h-12 w-12 place-items-center rounded-full border-4 border-red-600 text-2xl font-black text-red-500">
-          K
-        </div>
-        <div className="text-xl font-extrabold tracking-wide">COACH PANEL</div>
-      </div>
-
-      <nav className="flex-1 overflow-y-auto px-4 pb-6">
-        <div className="space-y-1">
-          {navSections.filter((section) => !section.adminOnly || canSeeAdmin).map((section) => {
-            const className = `flex h-12 w-full items-center rounded-md px-4 text-left text-[15px] font-semibold ${
-              section.active
-                ? 'bg-red-600 text-white shadow-lg shadow-red-950/30'
-                : 'text-slate-100 hover:bg-white/10'
-            }`;
-
-            const item = section.children ? (
-              <button onClick={() => setSettingsOpen((value) => !value)} className={className}>
-                <span className="truncate">{section.label}</span>
-                <span className={`ml-auto text-xs transition-transform ${settingsOpen ? 'rotate-180' : ''}`}>⌄</span>
-              </button>
-            ) : section.path ? (
-              <Link to={section.path} className={className}>
-                <span className="truncate">{section.label}</span>
-              </Link>
-            ) : (
-              <button className={className}>
-                <span className="truncate">{section.label}</span>
-              </button>
-            );
-
-            return (
-              <div key={section.label} className={section.spacerBefore ? 'mt-6' : ''}>
-                {item}
-                {section.children && canSeeAdmin && (
-                  <div className={`ml-4 overflow-hidden border-l border-white/10 pl-3 transition-all duration-200 ${settingsOpen ? 'mt-1 max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
-                    {section.children.map((child) => (
-                      child.path ? (
-                        <Link key={child.label} to={child.path} className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">{child.label}</Link>
-                      ) : (
-                        <button key={child.label} className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">{child.label}</button>
-                      )
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </nav>
-
-      <div className="border-t border-white/10 p-7">
-        <div className="flex items-center gap-3">
-          <Avatar initials={(user?.fullName || 'Coach Admin').slice(0, 2).toUpperCase()} tone="bg-red-600" size="h-12 w-12" />
-          <div>
-            <div className="font-bold">{user?.fullName || 'Coach Admin'}</div>
-            <div className="mt-1 flex items-center gap-2 text-sm text-emerald-400">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-              Online
-            </div>
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function Topbar({ user, logout, sidebarOpen, onToggleSidebar }) {
-  return (
-    <header className={`fixed ${sidebarOpen ? 'left-[300px]' : 'left-0'} right-0 top-0 z-10 flex h-[86px] items-center justify-between border-b border-slate-200 bg-white px-10 shadow-sm transition-all duration-200`}>
-      <div className="flex items-center gap-9">
-        <MenuToggle onClick={onToggleSidebar} />
-        <h1 className="text-2xl font-extrabold">Dashboard</h1>
-      </div>
-
-      <TopbarActions user={user} logout={logout} Avatar={Avatar} />
-    </header>
-  );
-}
 
 function WeightChart() {
   const polyline = chartPoints.map(([x, y]) => `${x},${y}`).join(' ');
@@ -244,7 +102,6 @@ function SubscriptionCard({ total, active, pending, inactive }) {
 
 export default function Dashboard() {
   const { user, logout } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [clients, setClients] = React.useState([]);
 
   React.useEffect(() => {
@@ -281,106 +138,98 @@ export default function Dashboard() {
   const topClients = [];
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-950">
-      {sidebarOpen && <Sidebar user={user} />}
-      <Topbar user={user} logout={logout} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((value) => !value)} />
+    <CoachShell title="Dashboard" user={user} logout={logout}>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h2 className="text-3xl font-extrabold">Καλωσήρθες, Coach! 👋</h2>
+          <p className="mt-2 text-lg text-slate-600">Εδώ είναι μια συνοπτική εικόνα της επιχείρησής σου.</p>
+        </div>
+        <button className="flex h-12 items-center gap-3 rounded-md bg-red-600 px-6 font-bold text-white shadow-lg shadow-red-200 hover:bg-red-700">
+          <span className="text-2xl leading-none">＋</span>
+          Προσθήκη Νέου
+        </button>
+      </div>
 
-      <main className={`${sidebarOpen ? 'ml-[300px]' : 'ml-0'} pt-[86px] transition-all duration-200`}>
-        <div className="px-10 py-8">
-          <div className="mb-6 flex items-start justify-between">
-            <div>
-              <h2 className="text-3xl font-extrabold">Καλωσήρθες, Coach! 👋</h2>
-              <p className="mt-2 text-lg text-slate-600">Εδώ είναι μια συνοπτική εικόνα της επιχείρησής σου.</p>
+      <div className="grid grid-cols-5 gap-5">
+        {stats.map((stat) => (
+          <Card key={stat.label} className="p-6">
+            <div className="flex items-center gap-5">
+              <span className={`grid h-8 w-8 place-items-center text-2xl ${stat.color}`}>{stat.icon}</span>
+              <div className="text-sm text-slate-600">{stat.label}</div>
             </div>
-            <button className="flex h-12 items-center gap-3 rounded-md bg-red-600 px-6 font-bold text-white shadow-lg shadow-red-200 hover:bg-red-700">
-              <span className="text-2xl leading-none">＋</span>
-              Προσθήκη Νέου
-            </button>
-          </div>
+            <div className="mt-5 text-3xl font-extrabold">{stat.value}</div>
+            <div className="mt-3 text-sm text-slate-600">{stat.note}</div>
+          </Card>
+        ))}
+      </div>
 
-          <div className="grid grid-cols-5 gap-5">
-            {stats.map((stat) => (
-              <Card key={stat.label} className="p-6">
-                <div className="flex items-center gap-5">
-                  <span className={`grid h-8 w-8 place-items-center text-2xl ${stat.color}`}>{stat.icon}</span>
-                  <div className="text-sm text-slate-600">{stat.label}</div>
+      <div id="progress" className="mt-6 grid scroll-mt-28 grid-cols-12 gap-6">
+        <WeightChart />
+
+        <Card className="p-6 lg:col-span-3">
+          <h2 className="text-lg font-extrabold">Τελευταία Updates</h2>
+          <div className="mt-5 space-y-4">
+            {latestUpdates.map((update) => (
+              <div key={update.name} className="flex items-center gap-4">
+                <Avatar initials={update.initials} tone={update.tone} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-bold">{update.name}</div>
+                  <div className="text-sm text-slate-500">{update.date}</div>
                 </div>
-                <div className="mt-5 text-3xl font-extrabold">{stat.value}</div>
-                <div className="mt-3 text-sm text-slate-600">{stat.note}</div>
-              </Card>
+                <div className="font-extrabold">{update.weight}</div>
+              </div>
+            ))}
+            {!latestUpdates.length && <div className="rounded-md bg-slate-50 p-5 text-sm font-semibold text-slate-500">Δεν υπάρχουν πραγματικά updates ακόμα.</div>}
+          </div>
+          <ViewAllButton />
+        </Card>
+
+        <SubscriptionCard total={totalClients} active={activeClients} pending={pendingClients} inactive={inactiveClients} />
+
+        <Card className="p-6 lg:col-span-4">
+          <h2 className="text-lg font-extrabold">Κορυφαίοι Πελάτες (Αυτόν τον Μήνα)</h2>
+          <div className="mt-7 space-y-6">
+            {topClients.map((client, index) => (
+              <div key={client.name} className="flex items-center gap-5">
+                <div className="w-6 text-2xl font-extrabold">{index + 1}</div>
+                <Avatar initials={client.initials} tone={client.tone} />
+                <div className="min-w-0 flex-1 truncate font-bold">{client.name}</div>
+                <div className="font-extrabold text-emerald-600">{client.change}</div>
+              </div>
+            ))}
+            {!topClients.length && <div className="rounded-md bg-slate-50 p-5 text-sm font-semibold text-slate-500">Δεν υπάρχουν αρκετά πραγματικά δεδομένα progress ακόμα.</div>}
+          </div>
+          <ViewAllButton />
+        </Card>
+
+        <Card className="p-6 lg:col-span-4">
+          <h2 className="text-lg font-extrabold">Σημερινές Εργασίες</h2>
+          <div className="mt-5 space-y-3">
+            {tasks.map((task) => (
+              <label key={task.label} className="flex h-11 items-center gap-4 rounded-md border border-slate-200 px-4 text-sm font-medium text-slate-700">
+                <input type="checkbox" defaultChecked={task.done} className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500" />
+                {task.label}
+              </label>
             ))}
           </div>
+          <button className="mt-5 flex h-11 w-full items-center justify-center gap-3 rounded-md border border-slate-200 text-sm font-semibold text-slate-700 hover:border-red-200 hover:text-red-600">
+            <span>▦</span>
+            Προβολή Ημερολογίου
+          </button>
+        </Card>
 
-          <div id="progress" className="mt-6 grid scroll-mt-28 grid-cols-12 gap-6">
-            <WeightChart />
-
-            <Card className="p-6 lg:col-span-3">
-              <h2 className="text-lg font-extrabold">Τελευταία Updates</h2>
-              <div className="mt-5 space-y-4">
-                {latestUpdates.map((update) => (
-                  <div key={update.name} className="flex items-center gap-4">
-                    <Avatar initials={update.initials} tone={update.tone} />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate font-bold">{update.name}</div>
-                      <div className="text-sm text-slate-500">{update.date}</div>
-                    </div>
-                    <div className="font-extrabold">{update.weight}</div>
-                  </div>
-                ))}
-                {!latestUpdates.length && <div className="rounded-md bg-slate-50 p-5 text-sm font-semibold text-slate-500">Δεν υπάρχουν πραγματικά updates ακόμα.</div>}
-              </div>
-              <ViewAllButton />
-            </Card>
-
-            <SubscriptionCard total={totalClients} active={activeClients} pending={pendingClients} inactive={inactiveClients} />
-
-            <Card className="p-6 lg:col-span-4">
-              <h2 className="text-lg font-extrabold">Κορυφαίοι Πελάτες (Αυτόν τον Μήνα)</h2>
-              <div className="mt-7 space-y-6">
-                {topClients.map((client, index) => (
-                  <div key={client.name} className="flex items-center gap-5">
-                    <div className="w-6 text-2xl font-extrabold">{index + 1}</div>
-                    <Avatar initials={client.initials} tone={client.tone} />
-                    <div className="min-w-0 flex-1 truncate font-bold">{client.name}</div>
-                    <div className="font-extrabold text-emerald-600">{client.change}</div>
-                  </div>
-                ))}
-                {!topClients.length && <div className="rounded-md bg-slate-50 p-5 text-sm font-semibold text-slate-500">Δεν υπάρχουν αρκετά πραγματικά δεδομένα progress ακόμα.</div>}
-              </div>
-              <ViewAllButton />
-            </Card>
-
-            <Card className="p-6 lg:col-span-4">
-              <h2 className="text-lg font-extrabold">Σημερινές Εργασίες</h2>
-              <div className="mt-5 space-y-3">
-                {tasks.map((task) => (
-                  <label key={task.label} className="flex h-11 items-center gap-4 rounded-md border border-slate-200 px-4 text-sm font-medium text-slate-700">
-                    <input type="checkbox" defaultChecked={task.done} className="h-4 w-4 rounded border-slate-300 text-red-600 focus:ring-red-500" />
-                    {task.label}
-                  </label>
-                ))}
-              </div>
-              <button className="mt-5 flex h-11 w-full items-center justify-center gap-3 rounded-md border border-slate-200 text-sm font-semibold text-slate-700 hover:border-red-200 hover:text-red-600">
-                <span>▦</span>
-                Προβολή Ημερολογίου
+        <Card className="p-6 lg:col-span-4">
+          <h2 className="text-lg font-extrabold">Γρήγορες Ενέργειες</h2>
+          <div className="mt-5 space-y-3">
+            {quickActions.map((action) => (
+              <button key={action.label} className="flex h-11 w-full items-center gap-5 rounded-md border border-slate-200 px-5 text-left text-sm font-medium text-slate-700 hover:border-red-200 hover:text-red-600">
+                <span className={`grid h-5 w-5 place-items-center text-xl ${action.color}`}>{action.icon}</span>
+                {action.label}
               </button>
-            </Card>
-
-            <Card className="p-6 lg:col-span-4">
-              <h2 className="text-lg font-extrabold">Γρήγορες Ενέργειες</h2>
-              <div className="mt-5 space-y-3">
-                {quickActions.map((action) => (
-                  <button key={action.label} className="flex h-11 w-full items-center gap-5 rounded-md border border-slate-200 px-5 text-left text-sm font-medium text-slate-700 hover:border-red-200 hover:text-red-600">
-                    <span className={`grid h-5 w-5 place-items-center text-xl ${action.color}`}>{action.icon}</span>
-                    {action.label}
-                  </button>
-                ))}
-              </div>
-            </Card>
+            ))}
           </div>
-        </div>
-      </main>
-    </div>
+        </Card>
+      </div>
+    </CoachShell>
   );
 }
-

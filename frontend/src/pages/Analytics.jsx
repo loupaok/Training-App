@@ -1,31 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { MenuToggle, TopbarActions } from '../components/TopbarControls';
-
-const navSections = [
-  { label: 'Dashboard', href: '/dashboard' },
-  { label: 'Πελάτες', href: '/clients' },
-  { label: 'Βιβλιοθήκη Ασκήσεων', href: '/exercises' },
-  { label: 'Media Library', href: '/media-library' },
-  { label: 'Team', href: '/team' },
-  { label: 'Analytics', href: '/analytics', active: true },
-  { label: 'Updates Πελατών', href: '/updates' },
-  { label: 'Discord', href: '#' },
-  { label: 'Ειδοποιήσεις', href: '/notifications' },
-  { label: 'Ρυθμίσεις', href: '#' },
-];
-
-const menuSections = [
-  { label: 'Dashboard', href: '/dashboard' },
-  { label: 'Πελάτες', href: '/clients' },
-  { label: 'Updates Πελατών', href: '/updates' },
-  { label: 'Βιβλιοθήκη Ασκήσεων', href: '/exercises' },
-  { label: 'Analytics', href: '/analytics', active: true },
-  { label: 'Media Library', href: '/media-library' },
-  { label: 'Team', href: '/team' },
-  { label: 'Ειδοποιήσεις', href: '/notifications', spacerBefore: true },
-];
+import { CoachShell } from '../components/CoachShell';
 
 const periodData = {
   week: {
@@ -138,93 +114,8 @@ const payments = [];
 
 const clientRevenue = [];
 
-function Avatar() {
-  return (
-    <div className="w-11 h-11 rounded-full bg-slate-200 border border-white shadow-sm overflow-hidden flex items-center justify-center text-xs font-bold text-slate-700">
-      CA
-    </div>
-  );
-}
-
-function Sidebar({ user }) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
-  return (
-    <aside className="fixed inset-y-0 left-0 z-30 flex w-[300px] flex-col bg-[#07131d] text-white shadow-2xl">
-      <div className="h-full flex flex-col">
-        <div className="flex h-[86px] items-center gap-3 px-8">
-          <div className="grid h-12 w-12 place-items-center rounded-full border-4 border-red-600 text-2xl font-black text-red-500">K</div>
-          <div className="font-bold text-xl">COACH PANEL</div>
-        </div>
-
-        <nav className="flex-1 overflow-y-auto px-4 pb-6">
-          <div className="space-y-1">
-          {menuSections.map((item) => {
-            const className = item.active
-              ? 'bg-red-600 text-white shadow-lg shadow-red-900/30'
-              : 'text-slate-100 hover:bg-white/10';
-
-            if (item.href === '#') {
-              return (
-                <button key={item.label} className={`flex h-12 w-full items-center rounded-md px-4 text-left text-[15px] font-semibold transition ${className} ${item.spacerBefore ? 'mt-6' : ''}`}>
-                  {item.label}
-                </button>
-              );
-            }
-
-            return (
-              <Link key={item.label} to={item.href} className={`flex h-12 w-full items-center rounded-md px-4 text-[15px] font-semibold transition ${className} ${item.spacerBefore ? 'mt-6' : ''}`}>
-                {item.label}
-              </Link>
-            );
-          })}
-          {user?.role === 'admin' && (
-            <div className="mt-1">
-              <button onClick={() => setSettingsOpen((value) => !value)} className="flex h-12 w-full items-center rounded-md px-4 text-left text-[15px] font-semibold text-slate-100 transition hover:bg-white/10">
-                <span>Ρυθμίσεις</span>
-                <span className={`ml-auto text-xs transition-transform ${settingsOpen ? 'rotate-180' : ''}`}>⌄</span>
-              </button>
-              <div className={`ml-4 overflow-hidden border-l border-white/10 pl-3 transition-all duration-200 ${settingsOpen ? 'mt-1 max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
-                {['Discord', 'Πλάνα & Τιμές', 'Branding'].map((label) => (
-                  label === 'Πλάνα & Τιμές'
-                    ? <Link key={label} to="/pricing-plans" className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">{label}</Link>
-                    : <button key={label} className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">{label}</button>
-                ))}
-              </div>
-            </div>
-          )}
-          </div>
-        </nav>
-
-        <div className="border-t border-white/10 p-7 flex items-center gap-3">
-          <Avatar />
-          <div>
-            <div className="font-semibold">Coach Admin</div>
-            <div className="text-sm text-green-400">● Online</div>
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function Topbar({ sidebarOpen, onToggle }) {
-  const { user, logout } = useAuth();
-
-  return (
-    <header className="bg-white border-b border-slate-200 h-[73px] flex items-center justify-between px-7 sticky top-0 z-20 shadow-sm">
-      <div className="flex items-center gap-6">
-        <MenuToggle isOpen={sidebarOpen} onClick={onToggle} />
-        <h1 className="text-2xl font-bold text-slate-950">Analytics</h1>
-      </div>
-      <TopbarActions user={user} logout={logout} Avatar={Avatar} />
-    </header>
-  );
-}
-
 export default function Analytics() {
-  const { user } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const { user, logout } = useAuth();
   const [period, setPeriod] = useState('month');
   const [paymentStatus, setPaymentStatus] = useState('all');
   const [subscriptionStatus, setSubscriptionStatus] = useState('all');
@@ -250,13 +141,8 @@ export default function Analytics() {
   const showPayments = view === 'all' || view === 'payments';
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-950">
-      {sidebarOpen && <Sidebar user={user} />}
-
-      <div className={`min-h-screen transition-all duration-300 ${sidebarOpen ? 'ml-[300px]' : 'ml-0'}`}>
-        <Topbar sidebarOpen={sidebarOpen} onToggle={() => setSidebarOpen((value) => !value)} />
-
-        <main className="p-7 space-y-6">
+    <CoachShell title="Analytics" user={user} logout={logout}>
+        <div className="space-y-6">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <div className="flex items-center gap-2 text-sm text-slate-500 mb-4">
@@ -429,9 +315,8 @@ export default function Analytics() {
               </Card>
             </section>
           )}
-        </main>
-      </div>
-    </div>
+        </div>
+    </CoachShell>
   );
 }
 

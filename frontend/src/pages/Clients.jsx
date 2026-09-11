@@ -1,31 +1,9 @@
 ﻿import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { MenuToggle, TopbarActions } from '../components/TopbarControls';
 import PaginationControls from '../components/PaginationControls';
+import { CoachShell, Avatar, getInitials, resolveMediaUrl } from '../components/CoachShell';
 import { api } from '../services/api';
-
-const API_ORIGIN = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:5000';
-
-const navSections = [
-  { label: 'Dashboard', path: '/dashboard' },
-  { label: 'Πελάτες', path: '/clients', active: true },
-  { label: 'Updates Πελατών', path: '/updates' },
-  { label: 'Βιβλιοθήκη Ασκήσεων', path: '/exercises' },
-  { label: 'Analytics', path: '/analytics' },
-  { label: 'Media Library', path: '/media-library' },
-  { label: 'Team', path: '/team' },
-  { label: 'Ειδοποιήσεις', path: '/notifications', spacerBefore: true },
-  {
-    label: 'Ρυθμίσεις',
-    adminOnly: true,
-    children: [
-      { label: 'Discord' },
-      { label: 'Πλάνα & Τιμές', path: '/pricing-plans' },
-      { label: 'Branding' },
-    ],
-  },
-];
 
 const emptyClientForm = {
   fullName: '',
@@ -46,16 +24,6 @@ const updateDayOptions = [
   { value: 0, label: 'Κυριακή' },
 ];
 
-function getInitials(name) {
-  return String(name || 'CL')
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase() || 'CL';
-}
-
 function slugify(value) {
   return String(value || 'manual')
     .toLowerCase()
@@ -70,13 +38,6 @@ function formatDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
   return date.toLocaleDateString('el-GR');
-}
-
-function resolveMediaUrl(url) {
-  if (!url) return '';
-  if (/^https?:\/\//.test(url)) return url;
-  if (url.startsWith('/uploads')) return `${API_ORIGIN}${url}`;
-  return `${API_ORIGIN}/${String(url).replace(/^\/+/, '')}`;
 }
 
 function mapApiClient(row) {
@@ -110,106 +71,6 @@ function mapApiClient(row) {
     initials: getInitials(row.full_name || row.email),
     tone: 'bg-slate-900',
   };
-}
-
-function Avatar({ initials, tone = 'bg-slate-900', size = 'h-12 w-12', photoUrl }) {
-  const src = resolveMediaUrl(photoUrl);
-  if (src) {
-    return <img src={src} alt="" className={`${size} rounded-full object-cover shadow-sm`} />;
-  }
-
-  return (
-    <div className={`${size} ${tone} grid place-items-center rounded-full text-xs font-bold text-white shadow-sm`}>
-      {initials}
-    </div>
-  );
-}
-
-function Sidebar({ user }) {
-  const canSeeAdmin = user?.role === 'admin' || user?.role === 'coach';
-  const settingsIsActive = navSections.some((section) => section.children?.some((child) => child.active));
-  const [settingsOpen, setSettingsOpen] = React.useState(settingsIsActive);
-
-  return (
-    <aside className="fixed inset-y-0 left-0 flex w-[300px] flex-col bg-[#07131d] text-white shadow-2xl">
-      <div className="flex h-[86px] items-center gap-3 px-8">
-        <div className="grid h-12 w-12 place-items-center rounded-full border-4 border-red-600 text-2xl font-black text-red-500">
-          K
-        </div>
-        <div className="text-xl font-extrabold tracking-wide">COACH PANEL</div>
-      </div>
-
-      <nav className="flex-1 overflow-y-auto px-4 pb-6">
-        <div className="space-y-1">
-          {navSections.filter((section) => !section.adminOnly || canSeeAdmin).map((section) => {
-            const className = `flex h-12 w-full items-center rounded-md px-4 text-left text-[15px] font-semibold ${
-              section.active
-                ? 'bg-red-600 text-white shadow-lg shadow-red-950/30'
-                : 'text-slate-100 hover:bg-white/10'
-            }`;
-
-            const item = section.children ? (
-              <button onClick={() => setSettingsOpen((value) => !value)} className={className}>
-                <span className="truncate">{section.label}</span>
-                <span className={`ml-auto text-xs transition-transform ${settingsOpen ? 'rotate-180' : ''}`}>⌄</span>
-              </button>
-            ) : section.path ? (
-              <Link to={section.path} className={className}>
-                <span className="truncate">{section.label}</span>
-              </Link>
-            ) : (
-              <button className={className}>
-                <span className="truncate">{section.label}</span>
-              </button>
-            );
-
-            return (
-              <div key={section.label} className={section.spacerBefore ? 'mt-6' : ''}>
-                {item}
-                {section.children && canSeeAdmin && (
-                  <div className={`ml-4 overflow-hidden border-l border-white/10 pl-3 transition-all duration-200 ${settingsOpen ? 'mt-1 max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
-                    {section.children.map((child) => (
-                      child.path ? (
-                        <Link key={child.label} to={child.path} className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">{child.label}</Link>
-                      ) : (
-                        <button key={child.label} className="flex h-10 w-full items-center rounded-md px-4 text-left text-sm font-semibold text-slate-300 hover:bg-white/10 hover:text-white">{child.label}</button>
-                      )
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </nav>
-
-      <div className="border-t border-white/10 p-7">
-        <div className="flex items-center gap-3">
-          <Avatar initials={(user?.fullName || 'Coach Admin').slice(0, 2).toUpperCase()} tone="bg-red-600" />
-          <div>
-            <div className="font-bold">{user?.fullName || 'Coach Admin'}</div>
-            <div className="mt-1 flex items-center gap-2 text-sm text-emerald-400">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-              Online
-            </div>
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function Topbar({ user, logout, sidebarOpen, onToggleSidebar }) {
-  return (
-    <header className={`fixed ${sidebarOpen ? 'left-[300px]' : 'left-0'} right-0 top-0 z-10 flex h-[86px] items-center justify-between border-b border-slate-200 bg-white px-10 shadow-sm transition-all duration-200`}>
-      <div className="flex items-center gap-9">
-        <MenuToggle onClick={onToggleSidebar} />
-        <h1 className="text-2xl font-extrabold">Πελάτες</h1>
-      </div>
-
-      <TopbarActions user={user} logout={logout} Avatar={Avatar} />
-    </header>
-  );
 }
 
 const actionIcons = {
@@ -279,7 +140,6 @@ function getWeightNumber(value) {
 
 export default function Clients() {
   const { user, logout } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = React.useState(true);
   const [clientRows, setClientRows] = useState([]);
   const [loadingClients, setLoadingClients] = useState(false);
   const [clientMessage, setClientMessage] = useState('');
@@ -418,12 +278,7 @@ export default function Clients() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-950">
-      {sidebarOpen && <Sidebar user={user} />}
-      <Topbar user={user} logout={logout} sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen((value) => !value)} />
-
-      <main className={`${sidebarOpen ? 'ml-[300px]' : 'ml-0'} pt-[86px] transition-all duration-200`}>
-        <div className="px-10 py-8">
+    <CoachShell title="Πελάτες" user={user} logout={logout}>
           <div className="mb-7 flex items-start justify-between">
             <div>
               <h2 className="text-3xl font-extrabold">Πελάτες</h2>
@@ -592,8 +447,6 @@ export default function Clients() {
               variant="pages"
             />
           </section>
-        </div>
-      </main>
 
       {showAddClient && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 p-8">
@@ -622,7 +475,7 @@ export default function Clients() {
           </form>
         </div>
       )}
-    </div>
+    </CoachShell>
   );
 }
 
