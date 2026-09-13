@@ -8,7 +8,7 @@ billing. Role-based access across admin / coach / moderator / client.
 
 | Layer | Tech |
 | --- | --- |
-| Frontend | React 18, Vite 5, React Router 6, Tailwind CSS 3, Axios |
+| Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, shadcn/ui, Tremor (charts) |
 | Backend | Node.js, Express 4, no ORM (raw SQL via `mysql2`) |
 | Database | MySQL 8+ |
 | Auth | JWT (access + refresh tokens), bcrypt password hashing |
@@ -50,8 +50,12 @@ npm run dev                  # http://localhost:5000
 # 3. Frontend (separate terminal)
 cd frontend
 npm install
-npm run dev                  # http://localhost:5173, proxies /api to the backend
+npm run dev                  # http://localhost:3000, rewrites /api and /uploads to the backend
 ```
+
+Frontend config lives in `frontend/.env.local` (gitignored): `BACKEND_ORIGIN=http://localhost:5000` tells
+`next.config.ts`'s rewrites where to proxy `/api/*` and `/uploads/*` — the browser never talks to the
+backend's origin directly, so there's nothing client-visible to configure beyond that one variable.
 
 ### Login
 
@@ -113,6 +117,6 @@ you care about keeping them (client photos, exercise images, etc.).
 
 - **"Cannot connect to database"** — check `backend/.env` credentials and that MySQL is running.
 - **"Module not found"** — run `npm install` in both `backend/` and `frontend/`.
-- **Port already in use** — change `PORT` in `backend/.env`, or stop whatever else is on 5000/5173.
-- **Frontend can't reach the backend** — check `FRONTEND_URL` in `backend/.env` matches where the
-  frontend actually runs, and that `frontend/vite.config.js`'s proxy target matches the backend port.
+- **Port already in use** — change `PORT` in `backend/.env`, or stop whatever else is on 5000/3000.
+- **Frontend can't reach the backend** — check `BACKEND_ORIGIN` in `frontend/.env.local` matches where
+  the backend actually runs (`next.config.ts`'s rewrites proxy `/api` and `/uploads` there).
