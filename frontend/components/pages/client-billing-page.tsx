@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Copy } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { ClientShell } from "@/components/shell/client-shell";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -190,7 +193,7 @@ function ClientBillingContent() {
           </section>
 
           <section className="mt-8 grid gap-6 lg:grid-cols-[1fr_420px]">
-            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <Card className="p-6">
               <h2 className="text-xl font-black">Τρόπος Πληρωμής</h2>
               <div className="mt-5 space-y-3">
                 <PaymentOption
@@ -207,24 +210,23 @@ function ClientBillingContent() {
                   disabledNote
                 />
               </div>
-            </div>
+            </Card>
 
-            <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <Card className="p-6">
               <h2 className="text-xl font-black">Σύνοψη</h2>
               <div className="mt-5 rounded-xl border border-slate-200">
                 <SummaryRow label="Πακέτο" value={selectedPlan?.title || "-"} />
                 <SummaryRow label="Χρέωση" value={`${selectedPlan?.price || "-"} /${getPeriodLabel(selectedPlan?.period)}`} />
                 <SummaryRow label="Τρόπος" value={paymentMethod === "bank_transfer" ? "Τραπεζικό έμβασμα" : "Κάρτα μέσω Stripe"} />
               </div>
-              <button
-                type="button"
+              <Button
                 disabled={saving || !selectedPackage || paymentMethod === "stripe_card"}
                 onClick={startPayment}
-                className="mt-6 h-12 w-full rounded-md bg-red-600 px-6 font-black text-white shadow-lg shadow-red-100 hover:bg-red-700 disabled:bg-slate-400"
+                className="mt-6 h-12 w-full font-black shadow-lg shadow-red-100"
               >
                 {saving ? "Αποθήκευση..." : paymentMethod === "bank_transfer" ? "Συνέχεια στα στοιχεία πληρωμής" : "Stripe σύντομα"}
-              </button>
-            </div>
+              </Button>
+            </Card>
           </section>
         </>
       )}
@@ -255,7 +257,7 @@ function BankTransferPanel({
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-6 rounded-xl border border-slate-200 bg-white p-7 shadow-sm xl:grid-cols-[1fr_360px]">
+      <Card className="grid gap-6 p-7 xl:grid-cols-[1fr_360px]">
         <div>
           <h2 className="text-xl font-black">Στοιχεία Τραπεζικού Λογαριασμού</h2>
           <div className="mt-6 overflow-hidden rounded-xl border border-slate-200">
@@ -265,9 +267,10 @@ function BankTransferPanel({
               label="IBAN"
               value={bankDetails.iban}
               action={
-                <button type="button" onClick={copyIban} className="rounded-md border border-blue-100 px-3 py-1 text-xs font-black text-blue-700 hover:bg-blue-50">
+                <Button variant="outline" size="sm" onClick={copyIban} className="h-7 text-xs">
+                  <Copy className="h-3 w-3" />
                   Copy
-                </button>
+                </Button>
               }
             />
             <BankRow label="Ποσό Κατάθεσης" value={formattedAmount} />
@@ -282,7 +285,7 @@ function BankTransferPanel({
             Κατάθεσε ακριβώς το ποσό και χρησιμοποίησε την αιτιολογία <span className="font-black">{referenceNumber}</span>, ώστε να γίνει σωστά η ταυτοποίηση της πληρωμής.
           </p>
         </div>
-      </section>
+      </Card>
 
       <section className="rounded-xl border border-amber-100 bg-amber-50 p-7 shadow-sm">
         <div className="flex items-start gap-5">
@@ -296,14 +299,14 @@ function BankTransferPanel({
         </div>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-7 shadow-sm">
+      <Card className="p-7">
         <h2 className="text-xl font-black">Τι συμβαίνει μετά;</h2>
         <div className="mt-6 grid gap-5 md:grid-cols-3">
           <NextStep title="Κάνεις την κατάθεση" text="Κατάθεσε το ποσό με την αιτιολογία που βλέπεις παραπάνω." />
           <NextStep title="Ο coach εγκρίνει χειροκίνητα" text="Μόλις επαληθευτεί η κατάθεση, ο coach ενεργοποιεί τη συνδρομή σου." />
           <NextStep title="Ενημερώνεσαι" text="Θα λάβεις ειδοποίηση όταν η συνδρομή σου γίνει ενεργή." />
         </div>
-      </section>
+      </Card>
 
       <div className="rounded-xl border border-blue-100 bg-blue-50 px-5 py-4 text-sm font-bold text-blue-800">
         Χρειάζεσαι βοήθεια; Επικοινώνησε μαζί μας στο {bankDetails.supportEmail} ή στο {bankDetails.supportPhone}.
