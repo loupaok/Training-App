@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { ClientShell } from "@/components/shell/client-shell";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -195,21 +196,21 @@ function ClientBillingContent() {
           <section className="mt-8 grid gap-6 lg:grid-cols-[1fr_420px]">
             <Card className="p-6">
               <h2 className="text-xl font-black">Τρόπος Πληρωμής</h2>
-              <div className="mt-5 space-y-3">
+              <RadioGroup value={paymentMethod} onValueChange={setPaymentMethod} className="mt-5 gap-3">
                 <PaymentOption
+                  value="bank_transfer"
                   active={paymentMethod === "bank_transfer"}
                   title="Τραπεζικό έμβασμα"
                   text="Θα δεις τα στοιχεία κατάθεσης. Ο coach θα εγκρίνει τη συνδρομή manually."
-                  onClick={() => setPaymentMethod("bank_transfer")}
                 />
                 <PaymentOption
+                  value="stripe_card"
                   active={paymentMethod === "stripe_card"}
                   title="Κάρτα μέσω Stripe"
                   text="Προς το παρόν δεν είναι ενεργό."
-                  onClick={() => setPaymentMethod("stripe_card")}
                   disabledNote
                 />
-              </div>
+              </RadioGroup>
             </Card>
 
             <Card className="p-6">
@@ -328,11 +329,12 @@ function PlanCard({ plan, active, onClick }: { plan: DisplayPlan; active: boolea
       ];
 
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
       onClick={onClick}
-      className={`relative flex min-h-[410px] flex-col rounded-xl border bg-white p-7 text-left transition ${
-        active ? "border-red-500 shadow-xl shadow-red-100 ring-2 ring-red-50" : "border-slate-200 hover:border-red-200 hover:shadow-lg hover:shadow-slate-100"
+      className={`relative flex h-auto min-h-[410px] flex-col items-stretch whitespace-normal rounded-xl p-7 text-left font-normal transition ${
+        active ? "border-red-500 shadow-xl shadow-red-100 ring-2 ring-red-50" : "hover:border-red-200 hover:shadow-lg hover:shadow-slate-100"
       }`}
     >
       {plan.badge && (
@@ -370,7 +372,7 @@ function PlanCard({ plan, active, onClick }: { plan: DisplayPlan; active: boolea
       <div className={`mt-7 grid h-12 place-items-center rounded-md border text-sm font-black ${active ? "border-red-600 bg-red-600 text-white" : "border-slate-300 text-slate-800"}`}>
         {active ? "Επιλεγμένο πακέτο" : "Επιλογή"}
       </div>
-    </button>
+    </Button>
   );
 }
 
@@ -380,32 +382,28 @@ function Alert({ children, tone }: { children: ReactNode; tone: "red" | "green" 
 }
 
 function PaymentOption({
+  value,
   active,
   title,
   text,
-  onClick,
   disabledNote,
 }: {
+  value: string;
   active: boolean;
   title: string;
   text: string;
-  onClick: () => void;
   disabledNote?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex w-full items-center gap-4 rounded-lg border p-4 text-left ${active ? "border-red-500 bg-red-50 ring-2 ring-red-100" : "border-slate-200 bg-white hover:border-red-200"}`}
+    <label
+      className={`flex w-full items-center gap-4 rounded-lg border p-4 ${active ? "border-red-500 bg-red-50 ring-2 ring-red-100" : "border-slate-200 bg-white hover:border-red-200"}`}
     >
-      <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full border text-xs font-black ${active ? "border-red-600 bg-red-600 text-white" : "border-slate-300 text-slate-400"}`}>
-        {active ? "●" : ""}
-      </span>
+      <RadioGroupItem value={value} />
       <span>
         <span className="block font-black">{title}</span>
         <span className={`mt-1 block text-xs font-bold ${disabledNote ? "text-amber-600" : "text-slate-500"}`}>{text}</span>
       </span>
-    </button>
+    </label>
   );
 }
 

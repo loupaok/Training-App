@@ -1031,19 +1031,18 @@ function TrainingPlanEditor({
           {visibleDays.map((day, index) => {
             const groups = [...new Set((day.exercises || []).map((exercise) => exercise.muscleGroup).filter(Boolean))];
             return (
-              <button
+              <Button
                 key={`${day.dayOfWeek}-${index}`}
                 type="button"
+                variant={activeDayIndex === index ? "default" : "outline"}
                 onClick={() => setActiveDayIndex(index)}
-                className={`min-w-[132px] rounded-md px-4 py-3 text-left transition ${
-                  activeDayIndex === index ? "bg-red-600 text-white shadow-sm" : "bg-white text-slate-700 hover:bg-slate-100"
-                }`}
+                className="h-auto min-w-[132px] flex-col items-start whitespace-normal px-4 py-3 text-left"
               >
                 <div className="text-sm font-black">Ημέρα {index + 1}</div>
                 <div className={`mt-1 truncate text-xs font-bold ${activeDayIndex === index ? "text-white/90" : "text-slate-500"}`}>
                   {groups.length ? groups.join(" / ") : "Χωρίς ασκήσεις"}
                 </div>
-              </button>
+              </Button>
             );
           })}
         </div>
@@ -1174,12 +1173,13 @@ function ExercisePicker({
       {open && (
         <div className="absolute left-0 right-0 top-[62px] z-30 max-h-72 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-xl">
           {filteredExercises.map((item) => (
-            <button
+            <Button
               key={item.id}
               type="button"
+              variant="ghost"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => chooseExercise(item)}
-              className="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-3 text-left last:border-b-0 hover:bg-slate-50"
+              className="h-auto w-full justify-start gap-3 whitespace-normal rounded-none border-b border-slate-100 px-3 py-3 text-left last:border-b-0"
             >
               <span className="h-12 w-16 shrink-0 overflow-hidden rounded-md bg-slate-100">
                 {item.imageUrl || item.image_url ? (
@@ -1194,7 +1194,7 @@ function ExercisePicker({
                 <span className="mt-1 block truncate text-xs font-bold text-slate-500">{item.muscleGroup || "Χωρίς μυϊκή ομάδα"}</span>
               </span>
               {item.equipment && <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-500">{item.equipment}</span>}
-            </button>
+            </Button>
           ))}
           {!filteredExercises.length && <div className="px-3 py-4 text-center text-sm font-bold text-slate-500">Δεν βρέθηκε άσκηση.</div>}
         </div>

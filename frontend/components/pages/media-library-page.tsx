@@ -558,32 +558,36 @@ function FolderButton({
       }}
       className={`mt-2 flex w-full items-center rounded-md text-sm font-semibold ${active ? "bg-red-50 text-red-700" : "text-slate-700 hover:bg-slate-50"} ${isDropTarget ? "ring-2 ring-red-300" : ""}`}
     >
-      <button onClick={onClick} className="flex min-w-0 flex-1 items-center justify-between px-3 py-2 text-left">
+      <Button variant="ghost" onClick={onClick} className="h-auto min-w-0 flex-1 justify-between px-3 py-2 text-left font-semibold">
         <span className="truncate">{label}</span>
         <span className="ml-2 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{count}</span>
-      </button>
+      </Button>
       {canManage && (
         <div className="mr-2 flex shrink-0 items-center gap-1">
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={(event) => {
               event.stopPropagation();
               onRename?.();
             }}
-            className="rounded p-1.5 text-slate-600 hover:bg-slate-100 hover:text-red-600"
+            className="h-7 w-7 text-slate-600 hover:text-red-600"
             title="Rename"
           >
             <Pencil className="h-3.5 w-3.5" />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={(event) => {
               event.stopPropagation();
               onDelete?.();
             }}
-            className="rounded p-1.5 text-red-600 hover:bg-red-100"
+            className="h-7 w-7 text-red-600 hover:bg-red-100 hover:text-red-600"
             title="Delete"
           >
             <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          </Button>
         </div>
       )}
     </div>

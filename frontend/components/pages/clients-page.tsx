@@ -294,12 +294,12 @@ function ClientsContent() {
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-12">
         <FilterBox className="lg:col-span-4">
           <Search className="mr-3 h-5 w-5 shrink-0 text-slate-500" />
-          <input
+          <Input
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Αναζήτηση πελάτη..."
-            className="w-full bg-transparent text-base outline-none placeholder:text-slate-500"
+            className="h-auto border-none bg-transparent p-0 text-base shadow-none focus-visible:ring-0"
           />
         </FilterBox>
 

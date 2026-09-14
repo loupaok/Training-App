@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { Clock, Flame, LayoutGrid, ChevronLeft, ChevronRight, Play } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { resolveMediaUrl } from "@/lib/media";
 
 const dayNames = ["Κυριακή", "Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο"];
@@ -189,8 +191,6 @@ export default function WorkoutProgramView({
   const activeDay = days.find((day) => day.id === activeDayId) || days[0];
   const totalSets = activeDay.exercises.reduce((sum, exercise) => sum + (Number.parseInt(String(exercise.sets), 10) || 0), 0);
   const estimatedMinutes = Math.max(30, Math.min(90, activeDay.exercises.length * 10 + totalSets * 2));
-  const estimatedCalories = `${Math.max(250, activeDay.exercises.length * 85)}-${Math.max(350, activeDay.exercises.length * 110)} kcal`;
-  const activeMuscles = [...new Set(activeDay.exercises.map((exercise) => exercise.muscle).filter(Boolean))];
 
   return (
     <section className="space-y-7">
@@ -205,86 +205,93 @@ export default function WorkoutProgramView({
         </div>
       </div>
 
-      <div className="grid gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm sm:grid-cols-2 lg:grid-cols-5">
-        {days.slice(0, 7).map((day, index) => (
-          <button
-            key={day.id}
-            type="button"
-            onClick={() => setActiveDayId(day.id)}
-            className={`min-h-[72px] rounded-md px-4 py-3 text-center font-black transition ${
-              activeDay.id === day.id ? "bg-red-600 text-white shadow-lg shadow-red-100" : "border border-slate-100 text-slate-950 hover:bg-slate-50"
-            }`}
-          >
-            <div>Ημέρα {index + 1}</div>
-            <div className={`mt-1 truncate text-xs font-bold ${activeDay.id === day.id ? "text-white/90" : "text-slate-500"}`}>
-              {[...new Set(day.exercises.map((exercise) => exercise.muscle).filter(Boolean))].join(" / ") || "Χωρίς ασκήσεις"}
-            </div>
-          </button>
-        ))}
-      </div>
-
-      <Card className="overflow-hidden" style={{ "--card-spacing": "0px" } as CSSProperties}>
-        <div className="flex items-center gap-4 border-b border-slate-100 p-6">
-          <div className="grid h-10 w-10 place-items-center rounded-full bg-red-50 text-red-600">
-            <LayoutGrid className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 className="text-2xl font-black">Ημέρα {days.findIndex((day) => day.id === activeDay.id) + 1}</h3>
-            <div className="mt-1 text-sm font-bold text-slate-500">{activeMuscles.join(" / ") || "Χωρίς ασκήσεις"}</div>
-          </div>
-        </div>
-
-        <div className="mx-5 hidden grid-cols-[minmax(0,1fr)_72px_92px_92px_82px_42px] rounded-lg bg-slate-50 px-5 py-4 text-sm font-bold text-slate-500 md:grid">
-          <div>Άσκηση</div>
-          <div className="text-center">Σετ</div>
-          <div className="text-center">Επαναλ.</div>
-          <div className="text-center">Tempo</div>
-          <div className="text-center">Rest</div>
-          <div />
-        </div>
-
-        <div className="divide-y divide-slate-100 p-5 pt-0">
-          {activeDay.exercises.map((exercise) => (
-            <div key={exercise.id} className="grid gap-4 rounded-lg px-0 py-5 md:grid-cols-[minmax(0,1fr)_72px_92px_92px_82px_42px] md:items-center">
-              <div className="flex min-w-0 items-center gap-4">
-                <ExercisePhotoSlider exercise={exercise} />
-                <div className="min-w-0">
-                  <div className="text-lg font-black text-slate-950">{exercise.name}</div>
-                  <div className="mt-1 text-sm font-bold text-slate-500">{exercise.muscle || "-"}</div>
-                </div>
+      <Tabs value={String(activeDay.id)} onValueChange={(value) => setActiveDayId(value)} className="gap-7">
+        <TabsList className="grid h-auto w-full gap-2 bg-white p-2 sm:grid-cols-2 lg:grid-cols-5">
+          {days.slice(0, 7).map((day, index) => (
+            <TabsTrigger
+              key={day.id}
+              value={String(day.id)}
+              className="min-h-[72px] flex-col whitespace-normal rounded-md px-4 py-3 font-black data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-100"
+            >
+              <div>Ημέρα {index + 1}</div>
+              <div className="mt-1 truncate text-xs font-bold text-slate-500 group-data-[state=active]:text-white/90 data-[state=active]:text-white/90">
+                {[...new Set(day.exercises.map((exercise) => exercise.muscle).filter(Boolean))].join(" / ") || "Χωρίς ασκήσεις"}
               </div>
-              <StatCell label="Σετ" value={exercise.sets} />
-              <StatCell label="Επαναλ." value={exercise.reps} />
-              <StatCell label="Tempo" value={exercise.tempo} />
-              <StatCell label="Rest" value={formatRest(exercise.rest)} />
-              <button
-                type="button"
-                className="grid h-9 w-9 place-items-center rounded-md border border-slate-300 text-slate-700 hover:border-red-200 hover:text-red-600"
-                title="Video"
-              >
-                <Play className="h-4 w-4" />
-              </button>
-              {exercise.notes && (
-                <div className="rounded-md bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 md:col-span-6">{exercise.notes}</div>
-              )}
-            </div>
+            </TabsTrigger>
           ))}
-          {!activeDay.exercises.length && (
-            <div className="p-8 text-center font-bold text-slate-500">Δεν υπάρχουν ασκήσεις για αυτή την ημέρα.</div>
-          )}
-        </div>
+        </TabsList>
 
-        {training.description && (
-          <div className="mx-5 mb-5 rounded-lg border border-red-100 bg-red-50 p-5">
-            <div className="font-black text-slate-950">Οδηγίες</div>
-            <p className="mt-2 text-sm font-semibold leading-6 text-slate-700">{training.description}</p>
-          </div>
-        )}
-      </Card>
+        {days.map((day, dayIndex) => {
+          const dayMuscles = [...new Set(day.exercises.map((exercise) => exercise.muscle).filter(Boolean))];
+
+          return (
+            <TabsContent key={day.id} value={String(day.id)} className="space-y-7">
+              <Card className="overflow-hidden" style={{ "--card-spacing": "0px" } as CSSProperties}>
+                <div className="flex items-center gap-4 border-b border-slate-100 p-6">
+                  <div className="grid h-10 w-10 place-items-center rounded-full bg-red-50 text-red-600">
+                    <LayoutGrid className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black">Ημέρα {dayIndex + 1}</h3>
+                    <div className="mt-1 text-sm font-bold text-slate-500">{dayMuscles.join(" / ") || "Χωρίς ασκήσεις"}</div>
+                  </div>
+                </div>
+
+                <div className="mx-5 hidden grid-cols-[minmax(0,1fr)_72px_92px_92px_82px_42px] rounded-lg bg-slate-50 px-5 py-4 text-sm font-bold text-slate-500 md:grid">
+                  <div>Άσκηση</div>
+                  <div className="text-center">Σετ</div>
+                  <div className="text-center">Επαναλ.</div>
+                  <div className="text-center">Tempo</div>
+                  <div className="text-center">Rest</div>
+                  <div />
+                </div>
+
+                <div className="divide-y divide-slate-100 p-5 pt-0">
+                  {day.exercises.map((exercise) => (
+                    <div key={exercise.id} className="grid gap-4 rounded-lg px-0 py-5 md:grid-cols-[minmax(0,1fr)_72px_92px_92px_82px_42px] md:items-center">
+                      <div className="flex min-w-0 items-center gap-4">
+                        <ExercisePhotoSlider exercise={exercise} />
+                        <div className="min-w-0">
+                          <div className="text-lg font-black text-slate-950">{exercise.name}</div>
+                          <div className="mt-1 text-sm font-bold text-slate-500">{exercise.muscle || "-"}</div>
+                        </div>
+                      </div>
+                      <StatCell label="Σετ" value={exercise.sets} />
+                      <StatCell label="Επαναλ." value={exercise.reps} />
+                      <StatCell label="Tempo" value={exercise.tempo} />
+                      <StatCell label="Rest" value={formatRest(exercise.rest)} />
+                      <Button variant="outline" size="icon" title="Video">
+                        <Play className="h-4 w-4" />
+                      </Button>
+                      {exercise.notes && (
+                        <div className="rounded-md bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 md:col-span-6">{exercise.notes}</div>
+                      )}
+                    </div>
+                  ))}
+                  {!day.exercises.length && (
+                    <div className="p-8 text-center font-bold text-slate-500">Δεν υπάρχουν ασκήσεις για αυτή την ημέρα.</div>
+                  )}
+                </div>
+
+                {training.description && (
+                  <div className="mx-5 mb-5 rounded-lg border border-red-100 bg-red-50 p-5">
+                    <div className="font-black text-slate-950">Οδηγίες</div>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-slate-700">{training.description}</p>
+                  </div>
+                )}
+              </Card>
+            </TabsContent>
+          );
+        })}
+      </Tabs>
 
       <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm md:grid-cols-3">
         <SummaryItem icon={<Clock className="h-5 w-5" />} label="Διάρκεια Προπόνησης" value={`~ ${estimatedMinutes} λεπτά`} />
-        <SummaryItem icon={<Flame className="h-5 w-5" />} label="Εκτιμώμενες Θερμίδες" value={estimatedCalories} />
+        <SummaryItem
+          icon={<Flame className="h-5 w-5" />}
+          label="Εκτιμώμενες Θερμίδες"
+          value={`${Math.max(250, activeDay.exercises.length * 85)}-${Math.max(350, activeDay.exercises.length * 110)} kcal`}
+        />
         <SummaryItem icon={<LayoutGrid className="h-5 w-5" />} label="Επίπεδο" value={difficultyLabel(training.difficulty)} />
       </div>
     </section>
@@ -321,27 +328,32 @@ function ExercisePhotoSlider({ exercise }: { exercise: Exercise }) {
       <img src={resolveMediaUrl(activeImage.imageUrl)} alt="" className="h-full w-full object-cover" />
       {images.length > 1 && (
         <>
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="icon"
             onClick={() => setIndex((value) => (value - 1 + images.length) % images.length)}
-            className="absolute left-1 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-slate-900 opacity-0 shadow transition group-hover:opacity-100"
+            className="absolute left-1 top-1/2 h-7 w-7 -translate-y-1/2 rounded-full bg-white/90 text-slate-900 opacity-0 shadow transition group-hover:opacity-100 hover:bg-white"
           >
             <ChevronLeft className="h-4 w-4" />
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="secondary"
+            size="icon"
             onClick={() => setIndex((value) => (value + 1) % images.length)}
-            className="absolute right-1 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-slate-900 opacity-0 shadow transition group-hover:opacity-100"
+            className="absolute right-1 top-1/2 h-7 w-7 -translate-y-1/2 rounded-full bg-white/90 text-slate-900 opacity-0 shadow transition group-hover:opacity-100 hover:bg-white"
           >
             <ChevronRight className="h-4 w-4" />
-          </button>
+          </Button>
           <div className="absolute bottom-1.5 left-0 right-0 flex justify-center gap-1">
             {images.map((image, imageIndex) => (
-              <button
+              <Button
                 key={`${image.id}-${imageIndex}`}
                 type="button"
+                variant="ghost"
                 onClick={() => setIndex(imageIndex)}
-                className={`h-1.5 rounded-full transition-all ${imageIndex === index ? "w-5 bg-red-600" : "w-1.5 bg-white/80"}`}
+                className={`h-1.5 min-w-0 rounded-full p-0 transition-all hover:bg-white ${imageIndex === index ? "w-5 bg-red-600" : "w-1.5 bg-white/80"}`}
                 aria-label={`Photo ${imageIndex + 1}`}
               />
             ))}

@@ -554,11 +554,11 @@ function ExercisesContent() {
       <div className="grid grid-cols-12 gap-5">
         <div className="col-span-12 flex h-14 items-center rounded-lg border border-slate-200 bg-white px-5 shadow-sm md:col-span-4">
           <Search className="mr-3 h-5 w-5 text-slate-500" />
-          <input
+          <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Αναζήτηση άσκησης..."
-            className="w-full bg-transparent text-sm outline-none placeholder:text-slate-500"
+            className="h-auto border-none bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
           />
         </div>
         <div className="col-span-6 md:col-span-3">
@@ -646,13 +646,14 @@ function ExercisesContent() {
             {paginatedExercises.map((exercise) => (
               <TableRow key={exercise.id} className="h-[82px]">
                 <TableCell className="px-6">
-                  <button
+                  <Button
+                    variant="link"
                     onClick={() => openExercise(exercise, "view")}
-                    className="flex items-center gap-4 whitespace-normal text-left font-extrabold text-slate-950 hover:text-red-600"
+                    className="h-auto gap-4 whitespace-normal p-0 text-left font-extrabold text-slate-950 hover:text-red-600"
                   >
                     <ExerciseImage exercise={exercise} />
                     {exercise.name}
-                  </button>
+                  </Button>
                 </TableCell>
                 <TableCell className="px-5 text-sm text-slate-700">{exercise.muscleGroup}</TableCell>
                 <TableCell className="px-5 text-sm text-slate-700">{exercise.equipment}</TableCell>
@@ -852,13 +853,14 @@ function ExercisesContent() {
                                   <Badge className="absolute left-2 top-2 bg-red-600 text-[10px] font-black text-white">PRIMARY</Badge>
                                 )}
                               </div>
-                              <button
+                              <Button
+                                variant="ghost"
                                 onClick={() => deleteExerciseImage(image)}
                                 disabled={saving || !image.id || String(image.id).startsWith("local")}
-                                className="h-9 w-full text-xs font-bold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                                className="h-9 w-full rounded-none text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-600"
                               >
                                 Διαγραφή
-                              </button>
+                              </Button>
                             </div>
                           ))}
                         </div>
@@ -909,10 +911,11 @@ function ExercisesContent() {
             />
             <div className="mt-5 grid max-h-[58vh] grid-cols-2 gap-4 overflow-y-auto pr-2 sm:grid-cols-4">
               {filteredMediaAssets.map((asset) => (
-                <button
+                <Button
                   key={`${asset.kind}-${asset.id}`}
+                  variant="outline"
                   onClick={() => chooseMediaAsset(asset)}
-                  className="overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-sm hover:border-red-300"
+                  className="h-auto flex-col items-stretch overflow-hidden whitespace-normal p-0 text-left hover:border-red-300"
                 >
                   <div className="h-36 bg-slate-100">
                     <PickerImage asset={asset} />
@@ -921,7 +924,7 @@ function ExercisesContent() {
                     <div className="truncate font-bold">{asset.title}</div>
                     <div className="mt-1 truncate text-xs text-slate-500">{asset.folderName || asset.source}</div>
                   </div>
-                </button>
+                </Button>
               ))}
             </div>
             {!filteredMediaAssets.length && (
@@ -1066,27 +1069,32 @@ function ExerciseImageSlider({ exercise, large = false }: { exercise: Partial<Ex
       <img src={resolveMediaUrl(activeImage.imageUrl)} alt={exercise.name || ""} className="h-full w-full object-cover" />
       {images.length > 1 && (
         <>
-          <button
+          <Button
             type="button"
+            variant="secondary"
+            size="icon"
             onClick={() => setIndex((value) => (value - 1 + images.length) % images.length)}
-            className="absolute left-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-slate-900 shadow hover:bg-white"
+            className="absolute left-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-white/90 text-slate-900 shadow hover:bg-white"
           >
             <ChevronLeft className="h-5 w-5" />
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="secondary"
+            size="icon"
             onClick={() => setIndex((value) => (value + 1) % images.length)}
-            className="absolute right-3 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-slate-900 shadow hover:bg-white"
+            className="absolute right-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-white/90 text-slate-900 shadow hover:bg-white"
           >
             <ChevronRight className="h-5 w-5" />
-          </button>
+          </Button>
           <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
             {images.map((image, imageIndex) => (
-              <button
+              <Button
                 key={`${image.id}-${imageIndex}`}
                 type="button"
+                variant="ghost"
                 onClick={() => setIndex(imageIndex)}
-                className={`h-2 rounded-full transition-all ${imageIndex === index ? "w-7 bg-red-600" : "w-2 bg-white/80"}`}
+                className={`h-2 min-w-0 rounded-full p-0 transition-all hover:bg-white ${imageIndex === index ? "w-7 bg-red-600" : "w-2 bg-white/80"}`}
                 aria-label={`Φωτογραφία ${imageIndex + 1}`}
               />
             ))}

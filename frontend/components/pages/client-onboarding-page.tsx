@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import type { AuthUser } from "@/types/auth";
@@ -708,10 +709,20 @@ function YesNoQuestion({
         <div className="text-sm font-black leading-6 text-slate-700">
           {label} <span className="text-slate-400">ⓘ</span>
         </div>
-        <div className="flex min-w-[150px] items-center gap-4 rounded-md bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">
-          <Radio checked={flags[name] === "yes"} onChange={() => onFlagChange(name, "yes")} label="Ναι" />
-          <Radio checked={flags[name] === "no"} onChange={() => onFlagChange(name, "no")} label="Όχι" />
-        </div>
+        <RadioGroup
+          value={flags[name]}
+          onValueChange={(value) => onFlagChange(name, value as YesNoFlag)}
+          className="flex min-w-[150px] flex-row items-center gap-4 rounded-md bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700"
+        >
+          <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap">
+            <RadioGroupItem value="yes" />
+            <span>Ναι</span>
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap">
+            <RadioGroupItem value="no" />
+            <span>Όχι</span>
+          </label>
+        </RadioGroup>
       </div>
       <Input
         value={value}
@@ -723,14 +734,6 @@ function YesNoQuestion({
   );
 }
 
-function Radio({ checked, onChange, label }: { checked: boolean; onChange: () => void; label: string }) {
-  return (
-    <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap">
-      <input type="radio" checked={checked} onChange={onChange} className="h-4 w-4 shrink-0 accent-red-600" />
-      <span>{label}</span>
-    </label>
-  );
-}
 
 function FormInput({
   label,

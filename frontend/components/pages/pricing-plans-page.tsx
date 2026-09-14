@@ -165,12 +165,13 @@ function PricingPlansContent() {
             <p className="mt-2 text-sm font-semibold text-slate-500">Σύρε για αλλαγή σειράς εμφάνισης</p>
             <div className="mt-5 space-y-3">
               {plans.map((plan) => (
-                <button
+                <Button
                   key={plan.id}
                   type="button"
+                  variant="outline"
                   onClick={() => setSelectedId(plan.id ?? null)}
-                  className={`flex h-12 w-full items-center justify-between rounded-md border px-4 text-left font-bold ${
-                    selectedId === plan.id ? "border-red-500 bg-red-50 text-slate-950" : "border-slate-200 hover:border-red-200"
+                  className={`h-12 w-full justify-between px-4 text-left font-bold ${
+                    selectedId === plan.id ? "border-red-500 bg-red-50 text-slate-950" : "hover:border-red-200"
                   }`}
                 >
                   <span className="flex items-center gap-3">
@@ -178,7 +179,7 @@ function PricingPlansContent() {
                     {plan.name}
                   </span>
                   <span className="text-slate-400">⋮⋮</span>
-                </button>
+                </Button>
               ))}
             </div>
           </aside>
@@ -255,8 +256,13 @@ function PricingPlansContent() {
                 <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700">
                   Χρώμα Θέματος
                   <div className="flex h-12 w-full items-center gap-3 rounded-md border border-slate-200 px-3">
+                    {/* No shadcn equivalent for a native color swatch picker */}
                     <input type="color" value={form.themeColor} onChange={(event) => update("themeColor", event.target.value)} className="h-7 w-7 rounded border-0 p-0" />
-                    <input value={form.themeColor} onChange={(event) => update("themeColor", event.target.value)} className="flex-1 outline-none" />
+                    <Input
+                      value={form.themeColor}
+                      onChange={(event) => update("themeColor", event.target.value)}
+                      className="h-auto flex-1 border-none p-0 shadow-none focus-visible:ring-0"
+                    />
                   </div>
                 </Label>
               </div>
@@ -267,25 +273,29 @@ function PricingPlansContent() {
                   {form.features.map((feature, index) => (
                     <div key={index} className="grid grid-cols-[28px_36px_1fr_34px] items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
                       <span className="text-slate-400">⋮⋮</span>
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="icon"
                         onClick={() => updateFeature(index, "included", !feature.included)}
-                        className={`text-lg font-black ${feature.included ? "text-emerald-600" : "text-red-600"}`}
+                        className={`h-9 w-9 text-lg font-black ${feature.included ? "text-emerald-600 hover:text-emerald-600" : "text-red-600 hover:text-red-600"}`}
                       >
                         {feature.included ? "✓" : "×"}
-                      </button>
-                      <input
+                      </Button>
+                      <Input
                         value={feature.text}
                         onChange={(event) => updateFeature(index, "text", event.target.value)}
-                        className="h-10 rounded-md border border-transparent px-2 outline-none focus:border-red-200"
+                        className="h-10 border-transparent px-2 focus-visible:border-red-200"
                       />
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="icon"
                         onClick={() => update("features", form.features.filter((_, i) => i !== index))}
-                        className="text-slate-400 hover:text-red-600"
+                        className="h-9 w-9 text-slate-400 hover:text-red-600"
                       >
                         ×
-                      </button>
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -348,9 +358,9 @@ function PlanPreview({ plan }: { plan: PricingPlan }) {
           €{plan.price}
           <span className="text-base font-bold text-slate-500"> /{formatPlanPeriod(plan.period)}</span>
         </div>
-        <button type="button" className="mt-5 h-11 w-full rounded-md font-black text-white" style={{ backgroundColor: plan.themeColor }}>
+        <Button type="button" className="mt-5 h-11 w-full font-black text-white hover:opacity-90" style={{ backgroundColor: plan.themeColor }}>
           Επιλέγω {plan.name}
-        </button>
+        </Button>
       </div>
       <div className="space-y-4 py-3">
         {plan.features.map((feature, index) => (

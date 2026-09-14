@@ -59,14 +59,15 @@ export function ThemeColorPicker() {
         <div className="mb-3 text-sm font-bold text-slate-700">Χρώμα Εφαρμογής</div>
         <div className="grid grid-cols-3 gap-2">
           {accents.map((item) => (
-            <button
+            <Button
               key={item.value}
               type="button"
+              variant="outline"
               onClick={() => selectAccent(item.value)}
               title={item.label}
               className={cn(
-                "flex flex-col items-center gap-1.5 rounded-md border p-2 text-xs font-semibold hover:bg-slate-50",
-                accent === item.value ? "border-slate-900" : "border-slate-200",
+                "h-auto flex-col gap-1.5 p-2 text-xs font-semibold",
+                accent === item.value && "border-slate-900",
               )}
             >
               <span
@@ -76,7 +77,7 @@ export function ThemeColorPicker() {
                 {accent === item.value && <Check className="h-3.5 w-3.5 text-white" />}
               </span>
               {item.label}
-            </button>
+            </Button>
           ))}
         </div>
       </PopoverContent>

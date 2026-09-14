@@ -2,6 +2,7 @@
 
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 export function ThemeSwitcher() {
   const { theme, setTheme } = useTheme();
@@ -12,27 +13,18 @@ export function ThemeSwitcher() {
   const current = mounted ? theme : "light";
 
   return (
-    <div className="flex rounded-md border border-slate-200 bg-slate-50 p-1 dark:border-slate-700 dark:bg-slate-900">
-      <button
-        type="button"
-        onClick={() => setTheme("light")}
-        className={`h-9 rounded px-3 text-xs font-black ${
-          current === "light"
-            ? "bg-white text-red-600 shadow-sm dark:bg-slate-800"
-            : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-        }`}
-      >
+    <ToggleGroup
+      value={current ? [current] : []}
+      onValueChange={(values) => values[0] && setTheme(values[0])}
+      variant="outline"
+      size="sm"
+    >
+      <ToggleGroupItem value="light" className="text-xs font-black data-[state=on]:text-primary">
         Light
-      </button>
-      <button
-        type="button"
-        onClick={() => setTheme("dark")}
-        className={`h-9 rounded px-3 text-xs font-black ${
-          current === "dark" ? "bg-red-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-        }`}
-      >
+      </ToggleGroupItem>
+      <ToggleGroupItem value="dark" className="text-xs font-black data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
         Dark
-      </button>
-    </div>
+      </ToggleGroupItem>
+    </ToggleGroup>
   );
 }
