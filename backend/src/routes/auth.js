@@ -393,6 +393,45 @@ router.post('/profile-photo', authenticateToken, (req, res, next) => {
   }
 });
 
+// PUT /auth/change-password — any authenticated role, requires the current password
+router.put('/change-password', authenticateToken, [
+  body('currentPassword').notEmpty().withMessage('Current password required'),
+  body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const { currentPassword, newPassword } = req.body;
+  const connection = await pool.getConnection();
+
+  try {
+    const [rows] = await connection.query('SELECT id, password FROM users WHERE id = ?', [req.user.id]);
+
+    if (rows.length === 0) {
+      connection.release();
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const validPassword = await bcrypt.compare(currentPassword, rows[0].password);
+    if (!validPassword) {
+      connection.release();
+      return res.status(400).json({ message: 'Ο τρέχων κωδικός δεν είναι σωστός' });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await connection.query('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, req.user.id]);
+    connection.release();
+
+    res.json({ message: 'Password updated successfully' });
+  } catch (error) {
+    connection.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 async function refreshHandler(req, res) {
   const refreshToken = req.body.refreshToken || readCookie(req, 'refreshToken');
 

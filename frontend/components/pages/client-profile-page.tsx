@@ -12,6 +12,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl } from "@/lib/media";
 import { cropAndCompressImage } from "@/lib/image-compression";
+import { ChangePasswordCard } from "@/components/shared/change-password-card";
 import type { AuthUser } from "@/types/auth";
 
 const socialPlatforms = ["Instagram", "Facebook", "YouTube", "TikTok"];
@@ -331,6 +332,7 @@ function ClientProfileContent() {
           Φόρτωση...
         </div>
       ) : (
+        <div className="space-y-6">
         <form onSubmit={saveProfile} className="space-y-6">
           {(error || message) && (
             <div
@@ -460,6 +462,9 @@ function ClientProfileContent() {
             </Button>
           </div>
         </form>
+
+        <ChangePasswordCard />
+        </div>
       )}
     </ClientShell>
   );

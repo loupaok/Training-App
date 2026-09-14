@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CoachShell } from "@/components/shell/coach-shell";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { ChangePasswordCard } from "@/components/shared/change-password-card";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { getInitials } from "@/lib/media";
@@ -75,15 +76,21 @@ function CoachProfileContent() {
   return (
     <CoachShell title="Προφίλ" user={user} logout={logout}>
       <div className="mb-6">
-        <h1 className="text-3xl font-black">Το προφίλ μου</h1>
-        <p className="mt-2 text-sm font-semibold text-slate-500">Διαχειρίσου τα προσωπικά σου στοιχεία και τη φωτογραφία προφίλ.</p>
+        <h1 className="text-3xl font-black dark:text-slate-50">Το προφίλ μου</h1>
+        <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
+          Διαχειρίσου τα προσωπικά σου στοιχεία και τη φωτογραφία προφίλ.
+        </p>
       </div>
 
       {error && (
-        <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">{error}</div>
+        <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+          {error}
+        </div>
       )}
       {message && (
-        <div className="mb-5 rounded-lg border border-green-200 bg-green-50 px-5 py-4 text-sm font-bold text-green-700">{message}</div>
+        <div className="mb-5 rounded-lg border border-green-200 bg-green-50 px-5 py-4 text-sm font-bold text-green-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200">
+          {message}
+        </div>
       )}
 
       <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
@@ -97,7 +104,7 @@ function CoachProfileContent() {
             />
             <div>
               <div className="font-bold">{user?.fullName}</div>
-              <div className="text-sm text-slate-500">{user?.email}</div>
+              <div className="text-sm text-slate-500 dark:text-slate-400">{user?.email}</div>
             </div>
             <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
               <Camera className="h-4 w-4" />
@@ -107,40 +114,44 @@ function CoachProfileContent() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Προσωπικά στοιχεία</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={saveProfile} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Όνομα και επίθετο</Label>
-                <Input
-                  id="fullName"
-                  value={form.fullName}
-                  onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" value={user?.email || ""} disabled />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="profileTitle">Τίτλος</Label>
-                <Input
-                  id="profileTitle"
-                  value={form.profileTitle}
-                  onChange={(event) => setForm((current) => ({ ...current, profileTitle: event.target.value }))}
-                  placeholder="π.χ. Head Coach"
-                />
-              </div>
-              <Button type="submit" disabled={saving}>
-                {saving ? "Αποθήκευση..." : "Αποθήκευση"}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Προσωπικά στοιχεία</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={saveProfile} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">Όνομα και επίθετο</Label>
+                  <Input
+                    id="fullName"
+                    value={form.fullName}
+                    onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input id="email" value={user?.email || ""} disabled />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="profileTitle">Τίτλος</Label>
+                  <Input
+                    id="profileTitle"
+                    value={form.profileTitle}
+                    onChange={(event) => setForm((current) => ({ ...current, profileTitle: event.target.value }))}
+                    placeholder="π.χ. Head Coach"
+                  />
+                </div>
+                <Button type="submit" disabled={saving}>
+                  {saving ? "Αποθήκευση..." : "Αποθήκευση"}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <ChangePasswordCard />
+        </div>
       </div>
     </CoachShell>
   );
