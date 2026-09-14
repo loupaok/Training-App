@@ -118,6 +118,45 @@
   --sidebar-ring: #dc2626;
 }
 
+/* Accent color presets — switched at runtime via the theme-color-picker (sets [data-accent] on <html>).
+   Only --primary/--ring/--sidebar-primary/--sidebar-ring/--chart-1 change; --destructive stays red
+   regardless of accent, and the navy sidebar background is brand identity, not an accent. */
+[data-accent="rose"] {
+  --primary: #e11d48;
+  --ring: #e11d48;
+  --sidebar-primary: #e11d48;
+  --sidebar-ring: #e11d48;
+  --chart-1: #e11d48;
+}
+[data-accent="orange"] {
+  --primary: #ea580c;
+  --ring: #ea580c;
+  --sidebar-primary: #ea580c;
+  --sidebar-ring: #ea580c;
+  --chart-1: #ea580c;
+}
+[data-accent="green"] {
+  --primary: #059669;
+  --ring: #059669;
+  --sidebar-primary: #059669;
+  --sidebar-ring: #059669;
+  --chart-1: #059669;
+}
+[data-accent="blue"] {
+  --primary: #2563eb;
+  --ring: #2563eb;
+  --sidebar-primary: #2563eb;
+  --sidebar-ring: #2563eb;
+  --chart-1: #2563eb;
+}
+[data-accent="violet"] {
+  --primary: #7c3aed;
+  --ring: #7c3aed;
+  --sidebar-primary: #7c3aed;
+  --sidebar-ring: #7c3aed;
+  --chart-1: #7c3aed;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

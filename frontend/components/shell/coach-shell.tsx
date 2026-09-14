@@ -21,6 +21,7 @@ import {
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { MenuToggle, TopbarActions } from "@/components/shell/topbar-controls";
+import { ThemeColorPicker } from "@/components/shell/theme-color-picker";
 import { coachNavSections, isActivePath } from "@/lib/nav-config";
 import { getInitials } from "@/lib/media";
 import type { AuthUser } from "@/types/auth";
@@ -129,7 +130,10 @@ function CoachTopbar({ title, user, logout }: { title: string; user: AuthUser | 
         <h1 className="text-2xl font-extrabold">{title}</h1>
       </div>
 
-      <TopbarActions user={user} logout={logout} />
+      <div className="flex items-center gap-4">
+        <ThemeColorPicker />
+        <TopbarActions user={user} logout={logout} />
+      </div>
     </header>
   );
 }

@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { LineChart, DonutChart } from "@tremor/react";
-import { Plus, ListChecks, Dumbbell, Salad, Mail } from "lucide-react";
-import { Card } from "@/components/ui/card";
+import { BarChart } from "@tremor/react";
+import { Users, UserCheck, Clock, UserX, Download } from "lucide-react";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { CoachShell } from "@/components/shell/coach-shell";
 import { UserAvatar } from "@/components/shared/user-avatar";
-import { ViewAllButton } from "@/components/shared/view-all-button";
+import { DateRangePicker } from "@/components/shared/date-range-picker";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { getInitials } from "@/lib/media";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -21,87 +21,6 @@ interface ClientRow {
   client_status_key?: string;
   latest_update_at?: string;
   latest_update_weight?: number | string;
-}
-
-const tasks = [
-  { label: "Έλεγχος 7 νέων updates", done: true },
-  { label: "Έλεγχος εκκρεμών συνδρομών" },
-  { label: "Ενημέρωση προγράμματος πελατών", done: true },
-  { label: "Αποστολή υπενθυμίσεων" },
-];
-
-const quickActions = [
-  { label: "Προσθήκη Νέου Πελάτη", icon: Plus, color: "text-orange-600" },
-  { label: "Δημιουργία Προγράμματος Προπόνησης", icon: Dumbbell, color: "text-blue-600" },
-  { label: "Δημιουργία Προγράμματος Διατροφής", icon: Salad, color: "text-green-600" },
-  { label: "Αποστολή Μηνύματος", icon: Mail, color: "text-indigo-600" },
-];
-
-const weightChartData = [
-  { date: "01/04", "Βάρος (kg)": 82 },
-  { date: "08/04", "Βάρος (kg)": 81 },
-  { date: "15/04", "Βάρος (kg)": 79.5 },
-  { date: "22/04", "Βάρος (kg)": 78 },
-  { date: "29/04", "Βάρος (kg)": 76.5 },
-];
-
-function WeightChart() {
-  return (
-    <Card className="p-6 lg:col-span-5">
-      <div className="mb-7 flex items-start justify-between">
-        <h2 className="text-lg font-extrabold">Γράφημα Βάρους (Όλοι οι Πελάτες)</h2>
-        <Button variant="outline" size="sm" className="text-slate-600">
-          Τελευταίες 30 ημέρες
-        </Button>
-      </div>
-      <LineChart
-        className="h-[250px]"
-        data={weightChartData}
-        index="date"
-        categories={["Βάρος (kg)"]}
-        colors={["blue"]}
-        showLegend={false}
-        showAnimation
-      />
-    </Card>
-  );
-}
-
-function SubscriptionCard({ total, active, pending, inactive }: { total: number; active: number; pending: number; inactive: number }) {
-  const data = [
-    { name: "Ενεργοί", value: active },
-    { name: "Εκκρεμείς", value: pending },
-    { name: "Ανενεργοί", value: inactive },
-  ];
-
-  return (
-    <Card className="p-6 lg:col-span-4">
-      <h2 className="text-lg font-extrabold">Κατάσταση Συνδρομών</h2>
-      <div className="mt-9 flex items-center gap-10">
-        <DonutChart
-          data={data}
-          category="value"
-          index="name"
-          colors={["emerald", "amber", "red"]}
-          className="h-44 w-44 shrink-0"
-          label={String(total)}
-          showAnimation
-        />
-        <div className="space-y-5 text-sm">
-          <div className="flex items-center gap-3">
-            <span className="h-4 w-4 rounded-full bg-green-500" /> Ενεργοί <span className="ml-5 text-slate-500">{active}</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="h-4 w-4 rounded-full bg-amber-400" /> Εκκρεμείς <span className="ml-2 text-slate-500">{pending}</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="h-4 w-4 rounded-full bg-red-500" /> Ανενεργοί <span className="ml-2 text-slate-500">{inactive}</span>
-          </div>
-        </div>
-      </div>
-      <ViewAllButton />
-    </Card>
-  );
 }
 
 function CoachDashboardContent() {
@@ -122,126 +41,116 @@ function CoachDashboardContent() {
   const activePercentText = totalClients ? `${Math.round((activeClients / totalClients) * 100)}% του συνόλου` : "0% του συνόλου";
 
   const stats = [
-    { label: "Σύνολο Πελατών", value: totalClients, note: "Πραγματικές εγγραφές", color: "text-blue-600" },
-    { label: "Ενεργοί Πελάτες", value: activeClients, note: activePercentText, color: "text-indigo-600" },
-    { label: "Εκκρεμείς Πληρωμές", value: pendingClients, note: "Αναμονή έγκρισης", color: "text-amber-500" },
-    { label: "Ανενεργοί Πελάτες", value: inactiveClients, note: "Χωρίς ενεργή πληρωμή", color: "text-red-500" },
-    { label: "Νέα Updates", value: 0, note: "Από πραγματικές υποβολές", color: "text-sky-600" },
+    { label: "Σύνολο Πελατών", value: totalClients, note: "Πραγματικές εγγραφές", icon: Users },
+    { label: "Ενεργοί Πελάτες", value: activeClients, note: activePercentText, icon: UserCheck },
+    { label: "Εκκρεμείς Πληρωμές", value: pendingClients, note: "Αναμονή έγκρισης", icon: Clock },
+    { label: "Ανενεργοί Πελάτες", value: inactiveClients, note: "Χωρίς ενεργή πληρωμή", icon: UserX },
   ];
 
-  const latestUpdates = clients
+  const overviewData = [
+    { status: "Ενεργοί", Πελάτες: activeClients },
+    { status: "Εκκρεμείς", Πελάτες: pendingClients },
+    { status: "Ανενεργοί", Πελάτες: inactiveClients },
+  ];
+
+  const recentUpdates = clients
     .filter((client) => client.latest_update_at)
-    .slice(0, 4)
+    .slice(0, 5)
     .map((client) => ({
+      id: client.id,
       name: client.full_name || client.email || "Πελάτης",
-      date: new Date(client.latest_update_at as string).toLocaleDateString("el-GR"),
+      email: client.email || "",
       weight: client.latest_update_weight ? `${client.latest_update_weight} kg` : "-",
       initials: getInitials(client.full_name || client.email),
     }));
 
-  const topClients: { name: string; initials: string; change: string }[] = [];
-
   return (
     <CoachShell title="Dashboard" user={user} logout={logout}>
-      <div className="mb-6 flex items-start justify-between">
-        <div>
-          <h2 className="text-3xl font-extrabold">Καλωσήρθες, Coach! 👋</h2>
-          <p className="mt-2 text-lg text-slate-600">Εδώ είναι μια συνοπτική εικόνα της επιχείρησής σου.</p>
+      <div className="flex-1 space-y-4">
+        <div className="flex items-center justify-between space-y-2">
+          <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+          <div className="flex items-center space-x-2">
+            <DateRangePicker />
+            <Button variant="outline">
+              <Download className="h-4 w-4" />
+              Download
+            </Button>
+          </div>
         </div>
-        <Button className="h-12 gap-3 px-6 font-bold shadow-lg shadow-red-200">
-          <Plus className="h-5 w-5" />
-          Προσθήκη Νέου
-        </Button>
-      </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-5">
-        {stats.map((stat) => (
-          <Card key={stat.label} className="p-6">
-            <div className="flex items-center gap-5">
-              <div className="text-sm text-slate-600">{stat.label}</div>
+        <Tabs defaultValue="overview" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="analytics" disabled>
+              Analytics
+            </TabsTrigger>
+            <TabsTrigger value="reports" disabled>
+              Reports
+            </TabsTrigger>
+            <TabsTrigger value="notifications" disabled>
+              Notifications
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview" className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {stats.map((stat) => (
+                <Card key={stat.label}>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">{stat.label}</CardTitle>
+                    <stat.icon className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{stat.value}</div>
+                    <p className="text-xs text-muted-foreground">{stat.note}</p>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-            <div className={`mt-5 text-3xl font-extrabold ${stat.color}`}>{stat.value}</div>
-            <div className="mt-3 text-sm text-slate-600">{stat.note}</div>
-          </Card>
-        ))}
-      </div>
 
-      <div id="progress" className="mt-6 grid scroll-mt-28 grid-cols-1 gap-6 lg:grid-cols-12">
-        <WeightChart />
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+              <Card className="lg:col-span-4">
+                <CardHeader>
+                  <CardTitle>Επισκόπηση</CardTitle>
+                </CardHeader>
+                <CardContent className="pl-2">
+                  <BarChart
+                    className="h-[300px]"
+                    data={overviewData}
+                    index="status"
+                    categories={["Πελάτες"]}
+                    colors={["blue"]}
+                    showLegend={false}
+                    showAnimation
+                  />
+                </CardContent>
+              </Card>
 
-        <Card className="p-6 lg:col-span-3">
-          <h2 className="text-lg font-extrabold">Τελευταία Updates</h2>
-          <div className="mt-5 space-y-4">
-            {latestUpdates.map((update) => (
-              <div key={update.name} className="flex items-center gap-4">
-                <UserAvatar initials={update.initials} tone="bg-slate-900" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-bold">{update.name}</div>
-                  <div className="text-sm text-slate-500">{update.date}</div>
-                </div>
-                <div className="font-extrabold">{update.weight}</div>
-              </div>
-            ))}
-            {!latestUpdates.length && (
-              <div className="rounded-md bg-slate-50 p-5 text-sm font-semibold text-slate-500">Δεν υπάρχουν πραγματικά updates ακόμα.</div>
-            )}
-          </div>
-          <ViewAllButton />
-        </Card>
-
-        <SubscriptionCard total={totalClients} active={activeClients} pending={pendingClients} inactive={inactiveClients} />
-
-        <Card className="p-6 lg:col-span-4">
-          <h2 className="text-lg font-extrabold">Κορυφαίοι Πελάτες (Αυτόν τον Μήνα)</h2>
-          <div className="mt-7 space-y-6">
-            {topClients.map((client, index) => (
-              <div key={client.name} className="flex items-center gap-5">
-                <div className="w-6 text-2xl font-extrabold">{index + 1}</div>
-                <UserAvatar initials={client.initials} tone="bg-slate-900" />
-                <div className="min-w-0 flex-1 truncate font-bold">{client.name}</div>
-                <div className="font-extrabold text-emerald-600">{client.change}</div>
-              </div>
-            ))}
-            {!topClients.length && (
-              <div className="rounded-md bg-slate-50 p-5 text-sm font-semibold text-slate-500">
-                Δεν υπάρχουν αρκετά πραγματικά δεδομένα progress ακόμα.
-              </div>
-            )}
-          </div>
-          <ViewAllButton />
-        </Card>
-
-        <Card className="p-6 lg:col-span-4">
-          <h2 className="text-lg font-extrabold">Σημερινές Εργασίες</h2>
-          <div className="mt-5 space-y-3">
-            {tasks.map((task) => (
-              <label key={task.label} className="flex h-11 items-center gap-4 rounded-md border border-slate-200 px-4 text-sm font-medium text-slate-700">
-                <Checkbox defaultChecked={task.done} />
-                {task.label}
-              </label>
-            ))}
-          </div>
-          <Button variant="outline" className="mt-5 flex h-11 w-full items-center justify-center gap-3 text-sm font-semibold hover:border-red-200 hover:text-red-600">
-            <ListChecks className="h-4 w-4" />
-            Προβολή Ημερολογίου
-          </Button>
-        </Card>
-
-        <Card className="p-6 lg:col-span-4">
-          <h2 className="text-lg font-extrabold">Γρήγορες Ενέργειες</h2>
-          <div className="mt-5 space-y-3">
-            {quickActions.map((action) => (
-              <Button
-                key={action.label}
-                variant="outline"
-                className="flex h-11 w-full items-center justify-start gap-5 px-5 text-left text-sm font-medium hover:border-red-200 hover:text-red-600"
-              >
-                <action.icon className={`h-5 w-5 ${action.color}`} />
-                {action.label}
-              </Button>
-            ))}
-          </div>
-        </Card>
+              <Card className="lg:col-span-3">
+                <CardHeader>
+                  <CardTitle>Πρόσφατα Updates</CardTitle>
+                  <CardDescription>
+                    {recentUpdates.length
+                      ? `${recentUpdates.length} πρόσφατες ενημερώσεις πελατών.`
+                      : "Δεν υπάρχουν πραγματικά updates ακόμα."}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {recentUpdates.map((update) => (
+                    <div key={update.id} className="flex items-center gap-4">
+                      <UserAvatar initials={update.initials} tone="bg-slate-900" />
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <p className="truncate text-sm font-medium leading-none">{update.name}</p>
+                        <p className="truncate text-sm text-muted-foreground">{update.email}</p>
+                      </div>
+                      <div className="font-medium">{update.weight}</div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </CoachShell>
   );

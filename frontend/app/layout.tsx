@@ -7,10 +7,15 @@ export const metadata: Metadata = {
   description: "Coaching business platform for coaches and clients",
 };
 
+const ACCENT_INIT_SCRIPT = `(function(){try{var a=localStorage.getItem("accentColor");if(a&&a!=="red")document.documentElement.setAttribute("data-accent",a);}catch(e){}})();`;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" suppressHydrationWarning className="h-full antialiased">
-      <body className="min-h-full font-sans">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: ACCENT_INIT_SCRIPT }} />
+      </head>
+      <body className="min-h-full font-sans" suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

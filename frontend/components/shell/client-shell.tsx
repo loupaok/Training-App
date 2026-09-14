@@ -17,6 +17,7 @@ import {
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { MenuToggle, TopbarActions } from "@/components/shell/topbar-controls";
 import { ThemeSwitcher } from "@/components/shell/theme-switcher";
+import { ThemeColorPicker } from "@/components/shell/theme-color-picker";
 import { clientNavSections } from "@/lib/nav-config";
 import type { AuthUser } from "@/types/auth";
 
@@ -109,6 +110,7 @@ function ClientTopbar({
         <h1 className="text-2xl font-extrabold">{title}</h1>
       </div>
       <div className="flex items-center gap-4">
+        <ThemeColorPicker />
         <ThemeSwitcher />
         <TopbarActions user={user} logout={logout} />
       </div>
