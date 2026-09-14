@@ -19,6 +19,7 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
+import { Badge } from "@/components/ui/badge";
 import { MenuToggle, TopbarActions } from "@/components/shell/topbar-controls";
 import { ThemeColorPicker } from "@/components/shell/theme-color-picker";
 import { SidebarUserMenu } from "@/components/shell/sidebar-user-menu";
@@ -122,13 +123,18 @@ function CoachSidebar({ user, logout }: { user: AuthUser | null; logout: () => P
 
 function CoachTopbar({ title, user, logout }: { title: string; user: AuthUser | null; logout: () => Promise<void> }) {
   return (
-    <header className="sticky top-0 z-10 flex h-[86px] items-center justify-between border-b border-slate-200 bg-white px-10 shadow-sm">
-      <div className="flex items-center gap-9">
+    <header className="flex items-center justify-between border-b bg-background px-6 py-4">
+      <div className="flex items-center gap-3">
         <MenuToggle />
-        <h1 className="text-2xl font-extrabold">{title}</h1>
+        <h1 className="text-lg font-semibold">{title}</h1>
+        {user?.role && (
+          <Badge variant="secondary" className="capitalize">
+            {user.role}
+          </Badge>
+        )}
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <ThemeColorPicker />
         <TopbarActions user={user} logout={logout} />
       </div>

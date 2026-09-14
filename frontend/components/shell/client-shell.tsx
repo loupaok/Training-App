@@ -14,6 +14,7 @@ import {
   SidebarMenuItem,
   SidebarProvider,
 } from "@/components/ui/sidebar";
+import { Badge } from "@/components/ui/badge";
 import { MenuToggle, TopbarActions } from "@/components/shell/topbar-controls";
 import { ThemeSwitcher } from "@/components/shell/theme-switcher";
 import { ThemeColorPicker } from "@/components/shell/theme-color-picker";
@@ -100,12 +101,17 @@ function ClientTopbar({
   logout: () => Promise<void>;
 }) {
   return (
-    <header className="sticky top-0 z-10 flex h-[86px] items-center justify-between border-b border-slate-200 bg-white px-10 text-slate-950 shadow-sm dark:border-slate-800 dark:bg-slate-950 dark:text-white">
-      <div className="flex items-center gap-9">
+    <header className="flex items-center justify-between border-b bg-background px-6 py-4 text-foreground">
+      <div className="flex items-center gap-3">
         <MenuToggle />
-        <h1 className="text-2xl font-extrabold">{title}</h1>
+        <h1 className="text-lg font-semibold">{title}</h1>
+        {user?.role && (
+          <Badge variant="secondary" className="capitalize">
+            {user.role}
+          </Badge>
+        )}
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <ThemeColorPicker />
         <ThemeSwitcher />
         <TopbarActions user={user} logout={logout} />
