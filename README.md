@@ -16,24 +16,32 @@ billing. Role-based access across admin / coach / moderator / client.
 
 ## What's included
 
-**Coach / admin side** (`Dashboard.jsx`, `AdminDashboard.jsx`, `Clients.jsx`, `ClientDetail.jsx`,
-`ClientUpdates.jsx`, `Exercises.jsx`, `MediaLibrary.jsx`, `Analytics.jsx`, `Notifications.jsx`,
-`Team.jsx`, `PricingPlans.jsx`):
+**Coach / admin side** (`app/dashboard`, `app/admin`, `app/clients`, `app/updates`, `app/exercises`,
+`app/media-library`, `app/analytics`, `app/notifications`, `app/manual-notifications`,
+`app/changelog`, `app/pricing-plans`, `app/coach-profile`):
 - Client roster, individual client detail/management, approve or reject payments
 - Training plans and nutrition plans per client, rep tracking
 - Exercise library (876 seeded exercises, images/video, Greek-localized descriptions)
 - Media library with folders
 - Progress tracking (photos + updates) per client
 - Pricing plans (public list + admin management)
-- Team view of coaches, system stats and admin user management
+- Admin Panel: manage all users (any role), reset any user's password, deactivate accounts
+- Manual Notifications: admin broadcast to every active user, any role (`/manual-notifications`)
+- Changelog: "what's new" feed, admin-authored, visible to every role (`/changelog`)
+- Profile: photo, display name/title, font-size preference, push notifications, change password
 
-**Client portal** (`ClientOnboarding.jsx`, `ClientDashboard.jsx`, `ClientProgram.jsx`,
-`ClientPending.jsx`, `ClientExpired.jsx`, `ClientBilling.jsx`, `ClientNotifications.jsx`,
-`ClientProfile.jsx`):
+**Client portal** (`app/client-onboarding`, `app/client-dashboard`, `app/client-program`,
+`app/client/pending`, `app/client/expired`, `app/client-billing`, `app/client-notifications`,
+`app/client-profile`, `app/changelog`):
 - Onboarding flow, profile, billing (submit payment proof)
 - View assigned training/nutrition program
 - Weekly progress updates with photo upload
-- Own notification feed
+- Own notification feed, plus the shared Changelog feed
+- Profile: photo, font-size preference, push notifications, change password
+
+**Push notifications** (both sides): browser push via `web-push`/VAPID, opt-in per device from the
+Profile page. Falls back to in-app notifications only when VAPID keys aren't configured — see
+[Environment](#environment).
 
 ## Run it
 
@@ -85,7 +93,8 @@ deleting them if you want to avoid the same confusion again.
 
 Tables: `users`, `coach_clients`, `sessions`, `goals`, `clients`, `training_plans`, `nutrition_plans`,
 `reps`, `subscriptions`, `payments`, `progress_updates`, `progress_photos`, `social_links`,
-`update_schedule`, `refresh_tokens`.
+`update_schedule`, `refresh_tokens`, `notifications`, `manual_notifications`, `changelog_entries`,
+`push_subscriptions`.
 
 ## API reference
 
@@ -94,10 +103,10 @@ and `GET /api/health` require a valid JWT (`Authorization: Bearer <token>`).
 
 | Base path | Notes |
 | --- | --- |
-| `/api/auth` | register (client only), login, refresh/refresh-token, logout, me, profile |
-| `/api/admin` | admin-only: users, coaches, clients, stats |
+| `/api/auth` | register (client only), login, refresh/refresh-token, logout, me, profile (incl. font size, push opt-in), change-password, profile-photo |
+| `/api/admin` | admin-only: users (any role, filterable, reset-password), coaches, clients, stats |
 | `/api/coaches` | list/get public, update own profile (coach) |
-| `/api/clients` | coach/admin/moderator manage clients; `/me/*` sub-routes are the client's own profile/onboarding/billing/notifications |
+| `/api/clients` | coach/admin/moderator manage clients; `/me/*` sub-routes are the client's own profile/onboarding/billing/notifications; `/push/*` is push-subscription management (any authenticated role) |
 | `/api/client-dashboard` | client-only: dashboard data, weekly progress update with photos |
 | `/api/training-plans`, `/api/nutrition-plans`, `/api/reps` | coach/admin manage per-client plans |
 | `/api/subscriptions` | coach/admin |
@@ -105,6 +114,8 @@ and `GET /api/health` require a valid JWT (`Authorization: Bearer <token>`).
 | `/api/exercises` | coach/admin/moderator read; coach/admin write (incl. images/video) |
 | `/api/media` | coach/admin/moderator read; coach/admin write, folders |
 | `/api/pricing-plans` | public read; admin write |
+| `/api/manual-notifications` | admin-only: broadcast a notification to every active user |
+| `/api/changelog` | any authenticated role reads; admin writes/deletes |
 | `GET /api/health` | health check |
 
 ## Environment
@@ -113,6 +124,10 @@ Copy `.env.example` to `.env` in `backend/` and fill in `DB_PASSWORD`/`JWT_SECRE
 Uploaded files are gitignored and live in `backend/uploads/` — back those up separately from git if
 you care about keeping them (client photos, exercise images, etc.).
 
+Push notifications need `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (a `mailto:` address)
+in `backend/.env` — generate a pair with `npx web-push generate-vapid-keys`. Optional: if unset, the
+push feature no-ops cleanly and the app works the same otherwise.
+
 ## Troubleshooting
 
 - **"Cannot connect to database"** — check `backend/.env` credentials and that MySQL is running.
@@ -120,3 +135,6 @@ you care about keeping them (client photos, exercise images, etc.).
 - **Port already in use** — change `PORT` in `backend/.env`, or stop whatever else is on 5000/3000.
 - **Frontend can't reach the backend** — check `BACKEND_ORIGIN` in `frontend/.env.local` matches where
   the backend actually runs (`next.config.ts`'s rewrites proxy `/api` and `/uploads` there).
+- **Login "succeeds" but bounces back to `/login`** — the account's `role` column doesn't match what
+  you expect (e.g. it got changed to something unexpected via the Admin Panel). Check `SELECT role
+  FROM users WHERE email = '...'` and fix it directly, or reassign the role from the Admin Panel.

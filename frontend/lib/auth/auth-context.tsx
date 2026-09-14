@@ -34,7 +34,7 @@ async function authFetch(endpoint: string, options: RequestInit = {}) {
 export function getAuthRedirect(user: AuthUser | null | undefined): string {
   if (!user) return "/login";
   if (user.redirectTo) return user.redirectTo;
-  if (user.role === "coach" || user.role === "admin") return "/coach/dashboard";
+  if (user.role === "coach" || user.role === "admin" || user.role === "moderator") return "/coach/dashboard";
   if (user.role === "client" && !user.onboardingCompleted) return "/client-onboarding";
   if (user.role === "client" && user.status === "active") return "/client/dashboard";
   if (user.role === "client" && user.status === "expired") return "/client/expired";

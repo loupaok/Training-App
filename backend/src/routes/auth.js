@@ -81,7 +81,7 @@ function normalizeStatus(user) {
 }
 
 function getRedirectPath(user, onboardingCompleted = true) {
-  if (['coach', 'admin'].includes(user.role)) return '/coach/dashboard';
+  if (['coach', 'admin', 'moderator'].includes(user.role)) return '/coach/dashboard';
   if (user.role === 'client' && !onboardingCompleted) return '/client-onboarding';
   if (user.role === 'client' && user.status === 'active') return '/client/dashboard';
   if (user.role === 'client' && user.status === 'expired') return '/client/expired';

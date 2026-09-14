@@ -27,7 +27,7 @@ export function ProtectedRoute({ children, allow }: { children: ReactNode; allow
     if (user.role === "client" && user.onboardingCompleted && pathname === "/client-onboarding") {
       return getAuthRedirect(user);
     }
-    if (allow === "coach" && !["coach", "admin"].includes(user.role)) return getAuthRedirect(user);
+    if (allow === "coach" && !["coach", "admin", "moderator"].includes(user.role)) return getAuthRedirect(user);
     if (allow === "client-active" && user.role === "client" && user.status !== "active") return getAuthRedirect(user);
     if (allow === "client-pending" && !(user.role === "client" && user.status === "pending_payment")) {
       return getAuthRedirect(user);
