@@ -42,3 +42,35 @@ export async function compressImageFile(file: File, options: CompressImageOption
     return file;
   }
 }
+
+// Square-crops (centered) and compresses an avatar image to a fixed size, for profile photos.
+export async function cropAndCompressImage(file: File, size = 512): Promise<Blob> {
+  const imageUrl = URL.createObjectURL(file);
+  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = imageUrl;
+  });
+
+  const cropSize = Math.min(image.width, image.height);
+  const sourceX = Math.floor((image.width - cropSize) / 2);
+  const sourceY = Math.floor((image.height - cropSize) / 2);
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  context?.drawImage(image, sourceX, sourceY, cropSize, cropSize, 0, 0, size, size);
+  URL.revokeObjectURL(imageUrl);
+
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("Δεν ήταν δυνατή η επεξεργασία της εικόνας."));
+      },
+      "image/jpeg",
+      0.82,
+    );
+  });
+}

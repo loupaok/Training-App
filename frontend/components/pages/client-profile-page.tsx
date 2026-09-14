@@ -11,6 +11,7 @@ import { ClientShell } from "@/components/shell/client-shell";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl } from "@/lib/media";
+import { cropAndCompressImage } from "@/lib/image-compression";
 import type { AuthUser } from "@/types/auth";
 
 const socialPlatforms = ["Instagram", "Facebook", "YouTube", "TikTok"];
@@ -94,37 +95,6 @@ function normalizeSocialLinks(rows: { platform?: string; url?: string }[] = []):
   return socialPlatforms.map((platform) => {
     const existing = rows.find((item) => item.platform?.toLowerCase() === platform.toLowerCase());
     return { platform, url: existing?.url || "" };
-  });
-}
-
-async function cropAndCompressImage(file: File): Promise<Blob> {
-  const imageUrl = URL.createObjectURL(file);
-  const image = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = imageUrl;
-  });
-
-  const size = Math.min(image.width, image.height);
-  const sourceX = Math.floor((image.width - size) / 2);
-  const sourceY = Math.floor((image.height - size) / 2);
-  const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 512;
-  const context = canvas.getContext("2d");
-  context?.drawImage(image, sourceX, sourceY, size, size, 0, 0, 512, 512);
-  URL.revokeObjectURL(imageUrl);
-
-  return new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error("Δεν ήταν δυνατή η επεξεργασία της εικόνας."));
-      },
-      "image/jpeg",
-      0.82,
-    );
   });
 }
 

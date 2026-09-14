@@ -46,7 +46,7 @@ export function ThemeColorPicker() {
     <Popover>
       <PopoverTrigger
         render={
-          <Button variant="ghost" size="icon" aria-label="Αλλαγή χρώματος εφαρμογής" title="Χρώμα εφαρμογής">
+          <Button variant="outline" size="icon-sm" aria-label="Αλλαγή χρώματος εφαρμογής" title="Χρώμα εφαρμογής">
             {mounted ? (
               <span className="h-4 w-4 rounded-full border border-black/10" style={{ backgroundColor: activeSwatch.swatch }} />
             ) : (

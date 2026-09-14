@@ -117,7 +117,13 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
       </nav>
 
       <div className="border-t border-white/10 p-3">
-        <SidebarUserMenu user={user} logout={logout} notificationsHref="/notifications" collapsed={collapsed} />
+        <SidebarUserMenu
+          user={user}
+          logout={logout}
+          profileHref="/coach-profile"
+          notificationsHref="/notifications"
+          collapsed={collapsed}
+        />
       </div>
     </aside>
   );

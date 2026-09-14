@@ -107,7 +107,7 @@ export function NotificationsMenu({ user }: { user: AuthUser | null }) {
     >
       <DropdownMenuTrigger
         render={
-          <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
+          <Button variant="outline" size="icon-sm" className="relative" aria-label="Notifications">
             <Bell className="h-5 w-5" />
             {unreadCount > 0 && (
               <Badge className="absolute -right-1 -top-1 h-5 min-w-5 justify-center rounded-full px-1.5 text-[11px]">

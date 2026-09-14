@@ -2,12 +2,35 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import path from 'path';
+import fs from 'fs';
+import multer from 'multer';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 const isProduction = process.env.NODE_ENV === 'production';
+
+const profilePhotoStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.join('uploads', 'media');
+    fs.mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname || '.jpg').toLowerCase() || '.jpg';
+    cb(null, `profile-${req.user.id}-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
+  }
+});
+
+const profilePhotoUpload = multer({
+  storage: profilePhotoStorage,
+  limits: { fileSize: 3 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    cb(null, /^image\/(jpeg|png|webp)$/.test(file.mimetype));
+  }
+});
 
 function cookieOptions(maxAge) {
   return {
@@ -320,6 +343,47 @@ router.put('/profile', authenticateToken, [
     if (rows.length === 0) {
       return res.status(404).json({ message: 'User not found' });
     }
+
+    res.json({ user: buildUserResponse(rows[0], onboardingCompleted) });
+  } catch (error) {
+    connection.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// POST /auth/profile-photo — any authenticated role can change their own avatar
+router.post('/profile-photo', authenticateToken, (req, res, next) => {
+  profilePhotoUpload.single('photo')(req, res, (err) => {
+    if (err) return res.status(400).json({ message: err.message });
+    next();
+  });
+}, async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: 'Profile photo required' });
+  }
+
+  const url = `/uploads/media/${req.file.filename}`;
+  const connection = await pool.getConnection();
+
+  try {
+    await ensureAuthSchema(connection);
+    await connection.query('UPDATE users SET profile_photo = ? WHERE id = ?', [url, req.user.id]);
+
+    const [rows] = await connection.query(
+      `SELECT id, email, role, status, full_name, first_name, last_name, profile_photo, specializations
+       FROM users
+       WHERE id = ?`,
+      [req.user.id]
+    );
+
+    if (rows.length === 0) {
+      connection.release();
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const onboardingCompleted = await getOnboardingCompleted(connection, rows[0].id, rows[0].role);
+    connection.release();
 
     res.json({ user: buildUserResponse(rows[0], onboardingCompleted) });
   } catch (error) {
