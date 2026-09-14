@@ -1,4 +1,6 @@
 -- Create users table
+-- Note: first_name, last_name, status, payment_method, approved_at, approved_by and
+-- last_seen_at are added live via idempotent ALTER TABLE in middleware/auth.js, not here.
 CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   email VARCHAR(255) UNIQUE NOT NULL,
@@ -9,10 +11,64 @@ CREATE TABLE IF NOT EXISTS users (
   bio TEXT,
   specializations VARCHAR(255),
   is_active TINYINT(1) NOT NULL DEFAULT 1,
+  push_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  font_size ENUM('small', 'medium', 'large') NOT NULL DEFAULT 'medium',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_email (email),
   INDEX idx_role (role)
+);
+
+-- Per-user in-app notifications (also fans out to web push when configured)
+CREATE TABLE IF NOT EXISTS notifications (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  type VARCHAR(80) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  body TEXT,
+  link_url VARCHAR(500),
+  client_id INT NULL,
+  payment_id INT NULL,
+  manual_notification_id INT NULL,
+  read_at TIMESTAMP NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_user_id (user_id),
+  INDEX idx_read_at (read_at)
+);
+
+-- Admin broadcast messages; each fans out into `notifications` for every active user
+CREATE TABLE IF NOT EXISTS manual_notifications (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  body TEXT,
+  created_by INT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Changelog / "what's new" entries, visible to every role, never trigger notifications
+CREATE TABLE IF NOT EXISTS changelog_entries (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  body TEXT,
+  created_by INT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Web push subscriptions, one row per device; requires users.push_enabled = 1 to be used
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  endpoint VARCHAR(500) NOT NULL,
+  p256dh VARCHAR(255) NOT NULL,
+  auth VARCHAR(255) NOT NULL,
+  user_agent VARCHAR(255),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_endpoint (endpoint),
+  INDEX idx_user_id (user_id)
 );
 
 -- Create coach_clients junction table

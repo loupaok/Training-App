@@ -6,6 +6,7 @@ import fs from 'fs';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
+import { getVapidPublicKey, sendPushToUser, sendPushToUsers } from '../lib/webPush.js';
 
 const router = express.Router();
 
@@ -485,7 +486,8 @@ async function ensureNotificationsSchema(connection) {
 
   for (const statement of [
     'ALTER TABLE notifications ADD COLUMN client_id INT NULL',
-    'ALTER TABLE notifications ADD COLUMN payment_id INT NULL'
+    'ALTER TABLE notifications ADD COLUMN payment_id INT NULL',
+    'ALTER TABLE notifications ADD COLUMN manual_notification_id INT NULL'
   ]) {
     try {
       await connection.query(statement);
@@ -516,6 +518,16 @@ async function notifyCoaches(connection, notification) {
       ]
     );
   }
+
+  try {
+    await sendPushToUsers(coaches.map((coach) => coach.id), {
+      title: notification.title,
+      body: notification.body || '',
+      url: notification.linkUrl || '/'
+    });
+  } catch (error) {
+    console.error('Push notification failed:', error.message);
+  }
 }
 
 async function notifyUser(connection, userId, notification) {
@@ -533,6 +545,16 @@ async function notifyUser(connection, userId, notification) {
       notification.linkUrl || null,
     ]
   );
+
+  try {
+    await sendPushToUser(userId, {
+      title: notification.title,
+      body: notification.body || '',
+      url: notification.linkUrl || '/'
+    });
+  } catch (error) {
+    console.error('Push notification failed:', error.message);
+  }
 }
 
 async function refreshClientPaymentStatus(connection, clientId) {
@@ -1526,6 +1548,122 @@ router.get('/me/notifications', authorizeRole(['client']), async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+async function ensurePushSubscriptionsSchema(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      endpoint VARCHAR(500) NOT NULL,
+      p256dh VARCHAR(255) NOT NULL,
+      auth VARCHAR(255) NOT NULL,
+      user_agent VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE KEY unique_endpoint (endpoint),
+      INDEX idx_user_id (user_id)
+    )
+  `);
+}
+
+// Public VAPID key so the frontend can call PushManager.subscribe(). 404 when push isn't configured.
+router.get('/push/vapid-public-key', async (req, res) => {
+  const publicKey = getVapidPublicKey();
+  if (!publicKey) {
+    return res.status(404).json({ message: 'Push notifications are not configured' });
+  }
+  res.json({ publicKey });
+});
+
+router.post('/push/subscribe', [
+  body('endpoint').isString().notEmpty(),
+  body('keys.p256dh').isString().notEmpty(),
+  body('keys.auth').isString().notEmpty()
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await ensurePushSubscriptionsSchema(connection);
+    const { endpoint, keys, userAgent } = req.body;
+    await connection.query(
+      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent)
+       VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE user_id = VALUES(user_id), p256dh = VALUES(p256dh), auth = VALUES(auth), user_agent = VALUES(user_agent)`,
+      [req.user.id, endpoint, keys.p256dh, keys.auth, userAgent || null]
+    );
+    res.status(201).json({ message: 'Subscribed to push notifications' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.post('/push/unsubscribe', [
+  body('endpoint').isString().notEmpty()
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await ensurePushSubscriptionsSchema(connection);
+    await connection.query(
+      'DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?',
+      [req.body.endpoint, req.user.id]
+    );
+    res.json({ message: 'Unsubscribed from push notifications' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.get('/push/subscriptions', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensurePushSubscriptionsSchema(connection);
+    const [rows] = await connection.query(
+      'SELECT id, endpoint, user_agent, created_at FROM push_subscriptions WHERE user_id = ? ORDER BY created_at DESC',
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.delete('/push/subscriptions/:id', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensurePushSubscriptionsSchema(connection);
+    const [result] = await connection.query(
+      'DELETE FROM push_subscriptions WHERE id = ? AND user_id = ?',
+      [req.params.id, req.user.id]
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'Subscription not found' });
+    }
+    res.json({ message: 'Subscription removed' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
   }
 });
 

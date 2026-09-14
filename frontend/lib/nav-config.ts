@@ -5,7 +5,6 @@ import {
   Dumbbell,
   BarChart3,
   Image as ImageIcon,
-  UsersRound,
   Bell,
   Settings,
   MessageCircle,
@@ -17,6 +16,8 @@ import {
   TrendingUp,
   CreditCard,
   User,
+  Megaphone,
+  ScrollText,
   type LucideIcon,
 } from "lucide-react";
 
@@ -48,7 +49,7 @@ export const coachNavSections: CoachNavSection[] = [
   { key: "exercises", label: "Βιβλιοθήκη Ασκήσεων", path: "/exercises", icon: Dumbbell },
   { key: "analytics", label: "Analytics", path: "/analytics", icon: BarChart3 },
   { key: "media", label: "Media Library", path: "/media-library", icon: ImageIcon },
-  { key: "team", label: "Team", path: "/team", icon: UsersRound },
+  { key: "changelog", label: "Αλλαγές & Νέα", path: "/changelog", icon: ScrollText },
   { key: "notifications", label: "Ειδοποιήσεις", path: "/notifications", icon: Bell, spacerBefore: true },
   {
     key: "settings",
@@ -62,6 +63,13 @@ export const coachNavSections: CoachNavSection[] = [
     ],
   },
   { key: "admin", label: "Admin Panel", path: "/admin", icon: Shield, adminOnly: true, spacerBefore: true },
+  {
+    key: "manual-notifications",
+    label: "Manual Notifications",
+    path: "/manual-notifications",
+    icon: Megaphone,
+    adminOnly: true,
+  },
 ];
 
 export interface ClientNavSection {
@@ -80,6 +88,7 @@ export const clientNavSections: ClientNavSection[] = [
   { label: "Progress", locked: true, key: "progress", icon: TrendingUp },
   { label: "Πληρωμές και Συνδρομή", path: "/client-billing", key: "billing", icon: CreditCard },
   { label: "Προφίλ", path: "/client-profile", key: "profile", icon: User },
+  { label: "Αλλαγές & Νέα", path: "/changelog", key: "changelog", icon: ScrollText },
   { label: "Ειδοποιήσεις", path: "/client-notifications", key: "notifications", icon: Bell, spacerBefore: true },
 ];
 

@@ -98,7 +98,9 @@ async function ensureAuthSchema(connection) {
     'ALTER TABLE users ADD COLUMN approved_at TIMESTAMP NULL',
     'ALTER TABLE users ADD COLUMN approved_by INT NULL',
     'ALTER TABLE users ADD COLUMN profile_photo VARCHAR(255)',
-    'ALTER TABLE users ADD COLUMN specializations TEXT'
+    'ALTER TABLE users ADD COLUMN specializations TEXT',
+    'ALTER TABLE users ADD COLUMN push_enabled TINYINT(1) NOT NULL DEFAULT 0',
+    "ALTER TABLE users ADD COLUMN font_size ENUM('small', 'medium', 'large') NOT NULL DEFAULT 'medium'"
   ]) {
     try {
       await connection.query(statement);
@@ -149,6 +151,8 @@ function buildUserResponse(user, onboardingCompleted = true) {
     fullName,
     profilePhoto: user.profile_photo || null,
     profileTitle: user.specializations || null,
+    pushEnabled: Boolean(user.push_enabled),
+    fontSize: user.font_size || 'medium',
     onboardingCompleted
   };
   return { ...response, redirectTo: getRedirectPath(response, onboardingCompleted) };
@@ -160,7 +164,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     await ensureAuthSchema(connection);
 
     const [rows] = await connection.query(
-      `SELECT id, email, role, status, full_name, first_name, last_name, profile_photo, specializations
+      `SELECT id, email, role, status, full_name, first_name, last_name, profile_photo, specializations, push_enabled, font_size
        FROM users
        WHERE id = ? AND is_active = 1`,
       [req.user.id]
@@ -311,8 +315,10 @@ router.post('/login', [
 });
 
 router.put('/profile', authenticateToken, [
-  body('fullName').notEmpty().withMessage('Full name required'),
-  body('profileTitle').optional().isString()
+  body('fullName').optional().notEmpty().withMessage('Full name required'),
+  body('profileTitle').optional().isString(),
+  body('fontSize').optional().isIn(['small', 'medium', 'large']),
+  body('pushEnabled').optional().isBoolean()
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -323,15 +329,34 @@ router.put('/profile', authenticateToken, [
 
   try {
     await ensureAuthSchema(connection);
-    const { fullName, profileTitle } = req.body;
+    const { fullName, profileTitle, fontSize, pushEnabled } = req.body;
 
-    await connection.query(
-      'UPDATE users SET full_name = ?, specializations = ? WHERE id = ?',
-      [fullName, profileTitle || null, req.user.id]
-    );
+    const updates = [];
+    const values = [];
+    if (fullName !== undefined) {
+      updates.push('full_name = ?');
+      values.push(fullName);
+    }
+    if (profileTitle !== undefined) {
+      updates.push('specializations = ?');
+      values.push(profileTitle || null);
+    }
+    if (fontSize !== undefined) {
+      updates.push('font_size = ?');
+      values.push(fontSize);
+    }
+    if (pushEnabled !== undefined) {
+      updates.push('push_enabled = ?');
+      values.push(pushEnabled ? 1 : 0);
+    }
+
+    if (updates.length > 0) {
+      values.push(req.user.id);
+      await connection.query(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values);
+    }
 
     const [rows] = await connection.query(
-      `SELECT id, email, role, status, full_name, first_name, last_name, profile_photo, specializations
+      `SELECT id, email, role, status, full_name, first_name, last_name, profile_photo, specializations, push_enabled, font_size
        FROM users
        WHERE id = ?`,
       [req.user.id]
@@ -371,7 +396,7 @@ router.post('/profile-photo', authenticateToken, (req, res, next) => {
     await connection.query('UPDATE users SET profile_photo = ? WHERE id = ?', [url, req.user.id]);
 
     const [rows] = await connection.query(
-      `SELECT id, email, role, status, full_name, first_name, last_name, profile_photo, specializations
+      `SELECT id, email, role, status, full_name, first_name, last_name, profile_photo, specializations, push_enabled, font_size
        FROM users
        WHERE id = ?`,
       [req.user.id]

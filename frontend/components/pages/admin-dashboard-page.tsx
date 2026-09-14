@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 
@@ -43,7 +44,15 @@ interface AdminForm {
 const roleOptions = [
   { value: "admin", label: "Admin / Coach", description: "Ο βασικός coach/admin. Βλέπει και διαχειρίζεται τα πάντα." },
   { value: "moderator", label: "Moderator", description: "Βλέπει επιλεγμένες ενότητες. Τα permissions θα τα εξειδικεύσουμε μετά." },
+  { value: "coach", label: "Coach", description: "Διαχειρίζεται τους δικούς του πελάτες." },
 ];
+
+const roleLabels: Record<string, string> = {
+  admin: "Admin / Coach",
+  moderator: "Moderator",
+  coach: "Coach",
+  client: "Client",
+};
 
 const emptyForm: AdminForm = {
   fullName: "",
@@ -63,6 +72,11 @@ function AdminDashboardContent() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [resetTarget, setResetTarget] = useState<AdminUser | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetSaving, setResetSaving] = useState(false);
+  const [resetError, setResetError] = useState("");
 
   useEffect(() => {
     fetchData();
@@ -120,6 +134,39 @@ function AdminDashboardContent() {
       fetchData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Δεν έγινε ενημέρωση.");
+    }
+  };
+
+  const openResetDialog = (targetUser: AdminUser) => {
+    setResetTarget(targetUser);
+    setResetPassword("");
+    setResetConfirm("");
+    setResetError("");
+  };
+
+  const submitResetPassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!resetTarget) return;
+    setResetError("");
+
+    if (resetPassword.length < 6) {
+      setResetError("Ο κωδικός πρέπει να έχει τουλάχιστον 6 χαρακτήρες.");
+      return;
+    }
+    if (resetPassword !== resetConfirm) {
+      setResetError("Οι κωδικοί δεν ταιριάζουν.");
+      return;
+    }
+
+    setResetSaving(true);
+    try {
+      await api.put(`/admin/users/${resetTarget.id}/reset-password`, { newPassword: resetPassword });
+      setMessage(`Ο κωδικός για τον χρήστη ${resetTarget.full_name || resetTarget.email} άλλαξε.`);
+      setResetTarget(null);
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "Δεν έγινε αλλαγή κωδικού.");
+    } finally {
+      setResetSaving(false);
     }
   };
 
@@ -220,12 +267,13 @@ function AdminDashboardContent() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Όλη η ομάδα</SelectItem>
+              <SelectItem value="all">Όλοι οι χρήστες</SelectItem>
               {roleOptions.map((role) => (
                 <SelectItem key={role.value} value={role.value}>
                   {role.label}
                 </SelectItem>
               ))}
+              <SelectItem value="client">Client</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -255,18 +303,24 @@ function AdminDashboardContent() {
                   <TableCell className="px-5 py-4 font-bold">{row.full_name}</TableCell>
                   <TableCell className="px-5 py-4 text-slate-600 dark:text-slate-400">{row.email}</TableCell>
                   <TableCell className="px-5 py-4">
-                    <Select value={row.role} onValueChange={(value) => value && updateUser(row, { role: value })}>
-                      <SelectTrigger className="h-10 font-bold">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {roleOptions.map((role) => (
-                          <SelectItem key={role.value} value={role.value}>
-                            {role.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    {row.role === "client" ? (
+                      <Badge variant="outline" className="font-bold">
+                        {roleLabels[row.role] || row.role}
+                      </Badge>
+                    ) : (
+                      <Select value={row.role} onValueChange={(value) => value && updateUser(row, { role: value })}>
+                        <SelectTrigger className="h-10 font-bold">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {roleOptions.map((role) => (
+                            <SelectItem key={role.value} value={role.value}>
+                              {role.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </TableCell>
                   <TableCell className="px-5 py-4">
                     <Badge className={row.is_active ? "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400" : "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400"}>
@@ -275,13 +329,18 @@ function AdminDashboardContent() {
                   </TableCell>
                   <TableCell className="px-5 py-4 text-slate-600 dark:text-slate-400">{row.specializations || "-"}</TableCell>
                   <TableCell className="px-5 py-4">
-                    <Button
-                      variant="outline"
-                      className="font-bold text-slate-700 hover:border-red-200 hover:text-red-600 dark:text-slate-200"
-                      onClick={() => updateUser(row, { isActive: !row.is_active })}
-                    >
-                      {row.is_active ? "Deactivate" : "Activate"}
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        className="font-bold text-slate-700 hover:border-red-200 hover:text-red-600 dark:text-slate-200"
+                        onClick={() => updateUser(row, { isActive: !row.is_active })}
+                      >
+                        {row.is_active ? "Deactivate" : "Activate"}
+                      </Button>
+                      <Button variant="outline" className="font-bold text-slate-700 dark:text-slate-200" onClick={() => openResetDialog(row)}>
+                        Reset Password
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -295,6 +354,49 @@ function AdminDashboardContent() {
           </TableBody>
         </Table>
       </section>
+
+      <Dialog open={Boolean(resetTarget)} onOpenChange={(open) => !open && setResetTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Επαναφορά Κωδικού</DialogTitle>
+            <DialogDescription>
+              Ορίζεις νέο κωδικό για τον χρήστη {resetTarget?.full_name || resetTarget?.email}. Δεν απαιτείται ο τρέχων κωδικός.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={submitResetPassword} className="space-y-4">
+            {resetError && (
+              <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+                {resetError}
+              </div>
+            )}
+            <FormField label="Νέος κωδικός">
+              <Input
+                type="password"
+                autoComplete="new-password"
+                value={resetPassword}
+                onChange={(event) => setResetPassword(event.target.value)}
+                minLength={6}
+                required
+              />
+            </FormField>
+            <FormField label="Επιβεβαίωση νέου κωδικού">
+              <Input
+                type="password"
+                autoComplete="new-password"
+                value={resetConfirm}
+                onChange={(event) => setResetConfirm(event.target.value)}
+                minLength={6}
+                required
+              />
+            </FormField>
+            <DialogFooter>
+              <Button type="submit" disabled={resetSaving}>
+                {resetSaving ? "Αποθήκευση..." : "Αλλαγή Κωδικού"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </CoachShell>
   );
 }

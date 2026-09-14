@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { ClientShell } from "@/components/shell/client-shell";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -13,6 +14,8 @@ import { api } from "@/lib/api/client";
 import { resolveMediaUrl } from "@/lib/media";
 import { cropAndCompressImage } from "@/lib/image-compression";
 import { ChangePasswordCard } from "@/components/shared/change-password-card";
+import { PushNotificationsCard } from "@/components/shared/push-notifications-card";
+import { useFontSize, type FontSize } from "@/components/shell/font-size-context";
 import type { AuthUser } from "@/types/auth";
 
 const socialPlatforms = ["Instagram", "Facebook", "YouTube", "TikTok"];
@@ -199,6 +202,7 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
 
 function ClientProfileContent() {
   const { user, logout, updateUser } = useAuth();
+  const { fontSize, setFontSize } = useFontSize();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -462,6 +466,25 @@ function ClientProfileContent() {
             </Button>
           </div>
         </form>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Εμφάνιση</CardTitle>
+            <CardDescription>Μέγεθος γραμματοσειράς για όλη την εφαρμογή.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ToggleGroup
+              value={[fontSize]}
+              onValueChange={(value) => value[0] && setFontSize(value[0] as FontSize)}
+            >
+              <ToggleGroupItem value="small">Μικρό</ToggleGroupItem>
+              <ToggleGroupItem value="medium">Κανονικό</ToggleGroupItem>
+              <ToggleGroupItem value="large">Μεγάλο</ToggleGroupItem>
+            </ToggleGroup>
+          </CardContent>
+        </Card>
+
+        <PushNotificationsCard />
 
         <ChangePasswordCard />
         </div>

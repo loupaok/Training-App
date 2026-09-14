@@ -6,7 +6,9 @@ import { authenticateToken, authorizeRole } from '../middleware/auth.js';
 
 const router = express.Router();
 const ALLOWED_ROLES = ['admin', 'moderator', 'coach', 'client'];
-const TEAM_ROLES = ['admin', 'moderator'];
+// Roles an admin can create/reassign from the Users panel — clients are excluded because they
+// self-register via /auth/register; this panel only provisions internal staff accounts.
+const TEAM_ROLES = ['admin', 'moderator', 'coach'];
 
 async function ensureRoleEnum(connection) {
   await connection.query(
@@ -15,16 +17,31 @@ async function ensureRoleEnum(connection) {
 }
 
 function publicUserSelect() {
-  return 'id, email, full_name, role, specializations, is_active, created_at';
+  return 'id, email, full_name, role, specializations, is_active, status, created_at';
 }
 
-// Get all users (Admin only)
+// Get all users, optionally filtered by role/status (Admin only)
 router.get('/users', authenticateToken, authorizeRole(['admin']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await ensureRoleEnum(connection);
+
+    const conditions = [];
+    const values = [];
+    if (req.query.role && ALLOWED_ROLES.includes(req.query.role)) {
+      conditions.push('role = ?');
+      values.push(req.query.role);
+    }
+    if (req.query.status === 'active') {
+      conditions.push('is_active = 1');
+    } else if (req.query.status === 'inactive') {
+      conditions.push('is_active = 0');
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const [users] = await connection.query(
-      `SELECT ${publicUserSelect()} FROM users WHERE role IN ('admin', 'moderator') ORDER BY created_at DESC, full_name ASC`
+      `SELECT ${publicUserSelect()} FROM users ${whereClause} ORDER BY created_at DESC, full_name ASC`,
+      values
     );
     connection.release();
     res.json(users);
@@ -34,7 +51,7 @@ router.get('/users', authenticateToken, authorizeRole(['admin']), async (req, re
   }
 });
 
-// Create any user role (Admin only)
+// Create a staff user (Admin only) — admin/moderator/coach; clients self-register
 router.post('/users', authenticateToken, authorizeRole(['admin']), [
   body('email').isEmail(),
   body('password').isLength({ min: 6 }),
@@ -132,6 +149,39 @@ router.put('/users/:userId', authenticateToken, authorizeRole(['admin']), [
     }
 
     res.json({ message: 'User updated successfully' });
+  } catch (error) {
+    connection.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Reset any user's password directly (Admin only) — unlike the self-service
+// /auth/change-password, this does not require knowing the current password
+// (e.g. the user is locked out, or it's a new hire's first login).
+router.put('/users/:userId/reset-password', authenticateToken, authorizeRole(['admin']), [
+  body('newPassword').isLength({ min: 6 }).withMessage('New password must be at least 6 characters')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const connection = await pool.getConnection();
+
+  try {
+    const hashedPassword = await bcrypt.hash(req.body.newPassword, 10);
+    const [result] = await connection.query('UPDATE users SET password = ? WHERE id = ?', [
+      hashedPassword,
+      req.params.userId
+    ]);
+    connection.release();
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json({ message: 'Password reset successfully' });
   } catch (error) {
     connection.release();
     console.error(error);

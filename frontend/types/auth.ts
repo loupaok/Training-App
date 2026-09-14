@@ -10,6 +10,8 @@ export interface AuthUser {
   profilePhoto?: string;
   profileTitle?: string;
   redirectTo?: string;
+  pushEnabled?: boolean;
+  fontSize?: "small" | "medium" | "large";
   [key: string]: unknown;
 }
 

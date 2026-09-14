@@ -3,13 +3,16 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CoachShell } from "@/components/shell/coach-shell";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { ChangePasswordCard } from "@/components/shared/change-password-card";
+import { PushNotificationsCard } from "@/components/shared/push-notifications-card";
+import { useFontSize, type FontSize } from "@/components/shell/font-size-context";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { getInitials } from "@/lib/media";
@@ -22,6 +25,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
 
 function CoachProfileContent() {
   const { user, logout, updateUser } = useAuth();
+  const { fontSize, setFontSize } = useFontSize();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({ fullName: "", profileTitle: "" });
   const [saving, setSaving] = useState(false);
@@ -149,6 +153,25 @@ function CoachProfileContent() {
               </form>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Εμφάνιση</CardTitle>
+              <CardDescription>Μέγεθος γραμματοσειράς για όλη την εφαρμογή.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ToggleGroup
+                value={[fontSize]}
+                onValueChange={(value) => value[0] && setFontSize(value[0] as FontSize)}
+              >
+                <ToggleGroupItem value="small">Μικρό</ToggleGroupItem>
+                <ToggleGroupItem value="medium">Κανονικό</ToggleGroupItem>
+                <ToggleGroupItem value="large">Μεγάλο</ToggleGroupItem>
+              </ToggleGroup>
+            </CardContent>
+          </Card>
+
+          <PushNotificationsCard />
 
           <ChangePasswordCard />
         </div>
