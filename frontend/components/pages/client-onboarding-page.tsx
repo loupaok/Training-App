@@ -262,10 +262,10 @@ function ClientOnboardingContent() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f8fb] text-slate-950">
+    <div className="min-h-screen bg-[#f7f8fb] text-slate-950 dark:bg-slate-950 dark:text-slate-50">
       <main className="min-h-screen px-5 py-8 sm:px-8 lg:px-10 lg:py-12">
         <div className="mx-auto max-w-6xl">
-          <header className="mb-8 rounded-xl border border-slate-200 bg-white px-6 py-6 shadow-sm sm:px-8 lg:px-10">
+          <header className="mb-8 rounded-xl border border-slate-200 bg-white px-6 py-6 shadow-sm sm:px-8 lg:px-10 dark:border-slate-800 dark:bg-slate-900">
             <div className="grid gap-8 lg:grid-cols-[1fr_520px] lg:items-center">
               <div>
                 <div className="mb-5 flex items-center gap-3">
@@ -273,14 +273,14 @@ function ClientOnboardingContent() {
                     K
                   </div>
                   <div>
-                    <div className="text-sm font-black text-slate-900">COACH PANEL</div>
-                    <div className="text-xs font-bold text-slate-400">Client onboarding</div>
+                    <div className="text-sm font-black text-slate-900 dark:text-slate-50">COACH PANEL</div>
+                    <div className="text-xs font-bold text-slate-400 dark:text-slate-500">Client onboarding</div>
                   </div>
                 </div>
                 <h1 className="text-3xl font-black tracking-normal sm:text-4xl">
                   Καλωσήρθες, {form.firstName || user?.fullName || "φίλε"}!
                 </h1>
-                <p className="mt-3 max-w-2xl text-sm font-semibold leading-7 text-slate-500">
+                <p className="mt-3 max-w-2xl text-sm font-semibold leading-7 text-slate-500 dark:text-slate-400">
                   Για να σου προσφέρουμε την καλύτερη δυνατή εμπειρία, παρακαλούμε συμπλήρωσε τις παρακάτω πληροφορίες.
                 </p>
               </div>
@@ -289,12 +289,12 @@ function ClientOnboardingContent() {
           </header>
 
           {error && (
-            <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">
+            <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
               {error}
             </div>
           )}
 
-          <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:p-12">
+          <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:p-12 dark:border-slate-800 dark:bg-slate-900">
             {activeStep.key === "details" && <DetailsStep form={form} updateForm={updateForm} />}
             {activeStep.key === "questions" && (
               <QuestionsStep
@@ -309,13 +309,13 @@ function ClientOnboardingContent() {
               />
             )}
 
-            <div className="mt-8 flex flex-col gap-4 rounded-xl bg-slate-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex min-w-0 items-center gap-3 text-sm font-semibold text-slate-500">
-                <span className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white">
+            <div className="mt-8 flex flex-col gap-4 rounded-xl bg-slate-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:bg-slate-800">
+              <div className="flex min-w-0 items-center gap-3 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                <span className="grid h-8 w-8 place-items-center rounded-md border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
                   <ShieldCheck className="h-4 w-4" />
                 </span>
                 <div>
-                  <div className="font-black text-slate-700">Οι πληροφορίες σου είναι ασφαλείς</div>
+                  <div className="font-black text-slate-700 dark:text-slate-200">Οι πληροφορίες σου είναι ασφαλείς</div>
                   <div>Δεν κοινοποιούνται πουθενά.</div>
                 </div>
               </div>
@@ -632,17 +632,17 @@ function Stepper({ activeIndex }: { activeIndex: number }) {
   const progress = ((activeIndex + 1) / steps.length) * 100;
 
   return (
-    <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4 dark:border-slate-800 dark:bg-slate-800">
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-xs font-black uppercase tracking-wider text-slate-400">
+          <div className="text-xs font-black uppercase tracking-wider text-slate-400 dark:text-slate-500">
             Step {activeIndex + 1} / {steps.length}
           </div>
-          <div className="mt-1 truncate text-sm font-black text-slate-900">{steps[activeIndex].title}</div>
+          <div className="mt-1 truncate text-sm font-black text-slate-900 dark:text-slate-50">{steps[activeIndex].title}</div>
         </div>
         <div className="shrink-0 text-sm font-black text-red-600">{Math.round(progress)}%</div>
       </div>
-      <div className="mb-5 h-2 overflow-hidden rounded-full bg-white ring-1 ring-slate-200">
+      <div className="mb-5 h-2 overflow-hidden rounded-full bg-white ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
         <div className="h-full rounded-full bg-red-600 transition-all duration-300" style={{ width: `${progress}%` }} />
       </div>
       <div className="grid grid-cols-1 gap-2 lg:grid-cols-3 lg:gap-3">
@@ -654,18 +654,34 @@ function Stepper({ activeIndex }: { activeIndex: number }) {
             <div
               key={step.key}
               className={`min-w-0 rounded-lg border px-2 py-2 sm:px-3 sm:py-3 ${
-                isActive ? "border-red-200 bg-white shadow-sm" : isComplete ? "border-emerald-100 bg-emerald-50" : "border-slate-200 bg-white/70"
+                isActive
+                  ? "border-red-200 bg-white shadow-sm dark:border-red-900 dark:bg-slate-900 dark:shadow-none"
+                  : isComplete
+                    ? "border-emerald-100 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40"
+                    : "border-slate-200 bg-white/70 dark:border-slate-700 dark:bg-slate-900/70"
               }`}
             >
               <div className="flex min-w-0 items-center gap-2">
                 <div
                   className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-black ${
-                    isComplete ? "bg-emerald-500 text-white" : isActive ? "bg-red-600 text-white" : "bg-slate-100 text-slate-500 ring-1 ring-slate-200"
+                    isComplete
+                      ? "bg-emerald-500 text-white"
+                      : isActive
+                        ? "bg-red-600 text-white"
+                        : "bg-slate-100 text-slate-500 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700"
                   }`}
                 >
                   {isComplete ? <Check className="h-3.5 w-3.5" /> : index + 1}
                 </div>
-                <div className={`min-w-0 truncate text-[11px] font-black sm:text-xs ${isActive ? "text-slate-950" : isComplete ? "text-emerald-700" : "text-slate-500"}`}>
+                <div
+                  className={`min-w-0 truncate text-[11px] font-black sm:text-xs ${
+                    isActive
+                      ? "text-slate-950 dark:text-slate-50"
+                      : isComplete
+                        ? "text-emerald-700 dark:text-emerald-400"
+                        : "text-slate-500 dark:text-slate-400"
+                  }`}
+                >
                   {step.title}
                 </div>
               </div>
@@ -704,15 +720,15 @@ function YesNoQuestion({
   placeholder: string;
 }) {
   return (
-    <div className="rounded-lg border border-slate-100 bg-white p-4">
+    <div className="rounded-lg border border-slate-100 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
       <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
-        <div className="text-sm font-black leading-6 text-slate-700">
-          {label} <span className="text-slate-400">ⓘ</span>
+        <div className="text-sm font-black leading-6 text-slate-700 dark:text-slate-200">
+          {label} <span className="text-slate-400 dark:text-slate-500">ⓘ</span>
         </div>
         <RadioGroup
           value={flags[name]}
           onValueChange={(value) => onFlagChange(name, value as YesNoFlag)}
-          className="flex min-w-[150px] flex-row items-center gap-4 rounded-md bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700"
+          className="flex min-w-[150px] flex-row items-center gap-4 rounded-md bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200"
         >
           <label className="flex cursor-pointer items-center gap-2 whitespace-nowrap">
             <RadioGroupItem value="yes" />
@@ -752,7 +768,7 @@ function FormInput({
 }) {
   return (
     <label className="block min-w-0 space-y-2">
-      <span className="text-sm font-black text-slate-700">{label}</span>
+      <span className="text-sm font-black text-slate-700 dark:text-slate-200">{label}</span>
       <Input
         type={type}
         value={value}
@@ -780,7 +796,7 @@ function UnitInput({
 }) {
   return (
     <label className="block min-w-0 space-y-2">
-      <span className="text-sm font-black text-slate-700">{label}</span>
+      <span className="text-sm font-black text-slate-700 dark:text-slate-200">{label}</span>
       <div className="flex h-12 items-center rounded-md border border-input bg-transparent px-2.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
         <Input
           value={value}
@@ -788,7 +804,7 @@ function UnitInput({
           required={required}
           className="h-auto flex-1 border-0 bg-transparent p-0 shadow-none focus-visible:ring-0"
         />
-        <span className="ml-3 shrink-0 text-xs font-black text-slate-500">{unit}</span>
+        <span className="ml-3 shrink-0 text-xs font-black text-slate-500 dark:text-slate-400">{unit}</span>
       </div>
     </label>
   );
@@ -845,7 +861,7 @@ function FormSelect({
 }) {
   return (
     <div className="block min-w-0 space-y-2">
-      <Label className="text-sm font-black text-slate-700">{label}</Label>
+      <Label className="text-sm font-black text-slate-700 dark:text-slate-200">{label}</Label>
       <Select value={value} onValueChange={(nextValue) => onChange(nextValue ?? "")}>
         <SelectTrigger className="h-12 w-full text-sm font-semibold">
           <SelectValue />
@@ -865,7 +881,7 @@ function FormSelect({
 function FormTextarea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return (
     <label className="block space-y-2">
-      <span className="text-sm font-black text-slate-700">{label}</span>
+      <span className="text-sm font-black text-slate-700 dark:text-slate-200">{label}</span>
       <Textarea value={value} onChange={(event) => onChange(event.target.value)} className="min-h-32 text-sm font-semibold" />
     </label>
   );
@@ -885,10 +901,10 @@ function UploadCard({
   onChange: (file: File | null) => void;
 }) {
   return (
-    <Label className="block cursor-pointer flex-col items-start gap-0 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-5 hover:border-red-300">
-      <span className="text-base font-black text-slate-800">{label}</span>
-      <span className="mt-1 block text-sm text-slate-500">{hint}</span>
-      <span className="mt-4 block w-full rounded-md bg-white px-3 py-3 text-sm font-bold text-slate-600 ring-1 ring-slate-200">
+    <Label className="block cursor-pointer flex-col items-start gap-0 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-5 hover:border-red-300 dark:border-slate-700 dark:bg-slate-950">
+      <span className="text-base font-black text-slate-800 dark:text-slate-200">{label}</span>
+      <span className="mt-1 block text-sm text-slate-500 dark:text-slate-400">{hint}</span>
+      <span className="mt-4 block w-full rounded-md bg-white px-3 py-3 text-sm font-bold text-slate-600 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:ring-slate-700">
         {file ? file.name : "Επιλογή αρχείου"}
       </span>
       <input type="file" accept={accept} onChange={(event) => onChange(event.target.files?.[0] || null)} className="hidden" />
@@ -910,13 +926,13 @@ function PlanField({
   onFileChange: (file: File | null) => void;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800">
       <label className="block space-y-2">
-        <span className="text-sm font-black text-slate-700">{title}</span>
+        <span className="text-sm font-black text-slate-700 dark:text-slate-200">{title}</span>
         <Textarea
           value={value}
           onChange={(event) => onTextChange(event.target.value)}
-          className="min-h-28 bg-white text-sm font-semibold"
+          className="min-h-28 bg-white text-sm font-semibold dark:bg-slate-900"
         />
       </label>
       <div className="mt-4">

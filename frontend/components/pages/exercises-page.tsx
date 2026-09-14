@@ -542,8 +542,8 @@ function ExercisesContent() {
           <Link href="/dashboard" className="font-semibold text-blue-600">
             Dashboard
           </Link>
-          <span className="text-slate-400">›</span>
-          <span className="text-slate-600">Βιβλιοθήκη Ασκήσεων</span>
+          <span className="text-slate-400 dark:text-slate-500">›</span>
+          <span className="text-slate-600 dark:text-slate-400">Βιβλιοθήκη Ασκήσεων</span>
         </div>
         <Button onClick={openCreateExercise} className="h-12 gap-3 px-6 font-bold shadow-lg shadow-red-200">
           <Plus className="h-5 w-5" />
@@ -552,8 +552,8 @@ function ExercisesContent() {
       </div>
 
       <div className="grid grid-cols-12 gap-5">
-        <div className="col-span-12 flex h-14 items-center rounded-lg border border-slate-200 bg-white px-5 shadow-sm md:col-span-4">
-          <Search className="mr-3 h-5 w-5 text-slate-500" />
+        <div className="col-span-12 flex h-14 items-center rounded-lg border border-slate-200 bg-white px-5 shadow-sm dark:border-slate-800 dark:bg-slate-900 md:col-span-4">
+          <Search className="mr-3 h-5 w-5 text-slate-500 dark:text-slate-400" />
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -566,7 +566,7 @@ function ExercisesContent() {
             value={muscleGroup || ALL_VALUE}
             onValueChange={(value: string | null) => setMuscleGroup(!value || value === ALL_VALUE ? "" : value)}
           >
-            <SelectTrigger className="h-14 w-full rounded-lg border-slate-200 bg-white px-5 font-semibold text-slate-700 shadow-sm">
+            <SelectTrigger className="h-14 w-full rounded-lg border-slate-200 bg-white px-5 font-semibold text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
               <SelectValue placeholder="Μυϊκή Ομάδα: Όλες" />
             </SelectTrigger>
             <SelectContent>
@@ -584,7 +584,7 @@ function ExercisesContent() {
             value={equipment || ALL_VALUE}
             onValueChange={(value: string | null) => setEquipment(!value || value === ALL_VALUE ? "" : value)}
           >
-            <SelectTrigger className="h-14 w-full rounded-lg border-slate-200 bg-white px-5 font-semibold text-slate-700 shadow-sm">
+            <SelectTrigger className="h-14 w-full rounded-lg border-slate-200 bg-white px-5 font-semibold text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
               <SelectValue placeholder="Εξοπλισμός: Όλες" />
             </SelectTrigger>
             <SelectContent>
@@ -604,7 +604,7 @@ function ExercisesContent() {
             setMuscleGroup("");
             setEquipment("");
           }}
-          className="col-span-12 h-14 gap-2 font-bold text-slate-700 shadow-sm hover:border-red-200 hover:text-red-600 md:col-span-2"
+          className="col-span-12 h-14 gap-2 font-bold text-slate-700 shadow-sm hover:border-red-200 hover:text-red-600 md:col-span-2 dark:text-slate-200"
         >
           <Filter className="h-5 w-5" />
           Reset
@@ -612,13 +612,13 @@ function ExercisesContent() {
       </div>
 
       <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Σύνολο Ασκήσεων" value={stats.total} note="με ενεργά φίλτρα" tone="bg-blue-50 text-blue-600" icon={<Dumbbell className="h-8 w-8" />} />
-        <StatCard label="Μυϊκές Ομάδες" value={stats.muscleGroups} note="διαθέσιμες" tone="bg-emerald-50 text-emerald-600" icon={<Target className="h-8 w-8" />} />
-        <StatCard label="Εξοπλισμοί" value={stats.equipment} note="διαθέσιμοι" tone="bg-violet-50 text-violet-600" icon={<Box className="h-8 w-8" />} />
-        <StatCard label="Ασκήσεις σε Προγράμματα" value={stats.inPrograms} note="χρήσεις συνολικά" tone="bg-orange-50 text-orange-600" icon={<BarChart3 className="h-8 w-8" />} />
+        <StatCard label="Σύνολο Ασκήσεων" value={stats.total} note="με ενεργά φίλτρα" tone="bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400" icon={<Dumbbell className="h-8 w-8" />} />
+        <StatCard label="Μυϊκές Ομάδες" value={stats.muscleGroups} note="διαθέσιμες" tone="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" icon={<Target className="h-8 w-8" />} />
+        <StatCard label="Εξοπλισμοί" value={stats.equipment} note="διαθέσιμοι" tone="bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400" icon={<Box className="h-8 w-8" />} />
+        <StatCard label="Ασκήσεις σε Προγράμματα" value={stats.inPrograms} note="χρήσεις συνολικά" tone="bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400" icon={<BarChart3 className="h-8 w-8" />} />
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <PaginationControls
           totalItems={exercises.length}
           pageSize={pageSize}
@@ -649,16 +649,16 @@ function ExercisesContent() {
                   <Button
                     variant="link"
                     onClick={() => openExercise(exercise, "view")}
-                    className="h-auto gap-4 whitespace-normal p-0 text-left font-extrabold text-slate-950 hover:text-red-600"
+                    className="h-auto gap-4 whitespace-normal p-0 text-left font-extrabold text-slate-950 hover:text-red-600 dark:text-slate-50"
                   >
                     <ExerciseImage exercise={exercise} />
                     {exercise.name}
                   </Button>
                 </TableCell>
-                <TableCell className="px-5 text-sm text-slate-700">{exercise.muscleGroup}</TableCell>
-                <TableCell className="px-5 text-sm text-slate-700">{exercise.equipment}</TableCell>
-                <TableCell className="px-5 text-sm text-slate-700">{exercise.type}</TableCell>
-                <TableCell className="px-5 text-sm font-bold text-slate-700">{exercise.programsCount || 0}</TableCell>
+                <TableCell className="px-5 text-sm text-slate-700 dark:text-slate-200">{exercise.muscleGroup}</TableCell>
+                <TableCell className="px-5 text-sm text-slate-700 dark:text-slate-200">{exercise.equipment}</TableCell>
+                <TableCell className="px-5 text-sm text-slate-700 dark:text-slate-200">{exercise.type}</TableCell>
+                <TableCell className="px-5 text-sm font-bold text-slate-700 dark:text-slate-200">{exercise.programsCount || 0}</TableCell>
                 <TableCell className="px-5">
                   <div className="flex items-center gap-1">
                     <Button
@@ -667,7 +667,7 @@ function ExercisesContent() {
                       title="Προβολή"
                       aria-label="Προβολή"
                       onClick={() => openExercise(exercise, "view")}
-                      className="text-slate-900 hover:text-red-600"
+                      className="text-slate-900 hover:text-red-600 dark:text-slate-50"
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
@@ -677,7 +677,7 @@ function ExercisesContent() {
                       title="Επεξεργασία"
                       aria-label="Επεξεργασία"
                       onClick={() => openExercise(exercise, "edit")}
-                      className="text-slate-900 hover:text-red-600"
+                      className="text-slate-900 hover:text-red-600 dark:text-slate-50"
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
@@ -687,7 +687,7 @@ function ExercisesContent() {
                       title="Διαγραφή"
                       aria-label="Διαγραφή"
                       onClick={() => deleteExercise(exercise)}
-                      className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                      className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
@@ -697,7 +697,7 @@ function ExercisesContent() {
             ))}
             {!loading && exercises.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="h-32 px-6 text-center font-semibold text-slate-500">
+                <TableCell colSpan={6} className="h-32 px-6 text-center font-semibold text-slate-500 dark:text-slate-400">
                   Δεν βρέθηκαν ασκήσεις με αυτά τα φίλτρα.
                 </TableCell>
               </TableRow>
@@ -732,7 +732,7 @@ function ExercisesContent() {
               </DialogHeader>
               <div className="grid grid-cols-1 gap-6 md:grid-cols-12">
                 <div className="md:col-span-5">
-                  <div className="h-72 overflow-hidden rounded-lg bg-slate-100">
+                  <div className="h-72 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
                     <ExerciseImageSlider exercise={{ ...selected, name: editForm.name, imageUrl: editForm.imageUrl }} large />
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
@@ -751,9 +751,9 @@ function ExercisesContent() {
                         <Info label="Τύπος" value={editForm.type} />
                         <Info label="Σε προγράμματα" value={editForm.programsCount || 0} />
                       </div>
-                      <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                        <h3 className="font-extrabold">Περιγραφή / Πώς γίνεται</h3>
-                        <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-700">
+                      <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800">
+                        <h3 className="font-extrabold dark:text-slate-50">Περιγραφή / Πώς γίνεται</h3>
+                        <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-700 dark:text-slate-200">
                           {editForm.instructions || "Δεν έχει προστεθεί περιγραφή."}
                         </p>
                       </div>
@@ -790,20 +790,20 @@ function ExercisesContent() {
                       </div>
 
                       <Label className="mt-5 block">
-                        <span className="text-sm font-bold text-slate-700">Περιγραφή / Πώς γίνεται</span>
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Περιγραφή / Πώς γίνεται</span>
                       </Label>
                       <Textarea
                         value={editForm.instructions}
                         onChange={(event) => updateEditField("instructions", event.target.value)}
-                        className="mt-2 min-h-40 w-full rounded-lg border-slate-200 bg-slate-50 p-4 text-sm leading-7 focus-visible:border-red-300"
+                        className="mt-2 min-h-40 w-full rounded-lg border-slate-200 bg-slate-50 p-4 text-sm leading-7 focus-visible:border-red-300 dark:border-slate-800 dark:bg-slate-800"
                       />
 
-                      <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                      <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800">
                         <div className="flex items-center justify-between gap-4">
-                          <span className="text-sm font-bold text-slate-700">Φωτογραφίες άσκησης</span>
+                          <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Φωτογραφίες άσκησης</span>
                           <Badge
                             variant={currentImages.length ? "default" : "secondary"}
-                            className={currentImages.length ? "bg-emerald-50 text-emerald-700" : "bg-slate-200 text-slate-600"}
+                            className={currentImages.length ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400" : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"}
                           >
                             {currentImages.length ? `${currentImages.length} εικόνες` : "Χωρίς εικόνα"}
                           </Badge>
@@ -819,7 +819,7 @@ function ExercisesContent() {
                             Προσθήκη από Media Library
                           </Button>
                           <label
-                            className={`flex h-11 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 text-sm font-bold ${
+                            className={`flex h-11 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 text-sm font-bold dark:border-slate-800 dark:bg-slate-900 ${
                               isCreating ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:border-red-200 hover:text-red-600"
                             }`}
                           >
@@ -845,8 +845,8 @@ function ExercisesContent() {
                         </div>
                         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                           {currentImages.map((image, index) => (
-                            <div key={`${image.id}-${image.imageUrl}`} className="overflow-hidden rounded-lg border border-slate-200 bg-white">
-                              <div className="relative h-24 bg-slate-100">
+                            <div key={`${image.id}-${image.imageUrl}`} className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+                              <div className="relative h-24 bg-slate-100 dark:bg-slate-800">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img src={resolveMediaUrl(image.imageUrl)} alt="" className="h-full w-full object-cover" />
                                 {(image.isPrimary || image.imageUrl === editForm.imageUrl || index === 0) && (
@@ -857,7 +857,7 @@ function ExercisesContent() {
                                 variant="ghost"
                                 onClick={() => deleteExerciseImage(image)}
                                 disabled={saving || !image.id || String(image.id).startsWith("local")}
-                                className="h-9 w-full rounded-none text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-600"
+                                className="h-9 w-full rounded-none text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10"
                               >
                                 Διαγραφή
                               </Button>
@@ -867,7 +867,7 @@ function ExercisesContent() {
                       </div>
 
                       <Label className="mt-5 block">
-                        <span className="text-sm font-bold text-slate-700">Video link / embed</span>
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Video link / embed</span>
                       </Label>
                       <Input
                         value={editForm.videoUrl}
@@ -877,12 +877,12 @@ function ExercisesContent() {
                       />
 
                       {mediaMessage && (
-                        <div className="mt-3 rounded-md bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">{mediaMessage}</div>
+                        <div className="mt-3 rounded-md bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{mediaMessage}</div>
                       )}
 
                       <VideoEmbed url={editForm.videoUrl} />
 
-                      <div className="mt-6 flex justify-end border-t border-slate-200 pt-5">
+                      <div className="mt-6 flex justify-end border-t border-slate-200 pt-5 dark:border-slate-800">
                         <Button onClick={saveExercise} disabled={saving} className="h-11 px-6 font-bold">
                           {saving ? "Αποθήκευση..." : isCreating ? "Προσθήκη Άσκησης" : "Αποθήκευση Άσκησης"}
                         </Button>
@@ -917,18 +917,18 @@ function ExercisesContent() {
                   onClick={() => chooseMediaAsset(asset)}
                   className="h-auto flex-col items-stretch overflow-hidden whitespace-normal p-0 text-left hover:border-red-300"
                 >
-                  <div className="h-36 bg-slate-100">
+                  <div className="h-36 bg-slate-100 dark:bg-slate-800">
                     <PickerImage asset={asset} />
                   </div>
                   <div className="p-3">
                     <div className="truncate font-bold">{asset.title}</div>
-                    <div className="mt-1 truncate text-xs text-slate-500">{asset.folderName || asset.source}</div>
+                    <div className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{asset.folderName || asset.source}</div>
                   </div>
                 </Button>
               ))}
             </div>
             {!filteredMediaAssets.length && (
-              <div className="mt-8 rounded-lg border border-dashed border-slate-300 p-8 text-center font-semibold text-slate-500">
+              <div className="mt-8 rounded-lg border border-dashed border-slate-300 p-8 text-center font-semibold text-slate-500 dark:border-slate-700 dark:text-slate-400">
                 Δεν βρέθηκαν φωτογραφίες στη Media Library.
               </div>
             )}
@@ -953,7 +953,7 @@ function EditInput({
   return (
     <Label className="block">
       <span className="w-full">
-        <span className="block text-sm font-bold text-slate-700">{label}</span>
+        <span className="block text-sm font-bold text-slate-700 dark:text-slate-200">{label}</span>
         <Input
           type={type}
           value={value}
@@ -980,7 +980,7 @@ function EditSelect({
 
   return (
     <label className="block">
-      <span className="text-sm font-bold text-slate-700">{label}</span>
+      <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{label}</span>
       <Select value={value || UNSET_VALUE} onValueChange={(next: string | null) => onChange(!next || next === UNSET_VALUE ? "" : next)}>
         <SelectTrigger className="mt-2 h-11 w-full focus-visible:border-red-300">
           <SelectValue placeholder="Επιλογή" />
@@ -1016,9 +1016,9 @@ function StatCard({
       <div className="flex items-center gap-5">
         <span className={`grid h-16 w-16 shrink-0 place-items-center rounded-full ${tone}`}>{icon}</span>
         <div>
-          <p className="text-base font-semibold text-slate-600">{label}</p>
+          <p className="text-base font-semibold text-slate-600 dark:text-slate-400">{label}</p>
           <p className="mt-3 text-3xl font-extrabold">{value}</p>
-          <p className="mt-3 text-sm text-slate-600">{note}</p>
+          <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">{note}</p>
         </div>
       </div>
     </Card>
@@ -1064,7 +1064,7 @@ function ExerciseImageSlider({ exercise, large = false }: { exercise: Partial<Ex
   }
 
   return (
-    <div className="relative h-full w-full overflow-hidden rounded-lg bg-slate-100">
+    <div className="relative h-full w-full overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={resolveMediaUrl(activeImage.imageUrl)} alt={exercise.name || ""} className="h-full w-full object-cover" />
       {images.length > 1 && (
@@ -1124,7 +1124,7 @@ function ExerciseImage({ exercise, large = false }: { exercise: Partial<Exercise
 
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt={exercise.name || ""} className={`${sizeClass} bg-slate-200 object-cover`} onError={() => setFailed(true)} />
+    <img src={src} alt={exercise.name || ""} className={`${sizeClass} bg-slate-200 object-cover dark:bg-slate-800`} onError={() => setFailed(true)} />
   );
 }
 
@@ -1144,9 +1144,9 @@ function PickerImage({ asset }: { asset: MediaAsset }) {
 
 function Info({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg border border-slate-200 p-3">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="mt-1 font-bold">{value}</div>
+    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+      <div className="text-xs text-slate-500 dark:text-slate-400">{label}</div>
+      <div className="mt-1 font-bold dark:text-slate-50">{value}</div>
     </div>
   );
 }
@@ -1156,7 +1156,7 @@ function VideoEmbed({ url }: { url?: string }) {
 
   if (!url) {
     return (
-      <div className="mt-5 flex h-44 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-sm font-semibold text-slate-500">
+      <div className="mt-5 flex h-44 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-sm font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
         <Play className="mr-2 h-5 w-5" />
         Δεν έχει προστεθεί video ακόμα
       </div>
@@ -1165,14 +1165,14 @@ function VideoEmbed({ url }: { url?: string }) {
 
   if (!embedUrl) {
     return (
-      <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">
+      <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-400">
         Το link αποθηκεύεται, αλλά δεν υποστηρίζεται embed preview για αυτόν τον τύπο URL.
       </div>
     );
   }
 
   return (
-    <div className="mt-5 aspect-video overflow-hidden rounded-lg border border-slate-200 bg-slate-950">
+    <div className="mt-5 aspect-video overflow-hidden rounded-lg border border-slate-200 bg-slate-950 dark:border-slate-800">
       <iframe
         src={embedUrl}
         title="Exercise video"

@@ -110,11 +110,11 @@ function TeamContent() {
             <Link href="/dashboard" className="font-semibold text-blue-600">
               Dashboard
             </Link>
-            <span className="text-slate-400">›</span>
-            <span className="text-slate-600">Team</span>
+            <span className="text-slate-400 dark:text-slate-500">›</span>
+            <span className="text-slate-600 dark:text-slate-400">Team</span>
           </div>
           <h2 className="mt-5 text-3xl font-extrabold">Team &amp; Roles</h2>
-          <p className="mt-2 text-slate-600">Ορίζεις μόνο την εσωτερική ομάδα: Admin/Coach και Moderator.</p>
+          <p className="mt-2 text-slate-600 dark:text-slate-400">Ορίζεις μόνο την εσωτερική ομάδα: Admin/Coach και Moderator.</p>
         </div>
         {isAdmin && (
           <Button
@@ -127,18 +127,18 @@ function TeamContent() {
       </div>
 
       {!isAdmin && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-6 font-bold text-red-700">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-6 font-bold text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400">
           Μόνο ο Admin μπορεί να διαχειριστεί το Team.
         </div>
       )}
 
       {isAdmin && (
         <>
-          {error && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">{error}</div>}
-          {message && <div className="mb-5 rounded-lg border border-green-200 bg-green-50 px-5 py-4 text-sm font-bold text-green-700">{message}</div>}
+          {error && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400">{error}</div>}
+          {message && <div className="mb-5 rounded-lg border border-green-200 bg-green-50 px-5 py-4 text-sm font-bold text-green-700 dark:border-green-500/20 dark:bg-green-500/10 dark:text-green-400">{message}</div>}
 
           {showForm && (
-            <form onSubmit={createUser} className="mb-7 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+            <form onSubmit={createUser} className="mb-7 rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <div className="grid grid-cols-2 gap-4">
                 <FormField label="Ονοματεπώνυμο">
                   <Input value={form.fullName} onChange={(event) => setForm({ ...form, fullName: event.target.value })} required />
@@ -179,8 +179,8 @@ function TeamContent() {
             </form>
           )}
 
-          <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-slate-200 p-5">
+          <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-center justify-between border-b border-slate-200 p-5 dark:border-slate-800">
               <h3 className="text-xl font-extrabold">Χρήστες</h3>
               <Select value={roleFilter} onValueChange={(value) => value && setRoleFilter(value)}>
                 <SelectTrigger className="h-11 font-bold">
@@ -197,7 +197,7 @@ function TeamContent() {
               </Select>
             </div>
             <Table>
-              <TableHeader className="bg-slate-50 text-sm text-slate-600">
+              <TableHeader className="bg-slate-50 text-sm text-slate-600 dark:bg-slate-800 dark:text-slate-400">
                 <TableRow>
                   <TableHead className="px-5 py-4">Όνομα</TableHead>
                   <TableHead className="px-5 py-4">Email</TableHead>
@@ -211,7 +211,7 @@ function TeamContent() {
                 {filteredUsers.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell className="px-5 py-4 font-bold">{row.full_name}</TableCell>
-                    <TableCell className="px-5 py-4 text-slate-600">{row.email}</TableCell>
+                    <TableCell className="px-5 py-4 text-slate-600 dark:text-slate-400">{row.email}</TableCell>
                     <TableCell className="px-5 py-4">
                       <Select value={row.role} onValueChange={(value) => value && updateUser(row, { role: value })}>
                         <SelectTrigger className="h-10 font-bold">
@@ -227,15 +227,15 @@ function TeamContent() {
                       </Select>
                     </TableCell>
                     <TableCell className="px-5 py-4">
-                      <Badge className={row.is_active ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}>
+                      <Badge className={row.is_active ? "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400" : "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400"}>
                         {row.is_active ? "Active" : "Inactive"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="px-5 py-4 text-slate-600">{row.specializations || "-"}</TableCell>
+                    <TableCell className="px-5 py-4 text-slate-600 dark:text-slate-400">{row.specializations || "-"}</TableCell>
                     <TableCell className="px-5 py-4">
                       <Button
                         variant="outline"
-                        className="font-bold text-slate-700 hover:border-red-200 hover:text-red-600"
+                        className="font-bold text-slate-700 hover:border-red-200 hover:text-red-600 dark:text-slate-200"
                         onClick={() => updateUser(row, { isActive: !row.is_active })}
                       >
                         {row.is_active ? "Deactivate" : "Activate"}
@@ -245,7 +245,7 @@ function TeamContent() {
                 ))}
                 {!filteredUsers.length && (
                   <TableRow>
-                    <TableCell colSpan={6} className="px-5 py-10 text-center font-semibold text-slate-500">
+                    <TableCell colSpan={6} className="px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
                       Δεν υπάρχουν χρήστες.
                     </TableCell>
                   </TableRow>
@@ -261,7 +261,7 @@ function TeamContent() {
 
 function FormField({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700">
+    <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
       {label}
       {children}
     </Label>

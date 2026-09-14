@@ -185,7 +185,11 @@ export default function WorkoutProgramView({
   }, [activeDayId, days]);
 
   if (!training || !days.length) {
-    return <div className="rounded-lg border border-slate-200 bg-white p-8 text-center font-bold text-slate-500">{emptyText}</div>;
+    return (
+      <div className="rounded-lg border border-slate-200 bg-white p-8 text-center font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+        {emptyText}
+      </div>
+    );
   }
 
   const activeDay = days.find((day) => day.id === activeDayId) || days[0];
@@ -196,17 +200,17 @@ export default function WorkoutProgramView({
     <section className="space-y-7">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="text-3xl font-black text-slate-950">Πρόγραμμα Προπόνησης</h2>
-          <p className="mt-2 text-xl font-bold text-slate-600">{training.title || "Πρόγραμμα Προπόνησης"}</p>
+          <h2 className="text-3xl font-black text-slate-950 dark:text-slate-50">Πρόγραμμα Προπόνησης</h2>
+          <p className="mt-2 text-xl font-bold text-slate-600 dark:text-slate-400">{training.title || "Πρόγραμμα Προπόνησης"}</p>
         </div>
-        <div className="flex h-14 items-center gap-3 rounded-lg border border-slate-200 bg-white px-6 font-black text-slate-700 shadow-sm">
-          <Clock className="h-5 w-5 text-slate-500" />
+        <div className="flex h-14 items-center gap-3 rounded-lg border border-slate-200 bg-white px-6 font-black text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+          <Clock className="h-5 w-5 text-slate-500 dark:text-slate-400" />
           Περίπου {estimatedMinutes} λεπτά
         </div>
       </div>
 
       <Tabs value={String(activeDay.id)} onValueChange={(value) => setActiveDayId(value)} className="gap-7">
-        <TabsList className="grid h-auto w-full gap-2 bg-white p-2 sm:grid-cols-2 lg:grid-cols-5">
+        <TabsList className="grid h-auto w-full gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-sm sm:grid-cols-2 lg:grid-cols-5 dark:border-slate-800 dark:bg-slate-900">
           {days.slice(0, 7).map((day, index) => (
             <TabsTrigger
               key={day.id}
@@ -214,7 +218,7 @@ export default function WorkoutProgramView({
               className="min-h-[72px] flex-col whitespace-normal rounded-md px-4 py-3 font-black data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-100"
             >
               <div>Ημέρα {index + 1}</div>
-              <div className="mt-1 truncate text-xs font-bold text-slate-500 group-data-[state=active]:text-white/90 data-[state=active]:text-white/90">
+              <div className="mt-1 truncate text-xs font-bold text-slate-500 group-data-[state=active]:text-white/90 data-[state=active]:text-white/90 dark:text-slate-400">
                 {[...new Set(day.exercises.map((exercise) => exercise.muscle).filter(Boolean))].join(" / ") || "Χωρίς ασκήσεις"}
               </div>
             </TabsTrigger>
@@ -227,17 +231,17 @@ export default function WorkoutProgramView({
           return (
             <TabsContent key={day.id} value={String(day.id)} className="space-y-7">
               <Card className="overflow-hidden" style={{ "--card-spacing": "0px" } as CSSProperties}>
-                <div className="flex items-center gap-4 border-b border-slate-100 p-6">
-                  <div className="grid h-10 w-10 place-items-center rounded-full bg-red-50 text-red-600">
+                <div className="flex items-center gap-4 border-b border-slate-100 p-6 dark:border-slate-800">
+                  <div className="grid h-10 w-10 place-items-center rounded-full bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400">
                     <LayoutGrid className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-2xl font-black">Ημέρα {dayIndex + 1}</h3>
-                    <div className="mt-1 text-sm font-bold text-slate-500">{dayMuscles.join(" / ") || "Χωρίς ασκήσεις"}</div>
+                    <h3 className="text-2xl font-black dark:text-slate-50">Ημέρα {dayIndex + 1}</h3>
+                    <div className="mt-1 text-sm font-bold text-slate-500 dark:text-slate-400">{dayMuscles.join(" / ") || "Χωρίς ασκήσεις"}</div>
                   </div>
                 </div>
 
-                <div className="mx-5 hidden grid-cols-[minmax(0,1fr)_72px_92px_92px_82px_42px] rounded-lg bg-slate-50 px-5 py-4 text-sm font-bold text-slate-500 md:grid">
+                <div className="mx-5 hidden grid-cols-[minmax(0,1fr)_72px_92px_92px_82px_42px] rounded-lg bg-slate-50 px-5 py-4 text-sm font-bold text-slate-500 md:grid dark:bg-slate-800 dark:text-slate-400">
                   <div>Άσκηση</div>
                   <div className="text-center">Σετ</div>
                   <div className="text-center">Επαναλ.</div>
@@ -246,14 +250,14 @@ export default function WorkoutProgramView({
                   <div />
                 </div>
 
-                <div className="divide-y divide-slate-100 p-5 pt-0">
+                <div className="divide-y divide-slate-100 p-5 pt-0 dark:divide-slate-800">
                   {day.exercises.map((exercise) => (
                     <div key={exercise.id} className="grid gap-4 rounded-lg px-0 py-5 md:grid-cols-[minmax(0,1fr)_72px_92px_92px_82px_42px] md:items-center">
                       <div className="flex min-w-0 items-center gap-4">
                         <ExercisePhotoSlider exercise={exercise} />
                         <div className="min-w-0">
-                          <div className="text-lg font-black text-slate-950">{exercise.name}</div>
-                          <div className="mt-1 text-sm font-bold text-slate-500">{exercise.muscle || "-"}</div>
+                          <div className="text-lg font-black text-slate-950 dark:text-slate-50">{exercise.name}</div>
+                          <div className="mt-1 text-sm font-bold text-slate-500 dark:text-slate-400">{exercise.muscle || "-"}</div>
                         </div>
                       </div>
                       <StatCell label="Σετ" value={exercise.sets} />
@@ -264,19 +268,21 @@ export default function WorkoutProgramView({
                         <Play className="h-4 w-4" />
                       </Button>
                       {exercise.notes && (
-                        <div className="rounded-md bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 md:col-span-6">{exercise.notes}</div>
+                        <div className="rounded-md bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 md:col-span-6 dark:bg-slate-800 dark:text-slate-300">
+                          {exercise.notes}
+                        </div>
                       )}
                     </div>
                   ))}
                   {!day.exercises.length && (
-                    <div className="p-8 text-center font-bold text-slate-500">Δεν υπάρχουν ασκήσεις για αυτή την ημέρα.</div>
+                    <div className="p-8 text-center font-bold text-slate-500 dark:text-slate-400">Δεν υπάρχουν ασκήσεις για αυτή την ημέρα.</div>
                   )}
                 </div>
 
                 {training.description && (
-                  <div className="mx-5 mb-5 rounded-lg border border-red-100 bg-red-50 p-5">
-                    <div className="font-black text-slate-950">Οδηγίες</div>
-                    <p className="mt-2 text-sm font-semibold leading-6 text-slate-700">{training.description}</p>
+                  <div className="mx-5 mb-5 rounded-lg border border-red-100 bg-red-50 p-5 dark:border-red-500/20 dark:bg-red-500/10">
+                    <div className="font-black text-slate-950 dark:text-slate-50">Οδηγίες</div>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-slate-700 dark:text-slate-300">{training.description}</p>
                   </div>
                 )}
               </Card>
@@ -285,7 +291,7 @@ export default function WorkoutProgramView({
         })}
       </Tabs>
 
-      <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm md:grid-cols-3">
+      <div className="grid gap-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm md:grid-cols-3 dark:border-slate-800 dark:bg-slate-900">
         <SummaryItem icon={<Clock className="h-5 w-5" />} label="Διάρκεια Προπόνησης" value={`~ ${estimatedMinutes} λεπτά`} />
         <SummaryItem
           icon={<Flame className="h-5 w-5" />}
@@ -300,9 +306,9 @@ export default function WorkoutProgramView({
 
 function StatCell({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 md:block md:bg-transparent md:px-0 md:py-0 md:text-center">
-      <span className="text-xs font-black text-slate-500 md:hidden">{label}</span>
-      <span className="text-lg font-black text-slate-950 md:text-xl">{value || "-"}</span>
+    <div className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 md:block md:bg-transparent md:px-0 md:py-0 md:text-center dark:bg-slate-800 dark:md:bg-transparent">
+      <span className="text-xs font-black text-slate-500 md:hidden dark:text-slate-400">{label}</span>
+      <span className="text-lg font-black text-slate-950 md:text-xl dark:text-slate-50">{value || "-"}</span>
     </div>
   );
 }
@@ -367,10 +373,10 @@ function ExercisePhotoSlider({ exercise }: { exercise: Exercise }) {
 function SummaryItem({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
     <div className="flex items-center gap-4">
-      <div className="grid h-12 w-12 place-items-center rounded-full bg-red-50 text-red-600">{icon}</div>
+      <div className="grid h-12 w-12 place-items-center rounded-full bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400">{icon}</div>
       <div>
-        <div className="text-sm font-bold text-slate-500">{label}</div>
-        <div className="mt-1 text-lg font-black text-slate-950">{value}</div>
+        <div className="text-sm font-bold text-slate-500 dark:text-slate-400">{label}</div>
+        <div className="mt-1 text-lg font-black text-slate-950 dark:text-slate-50">{value}</div>
       </div>
     </div>
   );

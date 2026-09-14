@@ -70,11 +70,11 @@ function NotificationsContent() {
             <Link href="/dashboard" className="font-semibold text-blue-600">
               Dashboard
             </Link>
-            <span className="text-slate-400">›</span>
-            <span className="text-slate-600">Ειδοποιήσεις</span>
+            <span className="text-slate-400 dark:text-slate-500">›</span>
+            <span className="text-slate-600 dark:text-slate-400">Ειδοποιήσεις</span>
           </div>
           <h2 className="mt-5 text-3xl font-extrabold">Κέντρο Ειδοποιήσεων</h2>
-          <p className="mt-2 text-slate-600">Πληρωμές, συνδρομές, updates πελατών και νέα συμβάντα.</p>
+          <p className="mt-2 text-slate-600 dark:text-slate-400">Πληρωμές, συνδρομές, updates πελατών και νέα συμβάντα.</p>
         </div>
         <div className="grid grid-cols-2 gap-3 md:flex">
           <SummaryCard label="Σύνολο" value={notifications.length} />
@@ -98,18 +98,18 @@ function NotificationsContent() {
       </Card>
 
       {error && (
-        <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">{error}</div>
+        <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400">{error}</div>
       )}
       {loading && (
-        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center font-bold text-slate-500">Φόρτωση...</div>
+        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">Φόρτωση...</div>
       )}
 
       {!loading && (
         <section className="max-w-5xl space-y-5">
           {grouped.map((group) => (
             <Card key={group.label} className="p-5">
-              <div className="mb-4 text-xs font-extrabold uppercase tracking-wide text-slate-500">{group.label}</div>
-              <div className="divide-y divide-slate-200">
+              <div className="mb-4 text-xs font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">{group.label}</div>
+              <div className="divide-y divide-slate-200 dark:divide-slate-800">
                 {group.items.map((item) => (
                   <NotificationRow key={item.id} item={item} />
                 ))}
@@ -118,9 +118,9 @@ function NotificationsContent() {
           ))}
 
           {!grouped.length && (
-            <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center">
+            <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center dark:border-slate-700 dark:bg-slate-900">
               <div className="text-lg font-extrabold">Δεν υπάρχουν ειδοποιήσεις για αυτό το φίλτρο.</div>
-              <p className="mt-2 text-sm text-slate-500">Οι νέες πληρωμές και ενέργειες πελατών θα εμφανίζονται εδώ.</p>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Οι νέες πληρωμές και ενέργειες πελατών θα εμφανίζονται εδώ.</p>
             </div>
           )}
         </section>
@@ -131,8 +131,8 @@ function NotificationsContent() {
 
 function SummaryCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="min-w-32 rounded-lg border border-slate-200 bg-white px-5 py-3 shadow-sm">
-      <div className="text-xs font-bold uppercase text-slate-500">{label}</div>
+    <div className="min-w-32 rounded-lg border border-slate-200 bg-white px-5 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400">{label}</div>
       <div className="mt-1 text-2xl font-black">{value}</div>
     </div>
   );
@@ -149,15 +149,15 @@ function NotificationRow({ item }: { item: NotificationItem }) {
       <div className="min-w-0 flex-1">
         <div className="text-[15px] leading-6">
           <span className="font-extrabold">{item.title}</span>
-          {item.client_name && <span className="font-semibold text-slate-800"> — {item.client_name}</span>}
+          {item.client_name && <span className="font-semibold text-slate-800 dark:text-slate-200"> — {item.client_name}</span>}
         </div>
-        <div className="mt-1 text-sm font-semibold leading-6 text-slate-600">{item.body}</div>
-        <div className="mt-1 text-xs font-bold text-slate-400">{formatDateTime(item.created_at)}</div>
+        <div className="mt-1 text-sm font-semibold leading-6 text-slate-600 dark:text-slate-400">{item.body}</div>
+        <div className="mt-1 text-xs font-bold text-slate-400 dark:text-slate-500">{formatDateTime(item.created_at)}</div>
       </div>
       {item.client_id && (
         <Link
           href={`/clients/${item.client_id}`}
-          className="hidden rounded-md border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:border-red-200 hover:text-red-600 md:block"
+          className="hidden rounded-md border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:border-red-200 hover:text-red-600 md:block dark:border-slate-800 dark:text-slate-400"
         >
           Προβολή
         </Link>
@@ -203,11 +203,11 @@ function iconForType(type = ""): string {
 }
 
 function toneForType(type = ""): { bubble: string; text: string } {
-  if (type.includes("approved")) return { bubble: "bg-green-50", text: "text-green-600" };
-  if (type.includes("payment")) return { bubble: "bg-amber-50", text: "text-amber-600" };
-  if (type.includes("subscription")) return { bubble: "bg-red-50", text: "text-red-600" };
-  if (type.includes("update")) return { bubble: "bg-blue-50", text: "text-blue-600" };
-  return { bubble: "bg-slate-100", text: "text-slate-600" };
+  if (type.includes("approved")) return { bubble: "bg-green-50 dark:bg-green-500/10", text: "text-green-600 dark:text-green-400" };
+  if (type.includes("payment")) return { bubble: "bg-amber-50 dark:bg-amber-500/10", text: "text-amber-600 dark:text-amber-400" };
+  if (type.includes("subscription")) return { bubble: "bg-red-50 dark:bg-red-500/10", text: "text-red-600 dark:text-red-400" };
+  if (type.includes("update")) return { bubble: "bg-blue-50 dark:bg-blue-500/10", text: "text-blue-600 dark:text-blue-400" };
+  return { bubble: "bg-slate-100 dark:bg-slate-800", text: "text-slate-600 dark:text-slate-400" };
 }
 
 function formatDateTime(value?: string): string {

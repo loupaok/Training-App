@@ -13,7 +13,7 @@ function ClientExpiredContent() {
     <ClientShell title="Λήξη Συνδρομής" user={user} logout={logout} paymentApproved={false} active="billing">
       <div className="mx-auto max-w-3xl">
         <section className="rounded-lg border border-red-200 bg-white p-8 shadow-sm dark:border-red-900 dark:bg-slate-900">
-          <div className="grid h-16 w-16 place-items-center rounded-full bg-red-100 text-2xl font-black text-red-700">
+          <div className="grid h-16 w-16 place-items-center rounded-full bg-red-100 text-2xl font-black text-red-700 dark:bg-red-500/10 dark:text-red-400">
             ×
           </div>
           <h1 className="mt-6 text-3xl font-black">Η συνδρομή σου έχει λήξει</h1>

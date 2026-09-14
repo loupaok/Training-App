@@ -95,11 +95,11 @@ function formatDate(value?: string): string {
 function mapApiClient(row: ClientApiRow): MappedClient {
   const statusKey = row.client_status_key || (row.is_active === 0 || row.coaching_status === "inactive" ? "inactive" : "active");
   const statusMeta: Record<string, { label: string; style: string }> = {
-    active: { label: "Ενεργός", style: "bg-emerald-50 text-emerald-700" },
-    pending: { label: "Εκκρεμής", style: "bg-amber-50 text-amber-700" },
-    inactive: { label: "Ανενεργός", style: "bg-red-50 text-red-700" },
+    active: { label: "Ενεργός", style: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400" },
+    pending: { label: "Εκκρεμής", style: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400" },
+    inactive: { label: "Ανενεργός", style: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400" },
   };
-  const meta = statusMeta[statusKey] || { label: "Ανενεργός", style: "bg-red-50 text-red-700" };
+  const meta = statusMeta[statusKey] || { label: "Ανενεργός", style: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400" };
   const currentWeight = row.latest_update_weight || row.weight_kg;
   const updateDay = row.update_day === null || row.update_day === undefined ? "" : String(row.update_day);
   return {
@@ -130,7 +130,7 @@ function getWeightNumber(value: string): number {
 
 function FilterBox({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`flex h-[68px] items-center rounded-lg border border-slate-200 bg-white px-4 shadow-sm ${className}`}>{children}</div>
+    <div className={`flex h-[68px] items-center rounded-lg border border-slate-200 bg-white px-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}>{children}</div>
   );
 }
 
@@ -275,8 +275,8 @@ function ClientsContent() {
             <Link href="/dashboard" className="font-semibold text-blue-600 hover:text-blue-700">
               Dashboard
             </Link>
-            <span className="text-slate-400">›</span>
-            <span className="text-slate-600">Πελάτες</span>
+            <span className="text-slate-400 dark:text-slate-500">›</span>
+            <span className="text-slate-600 dark:text-slate-400">Πελάτες</span>
           </div>
         </div>
 
@@ -286,14 +286,14 @@ function ClientsContent() {
         </Button>
       </div>
 
-      {clientError && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">{clientError}</div>}
+      {clientError && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">{clientError}</div>}
       {clientMessage && (
-        <div className="mb-5 rounded-lg border border-green-200 bg-green-50 px-5 py-4 text-sm font-bold text-green-700">{clientMessage}</div>
+        <div className="mb-5 rounded-lg border border-green-200 bg-green-50 px-5 py-4 text-sm font-bold text-green-700 dark:border-green-900 dark:bg-green-950/50 dark:text-green-200">{clientMessage}</div>
       )}
 
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-12">
         <FilterBox className="lg:col-span-4">
-          <Search className="mr-3 h-5 w-5 shrink-0 text-slate-500" />
+          <Search className="mr-3 h-5 w-5 shrink-0 text-slate-500 dark:text-slate-400" />
           <Input
             type="search"
             value={search}
@@ -352,7 +352,7 @@ function ClientsContent() {
         </Button>
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <PaginationControls
           totalItems={filteredClients.length}
           pageSize={pageSize}
@@ -364,28 +364,28 @@ function ClientsContent() {
         />
       </div>
 
-      <section className="mt-5 overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+      <section className="mt-5 overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <Table>
           <TableHeader>
             <TableRow className="h-[72px]">
-              <TableHead className="w-[30%] px-8 text-base font-extrabold text-slate-950">Πελάτης</TableHead>
-              <TableHead className="w-[13%] px-5 text-base font-extrabold text-slate-950">Κατάσταση</TableHead>
-              <TableHead className="w-[13%] px-5 text-base font-extrabold text-slate-950">Τρέχον Βάρος</TableHead>
-              <TableHead className="w-[20%] px-5 text-base font-extrabold text-slate-950">Επόμενο Update</TableHead>
-              <TableHead className="w-[10%] px-5 text-base font-extrabold text-slate-950">Status</TableHead>
-              <TableHead className="w-[14%] px-5 text-base font-extrabold text-slate-950">Ενέργειες</TableHead>
+              <TableHead className="w-[30%] px-8 text-base font-extrabold text-slate-950 dark:text-slate-50">Πελάτης</TableHead>
+              <TableHead className="w-[13%] px-5 text-base font-extrabold text-slate-950 dark:text-slate-50">Κατάσταση</TableHead>
+              <TableHead className="w-[13%] px-5 text-base font-extrabold text-slate-950 dark:text-slate-50">Τρέχον Βάρος</TableHead>
+              <TableHead className="w-[20%] px-5 text-base font-extrabold text-slate-950 dark:text-slate-50">Επόμενο Update</TableHead>
+              <TableHead className="w-[10%] px-5 text-base font-extrabold text-slate-950 dark:text-slate-50">Status</TableHead>
+              <TableHead className="w-[14%] px-5 text-base font-extrabold text-slate-950 dark:text-slate-50">Ενέργειες</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {paginatedClients.map((client) => (
               <TableRow key={client.id} className="h-[104px]">
                 <TableCell className="px-8">
-                  <Link href={`/clients/${client.id}`} className="flex items-center gap-4 text-slate-950 hover:text-red-600">
+                  <Link href={`/clients/${client.id}`} className="flex items-center gap-4 text-slate-950 hover:text-red-600 dark:text-slate-50">
                     <UserAvatar initials={client.initials} tone={client.tone} photoUrl={client.profilePhoto} />
                     <div>
                       <div className="font-extrabold">{client.name}</div>
-                      <div className="mt-1 text-sm text-slate-600">{client.email}</div>
-                      <div className="mt-1 text-xs font-bold text-slate-500">{client.program}</div>
+                      <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">{client.email}</div>
+                      <div className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">{client.program}</div>
                     </div>
                   </Link>
                 </TableCell>
@@ -395,14 +395,16 @@ function ClientsContent() {
                 <TableCell className="px-5 text-base">{client.currentWeight}</TableCell>
                 <TableCell className="px-5">
                   <div>
-                    <div className="font-bold text-slate-900">{client.nextUpdate}</div>
-                    <div className="mt-1 text-xs font-bold text-slate-500">{client.updateDayLabel}</div>
+                    <div className="font-bold text-slate-900 dark:text-slate-50">{client.nextUpdate}</div>
+                    <div className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">{client.updateDayLabel}</div>
                   </div>
                 </TableCell>
                 <TableCell className="px-5">
                   <span
                     className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-bold ${
-                      client.isOnline ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                      client.isOnline
+                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
+                        : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
                     }`}
                   >
                     <span className={`h-2 w-2 rounded-full ${client.isOnline ? "bg-emerald-500" : "bg-slate-400"}`} />
@@ -447,7 +449,7 @@ function ClientsContent() {
             ))}
             {!paginatedClients.length && (
               <TableRow>
-                <TableCell colSpan={6} className="px-8 py-12 text-center font-semibold text-slate-500">
+                <TableCell colSpan={6} className="px-8 py-12 text-center font-semibold text-slate-500 dark:text-slate-400">
                   {loadingClients ? "Φόρτωση πελατών..." : "Δεν υπάρχουν εγγεγραμμένοι πελάτες με αυτά τα φίλτρα."}
                 </TableCell>
               </TableRow>

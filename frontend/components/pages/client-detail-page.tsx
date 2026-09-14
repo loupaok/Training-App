@@ -337,12 +337,12 @@ function statusMeta(client: ClientRecord | null): StatusMetaResult {
   const subscriptionStatus = client?.subscription?.status;
 
   if (userStatus === "active" || subscriptionStatus === "active") {
-    return { label: "Ενεργός", className: "bg-emerald-50 text-emerald-700" };
+    return { label: "Ενεργός", className: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400" };
   }
   if (userStatus === "pending_payment" || paymentStatus === "pending") {
-    return { label: "Εκκρεμής", className: "bg-amber-50 text-amber-700" };
+    return { label: "Εκκρεμής", className: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400" };
   }
-  return { label: "Ανενεργός", className: "bg-red-50 text-red-700" };
+  return { label: "Ανενεργός", className: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400" };
 }
 
 function normalizeTrainingPlan(plan?: RawTrainingPlan | null): TrainingPlanState {
@@ -531,26 +531,26 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
     <CoachShell title="Καρτέλα Πελάτη" user={user} logout={logout}>
       <div className="mb-6 flex flex-wrap items-center gap-3 text-sm font-bold">
         <Link href="/dashboard" className="text-blue-600 hover:text-blue-700">Dashboard</Link>
-        <span className="text-slate-400">/</span>
+        <span className="text-slate-400 dark:text-slate-500">/</span>
         <Link href="/clients" className="text-blue-600 hover:text-blue-700">Πελάτες</Link>
-        <span className="text-slate-400">/</span>
-        <span className="text-slate-500">{displayName}</span>
+        <span className="text-slate-400 dark:text-slate-500">/</span>
+        <span className="text-slate-500 dark:text-slate-400">{displayName}</span>
       </div>
 
       {loading && <StateBox text="Φόρτωση πελάτη..." />}
-      {error && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 p-5 font-bold text-red-700">{error}</div>}
-      {message && <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-5 font-bold text-emerald-700">{message}</div>}
+      {error && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 p-5 font-bold text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400">{error}</div>}
+      {message && <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 p-5 font-bold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-400">{message}</div>}
 
       {!loading && client && (
         <div className="space-y-6">
           <ClientHeader client={client} displayName={displayName} currentStatus={currentStatus} onboarding={onboarding} updateDay={updateDay} />
 
           {currentStatus.label !== "Ενεργός" && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-500/20 dark:bg-amber-500/10">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                  <h3 className="text-lg font-black text-amber-900">Ο πελάτης δεν έχει ενεργή πληρωμή</h3>
-                  <p className="mt-1 text-sm font-bold text-amber-800">
+                  <h3 className="text-lg font-black text-amber-900 dark:text-amber-300">Ο πελάτης δεν έχει ενεργή πληρωμή</h3>
+                  <p className="mt-1 text-sm font-bold text-amber-800 dark:text-amber-400">
                     Κατάσταση: {currentStatus.label}. Τα προγράμματα μπορεί να υπάρχουν, αλλά ο πελάτης θα τα βλέπει κλειδωμένα μέχρι να εγκριθεί η πληρωμή του.
                   </p>
                 </div>
@@ -647,7 +647,7 @@ function ClientHeader({
               <h2 className="text-3xl font-black">{displayName}</h2>
               <Badge className={`h-auto rounded-md px-3 py-1.5 text-sm font-bold ${currentStatus.className}`}>{currentStatus.label}</Badge>
             </div>
-            <div className="mt-4 grid gap-2 text-sm font-semibold text-slate-600">
+            <div className="mt-4 grid gap-2 text-sm font-semibold text-slate-600 dark:text-slate-400">
               <span>{client.email || "-"}</span>
               <span>{client.phone || "-"}</span>
               <span>Μέλος από: {formatDate(client.created_at)}</span>
@@ -726,19 +726,19 @@ function OverviewTab({
             client.payments.map((payment) => (
               <div key={payment.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <div className="font-black text-slate-950">{money(payment.amount, payment.currency)}</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-500">{formatDateTime(payment.created_at)}</div>
+                  <div className="font-black text-slate-950 dark:text-slate-50">{money(payment.amount, payment.currency)}</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{formatDateTime(payment.created_at)}</div>
                   {payment.method === "bank_transfer" && (
-                    <div className="mt-1 text-xs font-bold text-slate-400">Τραπεζικό έμβασμα · {payment.reference_number || "-"}</div>
+                    <div className="mt-1 text-xs font-bold text-slate-400 dark:text-slate-500">Τραπεζικό έμβασμα · {payment.reference_number || "-"}</div>
                   )}
                 </div>
                 <Badge
                   className={`h-auto w-fit rounded-md px-3 py-1 text-sm font-black ${
                     payment.status === "completed"
-                      ? "bg-emerald-50 text-emerald-700"
+                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
                       : payment.status === "pending"
-                        ? "bg-amber-50 text-amber-700"
-                        : "bg-slate-100 text-slate-700"
+                        ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"
+                        : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
                   }`}
                 >
                   {payment.status === "completed" ? "Εγκρίθηκε" : payment.status === "pending" ? "Εκκρεμής" : payment.status || "-"}
@@ -758,7 +758,7 @@ function OverviewTab({
                       variant="outline"
                       onClick={() => onRejectPayment(payment.id)}
                       disabled={rejectingPaymentId === payment.id}
-                      className="h-9 border-red-200 px-4 text-sm font-black text-red-600 hover:bg-red-50"
+                      className="h-9 border-red-200 px-4 text-sm font-black text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
                     >
                       {rejectingPaymentId === payment.id ? "Απόρριψη..." : "Απόρριψη"}
                     </Button>
@@ -804,7 +804,7 @@ function OverviewTab({
       </ListCard>
 
       <InfoCard title="Ιδιωτικές σημειώσεις coach">
-        <div className="min-h-24 rounded-md bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-900">
+        <div className="min-h-24 rounded-md bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-900 dark:bg-amber-500/10 dark:text-amber-300">
           {client.coach_notes || "Δεν υπάρχουν σημειώσεις coach."}
         </div>
       </InfoCard>
@@ -833,13 +833,13 @@ function PaymentsTab({
 
   return (
     <Card className="overflow-hidden p-0">
-      <CardHeader className="border-b border-slate-200 px-6 py-5">
+      <CardHeader className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
         <CardTitle className="text-xl font-black">Ιστορικό Πληρωμών</CardTitle>
-        <p className="mt-1 text-sm font-semibold text-slate-500">Όλες οι πληρωμές του πελάτη και οι χειροκίνητες ενέργειες έγκρισης.</p>
+        <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">Όλες οι πληρωμές του πελάτη και οι χειροκίνητες ενέργειες έγκρισης.</p>
       </CardHeader>
 
       <Table>
-        <TableHeader className="border-b border-slate-200 bg-slate-50 text-xs font-black uppercase text-slate-500">
+        <TableHeader className="border-b border-slate-200 bg-slate-50 text-xs font-black uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-400">
           <TableRow>
             <TableHead className="px-5 py-4">Ημερομηνία</TableHead>
             <TableHead className="px-5 py-4">Ποσό</TableHead>
@@ -850,22 +850,22 @@ function PaymentsTab({
             <TableHead className="px-5 py-4">Ενέργειες</TableHead>
           </TableRow>
         </TableHeader>
-        <TableBody className="divide-y divide-slate-100">
+        <TableBody className="divide-y divide-slate-100 dark:divide-slate-800">
           {payments.map((payment) => (
             <TableRow key={payment.id} className="align-top">
-              <TableCell className="whitespace-normal px-5 py-4 font-semibold text-slate-700">{formatDateTime(payment.created_at)}</TableCell>
-              <TableCell className="whitespace-normal px-5 py-4 font-black text-slate-950">{money(payment.amount, payment.currency)}</TableCell>
-              <TableCell className="whitespace-normal px-5 py-4 font-semibold text-slate-700">
+              <TableCell className="whitespace-normal px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{formatDateTime(payment.created_at)}</TableCell>
+              <TableCell className="whitespace-normal px-5 py-4 font-black text-slate-950 dark:text-slate-50">{money(payment.amount, payment.currency)}</TableCell>
+              <TableCell className="whitespace-normal px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">
                 {payment.method === "bank_transfer" ? "Τραπεζικό έμβασμα" : payment.method || "-"}
               </TableCell>
-              <TableCell className="whitespace-normal px-5 py-4 font-semibold text-slate-500">{payment.reference_number || "-"}</TableCell>
+              <TableCell className="whitespace-normal px-5 py-4 font-semibold text-slate-500 dark:text-slate-400">{payment.reference_number || "-"}</TableCell>
               <TableCell className="whitespace-normal px-5 py-4">
                 {payment.proof_url ? (
                   <a href={resolveMediaUrl(payment.proof_url)} target="_blank" rel="noreferrer" className="font-black text-blue-600 hover:text-blue-700">
                     Προβολή
                   </a>
                 ) : (
-                  <span className="font-semibold text-slate-400">-</span>
+                  <span className="font-semibold text-slate-400 dark:text-slate-500">-</span>
                 )}
               </TableCell>
               <TableCell className="whitespace-normal px-5 py-4">
@@ -887,20 +887,20 @@ function PaymentsTab({
                       variant="outline"
                       onClick={() => onRejectPayment(payment.id)}
                       disabled={rejectingPaymentId === payment.id}
-                      className="h-9 border-red-200 px-4 text-sm font-black text-red-600 hover:bg-red-50"
+                      className="h-9 border-red-200 px-4 text-sm font-black text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
                     >
                       {rejectingPaymentId === payment.id ? "Απόρριψη..." : "Απόρριψη"}
                     </Button>
                   </div>
                 ) : (
-                  <span className="font-semibold text-slate-400">-</span>
+                  <span className="font-semibold text-slate-400 dark:text-slate-500">-</span>
                 )}
               </TableCell>
             </TableRow>
           ))}
           {!payments.length && (
             <TableRow>
-              <TableCell colSpan={7} className="whitespace-normal px-5 py-10 text-center font-semibold text-slate-500">
+              <TableCell colSpan={7} className="whitespace-normal px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
                 Δεν υπάρχουν πληρωμές ακόμα.
               </TableCell>
             </TableRow>
@@ -913,12 +913,12 @@ function PaymentsTab({
 
 function PaymentStatus({ status }: { status?: string }) {
   const meta: Record<string, [string, string]> = {
-    completed: ["Εγκρίθηκε", "bg-emerald-50 text-emerald-700"],
-    pending: ["Εκκρεμής", "bg-amber-50 text-amber-700"],
-    failed: ["Απορρίφθηκε", "bg-red-50 text-red-700"],
-    refunded: ["Επιστροφή", "bg-slate-100 text-slate-700"],
+    completed: ["Εγκρίθηκε", "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"],
+    pending: ["Εκκρεμής", "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"],
+    failed: ["Απορρίφθηκε", "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400"],
+    refunded: ["Επιστροφή", "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"],
   };
-  const [label, className] = meta[status || ""] || [status || "-", "bg-slate-100 text-slate-700"];
+  const [label, className] = meta[status || ""] || [status || "-", "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"];
 
   return <Badge className={`h-auto rounded-md px-3 py-1 text-sm font-black ${className}`}>{label}</Badge>;
 }
@@ -1000,7 +1000,7 @@ function TrainingPlanEditor({
         <div className="grid gap-4 xl:grid-cols-[1.2fr_0.7fr_0.7fr_1fr]">
           <Field label="Τίτλος" value={plan.title} onChange={(value) => setPlan({ ...plan, title: value })} />
           <div className="block">
-            <Label className="text-xs font-black text-slate-500">Ημέρες προγράμματος</Label>
+            <Label className="text-xs font-black text-slate-500 dark:text-slate-400">Ημέρες προγράμματος</Label>
             <Select value={String(plan.dayCount || visibleDays.length)} onValueChange={(value) => setDayCount(Number(value ?? 0))}>
               <SelectTrigger className="mt-1 h-11 w-full text-sm font-semibold">
                 <SelectValue />
@@ -1027,7 +1027,7 @@ function TrainingPlanEditor({
           <Field label="Διάρκεια εβδομάδες" type="number" value={plan.durationWeeks} onChange={(value) => setPlan({ ...plan, durationWeeks: value })} />
         </div>
 
-        <div className="flex gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-2">
+        <div className="flex gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-800">
           {visibleDays.map((day, index) => {
             const groups = [...new Set((day.exercises || []).map((exercise) => exercise.muscleGroup).filter(Boolean))];
             return (
@@ -1039,7 +1039,7 @@ function TrainingPlanEditor({
                 className="h-auto min-w-[132px] flex-col items-start whitespace-normal px-4 py-3 text-left"
               >
                 <div className="text-sm font-black">Ημέρα {index + 1}</div>
-                <div className={`mt-1 truncate text-xs font-bold ${activeDayIndex === index ? "text-white/90" : "text-slate-500"}`}>
+                <div className={`mt-1 truncate text-xs font-bold ${activeDayIndex === index ? "text-white/90" : "text-slate-500 dark:text-slate-400"}`}>
                   {groups.length ? groups.join(" / ") : "Χωρίς ασκήσεις"}
                 </div>
               </Button>
@@ -1048,19 +1048,19 @@ function TrainingPlanEditor({
         </div>
 
         {selectedDay && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h3 className="text-xl font-black">Ημέρα {activeDayIndex + 1}</h3>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {muscleGroups.length ? (
                     muscleGroups.map((group) => (
-                      <span key={group} className="rounded-full bg-red-50 px-3 py-1 text-xs font-black text-red-700">
+                      <span key={group} className="rounded-full bg-red-50 px-3 py-1 text-xs font-black text-red-700 dark:bg-red-500/10 dark:text-red-400">
                         {group}
                       </span>
                     ))
                   ) : (
-                    <span className="text-sm font-semibold text-slate-500">Οι μυϊκές ομάδες θα μπουν αυτόματα από τις ασκήσεις.</span>
+                    <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">Οι μυϊκές ομάδες θα μπουν αυτόματα από τις ασκήσεις.</span>
                   )}
                 </div>
               </div>
@@ -1074,7 +1074,7 @@ function TrainingPlanEditor({
               {(selectedDay.exercises || []).map((exercise, exerciseIndex) => (
                 <div
                   key={`${selectedDay.dayOfWeek}-${exerciseIndex}`}
-                  className="grid gap-3 rounded-md border border-slate-200 bg-white p-3 xl:grid-cols-[minmax(240px,2fr)_88px_100px_100px_96px_auto]"
+                  className="grid gap-3 rounded-md border border-slate-200 bg-white p-3 xl:grid-cols-[minmax(240px,2fr)_88px_100px_100px_96px_auto] dark:border-slate-800 dark:bg-slate-900"
                 >
                   <ExercisePicker
                     exercises={exercises}
@@ -1102,14 +1102,14 @@ function TrainingPlanEditor({
                     type="button"
                     variant="outline"
                     onClick={() => removeExercise(activeDayIndex, exerciseIndex)}
-                    className="h-auto self-end border-red-200 px-3 py-2 text-sm font-black text-red-600 hover:bg-red-50"
+                    className="h-auto self-end border-red-200 px-3 py-2 text-sm font-black text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
                   >
                     Διαγραφή
                   </Button>
                 </div>
               ))}
               {!selectedDay.exercises?.length && (
-                <div className="rounded-md border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500">
+                <div className="rounded-md border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
                   Πρόσθεσε την πρώτη άσκηση για αυτή την ημέρα.
                 </div>
               )}
@@ -1152,9 +1152,9 @@ function ExercisePicker({
 
   return (
     <div className="relative block">
-      <Label className="text-xs font-black text-slate-500">Άσκηση</Label>
+      <Label className="text-xs font-black text-slate-500 dark:text-slate-400">Άσκηση</Label>
       <div className="relative mt-1">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
         <Input
           value={searchValue}
           onFocus={() => {
@@ -1171,7 +1171,7 @@ function ExercisePicker({
         />
       </div>
       {open && (
-        <div className="absolute left-0 right-0 top-[62px] z-30 max-h-72 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-xl">
+        <div className="absolute left-0 right-0 top-[62px] z-30 max-h-72 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
           {filteredExercises.map((item) => (
             <Button
               key={item.id}
@@ -1179,24 +1179,24 @@ function ExercisePicker({
               variant="ghost"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => chooseExercise(item)}
-              className="h-auto w-full justify-start gap-3 whitespace-normal rounded-none border-b border-slate-100 px-3 py-3 text-left last:border-b-0"
+              className="h-auto w-full justify-start gap-3 whitespace-normal rounded-none border-b border-slate-100 px-3 py-3 text-left last:border-b-0 dark:border-slate-800"
             >
-              <span className="h-12 w-16 shrink-0 overflow-hidden rounded-md bg-slate-100">
+              <span className="h-12 w-16 shrink-0 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
                 {item.imageUrl || item.image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={resolveMediaUrl(item.imageUrl || item.image_url)} alt="" className="h-full w-full object-cover" />
                 ) : (
-                  <span className="grid h-full w-full place-items-center text-[10px] font-black text-slate-400">PHOTO</span>
+                  <span className="grid h-full w-full place-items-center text-[10px] font-black text-slate-400 dark:text-slate-500">PHOTO</span>
                 )}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-black text-slate-950">{item.name}</span>
-                <span className="mt-1 block truncate text-xs font-bold text-slate-500">{item.muscleGroup || "Χωρίς μυϊκή ομάδα"}</span>
+                <span className="block truncate text-sm font-black text-slate-950 dark:text-slate-50">{item.name}</span>
+                <span className="mt-1 block truncate text-xs font-bold text-slate-500 dark:text-slate-400">{item.muscleGroup || "Χωρίς μυϊκή ομάδα"}</span>
               </span>
-              {item.equipment && <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-500">{item.equipment}</span>}
+              {item.equipment && <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-black text-slate-500 dark:bg-slate-800 dark:text-slate-400">{item.equipment}</span>}
             </Button>
           ))}
-          {!filteredExercises.length && <div className="px-3 py-4 text-center text-sm font-bold text-slate-500">Δεν βρέθηκε άσκηση.</div>}
+          {!filteredExercises.length && <div className="px-3 py-4 text-center text-sm font-bold text-slate-500 dark:text-slate-400">Δεν βρέθηκε άσκηση.</div>}
         </div>
       )}
     </div>
@@ -1272,7 +1272,7 @@ function NutritionPlanEditor({
         <Field label="Γενικές οδηγίες διατροφής" value={plan.notes} onChange={(value) => setPlan({ ...plan, notes: value })} />
 
         {plan.meals.map((meal, mealIndex) => (
-          <div key={mealIndex} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div key={mealIndex} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800">
             <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto]">
               <Field label="Γεύμα" value={meal.title} onChange={(value) => updateMeal(mealIndex, { title: value })} />
               <SelectField
@@ -1291,7 +1291,7 @@ function NutritionPlanEditor({
                 type="button"
                 variant="outline"
                 onClick={() => removeMeal(mealIndex)}
-                className="h-auto self-end gap-2 border-red-200 bg-white px-4 py-2 text-sm font-black text-red-600 hover:bg-red-50"
+                className="h-auto self-end gap-2 border-red-200 bg-white px-4 py-2 text-sm font-black text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-500/10"
               >
                 <Trash2 className="h-4 w-4" />
                 Διαγραφή γεύματος
@@ -1301,7 +1301,7 @@ function NutritionPlanEditor({
 
             <div className="mt-4 space-y-3">
               {meal.foods.map((food, foodIndex) => (
-                <div key={foodIndex} className="grid gap-3 rounded-md border border-slate-200 bg-white p-3 xl:grid-cols-[2fr_1fr_0.8fr_0.8fr_0.8fr_0.8fr_auto]">
+                <div key={foodIndex} className="grid gap-3 rounded-md border border-slate-200 bg-white p-3 xl:grid-cols-[2fr_1fr_0.8fr_0.8fr_0.8fr_0.8fr_auto] dark:border-slate-800 dark:bg-slate-900">
                   <Field compact label="Τρόφιμο" value={food.foodName} onChange={(value) => updateFood(mealIndex, foodIndex, { foodName: value })} />
                   <Field compact label="Ποσότητα" value={food.quantity} onChange={(value) => updateFood(mealIndex, foodIndex, { quantity: value })} />
                   <Field compact label="Kcal" type="number" value={food.calories} onChange={(value) => updateFood(mealIndex, foodIndex, { calories: value })} />
@@ -1312,7 +1312,7 @@ function NutritionPlanEditor({
                     type="button"
                     variant="outline"
                     onClick={() => removeFood(mealIndex, foodIndex)}
-                    className="h-auto self-end border-red-200 px-3 py-2 text-sm font-black text-red-600 hover:bg-red-50"
+                    className="h-auto self-end border-red-200 px-3 py-2 text-sm font-black text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
                   >
                     Διαγραφή
                   </Button>
@@ -1322,7 +1322,7 @@ function NutritionPlanEditor({
                 type="button"
                 variant="outline"
                 onClick={() => addFood(mealIndex)}
-                className="h-10 w-full gap-2 text-sm font-black text-slate-700 hover:border-red-200 hover:text-red-600 sm:w-auto"
+                className="h-10 w-full gap-2 text-sm font-black text-slate-700 hover:border-red-200 hover:text-red-600 sm:w-auto dark:text-slate-200 dark:hover:border-red-500/30 dark:hover:text-red-400"
               >
                 <Plus className="h-4 w-4" />
                 Προσθήκη τροφίμου
@@ -1331,7 +1331,7 @@ function NutritionPlanEditor({
           </div>
         ))}
 
-        <Button type="button" variant="outline" onClick={addMeal} className="h-11 gap-2 px-5 text-sm font-black text-slate-700 hover:border-red-200 hover:text-red-600">
+        <Button type="button" variant="outline" onClick={addMeal} className="h-11 gap-2 px-5 text-sm font-black text-slate-700 hover:border-red-200 hover:text-red-600 dark:text-slate-200 dark:hover:border-red-500/30 dark:hover:text-red-400">
           <Plus className="h-4 w-4" />
           Προσθήκη γεύματος
         </Button>
@@ -1346,10 +1346,10 @@ function NutritionPlanEditor({
 
 function PlanHeader({ title, subtitle, onSave, saving }: { title: string; subtitle: string; onSave: () => void; saving: boolean }) {
   return (
-    <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-center lg:justify-between">
+    <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-center lg:justify-between dark:border-slate-800">
       <div>
         <h2 className="text-xl font-black">{title}</h2>
-        <p className="mt-1 text-sm font-semibold text-slate-500">{subtitle}</p>
+        <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{subtitle}</p>
       </div>
       <Button type="button" onClick={onSave} disabled={saving} className="h-11 bg-red-600 px-5 text-sm font-black text-white shadow-lg shadow-red-200 hover:bg-red-700">
         {saving ? "Αποθήκευση..." : "Αποθήκευση"}
@@ -1375,7 +1375,7 @@ function Field({
 }) {
   return (
     <div className={`block ${className}`}>
-      <Label className="text-xs font-black text-slate-500">{label}</Label>
+      <Label className="text-xs font-black text-slate-500 dark:text-slate-400">{label}</Label>
       <Input
         type={type}
         value={value ?? ""}
@@ -1399,7 +1399,7 @@ function SelectField({
 }) {
   return (
     <div className="block">
-      <Label className="text-xs font-black text-slate-500">{label}</Label>
+      <Label className="text-xs font-black text-slate-500 dark:text-slate-400">{label}</Label>
       <Select value={value ?? ""} onValueChange={(next) => onChange(next ?? "")}>
         <SelectTrigger className="mt-1 h-11 w-full text-sm font-semibold">
           <SelectValue />
@@ -1417,13 +1417,13 @@ function SelectField({
 }
 
 function StateBox({ text }: { text: string }) {
-  return <div className="rounded-lg border border-slate-200 bg-white p-8 text-center font-bold text-slate-500">{text}</div>;
+  return <div className="rounded-lg border border-slate-200 bg-white p-8 text-center font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">{text}</div>;
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-[150px] rounded-lg border border-slate-200 bg-slate-50 p-4">
-      <div className="text-xs font-black uppercase text-slate-500">{label}</div>
+    <div className="min-w-[150px] rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800">
+      <div className="text-xs font-black uppercase text-slate-500 dark:text-slate-400">{label}</div>
       <div className="mt-2 text-lg font-black">{value || "-"}</div>
     </div>
   );
@@ -1441,10 +1441,10 @@ function InfoCard({ title, children }: { title: string; children: ReactNode }) {
 function ListCard({ title, children }: { title: string; children: ReactNode }) {
   return (
     <Card className="overflow-hidden p-0">
-      <CardHeader className="border-b border-slate-200 px-6 py-5">
+      <CardHeader className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
         <CardTitle className="text-xl font-black">{title}</CardTitle>
       </CardHeader>
-      <div className="divide-y divide-slate-200">{children}</div>
+      <div className="divide-y divide-slate-200 dark:divide-slate-800">{children}</div>
     </Card>
   );
 }
@@ -1452,8 +1452,8 @@ function ListCard({ title, children }: { title: string; children: ReactNode }) {
 function Info({ label, value }: { label: string; value?: string | number | null }) {
   return (
     <div>
-      <div className="text-xs font-black uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-1 break-words text-sm font-bold text-slate-900">{value || "-"}</div>
+      <div className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</div>
+      <div className="mt-1 break-words text-sm font-bold text-slate-900 dark:text-slate-50">{value || "-"}</div>
     </div>
   );
 }
@@ -1462,21 +1462,21 @@ function DataRow({ title, meta, badge, description }: { title: string; meta: str
   return (
     <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
       <div>
-        <div className="font-black text-slate-950">{title}</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500">{meta}</div>
-        {description && <div className="mt-2 text-sm font-semibold text-slate-700">{description}</div>}
+        <div className="font-black text-slate-950 dark:text-slate-50">{title}</div>
+        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{meta}</div>
+        {description && <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">{description}</div>}
       </div>
-      <div className="w-fit rounded-md bg-slate-100 px-3 py-1 text-sm font-black text-slate-700">{badge}</div>
+      <div className="w-fit rounded-md bg-slate-100 px-3 py-1 text-sm font-black text-slate-700 dark:bg-slate-800 dark:text-slate-300">{badge}</div>
     </div>
   );
 }
 
 function EmptyRow({ text }: { text: string }) {
-  return <div className="p-5 text-sm font-semibold text-slate-500">{text}</div>;
+  return <div className="p-5 text-sm font-semibold text-slate-500 dark:text-slate-400">{text}</div>;
 }
 
 function EmptyInline({ text }: { text: string }) {
-  return <div className="text-sm font-semibold text-slate-500">{text}</div>;
+  return <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">{text}</div>;
 }
 
 // ---------------------------------------------------------------------------

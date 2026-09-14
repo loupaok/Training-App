@@ -125,10 +125,10 @@ function AdminDashboardContent() {
 
   if (user?.role !== "admin") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
-          <p className="mt-2 text-slate-600">Δεν έχεις δικαίωμα πρόσβασης σε αυτή τη σελίδα.</p>
+          <p className="mt-2 text-slate-600 dark:text-slate-400">Δεν έχεις δικαίωμα πρόσβασης σε αυτή τη σελίδα.</p>
         </div>
       </div>
     );
@@ -149,11 +149,11 @@ function AdminDashboardContent() {
         </div>
       )}
 
-      <section className="mb-8 rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-200 p-6">
+      <section className="mb-8 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center justify-between border-b border-slate-200 p-6 dark:border-slate-800">
           <div>
             <h2 className="text-xl font-black">Προσθήκη ατόμου</h2>
-            <p className="mt-1 text-sm text-slate-500">Ο διαχειριστής ορίζει από εδώ μόνο την εσωτερική ομάδα. Οι πελάτες μπαίνουν από τη σελίδα Πελάτες.</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Ο διαχειριστής ορίζει από εδώ μόνο την εσωτερική ομάδα. Οι πελάτες μπαίνουν από τη σελίδα Πελάτες.</p>
           </div>
           <Button onClick={() => setShowAddUser((value) => !value)} className="px-5 py-3 font-bold">
             {showAddUser ? "Κλείσιμο" : "Προσθήκη Χρήστη"}
@@ -161,7 +161,7 @@ function AdminDashboardContent() {
         </div>
 
         {showAddUser && (
-          <form onSubmit={handleAddUser} className="grid grid-cols-1 gap-4 bg-slate-50 p-6 md:grid-cols-2">
+          <form onSubmit={handleAddUser} className="grid grid-cols-1 gap-4 bg-slate-50 p-6 md:grid-cols-2 dark:bg-slate-800">
             <FormField label="Ονοματεπώνυμο">
               <Input value={formData.fullName} onChange={(event) => setFormData({ ...formData, fullName: event.target.value })} required />
             </FormField>
@@ -205,15 +205,15 @@ function AdminDashboardContent() {
 
       <section className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-4">
         {roleOptions.map((role) => (
-          <div key={role.value} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <div key={role.value} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <div className="text-lg font-black">{role.label}</div>
-            <p className="mt-2 text-sm leading-6 text-slate-500">{role.description}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{role.description}</p>
           </div>
         ))}
       </section>
 
-      <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-200 p-6">
+      <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center justify-between border-b border-slate-200 p-6 dark:border-slate-800">
           <h2 className="text-xl font-black">Όλοι οι χρήστες</h2>
           <Select value={roleFilter} onValueChange={(value) => value && setRoleFilter(value)}>
             <SelectTrigger className="h-11 font-semibold">
@@ -231,7 +231,7 @@ function AdminDashboardContent() {
         </div>
 
         <Table>
-          <TableHeader className="bg-slate-50">
+          <TableHeader className="bg-slate-50 dark:bg-slate-800">
             <TableRow>
               <TableHead className="px-5 py-4">Όνομα</TableHead>
               <TableHead className="px-5 py-4">Email</TableHead>
@@ -244,7 +244,7 @@ function AdminDashboardContent() {
           <TableBody>
             {loading && (
               <TableRow>
-                <TableCell colSpan={6} className="px-5 py-8 text-center font-semibold text-slate-500">
+                <TableCell colSpan={6} className="px-5 py-8 text-center font-semibold text-slate-500 dark:text-slate-400">
                   Φόρτωση...
                 </TableCell>
               </TableRow>
@@ -253,7 +253,7 @@ function AdminDashboardContent() {
               filteredUsers.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell className="px-5 py-4 font-bold">{row.full_name}</TableCell>
-                  <TableCell className="px-5 py-4 text-slate-600">{row.email}</TableCell>
+                  <TableCell className="px-5 py-4 text-slate-600 dark:text-slate-400">{row.email}</TableCell>
                   <TableCell className="px-5 py-4">
                     <Select value={row.role} onValueChange={(value) => value && updateUser(row, { role: value })}>
                       <SelectTrigger className="h-10 font-bold">
@@ -269,15 +269,15 @@ function AdminDashboardContent() {
                     </Select>
                   </TableCell>
                   <TableCell className="px-5 py-4">
-                    <Badge className={row.is_active ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}>
+                    <Badge className={row.is_active ? "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400" : "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400"}>
                       {row.is_active ? "Active" : "Inactive"}
                     </Badge>
                   </TableCell>
-                  <TableCell className="px-5 py-4 text-slate-600">{row.specializations || "-"}</TableCell>
+                  <TableCell className="px-5 py-4 text-slate-600 dark:text-slate-400">{row.specializations || "-"}</TableCell>
                   <TableCell className="px-5 py-4">
                     <Button
                       variant="outline"
-                      className="font-bold text-slate-700 hover:border-red-200 hover:text-red-600"
+                      className="font-bold text-slate-700 hover:border-red-200 hover:text-red-600 dark:text-slate-200"
                       onClick={() => updateUser(row, { isActive: !row.is_active })}
                     >
                       {row.is_active ? "Deactivate" : "Activate"}
@@ -287,7 +287,7 @@ function AdminDashboardContent() {
               ))}
             {!loading && filteredUsers.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="px-5 py-8 text-center font-semibold text-slate-500">
+                <TableCell colSpan={6} className="px-5 py-8 text-center font-semibold text-slate-500 dark:text-slate-400">
                   Δεν βρέθηκαν χρήστες.
                 </TableCell>
               </TableRow>
@@ -300,14 +300,17 @@ function AdminDashboardContent() {
 }
 
 function Alert({ children, tone }: { children: ReactNode; tone: "red" | "green" }) {
-  const className = tone === "red" ? "border-red-200 bg-red-50 text-red-700" : "border-green-200 bg-green-50 text-green-700";
+  const className =
+    tone === "red"
+      ? "border-red-200 bg-red-50 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400"
+      : "border-green-200 bg-green-50 text-green-700 dark:border-green-500/20 dark:bg-green-500/10 dark:text-green-400";
   return <div className={`mb-5 rounded-lg border px-5 py-4 text-sm font-bold ${className}`}>{children}</div>;
 }
 
 function StatCard({ title, value }: { title: string; value: number }) {
   return (
     <Card className="p-5 shadow-sm">
-      <div className="text-sm font-bold text-slate-500">{title}</div>
+      <div className="text-sm font-bold text-slate-500 dark:text-slate-400">{title}</div>
       <div className="mt-2 text-3xl font-black">{value}</div>
     </Card>
   );
@@ -315,7 +318,7 @@ function StatCard({ title, value }: { title: string; value: number }) {
 
 function FormField({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700">
+    <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
       {label}
       {children}
     </Label>

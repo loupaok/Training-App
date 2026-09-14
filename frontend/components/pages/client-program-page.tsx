@@ -41,11 +41,15 @@ function ClientProgramContent() {
       active="training"
     >
       {loading && (
-        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center font-bold text-slate-500">
+        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
           Φόρτωση...
         </div>
       )}
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-5 font-bold text-red-700">{error}</div>}
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-5 font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+          {error}
+        </div>
+      )}
       {!loading && !error && <WorkoutProgramView training={data?.training} />}
     </ClientShell>
   );

@@ -46,12 +46,12 @@ function iconForType(type = ""): LucideIcon {
 }
 
 function toneForType(type = ""): string {
-  if (type.includes("payment")) return "bg-amber-50 text-amber-700";
-  if (type.includes("subscription")) return "bg-red-50 text-red-700";
-  if (type.includes("message")) return "bg-blue-50 text-blue-700";
-  if (type.includes("nutrition")) return "bg-emerald-50 text-emerald-700";
-  if (type.includes("training")) return "bg-indigo-50 text-indigo-700";
-  return "bg-slate-100 text-slate-600";
+  if (type.includes("payment")) return "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400";
+  if (type.includes("subscription")) return "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400";
+  if (type.includes("message")) return "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400";
+  if (type.includes("nutrition")) return "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400";
+  if (type.includes("training")) return "bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400";
+  return "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
 }
 
 function formatDate(value?: string): string {
@@ -95,7 +95,7 @@ export function buildClientNotifications(data: ClientNotificationsResponse | nul
       date: formatDate(latestPayment.created_at),
       href: "/client-billing",
       icon: Euro,
-      tone: "bg-amber-50 text-amber-700",
+      tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
     });
   }
   if (latestPayment?.status === "completed") {
@@ -106,7 +106,7 @@ export function buildClientNotifications(data: ClientNotificationsResponse | nul
       date: formatDate(latestPayment.paid_at || latestPayment.created_at),
       href: "/client-dashboard",
       icon: Bell,
-      tone: "bg-emerald-50 text-emerald-700",
+      tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
     });
   }
 
@@ -120,7 +120,7 @@ export function buildClientNotifications(data: ClientNotificationsResponse | nul
         date: formatDate(data.subscription.end_date),
         href: "/client-billing",
         icon: Clock,
-        tone: "bg-red-50 text-red-700",
+        tone: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400",
       });
     }
   }
@@ -133,7 +133,7 @@ export function buildClientNotifications(data: ClientNotificationsResponse | nul
       date: formatDate(data.training.updated_at),
       href: "/client-dashboard",
       icon: Dumbbell,
-      tone: "bg-blue-50 text-blue-700",
+      tone: "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400",
     });
   }
   if (data.nutrition?.updated_at) {
@@ -144,7 +144,7 @@ export function buildClientNotifications(data: ClientNotificationsResponse | nul
       date: formatDate(data.nutrition.updated_at),
       href: "/client-dashboard",
       icon: Salad,
-      tone: "bg-emerald-50 text-emerald-700",
+      tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
     });
   }
 

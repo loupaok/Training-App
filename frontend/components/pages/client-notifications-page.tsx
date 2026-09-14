@@ -40,22 +40,22 @@ function ClientNotificationsContent() {
     >
       <div className="mb-7">
         <h2 className="text-3xl font-extrabold">Ειδοποιήσεις</h2>
-        <p className="mt-2 text-sm font-semibold text-slate-500">Ενημερώσεις που αφορούν μόνο τον δικό σου λογαριασμό.</p>
+        <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Ενημερώσεις που αφορούν μόνο τον δικό σου λογαριασμό.</p>
       </div>
 
       {error && (
-        <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700">{error}</div>
+        <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">{error}</div>
       )}
       {loading && (
-        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center font-bold text-slate-500">Φόρτωση...</div>
+        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">Φόρτωση...</div>
       )}
 
       {!loading && (
         <Card className="gap-0 overflow-hidden p-0">
-          <div className="border-b border-slate-200 px-6 py-5">
+          <div className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
             <h3 className="text-lg font-black">Οι ενημερώσεις σου</h3>
           </div>
-          <div className="divide-y divide-slate-200">
+          <div className="divide-y divide-slate-200 dark:divide-slate-800">
             {notifications.map((item) => {
               const Icon = item.icon;
               return (
@@ -64,15 +64,15 @@ function ClientNotificationsContent() {
                     <Icon className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="font-black text-slate-950">{item.title}</div>
-                    <div className="mt-1 text-sm font-semibold leading-6 text-slate-500">{item.body}</div>
-                    <div className="mt-2 text-xs font-bold text-slate-400">{item.date}</div>
+                    <div className="font-black text-slate-950 dark:text-slate-50">{item.title}</div>
+                    <div className="mt-1 text-sm font-semibold leading-6 text-slate-500 dark:text-slate-400">{item.body}</div>
+                    <div className="mt-2 text-xs font-bold text-slate-400 dark:text-slate-500">{item.date}</div>
                   </div>
                   {item.href && (
                     <Button
                       variant="outline"
                       size="sm"
-                      className="shrink-0 font-black text-slate-600 hover:border-red-200 hover:text-red-600"
+                      className="shrink-0 font-black text-slate-600 hover:border-red-200 hover:text-red-600 dark:text-slate-300"
                       nativeButton={false}
                       render={<Link href={item.href}>Προβολή</Link>}
                     />
@@ -81,7 +81,7 @@ function ClientNotificationsContent() {
               );
             })}
             {!notifications.length && (
-              <div className="px-6 py-12 text-center font-bold text-slate-500">Δεν υπάρχουν ειδοποιήσεις ακόμα.</div>
+              <div className="px-6 py-12 text-center font-bold text-slate-500 dark:text-slate-400">Δεν υπάρχουν ειδοποιήσεις ακόμα.</div>
             )}
           </div>
         </Card>

@@ -200,7 +200,7 @@ function AnalyticsContent() {
       <div className="space-y-6">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div>
-            <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
+            <div className="mb-4 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
               <Link href="/dashboard" className="font-semibold text-blue-600">
                 Dashboard
               </Link>
@@ -208,12 +208,12 @@ function AnalyticsContent() {
               <span>Analytics</span>
             </div>
             <h2 className="text-3xl font-bold">Analytics</h2>
-            <p className="mt-2 text-slate-600">Οικονομικά, πελάτες και πληρωμές με φίλτρα περιόδου.</p>
+            <p className="mt-2 text-slate-600 dark:text-slate-400">Οικονομικά, πελάτες και πληρωμές με φίλτρα περιόδου.</p>
           </div>
           <Button className="h-12 px-5 font-semibold shadow-lg shadow-red-900/20">Σύνδεση Stripe</Button>
         </div>
 
-        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
             <FilterSelect
               label="Περίοδος"
@@ -272,7 +272,7 @@ function AnalyticsContent() {
             />
             <Button
               variant="outline"
-              className="h-[54px] self-end font-semibold text-slate-700"
+              className="h-[54px] self-end font-semibold text-slate-700 dark:text-slate-200"
               onClick={() => {
                 setPeriod("month");
                 setPaymentStatus("all");
@@ -320,7 +320,7 @@ function AnalyticsContent() {
                     <RevenueRow key={item.client} item={item} />
                   ))}
                   {!clientRevenue.length && (
-                    <div className="rounded-md bg-slate-50 p-4 text-sm font-semibold text-slate-500">Δεν υπάρχουν δεδομένα ακόμα.</div>
+                    <div className="rounded-md bg-slate-50 p-4 text-sm font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">Δεν υπάρχουν δεδομένα ακόμα.</div>
                   )}
                 </div>
               </Card>
@@ -397,24 +397,24 @@ function AnalyticsContent() {
             <Card className="overflow-hidden p-0">
               <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader className="bg-slate-50">
+                  <TableHeader className="bg-slate-50 dark:bg-slate-800">
                     <TableRow>
-                      <TableHead className="px-5 py-4 font-semibold text-slate-600">Πελάτης</TableHead>
-                      <TableHead className="px-5 py-4 font-semibold text-slate-600">Πρόγραμμα</TableHead>
-                      <TableHead className="px-5 py-4 font-semibold text-slate-600">Ποσό</TableHead>
-                      <TableHead className="px-5 py-4 font-semibold text-slate-600">Ημερομηνία</TableHead>
-                      <TableHead className="px-5 py-4 font-semibold text-slate-600">Status</TableHead>
-                      <TableHead className="px-5 py-4 font-semibold text-slate-600">Ανανέωση</TableHead>
-                      <TableHead className="px-5 py-4 font-semibold text-slate-600">Ενέργειες</TableHead>
+                      <TableHead className="px-5 py-4 font-semibold text-slate-600 dark:text-slate-400">Πελάτης</TableHead>
+                      <TableHead className="px-5 py-4 font-semibold text-slate-600 dark:text-slate-400">Πρόγραμμα</TableHead>
+                      <TableHead className="px-5 py-4 font-semibold text-slate-600 dark:text-slate-400">Ποσό</TableHead>
+                      <TableHead className="px-5 py-4 font-semibold text-slate-600 dark:text-slate-400">Ημερομηνία</TableHead>
+                      <TableHead className="px-5 py-4 font-semibold text-slate-600 dark:text-slate-400">Status</TableHead>
+                      <TableHead className="px-5 py-4 font-semibold text-slate-600 dark:text-slate-400">Ανανέωση</TableHead>
+                      <TableHead className="px-5 py-4 font-semibold text-slate-600 dark:text-slate-400">Ενέργειες</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {visibleRows.map((payment) => (
                       <TableRow key={`${payment.client}-${payment.date}`}>
                         <TableCell className="px-5 py-4 font-semibold">{payment.client}</TableCell>
-                        <TableCell className="px-5 py-4 text-slate-600">{payment.plan}</TableCell>
+                        <TableCell className="px-5 py-4 text-slate-600 dark:text-slate-400">{payment.plan}</TableCell>
                         <TableCell className="px-5 py-4 font-bold">€{payment.amount}</TableCell>
-                        <TableCell className="px-5 py-4 text-slate-600">{payment.date}</TableCell>
+                        <TableCell className="px-5 py-4 text-slate-600 dark:text-slate-400">{payment.date}</TableCell>
                         <TableCell className="px-5 py-4">
                           <StatusBadge status={payment.status} />
                         </TableCell>
@@ -428,7 +428,7 @@ function AnalyticsContent() {
                     ))}
                     {!visibleRows.length && (
                       <TableRow>
-                        <TableCell colSpan={7} className="px-5 py-8 text-center text-sm font-semibold text-slate-500">
+                        <TableCell colSpan={7} className="px-5 py-8 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
                           Δεν υπάρχουν πληρωμές για αυτά τα φίλτρα.
                         </TableCell>
                       </TableRow>
@@ -471,12 +471,12 @@ function FilterSelect<T extends string | number>({
 
   return (
     <div>
-      <span className="mb-1 block text-xs font-semibold text-slate-500">{label}</span>
+      <span className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">{label}</span>
       <Select
         value={String(value)}
         onValueChange={(nextValue) => onChange((isNumeric ? Number(nextValue) : nextValue) as T)}
       >
-        <SelectTrigger className="h-11 w-full font-semibold text-slate-700">
+        <SelectTrigger className="h-11 w-full font-semibold text-slate-700 dark:text-slate-200">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -495,7 +495,7 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle: string })
   return (
     <div>
       <h3 className="text-xl font-bold">{title}</h3>
-      <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>
     </div>
   );
 }
@@ -512,7 +512,7 @@ function MetricCard({
   tone?: "slate" | "green" | "amber" | "red";
 }) {
   const colors: Record<string, string> = {
-    slate: "text-slate-950",
+    slate: "text-slate-950 dark:text-slate-50",
     green: "text-green-600",
     amber: "text-amber-600",
     red: "text-red-600",
@@ -520,9 +520,9 @@ function MetricCard({
 
   return (
     <Card className="p-5">
-      <div className="text-sm font-semibold text-slate-500">{title}</div>
+      <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">{title}</div>
       <div className={`mt-3 text-3xl font-black ${colors[tone]}`}>{value}</div>
-      <div className="mt-2 text-sm text-slate-500">{hint}</div>
+      <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">{hint}</div>
     </Card>
   );
 }
@@ -534,7 +534,7 @@ function Legend({ items }: { items: { label: string; value: number; color: strin
         <div key={item.label} className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-2">
             <span className={`h-3 w-3 rounded-full ${item.color}`} />
-            <span className="text-slate-600">{item.label}</span>
+            <span className="text-slate-600 dark:text-slate-400">{item.label}</span>
           </div>
           <span className="font-bold">{item.value}</span>
         </div>
@@ -548,7 +548,7 @@ function RevenueRow({ item }: { item: ClientRevenueItem }) {
     <div className="flex items-center justify-between gap-4">
       <div>
         <div className="font-semibold">{item.client}</div>
-        <div className="text-sm text-slate-500">{item.payments} πληρωμές</div>
+        <div className="text-sm text-slate-500 dark:text-slate-400">{item.payments} πληρωμές</div>
       </div>
       <div className="font-black">{item.revenue}</div>
     </div>
@@ -562,9 +562,9 @@ function StatusBadge({ status }: { status: PaymentStatus }) {
     failed: "Failed",
   };
   const styles: Record<PaymentStatus, string> = {
-    paid: "bg-green-50 text-green-700",
-    pending: "bg-amber-50 text-amber-700",
-    failed: "bg-red-50 text-red-700",
+    paid: "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400",
+    pending: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
+    failed: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400",
   };
 
   return <Badge className={`rounded-md px-3 py-1 text-xs font-bold ${styles[status]}`}>{labels[status]}</Badge>;
@@ -572,9 +572,9 @@ function StatusBadge({ status }: { status: PaymentStatus }) {
 
 function IntegrationItem({ title, text }: { title: string; text: string }) {
   return (
-    <div className="rounded-md border border-slate-200 p-4">
+    <div className="rounded-md border border-slate-200 p-4 dark:border-slate-800">
       <div className="font-bold">{title}</div>
-      <p className="mt-2 text-sm text-slate-500">{text}</p>
+      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{text}</p>
     </div>
   );
 }

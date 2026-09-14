@@ -13,7 +13,7 @@ function ClientPendingContent() {
     <ClientShell title="Εκκρεμής Πληρωμή" user={user} logout={logout} paymentApproved={false} active="billing">
       <div className="mx-auto max-w-3xl">
         <section className="rounded-lg border border-amber-200 bg-white p-8 shadow-sm dark:border-amber-900 dark:bg-slate-900">
-          <div className="grid h-16 w-16 place-items-center rounded-full bg-amber-100 text-2xl font-black text-amber-700">
+          <div className="grid h-16 w-16 place-items-center rounded-full bg-amber-100 text-2xl font-black text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
             !
           </div>
           <h1 className="mt-6 text-3xl font-black">Η πληρωμή σου είναι σε εκκρεμότητα</h1>

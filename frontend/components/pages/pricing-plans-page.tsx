@@ -135,7 +135,7 @@ function PricingPlansContent() {
   };
 
   if (user?.role !== "admin") {
-    return <div className="grid min-h-screen place-items-center bg-slate-50 font-bold text-slate-500">Δεν έχεις πρόσβαση σε αυτή τη σελίδα.</div>;
+    return <div className="grid min-h-screen place-items-center bg-slate-50 font-bold text-slate-500 dark:bg-slate-950 dark:text-slate-400">Δεν έχεις πρόσβαση σε αυτή τη σελίδα.</div>;
   }
 
   return (
@@ -143,26 +143,26 @@ function PricingPlansContent() {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-black">Διαχείριση Πλάνων &amp; Τιμών</h2>
-          <p className="mt-2 text-sm font-semibold text-slate-500">Δημιούργησε και διαχειρίσου τα πλάνα συνδρομής που βλέπουν οι πελάτες σου.</p>
+          <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Δημιούργησε και διαχειρίσου τα πλάνα συνδρομής που βλέπουν οι πελάτες σου.</p>
         </div>
         <div className="flex gap-3">
-          <Button onClick={newPlan} className="h-11 px-5 font-black shadow-lg shadow-red-200">
+          <Button onClick={newPlan} className="h-11 px-5 font-black shadow-lg shadow-red-200 dark:shadow-none">
             + Νέο Πλάνο
           </Button>
-          <Button variant="outline" className="h-11 px-5 font-bold text-slate-700">
+          <Button variant="outline" className="h-11 px-5 font-bold text-slate-700 dark:text-slate-200">
             Προεπισκόπηση
           </Button>
         </div>
       </div>
 
-      {message && <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">{message}</div>}
-      {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
+      {message && <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200">{message}</div>}
+      {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">{error}</div>}
 
-      <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="grid gap-6 xl:grid-cols-[290px_1fr]">
-          <aside className="rounded-lg border border-slate-200 p-4">
+          <aside className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
             <h3 className="font-black">Πλάνα Συνδρομής</h3>
-            <p className="mt-2 text-sm font-semibold text-slate-500">Σύρε για αλλαγή σειράς εμφάνισης</p>
+            <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Σύρε για αλλαγή σειράς εμφάνισης</p>
             <div className="mt-5 space-y-3">
               {plans.map((plan) => (
                 <Button
@@ -171,24 +171,26 @@ function PricingPlansContent() {
                   variant="outline"
                   onClick={() => setSelectedId(plan.id ?? null)}
                   className={`h-12 w-full justify-between px-4 text-left font-bold ${
-                    selectedId === plan.id ? "border-red-500 bg-red-50 text-slate-950" : "hover:border-red-200"
+                    selectedId === plan.id
+                      ? "border-red-500 bg-red-50 text-slate-950 dark:bg-red-500/10 dark:text-slate-50"
+                      : "hover:border-red-200"
                   }`}
                 >
                   <span className="flex items-center gap-3">
                     <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: plan.themeColor }} />
                     {plan.name}
                   </span>
-                  <span className="text-slate-400">⋮⋮</span>
+                  <span className="text-slate-400 dark:text-slate-500">⋮⋮</span>
                 </Button>
               ))}
             </div>
           </aside>
 
-          <div className="rounded-lg border border-slate-200 p-5">
+          <div className="rounded-lg border border-slate-200 p-5 dark:border-slate-800">
             <div className="mb-5 flex items-center justify-between">
               <h3 className="text-lg font-black">Επεξεργασία Πλάνου</h3>
               <div className="flex items-center gap-3">
-                <Label className="flex items-center gap-2 text-sm font-bold text-slate-600">
+                <Label className="flex items-center gap-2 text-sm font-bold text-slate-600 dark:text-slate-400">
                   Ενεργό
                   <Checkbox checked={form.isActive} onCheckedChange={(checked) => update("isActive", checked === true)} className="h-5 w-5" />
                 </Label>
@@ -196,7 +198,7 @@ function PricingPlansContent() {
                   variant="outline"
                   onClick={deletePlan}
                   disabled={!form.id || saving}
-                  className="h-10 px-4 text-sm font-bold text-slate-700 hover:border-red-200 hover:text-red-600 disabled:opacity-40"
+                  className="h-10 px-4 text-sm font-bold text-slate-700 hover:border-red-200 hover:text-red-600 disabled:opacity-40 dark:text-slate-200"
                 >
                   Διαγραφή
                 </Button>
@@ -205,24 +207,24 @@ function PricingPlansContent() {
 
             <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
               <div className="space-y-4">
-                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700">
+                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
                   Όνομα Πλάνου
                   <Input value={form.name} onChange={(event) => update("name", event.target.value)} />
                 </Label>
-                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700">
+                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
                   Badge / Ετικέτα
                   <Input value={form.badge} onChange={(event) => update("badge", event.target.value)} placeholder="Πιο δημοφιλές" />
                 </Label>
-                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700">
+                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
                   Περιγραφή
                   <Textarea value={form.description} onChange={(event) => update("description", event.target.value)} className="min-h-24" />
                 </Label>
                 <div className="grid grid-cols-3 gap-4">
-                  <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700">
+                  <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
                     Τιμή
                     <Input type="number" value={form.price} onChange={(event) => update("price", event.target.value)} />
                   </Label>
-                  <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700">
+                  <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
                     Νόμισμα
                     <Select value={form.currency} onValueChange={(value) => value && update("currency", value)}>
                       <SelectTrigger className="h-12 w-full">
@@ -237,7 +239,7 @@ function PricingPlansContent() {
                       </SelectContent>
                     </Select>
                   </Label>
-                  <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700">
+                  <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
                     Περίοδος
                     <Select value={form.period} onValueChange={(value) => value && update("period", value)}>
                       <SelectTrigger className="h-12 w-full">
@@ -253,9 +255,9 @@ function PricingPlansContent() {
                     </Select>
                   </Label>
                 </div>
-                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700">
+                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
                   Χρώμα Θέματος
-                  <div className="flex h-12 w-full items-center gap-3 rounded-md border border-slate-200 px-3">
+                  <div className="flex h-12 w-full items-center gap-3 rounded-md border border-slate-200 px-3 dark:border-slate-800">
                     {/* No shadcn equivalent for a native color swatch picker */}
                     <input type="color" value={form.themeColor} onChange={(event) => update("themeColor", event.target.value)} className="h-7 w-7 rounded border-0 p-0" />
                     <Input
@@ -269,10 +271,10 @@ function PricingPlansContent() {
 
               <div>
                 <h4 className="mb-4 font-black">Χαρακτηριστικά Πλάνου</h4>
-                <div className="overflow-hidden rounded-lg border border-slate-200">
+                <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
                   {form.features.map((feature, index) => (
-                    <div key={index} className="grid grid-cols-[28px_36px_1fr_34px] items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
-                      <span className="text-slate-400">⋮⋮</span>
+                    <div key={index} className="grid grid-cols-[28px_36px_1fr_34px] items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0 dark:border-slate-800">
+                      <span className="text-slate-400 dark:text-slate-500">⋮⋮</span>
                       <Button
                         type="button"
                         variant="ghost"
@@ -292,7 +294,7 @@ function PricingPlansContent() {
                         variant="ghost"
                         size="icon"
                         onClick={() => update("features", form.features.filter((_, i) => i !== index))}
-                        className="h-9 w-9 text-slate-400 hover:text-red-600"
+                        className="h-9 w-9 text-slate-400 hover:text-red-600 dark:text-slate-500"
                       >
                         ×
                       </Button>
@@ -302,7 +304,7 @@ function PricingPlansContent() {
                 <Button
                   variant="outline"
                   onClick={() => update("features", [...form.features, { text: "Νέο χαρακτηριστικό", included: true }])}
-                  className="mt-4 h-11 px-5 font-bold text-slate-700 hover:border-red-200 hover:text-red-600"
+                  className="mt-4 h-11 px-5 font-bold text-slate-700 hover:border-red-200 hover:text-red-600 dark:text-slate-200"
                 >
                   + Προσθήκη χαρακτηριστικού
                 </Button>
@@ -319,15 +321,15 @@ function PricingPlansContent() {
       </section>
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_420px]">
-        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <h3 className="font-black">Προεπισκόπηση Κάρτας</h3>
-          <div className="mt-5 rounded-lg border border-slate-200 p-4">
+          <div className="mt-5 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
             <PlanPreview plan={form} />
           </div>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <h3 className="font-black">Συμβουλές</h3>
-          <div className="mt-5 space-y-4 text-sm leading-6 text-slate-600">
+          <div className="mt-5 space-y-4 text-sm leading-6 text-slate-600 dark:text-slate-400">
             <p>• Σύρε τα πλάνα για να αλλάξεις τη σειρά εμφάνισης τους στη σελίδα εγγραφής.</p>
             <p>• Η ετικέτα &ldquo;Πιο δημοφιλές&rdquo; θα εμφανίζεται στο πλάνο που επιλέγεις.</p>
             <p>• Τα ανενεργά πλάνα δεν εμφανίζονται στο τελευταίο βήμα της φόρμας.</p>
@@ -353,10 +355,10 @@ function PlanPreview({ plan }: { plan: PricingPlan }) {
         <h4 className="mt-4 text-2xl font-black" style={{ color: plan.themeColor }}>
           {plan.name || "Πλάνο"}
         </h4>
-        <p className="mx-auto mt-3 max-w-56 text-sm leading-6 text-slate-600">{plan.description}</p>
+        <p className="mx-auto mt-3 max-w-56 text-sm leading-6 text-slate-600 dark:text-slate-400">{plan.description}</p>
         <div className="mt-5 text-3xl font-black">
           €{plan.price}
-          <span className="text-base font-bold text-slate-500"> /{formatPlanPeriod(plan.period)}</span>
+          <span className="text-base font-bold text-slate-500 dark:text-slate-400"> /{formatPlanPeriod(plan.period)}</span>
         </div>
         <Button type="button" className="mt-5 h-11 w-full font-black text-white hover:opacity-90" style={{ backgroundColor: plan.themeColor }}>
           Επιλέγω {plan.name}
@@ -364,7 +366,7 @@ function PlanPreview({ plan }: { plan: PricingPlan }) {
       </div>
       <div className="space-y-4 py-3">
         {plan.features.map((feature, index) => (
-          <div key={index} className="flex items-center gap-4 text-sm font-semibold text-slate-700">
+          <div key={index} className="flex items-center gap-4 text-sm font-semibold text-slate-700 dark:text-slate-200">
             <span className={feature.included ? "text-emerald-600" : "text-red-600"}>{feature.included ? "✓" : "×"}</span>
             {feature.text}
           </div>

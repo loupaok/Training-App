@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { ThemeToggle } from "@/components/shell/theme-toggle";
-import { ThemeColorPicker } from "@/components/shell/theme-color-picker";
 import { NotificationsMenu } from "@/components/shell/notifications-menu";
 import { getInitials } from "@/lib/media";
 import type { AuthUser } from "@/types/auth";
@@ -43,7 +42,6 @@ export function AppHeader({
 
       <div className="flex items-center gap-3">
         <NotificationsMenu user={user} />
-        <ThemeColorPicker />
         <ThemeToggle />
         <UserAvatar
           initials={getInitials(user?.fullName || user?.email)}

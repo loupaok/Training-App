@@ -273,8 +273,8 @@ function MediaLibraryContent() {
             <Link href="/dashboard" className="font-semibold text-blue-600">
               Dashboard
             </Link>
-            <span className="text-slate-400">›</span>
-            <span className="text-slate-600">Media Library</span>
+            <span className="text-slate-400 dark:text-slate-500">›</span>
+            <span className="text-slate-600 dark:text-slate-400">Media Library</span>
           </div>
           <h2 className="mt-5 text-3xl font-extrabold">Φωτογραφίες &amp; Εικονίδια</h2>
         </div>
@@ -288,14 +288,14 @@ function MediaLibraryContent() {
       </div>
 
       {message && (
-        <div className="mb-5 rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-700 shadow-sm">
+        <div className="mb-5 rounded-lg border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
           {message}
         </div>
       )}
 
       <div className="grid grid-cols-12 gap-5">
-        <section className="col-span-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="font-extrabold">Φάκελοι</h3>
+        <section className="col-span-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h3 className="font-extrabold dark:text-slate-50">Φάκελοι</h3>
           <div className="mt-4 flex gap-2">
             <Input
               value={newFolderName}
@@ -320,7 +320,7 @@ function MediaLibraryContent() {
             onDrop={(event) => handleFolderDrop(event, "uncategorized")}
           />
 
-          <div className="mt-5 text-xs font-extrabold uppercase text-slate-500">Custom Folders</div>
+          <div className="mt-5 text-xs font-extrabold uppercase text-slate-500 dark:text-slate-400">Custom Folders</div>
           <div className="max-h-[420px] overflow-y-auto pr-1">
             {allFolders.map((folder) => (
               <FolderButton
@@ -362,7 +362,7 @@ function MediaLibraryContent() {
             </Button>
           </div>
 
-          <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <PaginationControls
               totalItems={filteredAssets.length}
               pageSize={pageSize}
@@ -389,16 +389,16 @@ function MediaLibraryContent() {
                 }}
                 className={asset.kind === "media_asset" ? "cursor-grab active:cursor-grabbing" : ""}
               >
-                <div className="h-44 bg-slate-100">
+                <div className="h-44 bg-slate-100 dark:bg-slate-800">
                   <MediaPreview asset={asset} />
                 </div>
                 <div className="p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="font-extrabold">{asset.title}</h3>
-                      <p className="mt-1 text-sm text-slate-500">{asset.folderName || asset.source}</p>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{asset.folderName || asset.source}</p>
                     </div>
-                    <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">{asset.kind}</span>
+                    <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{asset.kind}</span>
                   </div>
                   <div className="mt-5 grid grid-cols-2 gap-3">
                     <Button variant="outline" onClick={() => openEdit(asset)} className="h-10 font-bold hover:border-red-200 hover:text-red-600">
@@ -407,7 +407,7 @@ function MediaLibraryContent() {
                     <Button
                       variant="outline"
                       onClick={() => deleteAsset(asset)}
-                      className="h-10 border-red-200 font-bold text-red-600 hover:bg-red-50"
+                      className="h-10 border-red-200 font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
                     >
                       Delete
                     </Button>
@@ -418,11 +418,11 @@ function MediaLibraryContent() {
           </div>
 
           {!filteredAssets.length && (
-            <div className="mt-10 rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center font-semibold text-slate-500">
+            <div className="mt-10 rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
               Δεν βρέθηκαν media.
             </div>
           )}
-          <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <PaginationControls
               totalItems={filteredAssets.length}
               pageSize={pageSize}
@@ -556,11 +556,11 @@ function FolderButton({
         if (!canDrop) return;
         onDrop?.(event);
       }}
-      className={`mt-2 flex w-full items-center rounded-md text-sm font-semibold ${active ? "bg-red-50 text-red-700" : "text-slate-700 hover:bg-slate-50"} ${isDropTarget ? "ring-2 ring-red-300" : ""}`}
+      className={`mt-2 flex w-full items-center rounded-md text-sm font-semibold ${active ? "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400" : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"} ${isDropTarget ? "ring-2 ring-red-300" : ""}`}
     >
       <Button variant="ghost" onClick={onClick} className="h-auto min-w-0 flex-1 justify-between px-3 py-2 text-left font-semibold">
         <span className="truncate">{label}</span>
-        <span className="ml-2 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{count}</span>
+        <span className="ml-2 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">{count}</span>
       </Button>
       {canManage && (
         <div className="mr-2 flex shrink-0 items-center gap-1">
@@ -571,7 +571,7 @@ function FolderButton({
               event.stopPropagation();
               onRename?.();
             }}
-            className="h-7 w-7 text-slate-600 hover:text-red-600"
+            className="h-7 w-7 text-slate-600 hover:text-red-600 dark:text-slate-300"
             title="Rename"
           >
             <Pencil className="h-3.5 w-3.5" />
@@ -583,7 +583,7 @@ function FolderButton({
               event.stopPropagation();
               onDelete?.();
             }}
-            className="h-7 w-7 text-red-600 hover:bg-red-100 hover:text-red-600"
+            className="h-7 w-7 text-red-600 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-500/10"
             title="Delete"
           >
             <Trash2 className="h-3.5 w-3.5" />
