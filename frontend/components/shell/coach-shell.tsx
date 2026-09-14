@@ -19,14 +19,13 @@ import {
   SidebarProvider,
 } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
-import { UserAvatar } from "@/components/shared/user-avatar";
 import { MenuToggle, TopbarActions } from "@/components/shell/topbar-controls";
 import { ThemeColorPicker } from "@/components/shell/theme-color-picker";
+import { SidebarUserMenu } from "@/components/shell/sidebar-user-menu";
 import { coachNavSections, isActivePath } from "@/lib/nav-config";
-import { getInitials } from "@/lib/media";
 import type { AuthUser } from "@/types/auth";
 
-function CoachSidebar({ user }: { user: AuthUser | null }) {
+function CoachSidebar({ user, logout }: { user: AuthUser | null; logout: () => Promise<void> }) {
   const pathname = usePathname();
   const canSeeCoachSettings = user?.role === "admin" || user?.role === "coach";
   const isAdmin = user?.role === "admin";
@@ -35,12 +34,12 @@ function CoachSidebar({ user }: { user: AuthUser | null }) {
   const [settingsOpen, setSettingsOpen] = useState(Boolean(settingsHasActiveChild));
 
   return (
-    <Sidebar collapsible="offcanvas">
-      <SidebarHeader className="flex h-[86px] flex-row items-center gap-3 px-8">
-        <div className="grid h-12 w-12 place-items-center rounded-full border-4 border-red-600 text-2xl font-black text-red-500">
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="flex h-[86px] flex-row items-center gap-3 px-4 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0 md:px-8">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-4 border-red-600 text-lg font-black text-red-500">
           K
         </div>
-        <div className="text-xl font-extrabold tracking-wide">COACH PANEL</div>
+        <div className="truncate text-xl font-extrabold tracking-wide group-data-[collapsible=icon]:hidden">COACH PANEL</div>
       </SidebarHeader>
 
       <SidebarContent className="px-4 pb-6">
@@ -50,16 +49,22 @@ function CoachSidebar({ user }: { user: AuthUser | null }) {
             .map((section) => {
               const active = isActivePath(pathname, section.path);
 
+              const SectionIcon = section.icon;
+
               if (section.children) {
                 return (
                   <SidebarMenuItem key={section.key} className={section.spacerBefore ? "mt-6" : ""}>
                     <Collapsible open={settingsOpen} onOpenChange={setSettingsOpen}>
                       <SidebarMenuButton
                         onClick={() => setSettingsOpen((value) => !value)}
+                        tooltip={section.label}
                         className="h-12 text-[15px] font-semibold text-slate-100 hover:bg-white/10 hover:text-white"
                       >
+                        {SectionIcon && <SectionIcon className="h-4 w-4 shrink-0" />}
                         <span className="truncate">{section.label}</span>
-                        <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${settingsOpen ? "rotate-180" : ""}`} />
+                        <ChevronDown
+                          className={`ml-auto h-4 w-4 shrink-0 transition-transform group-data-[collapsible=icon]:hidden ${settingsOpen ? "rotate-180" : ""}`}
+                        />
                       </SidebarMenuButton>
                       {canSeeCoachSettings && (
                         <CollapsibleContent>
@@ -93,9 +98,11 @@ function CoachSidebar({ user }: { user: AuthUser | null }) {
                 <SidebarMenuItem key={section.key} className={section.spacerBefore ? "mt-6" : ""}>
                   <SidebarMenuButton
                     isActive={active}
+                    tooltip={section.label}
                     className="h-12 text-[15px] font-semibold text-slate-100 hover:bg-white/10 hover:text-white data-[active=true]:bg-red-600 data-[active=true]:text-white data-[active=true]:shadow-lg data-[active=true]:shadow-red-950/30 data-[active=true]:hover:bg-red-600"
                     render={
                       <Link href={section.path || "#"}>
+                        {SectionIcon && <SectionIcon className="h-4 w-4 shrink-0" />}
                         <span className="truncate">{section.label}</span>
                       </Link>
                     }
@@ -106,17 +113,8 @@ function CoachSidebar({ user }: { user: AuthUser | null }) {
         </SidebarMenu>
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-white/10 p-7">
-        <div className="flex items-center gap-3">
-          <UserAvatar initials={getInitials(user?.fullName)} tone="bg-red-600" size="h-12 w-12" photoUrl={user?.profilePhoto} />
-          <div>
-            <div className="font-bold">{user?.fullName || "Coach Admin"}</div>
-            <div className="mt-1 flex items-center gap-2 text-sm text-emerald-400">
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-              Online
-            </div>
-          </div>
-        </div>
+      <SidebarFooter className="border-t border-white/10 p-3">
+        <SidebarUserMenu user={user} logout={logout} notificationsHref="/notifications" />
       </SidebarFooter>
     </Sidebar>
   );
@@ -153,7 +151,7 @@ export function CoachShell({
 }) {
   return (
     <SidebarProvider style={sidebarWidthStyle} className="bg-slate-50 text-slate-950">
-      <CoachSidebar user={user} />
+      <CoachSidebar user={user} logout={logout} />
       <SidebarInset className="bg-slate-50">
         <CoachTopbar title={title} user={user} logout={logout} />
         <div className="px-10 py-8">{children}</div>

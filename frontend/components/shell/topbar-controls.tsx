@@ -2,10 +2,8 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Bell, ChevronDown, LogOut, Mail, Menu, User } from "lucide-react";
+import { ChevronDown, LogOut, Mail, Menu, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,38 +15,11 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogD
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { UserAvatar } from "@/components/shared/user-avatar";
+import { NotificationsMenu } from "@/components/shell/notifications-menu";
 import { useSidebar } from "@/components/ui/sidebar";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
 import type { AuthUser } from "@/types/auth";
-
-const NOTIFICATION_COUNT_KEY = "coachUnreadNotifications";
-
-export function getUnreadNotificationCount(): number {
-  if (typeof window === "undefined") return 0;
-  const stored = window.localStorage.getItem(NOTIFICATION_COUNT_KEY);
-  if (stored === null) {
-    window.localStorage.setItem(NOTIFICATION_COUNT_KEY, "0");
-    return 0;
-  }
-  return Number(stored) || 0;
-}
-
-export function clearUnreadNotifications() {
-  return api
-    .post("/clients/notifications/read", {})
-    .finally(() => {
-      window.localStorage.setItem(NOTIFICATION_COUNT_KEY, "0");
-      window.dispatchEvent(new CustomEvent("coach-notifications-read"));
-    });
-}
-
-async function loadUnreadNotificationCount(): Promise<number> {
-  const data = await api.get<{ unread?: number }>("/clients/notifications/unread-count");
-  const nextCount = Number(data?.unread || 0);
-  window.localStorage.setItem(NOTIFICATION_COUNT_KEY, String(nextCount));
-  return nextCount;
-}
 
 export function MenuToggle() {
   const { toggleSidebar } = useSidebar();
@@ -68,30 +39,7 @@ export function TopbarActions({ user, logout }: { user: AuthUser | null; logout:
   });
   const [profileMessage, setProfileMessage] = useState("");
   const [profileError, setProfileError] = useState("");
-  const [unreadNotifications, setUnreadNotifications] = useState(() => getUnreadNotificationCount());
-  const pathname = usePathname();
   const isClient = user?.role === "client";
-  const notificationsPath = isClient ? "/client-notifications" : "/notifications";
-
-  useEffect(() => {
-    const updateCount = () => {
-      loadUnreadNotificationCount()
-        .then(setUnreadNotifications)
-        .catch(() => setUnreadNotifications(getUnreadNotificationCount()));
-    };
-    const clearCount = () => setUnreadNotifications(0);
-    updateCount();
-    window.addEventListener("storage", updateCount);
-    window.addEventListener("coach-notifications-read", clearCount);
-    return () => {
-      window.removeEventListener("storage", updateCount);
-      window.removeEventListener("coach-notifications-read", clearCount);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (pathname === notificationsPath) clearUnreadNotifications();
-  }, [pathname, notificationsPath]);
 
   useEffect(() => {
     setProfileForm({ fullName: user?.fullName || "", profileTitle: user?.profileTitle || "" });
@@ -117,23 +65,7 @@ export function TopbarActions({ user, logout }: { user: AuthUser | null; logout:
 
   return (
     <div className="flex items-center gap-5">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="relative"
-        aria-label="Notifications"
-        nativeButton={false}
-        render={
-          <Link href={notificationsPath} onClick={() => clearUnreadNotifications()}>
-            <Bell className="h-5 w-5" />
-            {unreadNotifications > 0 && (
-              <Badge className="absolute -right-1 -top-1 h-5 min-w-5 justify-center rounded-full px-1.5 text-[11px]">
-                {unreadNotifications}
-              </Badge>
-            )}
-          </Link>
-        }
-      />
+      <NotificationsMenu user={user} />
 
       <Button variant="ghost" size="icon" aria-label="Messages">
         <Mail className="h-5 w-5" />

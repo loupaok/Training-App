@@ -6,7 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CoachShell } from "@/components/shell/coach-shell";
-import { clearUnreadNotifications } from "@/components/shell/topbar-controls";
+import { clearUnreadNotifications } from "@/lib/notification-count";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 
