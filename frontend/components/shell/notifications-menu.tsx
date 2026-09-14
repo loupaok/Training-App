@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -118,7 +119,9 @@ export function NotificationsMenu({ user }: { user: AuthUser | null }) {
         }
       />
       <DropdownMenuContent align="end" className="w-80">
-        <DropdownMenuLabel>Ειδοποιήσεις</DropdownMenuLabel>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Ειδοποιήσεις</DropdownMenuLabel>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
         {loading ? (
           <p className="px-2 py-4 text-center text-sm text-muted-foreground">Φόρτωση...</p>
