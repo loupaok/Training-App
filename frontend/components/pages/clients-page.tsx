@@ -304,7 +304,16 @@ function ClientsContent() {
         </FilterBox>
 
         <FilterBox className="lg:col-span-2">
-          <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value ?? "all")}>
+          <Select
+            items={[
+              { value: "all", label: "Κατάσταση: Όλα" },
+              { value: "active", label: "Ενεργοί Πελάτες" },
+              { value: "pending", label: "Εκκρεμείς Πληρωμές" },
+              { value: "inactive", label: "Ανενεργοί Πελάτες" },
+            ]}
+            value={statusFilter}
+            onValueChange={(value) => setStatusFilter(value ?? "all")}
+          >
             <SelectTrigger className="h-full w-full border-none px-0 shadow-none">
               <SelectValue />
             </SelectTrigger>
@@ -318,7 +327,7 @@ function ClientsContent() {
         </FilterBox>
 
         <FilterBox className="lg:col-span-2">
-          <Select value={programFilter} onValueChange={(value) => setProgramFilter(value ?? "all")}>
+          <Select items={programOptions} value={programFilter} onValueChange={(value) => setProgramFilter(value ?? "all")}>
             <SelectTrigger className="h-full w-full border-none px-0 shadow-none">
               <SelectValue />
             </SelectTrigger>
@@ -333,7 +342,17 @@ function ClientsContent() {
         </FilterBox>
 
         <FilterBox className="lg:col-span-3">
-          <Select value={sortBy} onValueChange={(value) => setSortBy(value ?? "newest")}>
+          <Select
+            items={[
+              { value: "newest", label: "Ταξινόμηση: Νεότεροι" },
+              { value: "oldest", label: "Παλαιότεροι" },
+              { value: "nextUpdate", label: "Επόμενο Update" },
+              { value: "name", label: "Αλφαβητικά" },
+              { value: "weightDesc", label: "Βάρος: Μεγαλύτερο" },
+            ]}
+            value={sortBy}
+            onValueChange={(value) => setSortBy(value ?? "newest")}
+          >
             <SelectTrigger className="h-full w-full border-none px-0 shadow-none">
               <SelectValue />
             </SelectTrigger>

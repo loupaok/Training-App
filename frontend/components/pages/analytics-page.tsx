@@ -394,6 +394,7 @@ function FilterSelect<T extends string | number>({
     <div>
       <span className="mb-1 block text-xs font-semibold text-slate-500 dark:text-slate-400">{label}</span>
       <Select
+        items={options.map((option) => ({ value: String(option.value), label: option.label }))}
         value={String(value)}
         onValueChange={(nextValue) => onChange((isNumeric ? Number(nextValue) : nextValue) as T)}
       >

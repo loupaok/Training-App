@@ -484,6 +484,7 @@ function MediaLibraryContent() {
               <div className="space-y-2">
                 <Label>Φάκελος</Label>
                 <Select
+                  items={[{ value: "none", label: "Χωρίς φάκελο" }, ...customFolders.map((folder) => ({ value: String(folder.id), label: folder.name }))]}
                   value={editForm.folderId || "none"}
                   onValueChange={(value) => setEditForm((form) => ({ ...form, folderId: !value || value === "none" ? "" : value }))}
                 >

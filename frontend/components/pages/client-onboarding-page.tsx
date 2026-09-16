@@ -862,7 +862,7 @@ function FormSelect({
   return (
     <div className="block min-w-0 space-y-2">
       <Label className="text-sm font-black text-slate-700 dark:text-slate-200">{label}</Label>
-      <Select value={value} onValueChange={(nextValue) => onChange(nextValue ?? "")}>
+      <Select items={options} value={value} onValueChange={(nextValue) => onChange(nextValue ?? "")}>
         <SelectTrigger className="h-12 w-full text-sm font-semibold">
           <SelectValue />
         </SelectTrigger>

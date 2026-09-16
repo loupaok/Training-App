@@ -563,6 +563,7 @@ function ExercisesContent() {
         </div>
         <div className="col-span-6 md:col-span-3">
           <Select
+            items={[{ value: ALL_VALUE, label: "Μυϊκή Ομάδα: Όλες" }, ...filters.muscleGroups.map((option) => ({ value: option, label: option }))]}
             value={muscleGroup || ALL_VALUE}
             onValueChange={(value: string | null) => setMuscleGroup(!value || value === ALL_VALUE ? "" : value)}
           >
@@ -581,6 +582,7 @@ function ExercisesContent() {
         </div>
         <div className="col-span-6 md:col-span-3">
           <Select
+            items={[{ value: ALL_VALUE, label: "Εξοπλισμός: Όλες" }, ...filters.equipment.map((option) => ({ value: option, label: option }))]}
             value={equipment || ALL_VALUE}
             onValueChange={(value: string | null) => setEquipment(!value || value === ALL_VALUE ? "" : value)}
           >
@@ -981,7 +983,11 @@ function EditSelect({
   return (
     <label className="block">
       <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{label}</span>
-      <Select value={value || UNSET_VALUE} onValueChange={(next: string | null) => onChange(!next || next === UNSET_VALUE ? "" : next)}>
+      <Select
+        items={[{ value: UNSET_VALUE, label: "Επιλογή" }, ...selectOptions.map((option) => ({ value: option, label: option }))]}
+        value={value || UNSET_VALUE}
+        onValueChange={(next: string | null) => onChange(!next || next === UNSET_VALUE ? "" : next)}
+      >
         <SelectTrigger className="mt-2 h-11 w-full focus-visible:border-red-300">
           <SelectValue placeholder="Επιλογή" />
         </SelectTrigger>

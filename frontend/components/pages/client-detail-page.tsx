@@ -1001,7 +1001,11 @@ function TrainingPlanEditor({
           <Field label="Τίτλος" value={plan.title} onChange={(value) => setPlan({ ...plan, title: value })} />
           <div className="block">
             <Label className="text-xs font-black text-slate-500 dark:text-slate-400">Ημέρες προγράμματος</Label>
-            <Select value={String(plan.dayCount || visibleDays.length)} onValueChange={(value) => setDayCount(Number(value ?? 0))}>
+            <Select
+              items={[1, 2, 3, 4, 5, 6, 7].map((count) => ({ value: String(count), label: `${count} ημέρες` }))}
+              value={String(plan.dayCount || visibleDays.length)}
+              onValueChange={(value) => setDayCount(Number(value ?? 0))}
+            >
               <SelectTrigger className="mt-1 h-11 w-full text-sm font-semibold">
                 <SelectValue />
               </SelectTrigger>
@@ -1400,7 +1404,11 @@ function SelectField({
   return (
     <div className="block">
       <Label className="text-xs font-black text-slate-500 dark:text-slate-400">{label}</Label>
-      <Select value={value ?? ""} onValueChange={(next) => onChange(next ?? "")}>
+      <Select
+        items={options.map(([optionValue, optionLabel]) => ({ value: optionValue, label: optionLabel }))}
+        value={value ?? ""}
+        onValueChange={(next) => onChange(next ?? "")}
+      >
         <SelectTrigger className="mt-1 h-11 w-full text-sm font-semibold">
           <SelectValue />
         </SelectTrigger>

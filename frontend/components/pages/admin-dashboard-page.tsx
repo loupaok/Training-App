@@ -225,7 +225,7 @@ function AdminDashboardContent() {
               />
             </FormField>
             <FormField label="Ρόλος">
-              <Select value={formData.role} onValueChange={(value) => value && setFormData({ ...formData, role: value })}>
+              <Select items={roleOptions} value={formData.role} onValueChange={(value) => value && setFormData({ ...formData, role: value })}>
                 <SelectTrigger className="h-11 w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -262,7 +262,11 @@ function AdminDashboardContent() {
       <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-200 p-6 dark:border-slate-800">
           <h2 className="text-xl font-black">Όλοι οι χρήστες</h2>
-          <Select value={roleFilter} onValueChange={(value) => value && setRoleFilter(value)}>
+          <Select
+            items={[{ value: "all", label: "Όλοι οι χρήστες" }, ...roleOptions, { value: "client", label: "Client" }]}
+            value={roleFilter}
+            onValueChange={(value) => value && setRoleFilter(value)}
+          >
             <SelectTrigger className="h-11 font-semibold">
               <SelectValue />
             </SelectTrigger>
@@ -308,7 +312,7 @@ function AdminDashboardContent() {
                         {roleLabels[row.role] || row.role}
                       </Badge>
                     ) : (
-                      <Select value={row.role} onValueChange={(value) => value && updateUser(row, { role: value })}>
+                      <Select items={roleOptions} value={row.role} onValueChange={(value) => value && updateUser(row, { role: value })}>
                         <SelectTrigger className="h-10 font-bold">
                           <SelectValue />
                         </SelectTrigger>

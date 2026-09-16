@@ -165,10 +165,18 @@ function SelectField({
   options: (string | [string, string])[];
 }) {
   const stringValue = String(value ?? "");
+  const items = [
+    { value: "", label: "Επιλογή" },
+    ...options.map((option) => {
+      const optionValue = Array.isArray(option) ? option[0] : option;
+      const optionLabel = Array.isArray(option) ? option[1] : option;
+      return { value: optionValue, label: optionLabel };
+    }),
+  ];
   return (
     <div>
       <Label>{label}</Label>
-      <Select value={stringValue} onValueChange={(next) => onChange(String(next))}>
+      <Select items={items} value={stringValue} onValueChange={(next) => onChange(String(next))}>
         <SelectTrigger className="mt-2 w-full">
           <SelectValue placeholder="Επιλογή" />
         </SelectTrigger>
