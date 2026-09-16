@@ -199,7 +199,7 @@ function AdminDashboardContent() {
       <section className="mb-8 rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-200 p-6 dark:border-slate-800">
           <div>
-            <h2 className="text-xl font-black">Προσθήκη ατόμου</h2>
+            <h2 className="text-xl font-bold">Προσθήκη ατόμου</h2>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Ο διαχειριστής ορίζει από εδώ μόνο την εσωτερική ομάδα. Οι πελάτες μπαίνουν από τη σελίδα Πελάτες.</p>
           </div>
           <Button onClick={() => setShowAddUser((value) => !value)} className="px-5 py-3 font-bold">
@@ -253,7 +253,7 @@ function AdminDashboardContent() {
       <section className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-4">
         {roleOptions.map((role) => (
           <div key={role.value} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="text-lg font-black">{role.label}</div>
+            <div className="text-lg font-bold">{role.label}</div>
             <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">{role.description}</p>
           </div>
         ))}
@@ -261,7 +261,7 @@ function AdminDashboardContent() {
 
       <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-200 p-6 dark:border-slate-800">
-          <h2 className="text-xl font-black">Όλοι οι χρήστες</h2>
+          <h2 className="text-xl font-bold">Όλοι οι χρήστες</h2>
           <Select
             items={[{ value: "all", label: "Όλοι οι χρήστες" }, ...roleOptions, { value: "client", label: "Client" }]}
             value={roleFilter}
@@ -417,7 +417,7 @@ function StatCard({ title, value }: { title: string; value: number }) {
   return (
     <Card className="p-5 shadow-sm">
       <div className="text-sm font-bold text-slate-500 dark:text-slate-400">{title}</div>
-      <div className="mt-2 text-3xl font-black">{value}</div>
+      <div className="mt-2 text-3xl font-bold">{value}</div>
     </Card>
   );
 }

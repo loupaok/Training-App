@@ -276,7 +276,7 @@ function MediaLibraryContent() {
             <span className="text-slate-400 dark:text-slate-500">›</span>
             <span className="text-slate-600 dark:text-slate-400">Media Library</span>
           </div>
-          <h2 className="mt-5 text-3xl font-extrabold">Φωτογραφίες &amp; Εικονίδια</h2>
+          <h2 className="mt-5 text-3xl font-bold">Φωτογραφίες &amp; Εικονίδια</h2>
         </div>
         <label
           className={`flex h-12 cursor-pointer items-center gap-3 rounded-md px-6 font-bold text-white shadow-lg shadow-red-200 ${uploading ? "bg-slate-400" : "bg-red-600 hover:bg-red-700"}`}
@@ -295,7 +295,7 @@ function MediaLibraryContent() {
 
       <div className="grid grid-cols-12 gap-5">
         <section className="col-span-3 rounded-lg border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <h3 className="font-extrabold dark:text-slate-50">Φάκελοι</h3>
+          <h3 className="font-bold dark:text-slate-50">Φάκελοι</h3>
           <div className="mt-4 flex gap-2">
             <Input
               value={newFolderName}
@@ -320,7 +320,7 @@ function MediaLibraryContent() {
             onDrop={(event) => handleFolderDrop(event, "uncategorized")}
           />
 
-          <div className="mt-5 text-xs font-extrabold uppercase text-slate-500 dark:text-slate-400">Custom Folders</div>
+          <div className="mt-5 text-xs font-bold text-slate-500 dark:text-slate-400">Custom Folders</div>
           <div className="max-h-[420px] overflow-y-auto pr-1">
             {allFolders.map((folder) => (
               <FolderButton
@@ -395,7 +395,7 @@ function MediaLibraryContent() {
                 <div className="p-5">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="font-extrabold">{asset.title}</h3>
+                      <h3 className="font-bold">{asset.title}</h3>
                       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{asset.folderName || asset.source}</p>
                     </div>
                     <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{asset.kind}</span>
@@ -601,7 +601,7 @@ function MediaPreview({ asset }: { asset: MediaAsset }) {
 
   if (!src || failed) {
     return (
-      <div className="grid h-full place-items-center bg-slate-900 p-4 text-center text-sm font-extrabold uppercase text-white">
+      <div className="grid h-full place-items-center bg-slate-900 p-4 text-center text-sm font-bold text-white">
         {asset.title}
       </div>
     );

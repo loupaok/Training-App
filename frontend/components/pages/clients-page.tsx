@@ -276,7 +276,7 @@ function ClientsContent() {
     <CoachShell title="Πελάτες" user={user} logout={logout}>
       <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-3xl font-extrabold">Πελάτες</h2>
+          <h2 className="text-3xl font-bold">Πελάτες</h2>
           <div className="mt-3 flex items-center gap-3 text-base">
             <Link href="/dashboard" className="font-semibold text-blue-600 hover:text-blue-700">
               Dashboard
@@ -374,7 +374,7 @@ function ClientsContent() {
           </Select>
         </FilterBox>
 
-        <Button variant="outline" onClick={resetFilters} className="h-[68px] font-extrabold lg:col-span-1">
+        <Button variant="outline" onClick={resetFilters} className="h-[68px] font-bold lg:col-span-1">
           Reset
         </Button>
       </div>
@@ -395,12 +395,12 @@ function ClientsContent() {
         <Table>
           <TableHeader>
             <TableRow className="h-[72px]">
-              <TableHead className="w-[30%] px-8 text-base font-extrabold text-slate-950 dark:text-slate-50">Πελάτης</TableHead>
-              <TableHead className="w-[13%] px-5 text-base font-extrabold text-slate-950 dark:text-slate-50">Κατάσταση</TableHead>
-              <TableHead className="w-[13%] px-5 text-base font-extrabold text-slate-950 dark:text-slate-50">Τρέχον Βάρος</TableHead>
-              <TableHead className="w-[20%] px-5 text-base font-extrabold text-slate-950 dark:text-slate-50">Επόμενο Update</TableHead>
-              <TableHead className="w-[10%] px-5 text-base font-extrabold text-slate-950 dark:text-slate-50">Status</TableHead>
-              <TableHead className="w-[14%] px-5 text-base font-extrabold text-slate-950 dark:text-slate-50">Ενέργειες</TableHead>
+              <TableHead className="w-[30%] px-8 text-base font-bold text-slate-950 dark:text-slate-50">Πελάτης</TableHead>
+              <TableHead className="w-[13%] px-5 text-base font-bold text-slate-950 dark:text-slate-50">Κατάσταση</TableHead>
+              <TableHead className="w-[13%] px-5 text-base font-bold text-slate-950 dark:text-slate-50">Τρέχον Βάρος</TableHead>
+              <TableHead className="w-[20%] px-5 text-base font-bold text-slate-950 dark:text-slate-50">Επόμενο Update</TableHead>
+              <TableHead className="w-[10%] px-5 text-base font-bold text-slate-950 dark:text-slate-50">Status</TableHead>
+              <TableHead className="w-[14%] px-5 text-base font-bold text-slate-950 dark:text-slate-50">Ενέργειες</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -410,7 +410,7 @@ function ClientsContent() {
                   <Link href={`/clients/${client.id}`} className="flex items-center gap-4 text-slate-950 hover:text-red-600 dark:text-slate-50">
                     <UserAvatar initials={client.initials} tone={client.tone} photoUrl={client.profilePhoto} />
                     <div>
-                      <div className="font-extrabold">{client.name}</div>
+                      <div className="font-bold">{client.name}</div>
                       <div className="mt-1 text-sm text-slate-600 dark:text-slate-400">{client.email}</div>
                       <div className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">{client.program}</div>
                     </div>

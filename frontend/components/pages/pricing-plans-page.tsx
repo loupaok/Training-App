@@ -142,11 +142,11 @@ function PricingPlansContent() {
     <CoachShell title="Πλάνα & Τιμές" user={user} logout={logout}>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-black">Διαχείριση Πλάνων &amp; Τιμών</h2>
+          <h2 className="text-3xl font-bold">Διαχείριση Πλάνων &amp; Τιμών</h2>
           <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Δημιούργησε και διαχειρίσου τα πλάνα συνδρομής που βλέπουν οι πελάτες σου.</p>
         </div>
         <div className="flex gap-3">
-          <Button onClick={newPlan} className="h-11 px-5 font-black shadow-lg shadow-red-200 dark:shadow-none">
+          <Button onClick={newPlan} className="h-11 px-5 font-bold shadow-lg shadow-red-200 dark:shadow-none">
             + Νέο Πλάνο
           </Button>
           <Button variant="outline" className="h-11 px-5 font-bold text-slate-700 dark:text-slate-200">
@@ -161,7 +161,7 @@ function PricingPlansContent() {
       <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="grid gap-6 xl:grid-cols-[290px_1fr]">
           <aside className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
-            <h3 className="font-black">Πλάνα Συνδρομής</h3>
+            <h3 className="font-bold">Πλάνα Συνδρομής</h3>
             <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Σύρε για αλλαγή σειράς εμφάνισης</p>
             <div className="mt-5 space-y-3">
               {plans.map((plan) => (
@@ -188,7 +188,7 @@ function PricingPlansContent() {
 
           <div className="rounded-lg border border-slate-200 p-5 dark:border-slate-800">
             <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-lg font-black">Επεξεργασία Πλάνου</h3>
+              <h3 className="text-lg font-bold">Επεξεργασία Πλάνου</h3>
               <div className="flex items-center gap-3">
                 <Label className="flex items-center gap-2 text-sm font-bold text-slate-600 dark:text-slate-400">
                   Ενεργό
@@ -270,7 +270,7 @@ function PricingPlansContent() {
               </div>
 
               <div>
-                <h4 className="mb-4 font-black">Χαρακτηριστικά Πλάνου</h4>
+                <h4 className="mb-4 font-bold">Χαρακτηριστικά Πλάνου</h4>
                 <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
                   {form.features.map((feature, index) => (
                     <div key={index} className="grid grid-cols-[28px_36px_1fr_34px] items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0 dark:border-slate-800">
@@ -280,7 +280,7 @@ function PricingPlansContent() {
                         variant="ghost"
                         size="icon"
                         onClick={() => updateFeature(index, "included", !feature.included)}
-                        className={`h-9 w-9 text-lg font-black ${feature.included ? "text-emerald-600 hover:text-emerald-600" : "text-red-600 hover:text-red-600"}`}
+                        className={`h-9 w-9 text-lg font-bold ${feature.included ? "text-emerald-600 hover:text-emerald-600" : "text-red-600 hover:text-red-600"}`}
                       >
                         {feature.included ? "✓" : "×"}
                       </Button>
@@ -312,7 +312,7 @@ function PricingPlansContent() {
             </div>
 
             <div className="mt-6 flex justify-end">
-              <Button onClick={savePlan} disabled={saving} className="h-11 px-6 font-black disabled:bg-slate-400">
+              <Button onClick={savePlan} disabled={saving} className="h-11 px-6 font-bold disabled:bg-slate-400">
                 {saving ? "Αποθήκευση..." : "Αποθήκευση Πλάνου"}
               </Button>
             </div>
@@ -322,13 +322,13 @@ function PricingPlansContent() {
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_420px]">
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <h3 className="font-black">Προεπισκόπηση Κάρτας</h3>
+          <h3 className="font-bold">Προεπισκόπηση Κάρτας</h3>
           <div className="mt-5 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
             <PlanPreview plan={form} />
           </div>
         </div>
         <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <h3 className="font-black">Συμβουλές</h3>
+          <h3 className="font-bold">Συμβουλές</h3>
           <div className="mt-5 space-y-4 text-sm leading-6 text-slate-600 dark:text-slate-400">
             <p>• Σύρε τα πλάνα για να αλλάξεις τη σειρά εμφάνισης τους στη σελίδα εγγραφής.</p>
             <p>• Η ετικέτα &ldquo;Πιο δημοφιλές&rdquo; θα εμφανίζεται στο πλάνο που επιλέγεις.</p>
@@ -345,22 +345,22 @@ function PlanPreview({ plan }: { plan: PricingPlan }) {
     <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
       <div className="relative rounded-lg border p-6 text-center" style={{ borderColor: plan.themeColor }}>
         {plan.badge && (
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1 text-xs font-black text-white" style={{ backgroundColor: plan.themeColor }}>
+          <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1 text-xs font-bold text-white" style={{ backgroundColor: plan.themeColor }}>
             {plan.badge}
           </div>
         )}
         <div className="mx-auto grid h-12 w-12 place-items-center rounded-full text-2xl" style={{ backgroundColor: `${plan.themeColor}18`, color: plan.themeColor }}>
           🏆
         </div>
-        <h4 className="mt-4 text-2xl font-black" style={{ color: plan.themeColor }}>
+        <h4 className="mt-4 text-2xl font-bold" style={{ color: plan.themeColor }}>
           {plan.name || "Πλάνο"}
         </h4>
         <p className="mx-auto mt-3 max-w-56 text-sm leading-6 text-slate-600 dark:text-slate-400">{plan.description}</p>
-        <div className="mt-5 text-3xl font-black">
+        <div className="mt-5 text-3xl font-bold">
           €{plan.price}
           <span className="text-base font-bold text-slate-500 dark:text-slate-400"> /{formatPlanPeriod(plan.period)}</span>
         </div>
-        <Button type="button" className="mt-5 h-11 w-full font-black text-white hover:opacity-90" style={{ backgroundColor: plan.themeColor }}>
+        <Button type="button" className="mt-5 h-11 w-full font-bold text-white hover:opacity-90" style={{ backgroundColor: plan.themeColor }}>
           Επιλέγω {plan.name}
         </Button>
       </div>

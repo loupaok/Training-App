@@ -71,13 +71,13 @@ function ClientMessagesContent() {
   return (
     <ClientShell title="Μηνύματα" user={user} logout={logout} paymentApproved={paymentApproved} active="messages">
       <div className="mb-7">
-        <h2 className="text-3xl font-extrabold">Μηνύματα</h2>
+        <h2 className="text-3xl font-bold">Μηνύματα</h2>
         <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Ασύγχρονη επικοινωνία με τον coach σου.</p>
       </div>
 
       <Card className="overflow-hidden p-0">
         <CardHeader className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
-          <CardTitle className="text-lg font-black">Συνομιλία</CardTitle>
+          <CardTitle className="text-lg font-bold">Συνομιλία</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="max-h-96 space-y-3 overflow-y-auto p-6">

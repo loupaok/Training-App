@@ -200,10 +200,10 @@ export default function WorkoutProgramView({
     <section className="space-y-7">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="text-3xl font-black text-slate-950 dark:text-slate-50">Πρόγραμμα Προπόνησης</h2>
+          <h2 className="text-3xl font-bold text-slate-950 dark:text-slate-50">Πρόγραμμα Προπόνησης</h2>
           <p className="mt-2 text-xl font-bold text-slate-600 dark:text-slate-400">{training.title || "Πρόγραμμα Προπόνησης"}</p>
         </div>
-        <div className="flex h-14 items-center gap-3 rounded-lg border border-slate-200 bg-white px-6 font-black text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+        <div className="flex h-14 items-center gap-3 rounded-lg border border-slate-200 bg-white px-6 font-bold text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
           <Clock className="h-5 w-5 text-slate-500 dark:text-slate-400" />
           Περίπου {estimatedMinutes} λεπτά
         </div>
@@ -215,7 +215,7 @@ export default function WorkoutProgramView({
             <TabsTrigger
               key={day.id}
               value={String(day.id)}
-              className="min-h-[72px] flex-col whitespace-normal rounded-md px-4 py-3 font-black data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-100"
+              className="min-h-[72px] flex-col whitespace-normal rounded-md px-4 py-3 font-bold data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-100"
             >
               <div>Ημέρα {index + 1}</div>
               <div className="mt-1 truncate text-xs font-bold text-slate-500 group-data-[state=active]:text-white/90 data-[state=active]:text-white/90 dark:text-slate-400">
@@ -236,7 +236,7 @@ export default function WorkoutProgramView({
                     <LayoutGrid className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-2xl font-black dark:text-slate-50">Ημέρα {dayIndex + 1}</h3>
+                    <h3 className="text-2xl font-bold dark:text-slate-50">Ημέρα {dayIndex + 1}</h3>
                     <div className="mt-1 text-sm font-bold text-slate-500 dark:text-slate-400">{dayMuscles.join(" / ") || "Χωρίς ασκήσεις"}</div>
                   </div>
                 </div>
@@ -256,7 +256,7 @@ export default function WorkoutProgramView({
                       <div className="flex min-w-0 items-center gap-4">
                         <ExercisePhotoSlider exercise={exercise} />
                         <div className="min-w-0">
-                          <div className="text-lg font-black text-slate-950 dark:text-slate-50">{exercise.name}</div>
+                          <div className="text-lg font-bold text-slate-950 dark:text-slate-50">{exercise.name}</div>
                           <div className="mt-1 text-sm font-bold text-slate-500 dark:text-slate-400">{exercise.muscle || "-"}</div>
                         </div>
                       </div>
@@ -281,7 +281,7 @@ export default function WorkoutProgramView({
 
                 {training.description && (
                   <div className="mx-5 mb-5 rounded-lg border border-red-100 bg-red-50 p-5 dark:border-red-500/20 dark:bg-red-500/10">
-                    <div className="font-black text-slate-950 dark:text-slate-50">Οδηγίες</div>
+                    <div className="font-bold text-slate-950 dark:text-slate-50">Οδηγίες</div>
                     <p className="mt-2 text-sm font-semibold leading-6 text-slate-700 dark:text-slate-300">{training.description}</p>
                   </div>
                 )}
@@ -307,8 +307,8 @@ export default function WorkoutProgramView({
 function StatCell({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="flex items-center justify-between rounded-md bg-slate-50 px-3 py-2 md:block md:bg-transparent md:px-0 md:py-0 md:text-center dark:bg-slate-800 dark:md:bg-transparent">
-      <span className="text-xs font-black text-slate-500 md:hidden dark:text-slate-400">{label}</span>
-      <span className="text-lg font-black text-slate-950 md:text-xl dark:text-slate-50">{value || "-"}</span>
+      <span className="text-xs font-bold text-slate-500 md:hidden dark:text-slate-400">{label}</span>
+      <span className="text-lg font-bold text-slate-950 md:text-xl dark:text-slate-50">{value || "-"}</span>
     </div>
   );
 }
@@ -323,7 +323,7 @@ function ExercisePhotoSlider({ exercise }: { exercise: Exercise }) {
   if (!activeImage?.imageUrl) {
     return (
       <div className="h-24 w-36 shrink-0 overflow-hidden rounded-lg bg-slate-200">
-        <div className="grid h-full w-full place-items-center text-xs font-black text-slate-500">PHOTO</div>
+        <div className="grid h-full w-full place-items-center text-xs font-bold text-slate-500">PHOTO</div>
       </div>
     );
   }
@@ -376,7 +376,7 @@ function SummaryItem({ icon, label, value }: { icon: ReactNode; label: string; v
       <div className="grid h-12 w-12 place-items-center rounded-full bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400">{icon}</div>
       <div>
         <div className="text-sm font-bold text-slate-500 dark:text-slate-400">{label}</div>
-        <div className="mt-1 text-lg font-black text-slate-950 dark:text-slate-50">{value}</div>
+        <div className="mt-1 text-lg font-bold text-slate-950 dark:text-slate-50">{value}</div>
       </div>
     </div>
   );

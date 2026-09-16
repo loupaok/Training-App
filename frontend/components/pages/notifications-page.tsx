@@ -73,7 +73,7 @@ function NotificationsContent() {
             <span className="text-slate-400 dark:text-slate-500">›</span>
             <span className="text-slate-600 dark:text-slate-400">Ειδοποιήσεις</span>
           </div>
-          <h2 className="mt-5 text-3xl font-extrabold">Κέντρο Ειδοποιήσεων</h2>
+          <h2 className="mt-5 text-3xl font-bold">Κέντρο Ειδοποιήσεων</h2>
           <p className="mt-2 text-slate-600 dark:text-slate-400">Πληρωμές, συνδρομές, updates πελατών και νέα συμβάντα.</p>
         </div>
         <div className="grid grid-cols-2 gap-3 md:flex">
@@ -108,7 +108,7 @@ function NotificationsContent() {
         <section className="max-w-5xl space-y-5">
           {grouped.map((group) => (
             <Card key={group.label} className="p-5">
-              <div className="mb-4 text-xs font-extrabold uppercase tracking-wide text-slate-500 dark:text-slate-400">{group.label}</div>
+              <div className="mb-4 text-xs font-bold text-slate-500 dark:text-slate-400">{group.label}</div>
               <div className="divide-y divide-slate-200 dark:divide-slate-800">
                 {group.items.map((item) => (
                   <NotificationRow key={item.id} item={item} />
@@ -119,7 +119,7 @@ function NotificationsContent() {
 
           {!grouped.length && (
             <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center dark:border-slate-700 dark:bg-slate-900">
-              <div className="text-lg font-extrabold">Δεν υπάρχουν ειδοποιήσεις για αυτό το φίλτρο.</div>
+              <div className="text-lg font-bold">Δεν υπάρχουν ειδοποιήσεις για αυτό το φίλτρο.</div>
               <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Οι νέες πληρωμές και ενέργειες πελατών θα εμφανίζονται εδώ.</p>
             </div>
           )}
@@ -132,8 +132,8 @@ function NotificationsContent() {
 function SummaryCard({ label, value }: { label: string; value: number }) {
   return (
     <div className="min-w-32 rounded-lg border border-slate-200 bg-white px-5 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div className="text-xs font-bold uppercase text-slate-500 dark:text-slate-400">{label}</div>
-      <div className="mt-1 text-2xl font-black">{value}</div>
+      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">{label}</div>
+      <div className="mt-1 text-2xl font-bold">{value}</div>
     </div>
   );
 }
@@ -144,11 +144,11 @@ function NotificationRow({ item }: { item: NotificationItem }) {
   return (
     <div className="flex items-start gap-4 py-4 first:pt-0 last:pb-0">
       <div className={`mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-full ${tone.bubble}`}>
-        <span className={`text-sm font-black ${tone.text}`}>{iconForType(item.type)}</span>
+        <span className={`text-sm font-bold ${tone.text}`}>{iconForType(item.type)}</span>
       </div>
       <div className="min-w-0 flex-1">
         <div className="text-[15px] leading-6">
-          <span className="font-extrabold">{item.title}</span>
+          <span className="font-bold">{item.title}</span>
           {item.client_name && <span className="font-semibold text-slate-800 dark:text-slate-200"> — {item.client_name}</span>}
         </div>
         <div className="mt-1 text-sm font-semibold leading-6 text-slate-600 dark:text-slate-400">{item.body}</div>

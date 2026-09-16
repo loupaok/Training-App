@@ -80,7 +80,7 @@ function ClientUpdatesContent() {
             <span className="text-slate-400">›</span>
             <span className="text-slate-600">Νέα Updates</span>
           </div>
-          <h2 className="text-3xl font-extrabold">Νέα Updates</h2>
+          <h2 className="text-3xl font-bold">Νέα Updates</h2>
           <p className="mt-2 text-base text-slate-600">Ενημερώσεις που έχουν υποβληθεί από τους πελάτες σας.</p>
         </div>
 
@@ -103,7 +103,7 @@ function ClientUpdatesContent() {
               </span>
               <div>
                 <p className="text-base font-semibold text-slate-600">{stat.label}</p>
-                <p className="mt-3 text-3xl font-extrabold">{stat.value}</p>
+                <p className="mt-3 text-3xl font-bold">{stat.value}</p>
                 <p className="mt-3 text-sm text-slate-600">{stat.note}</p>
               </div>
             </div>
@@ -124,7 +124,7 @@ function ClientUpdatesContent() {
           />
           <Table>
             <TableHeader>
-              <TableRow className="h-16 text-left text-sm font-extrabold">
+              <TableRow className="h-16 text-left text-sm font-bold">
                 <TableHead className="px-6">Πελάτης</TableHead>
                 <TableHead className="px-5">
                   Ημερομηνία Υποβολής <ChevronDown className="ml-2 inline h-4 w-4" />
@@ -140,7 +140,7 @@ function ClientUpdatesContent() {
                   <TableCell className="px-6">
                     <div className="flex items-center gap-4">
                       <UserAvatar initials={update.initials} tone={update.tone} />
-                      <span className="font-extrabold">{update.name}</span>
+                      <span className="font-bold">{update.name}</span>
                     </div>
                   </TableCell>
                   <TableCell className="px-5">
@@ -191,7 +191,7 @@ function ClientUpdatesContent() {
 
         <Card className="col-span-4 p-6">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-extrabold">Λεπτομέρειες Update</h3>
+            <h3 className="text-lg font-bold">Λεπτομέρειες Update</h3>
             <Button variant="ghost" size="icon-sm" className="text-slate-700 hover:text-red-600">
               <X className="h-5 w-5" />
             </Button>

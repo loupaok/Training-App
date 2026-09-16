@@ -443,7 +443,7 @@ function MetricCard({
   return (
     <Card className="p-5">
       <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">{title}</div>
-      <div className={`mt-3 text-3xl font-black ${colors[tone]}`}>{value}</div>
+      <div className={`mt-3 text-3xl font-bold ${colors[tone]}`}>{value}</div>
       <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">{hint}</div>
     </Card>
   );
@@ -472,7 +472,7 @@ function RevenueRow({ item }: { item: ClientRevenueItem }) {
         <div className="font-semibold">{item.client}</div>
         <div className="text-sm text-slate-500 dark:text-slate-400">{item.payments} πληρωμές</div>
       </div>
-      <div className="font-black">{item.revenue}</div>
+      <div className="font-bold">{item.revenue}</div>
     </div>
   );
 }

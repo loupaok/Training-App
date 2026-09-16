@@ -104,7 +104,7 @@ function StatusCard({ title, value }: { title: string; value: string }) {
   return (
     <Card className="min-h-[128px] p-5 shadow-sm">
       <div className="text-sm font-bold text-slate-500 dark:text-slate-400">{title}</div>
-      <div className="mt-4 text-xl font-black leading-7">{value}</div>
+      <div className="mt-4 text-xl font-bold leading-7">{value}</div>
     </Card>
   );
 }
@@ -115,8 +115,8 @@ function WeeklyUpdateCard({ data, onOpen }: { data?: WeeklyUpdateInfo; onOpen: (
   return (
     <Card className="min-h-[128px] p-5 shadow-sm">
       <div className="text-sm font-bold text-slate-500 dark:text-slate-400">Εβδομαδιαίο Update</div>
-      <div className="mt-3 text-xl font-black">{statusLabel}</div>
-      <Button disabled={disabled} onClick={onOpen} className="mt-4 h-11 w-full font-black">
+      <div className="mt-3 text-xl font-bold">{statusLabel}</div>
+      <Button disabled={disabled} onClick={onOpen} className="mt-4 h-11 w-full font-bold">
         Συμπλήρωση
       </Button>
     </Card>
@@ -135,7 +135,7 @@ function Macro({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-md bg-slate-50 p-3 text-center dark:bg-slate-950">
       <div className="text-xs font-bold text-slate-500">{label}</div>
-      <div className="mt-1 font-black">{value}</div>
+      <div className="mt-1 font-bold">{value}</div>
     </div>
   );
 }
@@ -144,7 +144,7 @@ function NutritionView({ nutrition }: { nutrition?: NutritionPlan | null }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl font-black">Πρόγραμμα Διατροφής</CardTitle>
+        <CardTitle className="text-xl font-bold">Πρόγραμμα Διατροφής</CardTitle>
       </CardHeader>
       <CardContent>
         {nutrition ? (
@@ -163,7 +163,7 @@ function NutritionView({ nutrition }: { nutrition?: NutritionPlan | null }) {
             <div className="mt-5 space-y-3">
               {(nutrition.meals || []).map((meal) => (
                 <div key={meal.id} className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
-                  <h3 className="font-black">{meal.title || mealLabels[meal.meal_type || "other"] || "Γεύμα"}</h3>
+                  <h3 className="font-bold">{meal.title || mealLabels[meal.meal_type || "other"] || "Γεύμα"}</h3>
                   {meal.notes && <div className="mt-1 text-sm font-semibold text-slate-500">{meal.notes}</div>}
                   <div className="mt-3 space-y-2">
                     {meal.foods.map((food) => (
@@ -316,7 +316,7 @@ function ClientDashboardContent() {
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-900 dark:bg-amber-950/30">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <h2 className="text-lg font-black text-amber-900 dark:text-amber-200">
+                  <h2 className="text-lg font-bold text-amber-900 dark:text-amber-200">
                     Η πληρωμή σου είναι σε εκκρεμότητα
                   </h2>
                   <p className="mt-1 text-sm font-bold text-amber-800 dark:text-amber-300">
@@ -326,7 +326,7 @@ function ClientDashboardContent() {
                 <Button
                   nativeButton={false}
                   render={<Link href="/client-billing">Πληρωμές και Συνδρομή</Link>}
-                  className="h-11 bg-red-600 px-5 font-black text-white hover:bg-red-700"
+                  className="h-11 bg-red-600 px-5 font-bold text-white hover:bg-red-700"
                 />
               </div>
             </div>
@@ -352,7 +352,7 @@ function ClientDashboardContent() {
               <NutritionView nutrition={data.nutrition} />
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-xl font-black">Πρόοδος</CardTitle>
+                  <CardTitle className="text-xl font-bold">Πρόοδος</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {weights.length ? (

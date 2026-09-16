@@ -99,7 +99,7 @@ function ManualNotificationsContent() {
     <CoachShell title="Manual Notifications" user={user} logout={logout}>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-black dark:text-slate-50">Manual Notifications</h1>
+          <h1 className="text-3xl font-bold dark:text-slate-50">Manual Notifications</h1>
           <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
             Στείλε ένα μήνυμα σε όλους τους ενεργούς χρήστες της εφαρμογής.
           </p>

@@ -635,7 +635,7 @@ function ExercisesContent() {
       <Card className="mt-5 overflow-hidden" style={{ "--card-spacing": "0px" } as React.CSSProperties}>
         <Table>
           <TableHeader>
-            <TableRow className="h-16 text-sm font-extrabold">
+            <TableRow className="h-16 text-sm font-bold">
               <TableHead className="px-6">Άσκηση</TableHead>
               <TableHead className="px-5">Μυϊκή Ομάδα</TableHead>
               <TableHead className="px-5">Εξοπλισμός</TableHead>
@@ -651,7 +651,7 @@ function ExercisesContent() {
                   <Button
                     variant="link"
                     onClick={() => openExercise(exercise, "view")}
-                    className="h-auto gap-4 whitespace-normal p-0 text-left font-extrabold text-slate-950 hover:text-red-600 dark:text-slate-50"
+                    className="h-auto gap-4 whitespace-normal p-0 text-left font-bold text-slate-950 hover:text-red-600 dark:text-slate-50"
                   >
                     <ExerciseImage exercise={exercise} />
                     {exercise.name}
@@ -754,7 +754,7 @@ function ExercisesContent() {
                         <Info label="Σε προγράμματα" value={editForm.programsCount || 0} />
                       </div>
                       <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800">
-                        <h3 className="font-extrabold dark:text-slate-50">Περιγραφή / Πώς γίνεται</h3>
+                        <h3 className="font-bold dark:text-slate-50">Περιγραφή / Πώς γίνεται</h3>
                         <p className="mt-3 whitespace-pre-line text-sm leading-7 text-slate-700 dark:text-slate-200">
                           {editForm.instructions || "Δεν έχει προστεθεί περιγραφή."}
                         </p>
@@ -852,7 +852,7 @@ function ExercisesContent() {
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img src={resolveMediaUrl(image.imageUrl)} alt="" className="h-full w-full object-cover" />
                                 {(image.isPrimary || image.imageUrl === editForm.imageUrl || index === 0) && (
-                                  <Badge className="absolute left-2 top-2 bg-red-600 text-[10px] font-black text-white">PRIMARY</Badge>
+                                  <Badge className="absolute left-2 top-2 bg-red-600 text-[10px] font-bold text-white">PRIMARY</Badge>
                                 )}
                               </div>
                               <Button
@@ -1023,7 +1023,7 @@ function StatCard({
         <span className={`grid h-16 w-16 shrink-0 place-items-center rounded-full ${tone}`}>{icon}</span>
         <div>
           <p className="text-base font-semibold text-slate-600 dark:text-slate-400">{label}</p>
-          <p className="mt-3 text-3xl font-extrabold">{value}</p>
+          <p className="mt-3 text-3xl font-bold">{value}</p>
           <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">{note}</p>
         </div>
       </div>
@@ -1121,7 +1121,7 @@ function ExerciseImage({ exercise, large = false }: { exercise: Partial<Exercise
 
   if (!src || failed) {
     return (
-      <div className={`${sizeClass} grid place-items-center bg-slate-900 p-2 text-center text-[10px] font-extrabold uppercase leading-tight text-white`}>
+      <div className={`${sizeClass} grid place-items-center bg-slate-900 p-2 text-center text-[10px] font-bold leading-tight text-white`}>
         <ImageIcon className={large ? "mb-3 h-10 w-10" : "hidden"} />
         {exercise.name}
       </div>
@@ -1139,7 +1139,7 @@ function PickerImage({ asset }: { asset: MediaAsset }) {
   const src = resolveMediaUrl(asset.url);
 
   if (!src || failed) {
-    return <div className="grid h-full place-items-center bg-slate-900 p-3 text-center text-xs font-extrabold uppercase text-white">{asset.title}</div>;
+    return <div className="grid h-full place-items-center bg-slate-900 p-3 text-center text-xs font-bold text-white">{asset.title}</div>;
   }
 
   return (

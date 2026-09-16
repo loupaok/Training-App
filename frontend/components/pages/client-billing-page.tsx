@@ -172,7 +172,7 @@ function ClientBillingContent() {
     >
       <div className="mb-7">
         <p className="text-sm font-bold text-slate-500 dark:text-slate-400">Dashboard / Πληρωμές και Συνδρομή</p>
-        <h2 className="mt-2 text-3xl font-extrabold">{pendingPayment ? "Ολοκλήρωση Πληρωμής" : "Επιλέξτε το πακέτο σας"}</h2>
+        <h2 className="mt-2 text-3xl font-bold">{pendingPayment ? "Ολοκλήρωση Πληρωμής" : "Επιλέξτε το πακέτο σας"}</h2>
         <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-500 dark:text-slate-400">
           {pendingPayment
             ? "Για να ενεργοποιηθεί η συνδρομή σου, ολοκλήρωσε την κατάθεση. Ο coach θα εγκρίνει χειροκίνητα."
@@ -195,7 +195,7 @@ function ClientBillingContent() {
 
           <section className="mt-8 grid gap-6 lg:grid-cols-[1fr_420px]">
             <Card className="p-6">
-              <h2 className="text-xl font-black">Τρόπος Πληρωμής</h2>
+              <h2 className="text-xl font-bold">Τρόπος Πληρωμής</h2>
               <RadioGroup value={paymentMethod} onValueChange={setPaymentMethod} className="mt-5 gap-3">
                 <PaymentOption
                   value="bank_transfer"
@@ -214,7 +214,7 @@ function ClientBillingContent() {
             </Card>
 
             <Card className="p-6">
-              <h2 className="text-xl font-black">Σύνοψη</h2>
+              <h2 className="text-xl font-bold">Σύνοψη</h2>
               <div className="mt-5 rounded-xl border border-slate-200 dark:border-slate-800">
                 <SummaryRow label="Πακέτο" value={selectedPlan?.title || "-"} />
                 <SummaryRow label="Χρέωση" value={`${selectedPlan?.price || "-"} /${getPeriodLabel(selectedPlan?.period)}`} />
@@ -223,7 +223,7 @@ function ClientBillingContent() {
               <Button
                 disabled={saving || !selectedPackage || paymentMethod === "stripe_card"}
                 onClick={startPayment}
-                className="mt-6 h-12 w-full font-black shadow-lg shadow-red-100"
+                className="mt-6 h-12 w-full font-bold shadow-lg shadow-red-100"
               >
                 {saving ? "Αποθήκευση..." : paymentMethod === "bank_transfer" ? "Συνέχεια στα στοιχεία πληρωμής" : "Stripe σύντομα"}
               </Button>
@@ -260,7 +260,7 @@ function BankTransferPanel({
     <div className="space-y-6">
       <Card className="grid gap-6 p-7 xl:grid-cols-[1fr_360px]">
         <div>
-          <h2 className="text-xl font-black">Στοιχεία Τραπεζικού Λογαριασμού</h2>
+          <h2 className="text-xl font-bold">Στοιχεία Τραπεζικού Λογαριασμού</h2>
           <div className="mt-6 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
             <BankRow label="Δικαιούχος" value={bankDetails.beneficiary} />
             <BankRow label="Τράπεζα" value={bankDetails.bank} />
@@ -280,10 +280,10 @@ function BankTransferPanel({
         </div>
 
         <div className="self-center rounded-xl bg-emerald-50 p-6 text-emerald-950 dark:bg-emerald-500/10 dark:text-emerald-200">
-          <div className="mb-4 grid h-11 w-11 place-items-center rounded-full border border-emerald-300 text-lg font-black dark:border-emerald-800">i</div>
-          <h3 className="font-black">Σημαντικό</h3>
+          <div className="mb-4 grid h-11 w-11 place-items-center rounded-full border border-emerald-300 text-lg font-bold dark:border-emerald-800">i</div>
+          <h3 className="font-bold">Σημαντικό</h3>
           <p className="mt-3 text-sm font-semibold leading-7 text-emerald-900 dark:text-emerald-200">
-            Κατάθεσε ακριβώς το ποσό και χρησιμοποίησε την αιτιολογία <span className="font-black">{referenceNumber}</span>, ώστε να γίνει σωστά η ταυτοποίηση της πληρωμής.
+            Κατάθεσε ακριβώς το ποσό και χρησιμοποίησε την αιτιολογία <span className="font-bold">{referenceNumber}</span>, ώστε να γίνει σωστά η ταυτοποίηση της πληρωμής.
           </p>
         </div>
       </Card>
@@ -292,7 +292,7 @@ function BankTransferPanel({
         <div className="flex items-start gap-5">
           <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-amber-200 text-2xl text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">⏳</div>
           <div>
-            <h2 className="text-xl font-black text-amber-900 dark:text-amber-200">Αναμονή χειροκίνητης έγκρισης</h2>
+            <h2 className="text-xl font-bold text-amber-900 dark:text-amber-200">Αναμονή χειροκίνητης έγκρισης</h2>
             <p className="mt-2 text-sm font-semibold leading-6 text-amber-800 dark:text-amber-300">
               Η αίτησή σου καταχωρήθηκε. Μόλις πραγματοποιήσεις την κατάθεση, ο coach θα ελέγξει και θα εγκρίνει τη συνδρομή σου χειροκίνητα. Δεν χρειάζεται να ανεβάσεις αποδεικτικό.
             </p>
@@ -301,7 +301,7 @@ function BankTransferPanel({
       </section>
 
       <Card className="p-7">
-        <h2 className="text-xl font-black">Τι συμβαίνει μετά;</h2>
+        <h2 className="text-xl font-bold">Τι συμβαίνει μετά;</h2>
         <div className="mt-6 grid gap-5 md:grid-cols-3">
           <NextStep title="Κάνεις την κατάθεση" text="Κατάθεσε το ποσό με την αιτιολογία που βλέπεις παραπάνω." />
           <NextStep title="Ο coach εγκρίνει χειροκίνητα" text="Μόλις επαληθευτεί η κατάθεση, ο coach ενεργοποιεί τη συνδρομή σου." />
@@ -338,7 +338,7 @@ function PlanCard({ plan, active, onClick }: { plan: DisplayPlan; active: boolea
       }`}
     >
       {plan.badge && (
-        <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rounded-b-md rounded-t-sm bg-red-600 px-5 py-2 text-xs font-black uppercase text-white">
+        <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 rounded-b-md rounded-t-sm bg-red-600 px-5 py-2 text-xs font-bold text-white">
           {plan.badge}
         </span>
       )}
@@ -348,14 +348,14 @@ function PlanCard({ plan, active, onClick }: { plan: DisplayPlan; active: boolea
       >
         {getPlanIcon(plan.title)}
       </div>
-      <div className="mt-6 text-2xl font-black">{plan.title}</div>
+      <div className="mt-6 text-2xl font-bold">{plan.title}</div>
       <p className="mt-2 min-h-12 text-sm font-semibold leading-6 text-slate-500 dark:text-slate-400">{plan.note}</p>
       <div className="mt-6 flex items-end gap-1">
-        <span className="text-5xl font-black">{plan.price}</span>
+        <span className="text-5xl font-bold">{plan.price}</span>
         <span className="pb-2 text-sm font-bold text-slate-500 dark:text-slate-400">/{getPeriodLabel(plan.period)}</span>
       </div>
       {yearlyPrice && (
-        <div className="mt-2 text-sm font-black text-slate-700 dark:text-slate-200">
+        <div className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">
           ή €{yearlyPrice} /έτος <span className="text-emerald-600">(2 μήνες δωρεάν)</span>
         </div>
       )}
@@ -369,7 +369,7 @@ function PlanCard({ plan, active, onClick }: { plan: DisplayPlan; active: boolea
           </div>
         ))}
       </div>
-      <div className={`mt-7 grid h-12 place-items-center rounded-md border text-sm font-black ${active ? "border-red-600 bg-red-600 text-white" : "border-slate-300 text-slate-800 dark:border-slate-700 dark:text-slate-200"}`}>
+      <div className={`mt-7 grid h-12 place-items-center rounded-md border text-sm font-bold ${active ? "border-red-600 bg-red-600 text-white" : "border-slate-300 text-slate-800 dark:border-slate-700 dark:text-slate-200"}`}>
         {active ? "Επιλεγμένο πακέτο" : "Επιλογή"}
       </div>
     </Button>
@@ -403,7 +403,7 @@ function PaymentOption({
     >
       <RadioGroupItem value={value} />
       <span>
-        <span className="block font-black">{title}</span>
+        <span className="block font-bold">{title}</span>
         <span className={`mt-1 block text-xs font-bold ${disabledNote ? "text-amber-600 dark:text-amber-400" : "text-slate-500 dark:text-slate-400"}`}>{text}</span>
       </span>
     </label>
@@ -413,8 +413,8 @@ function PaymentOption({
 function BankRow({ label, value, action }: { label: string; value: string; action?: ReactNode }) {
   return (
     <div className="grid grid-cols-[180px_1fr_auto] items-center gap-4 border-b border-slate-200 px-5 py-4 text-sm last:border-b-0 dark:border-slate-800">
-      <span className="font-black text-slate-600 dark:text-slate-400">{label}</span>
-      <span className="font-black text-slate-950 dark:text-slate-50">{value}</span>
+      <span className="font-bold text-slate-600 dark:text-slate-400">{label}</span>
+      <span className="font-bold text-slate-950 dark:text-slate-50">{value}</span>
       <span>{action}</span>
     </div>
   );
@@ -424,7 +424,7 @@ function NextStep({ title, text }: { title: string; text: string }) {
   return (
     <div className="rounded-xl bg-slate-50 p-5 dark:bg-slate-800">
       <div className="mb-4 grid h-11 w-11 place-items-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">✓</div>
-      <div className="font-black">{title}</div>
+      <div className="font-bold">{title}</div>
       <p className="mt-2 text-sm font-semibold leading-6 text-slate-500 dark:text-slate-400">{text}</p>
     </div>
   );
@@ -434,7 +434,7 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 text-sm last:border-b-0 dark:border-slate-800">
       <span className="font-bold text-slate-500 dark:text-slate-400">{label}</span>
-      <span className="font-black">{value}</span>
+      <span className="font-bold">{value}</span>
     </div>
   );
 }

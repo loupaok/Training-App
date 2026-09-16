@@ -336,7 +336,7 @@ function ClientProfileContent() {
     <ClientShell title="Προφίλ" user={shellUser} logout={logout} paymentApproved={paymentApproved} active="profile">
       <div className="mb-6">
         <p className="text-sm font-bold text-slate-500 dark:text-slate-400">Dashboard / Προφίλ</p>
-        <h1 className="mt-2 text-3xl font-black">Το προφίλ μου</h1>
+        <h1 className="mt-2 text-3xl font-bold">Το προφίλ μου</h1>
       </div>
 
       {loading ? (
@@ -370,12 +370,12 @@ function ClientProfileContent() {
                       className="h-24 w-24 rounded-full object-cover ring-4 ring-red-50 dark:ring-red-950/40"
                     />
                   ) : (
-                    <div className="grid h-24 w-24 place-items-center rounded-full bg-slate-900 text-2xl font-black text-white dark:bg-red-600">
+                    <div className="grid h-24 w-24 place-items-center rounded-full bg-slate-900 text-2xl font-bold text-white dark:bg-red-600">
                       {(form.fullName || form.email || "CL").slice(0, 2).toUpperCase()}
                     </div>
                   )}
                   <div>
-                    <h2 className="text-xl font-black">Φωτογραφία προφίλ</h2>
+                    <h2 className="text-xl font-bold">Φωτογραφία προφίλ</h2>
                     <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">
                       Η εικόνα γίνεται αυτόματα τετράγωνο crop και συμπίεση πριν αποθηκευτεί.
                     </p>
@@ -413,7 +413,7 @@ function ClientProfileContent() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-xl font-black">Προσωπικά στοιχεία</CardTitle>
+              <CardTitle className="text-xl font-bold">Προσωπικά στοιχεία</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
@@ -445,7 +445,7 @@ function ClientProfileContent() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-xl font-black">Social Media</CardTitle>
+              <CardTitle className="text-xl font-bold">Social Media</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid gap-4 md:grid-cols-2">
@@ -468,7 +468,7 @@ function ClientProfileContent() {
             <Button
               type="submit"
               disabled={saving}
-              className="h-12 px-8 font-black shadow-lg shadow-red-100 dark:shadow-none"
+              className="h-12 px-8 font-bold shadow-lg shadow-red-100 dark:shadow-none"
             >
               {saving ? "Αποθήκευση..." : "Αποθήκευση αλλαγών"}
             </Button>
