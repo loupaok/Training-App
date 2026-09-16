@@ -32,6 +32,8 @@ interface ClientApiRow {
   is_online?: boolean | number;
   created_at?: string;
   profile_photo?: string | null;
+  subscription_end_date?: string | null;
+  is_expiring_soon?: boolean | number;
 }
 
 interface MappedClient {
@@ -47,6 +49,7 @@ interface MappedClient {
   updateDayLabel: string;
   nextUpdate: string;
   nextUpdateDate: string;
+  subscriptionExpiry: string;
   onlineStatus: string;
   isOnline: boolean;
   createdAt: string;
@@ -93,9 +96,11 @@ function formatDate(value?: string): string {
 }
 
 function mapApiClient(row: ClientApiRow): MappedClient {
-  const statusKey = row.client_status_key || (row.is_active === 0 || row.coaching_status === "inactive" ? "inactive" : "active");
+  const baseStatusKey = row.client_status_key || (row.is_active === 0 || row.coaching_status === "inactive" ? "inactive" : "active");
+  const statusKey = baseStatusKey === "active" && row.is_expiring_soon ? "expiring" : baseStatusKey;
   const statusMeta: Record<string, { label: string; style: string }> = {
     active: { label: "Ενεργός", style: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400" },
+    expiring: { label: "Λήγει σύντομα", style: "bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400" },
     pending: { label: "Εκκρεμής", style: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400" },
     inactive: { label: "Ανενεργός", style: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400" },
   };
@@ -115,6 +120,7 @@ function mapApiClient(row: ClientApiRow): MappedClient {
     updateDayLabel: updateDayOptions.find((item) => String(item.value) === updateDay)?.label || "-",
     nextUpdate: formatDate(row.next_update_date),
     nextUpdateDate: row.next_update_date || "2099-12-31",
+    subscriptionExpiry: formatDate(row.subscription_end_date || undefined),
     onlineStatus: row.is_online ? "Online" : "Offline",
     isOnline: Boolean(row.is_online),
     createdAt: row.created_at || new Date().toISOString(),
@@ -308,6 +314,7 @@ function ClientsContent() {
             items={[
               { value: "all", label: "Κατάσταση: Όλα" },
               { value: "active", label: "Ενεργοί Πελάτες" },
+              { value: "expiring", label: "Λήγουν Σύντομα" },
               { value: "pending", label: "Εκκρεμείς Πληρωμές" },
               { value: "inactive", label: "Ανενεργοί Πελάτες" },
             ]}
@@ -320,6 +327,7 @@ function ClientsContent() {
             <SelectContent>
               <SelectItem value="all">Κατάσταση: Όλα</SelectItem>
               <SelectItem value="active">Ενεργοί Πελάτες</SelectItem>
+              <SelectItem value="expiring">Λήγουν Σύντομα</SelectItem>
               <SelectItem value="pending">Εκκρεμείς Πληρωμές</SelectItem>
               <SelectItem value="inactive">Ανενεργοί Πελάτες</SelectItem>
             </SelectContent>
@@ -410,6 +418,9 @@ function ClientsContent() {
                 </TableCell>
                 <TableCell className="px-5">
                   <span className={`rounded-md px-3 py-2 text-sm font-bold ${client.statusStyle}`}>{client.status}</span>
+                  {client.subscriptionExpiry !== "-" && (
+                    <div className="mt-1 text-xs font-bold text-slate-500 dark:text-slate-400">Λήξη: {client.subscriptionExpiry}</div>
+                  )}
                 </TableCell>
                 <TableCell className="px-5 text-base">{client.currentWeight}</TableCell>
                 <TableCell className="px-5">

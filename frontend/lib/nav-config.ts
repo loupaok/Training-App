@@ -18,6 +18,7 @@ import {
   User,
   Megaphone,
   ScrollText,
+  MessageCircleMore,
   type LucideIcon,
 } from "lucide-react";
 
@@ -89,6 +90,7 @@ export const clientNavSections: ClientNavSection[] = [
   { label: "Πληρωμές και Συνδρομή", path: "/client-billing", key: "billing", icon: CreditCard },
   { label: "Προφίλ", path: "/client-profile", key: "profile", icon: User },
   { label: "Αλλαγές & Νέα", path: "/changelog", key: "changelog", icon: ScrollText },
+  { label: "Μηνύματα", path: "/client-messages", key: "messages", icon: MessageCircleMore },
   { label: "Ειδοποιήσεις", path: "/client-notifications", key: "notifications", icon: Bell, spacerBefore: true },
 ];
 

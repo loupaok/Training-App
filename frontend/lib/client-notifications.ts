@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Bell, Clock, Dumbbell, Euro, Mail, Megaphone, Salad } from "lucide-react";
+import { Bell, Clock, Dumbbell, Euro, Mail, Megaphone, MessageCircleMore, Salad } from "lucide-react";
 
 export interface RawNotification {
   id: number | string;
@@ -38,6 +38,7 @@ export interface ClientNotificationRow {
 
 function iconForType(type = ""): LucideIcon {
   if (type === "admin_broadcast") return Megaphone;
+  if (type === "coach_message") return MessageCircleMore;
   if (type.includes("payment")) return Euro;
   if (type.includes("subscription")) return Clock;
   if (type.includes("message")) return Mail;
@@ -48,6 +49,7 @@ function iconForType(type = ""): LucideIcon {
 
 function toneForType(type = ""): string {
   if (type === "admin_broadcast") return "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300";
+  if (type === "coach_message") return "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400";
   if (type.includes("payment")) return "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400";
   if (type.includes("subscription")) return "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400";
   if (type.includes("message")) return "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400";

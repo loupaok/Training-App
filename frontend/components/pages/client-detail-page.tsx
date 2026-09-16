@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { Plus, Search, Trash2 } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -14,8 +14,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { AreaChart } from "@tremor/react";
 import {
   Table,
   TableHeader,
@@ -54,11 +57,17 @@ interface WeeklyUpdate {
   notes?: string;
 }
 
+interface ProgressPhoto {
+  id: number | string;
+  photo_url?: string;
+  angle?: string;
+}
+
 interface ProgressUpdate {
   id: number | string;
   weight_kg?: number | string;
   submitted_at?: string;
-  photos?: unknown[];
+  photos?: ProgressPhoto[];
   notes?: string;
 }
 
@@ -103,6 +112,9 @@ interface ClientRecord {
   medical_notes?: string;
   fitness_goal?: string;
   coach_notes?: string;
+  discord_id?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
   profile_photo?: string | null;
   user_status?: string;
   status?: string;
@@ -270,9 +282,11 @@ interface StatusMetaResult {
 const dayLabels = ["Κυριακή", "Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο"];
 const tabs = [
   { id: "overview", label: "Επισκόπηση" },
+  { id: "progress", label: "Πρόοδος" },
   { id: "payments", label: "Ιστορικό Πληρωμών" },
   { id: "training", label: "Πρόγραμμα Προπόνησης" },
   { id: "nutrition", label: "Πρόγραμμα Διατροφής" },
+  { id: "messages", label: "Μηνύματα" },
 ];
 
 function emptyTrainingDay(dayOfWeek: number): TrainingDayEntry {
@@ -330,6 +344,26 @@ function money(amount?: number | string | null, currency = "EUR"): string {
   if (amount === null || amount === undefined || amount === "") return "-";
   return `${Number(amount).toFixed(2)} ${currency || "EUR"}`;
 }
+
+function daysRemaining(endDate?: string | null): string {
+  if (!endDate) return "-";
+  const end = new Date(endDate);
+  if (Number.isNaN(end.getTime())) return "-";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  const days = Math.ceil((end.getTime() - today.getTime()) / 86400000);
+  if (days < 0) return "Έληξε";
+  if (days === 0) return "Λήγει σήμερα";
+  return `${days} ημέρες`;
+}
+
+const paymentStatusLabels: Record<string, string> = {
+  completed: "Πληρωμένο",
+  pending: "Εκκρεμεί",
+  failed: "Απέτυχε",
+  refunded: "Επιστράφηκε",
+};
 
 function statusMeta(client: ClientRecord | null): StatusMetaResult {
   const userStatus = client?.user_status || client?.status;
@@ -459,7 +493,22 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
   const onboarding = client?.onboarding || {};
   const displayName = client?.full_name || client?.email || "Πελάτης";
   const currentStatus = useMemo(() => statusMeta(client), [client]);
-  const updateDay = client?.updateSchedule?.day_of_week ?? onboarding.update_day;
+
+  const createNewTrainingPlan = async () => {
+    const blank = defaultTrainingPlan();
+    setSavingTraining(true);
+    setMessage("");
+    setError("");
+    try {
+      const response = await api.put<{ plan: RawTrainingPlan }>(`/training-plans/${clientId}/full`, { ...blank, createNew: true });
+      setTrainingPlan(normalizeTrainingPlan(response.plan));
+      setMessage("Δημιουργήθηκε νέο πρόγραμμα προπόνησης. Το προηγούμενο μετακινήθηκε στο ιστορικό.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν δημιουργήθηκε νέο πρόγραμμα.");
+    } finally {
+      setSavingTraining(false);
+    }
+  };
 
   const saveTrainingPlan = async () => {
     setSavingTraining(true);
@@ -486,6 +535,22 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
       setMessage("Το πρόγραμμα διατροφής αποθηκεύτηκε.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Δεν αποθηκεύτηκε το πρόγραμμα διατροφής.");
+    } finally {
+      setSavingNutrition(false);
+    }
+  };
+
+  const createNewNutritionPlan = async () => {
+    const blank = defaultNutritionPlan();
+    setSavingNutrition(true);
+    setMessage("");
+    setError("");
+    try {
+      const response = await api.put<{ plan: RawNutritionPlan }>(`/nutrition-plans/${clientId}/full`, { ...blank, createNew: true });
+      setNutritionPlan(normalizeNutritionPlan(response.plan));
+      setMessage("Δημιουργήθηκε νέο πρόγραμμα διατροφής. Το προηγούμενο μετακινήθηκε στο ιστορικό.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν δημιουργήθηκε νέο πρόγραμμα.");
     } finally {
       setSavingNutrition(false);
     }
@@ -543,7 +608,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
 
       {!loading && client && (
         <div className="space-y-6">
-          <ClientHeader client={client} displayName={displayName} currentStatus={currentStatus} onboarding={onboarding} updateDay={updateDay} />
+          <ClientHeader client={client} displayName={displayName} currentStatus={currentStatus} onboarding={onboarding} />
 
           {currentStatus.label !== "Ενεργός" && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-500/20 dark:bg-amber-500/10">
@@ -579,39 +644,50 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
             </Card>
 
             <TabsContent value="overview" className="mt-6">
-              <OverviewTab
-                client={client}
-                onboarding={onboarding}
-                currentStatus={currentStatus}
-                onApprovePayment={approvePayment}
-                onRejectPayment={rejectPayment}
-                approvingPayment={approvingPayment}
-                rejectingPaymentId={rejectingPaymentId}
-              />
+              <OverviewTab client={client} clientId={clientId} onboarding={onboarding} onUpdated={loadClientDetail} />
+            </TabsContent>
+
+            <TabsContent value="progress" className="mt-6">
+              <ProgressTab client={client} />
             </TabsContent>
 
             <TabsContent value="payments" className="mt-6">
               <PaymentsTab
                 client={client}
+                clientId={clientId}
                 onApprovePayment={approvePayment}
                 onRejectPayment={rejectPayment}
                 approvingPayment={approvingPayment}
                 rejectingPaymentId={rejectingPaymentId}
+                onUpdated={loadClientDetail}
               />
             </TabsContent>
 
             <TabsContent value="training" className="mt-6">
               <TrainingPlanEditor
+                clientId={clientId}
                 plan={trainingPlan}
                 setPlan={setTrainingPlan}
                 exercises={exercises}
                 onSave={saveTrainingPlan}
+                onCreateNew={createNewTrainingPlan}
                 saving={savingTraining}
               />
             </TabsContent>
 
             <TabsContent value="nutrition" className="mt-6">
-              <NutritionPlanEditor plan={nutritionPlan} setPlan={setNutritionPlan} onSave={saveNutritionPlan} saving={savingNutrition} />
+              <NutritionPlanEditor
+                clientId={clientId}
+                plan={nutritionPlan}
+                setPlan={setNutritionPlan}
+                onSave={saveNutritionPlan}
+                onCreateNew={createNewNutritionPlan}
+                saving={savingNutrition}
+              />
+            </TabsContent>
+
+            <TabsContent value="messages" className="mt-6">
+              <MessagesTab clientId={clientId} />
             </TabsContent>
           </Tabs>
         </div>
@@ -629,13 +705,11 @@ function ClientHeader({
   displayName,
   currentStatus,
   onboarding,
-  updateDay,
 }: {
   client: ClientRecord;
   displayName: string;
   currentStatus: StatusMetaResult;
   onboarding: Onboarding;
-  updateDay?: number;
 }) {
   return (
     <Card className="p-6">
@@ -646,6 +720,11 @@ function ClientHeader({
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="text-3xl font-black">{displayName}</h2>
               <Badge className={`h-auto rounded-md px-3 py-1.5 text-sm font-bold ${currentStatus.className}`}>{currentStatus.label}</Badge>
+              {(client.fitness_goal || onboarding.goal) && (
+                <Badge variant="outline" className="h-auto rounded-md px-3 py-1.5 text-sm font-bold">
+                  {client.fitness_goal || onboarding.goal}
+                </Badge>
+              )}
             </div>
             <div className="mt-4 grid gap-2 text-sm font-semibold text-slate-600 dark:text-slate-400">
               <span>{client.email || "-"}</span>
@@ -656,55 +735,160 @@ function ClientHeader({
         </div>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <Metric label="Τρέχον βάρος" value={client.weight_kg ? `${client.weight_kg} kg` : "-"} />
-          <Metric label="Στόχος" value={client.fitness_goal || onboarding.goal || "-"} />
+          <Metric label="Ημέρες συνδρομής" value={daysRemaining(client.subscription?.end_date)} />
           <Metric label="Επόμενο update" value={client.updateSchedule?.next_due_date ? formatDate(client.updateSchedule.next_due_date) : "-"} />
-          <Metric label="Ημέρα update" value={updateDay === null || updateDay === undefined ? "-" : dayLabels[Number(updateDay)]} />
+          <Metric
+            label="Πληρωμή"
+            value={client.payments?.[0]?.status ? paymentStatusLabels[client.payments[0].status] || client.payments[0].status : "-"}
+          />
         </div>
       </div>
     </Card>
   );
 }
 
+interface ClientDetailsForm {
+  dateOfBirth: string;
+  gender: string;
+  heightCm: string;
+  weightKg: string;
+  fitnessGoal: string;
+  medicalNotes: string;
+  emergencyContactName: string;
+  emergencyContactPhone: string;
+  discordId: string;
+  coachNotes: string;
+}
+
+function toDetailsForm(client: ClientRecord): ClientDetailsForm {
+  return {
+    dateOfBirth: client.date_of_birth ? String(client.date_of_birth).slice(0, 10) : "",
+    gender: client.gender || "",
+    heightCm: client.height_cm !== undefined && client.height_cm !== null ? String(client.height_cm) : "",
+    weightKg: client.weight_kg !== undefined && client.weight_kg !== null ? String(client.weight_kg) : "",
+    fitnessGoal: client.fitness_goal || "",
+    medicalNotes: client.medical_notes || "",
+    emergencyContactName: client.emergency_contact_name || "",
+    emergencyContactPhone: client.emergency_contact_phone || "",
+    discordId: client.discord_id || "",
+    coachNotes: client.coach_notes || "",
+  };
+}
+
 function OverviewTab({
   client,
+  clientId,
   onboarding,
-  currentStatus,
-  onApprovePayment,
-  onRejectPayment,
-  approvingPayment,
-  rejectingPaymentId,
+  onUpdated,
 }: {
   client: ClientRecord;
+  clientId: string;
   onboarding: Onboarding;
-  currentStatus: StatusMetaResult;
-  onApprovePayment: (paymentId: number | string) => void;
-  onRejectPayment: (paymentId: number | string) => void;
-  approvingPayment: boolean;
-  rejectingPaymentId: number | string | null;
+  onUpdated: () => void;
 }) {
+  const [form, setForm] = useState<ClientDetailsForm>(() => toDetailsForm(client));
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saveError, setSaveError] = useState("");
+
+  useEffect(() => {
+    setForm(toDetailsForm(client));
+  }, [client]);
+
+  const updateField = <K extends keyof ClientDetailsForm>(field: K, value: ClientDetailsForm[K]) => {
+    setForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const saveDetails = async () => {
+    setSaving(true);
+    setSaveMessage("");
+    setSaveError("");
+    try {
+      await api.put(`/clients/${clientId}/details`, form);
+      setSaveMessage("Τα στοιχεία αποθηκεύτηκαν.");
+      onUpdated();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Δεν έγινε αποθήκευση.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {(saveMessage || saveError) && (
+        <div
+          className={`rounded-lg border p-4 text-sm font-bold ${
+            saveError
+              ? "border-red-200 bg-red-50 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400"
+              : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-400"
+          }`}
+        >
+          {saveError || saveMessage}
+        </div>
+      )}
+
       <section className="grid gap-6 xl:grid-cols-3">
         <InfoCard title="Στοιχεία">
-          <Info label="Ημερομηνία γέννησης" value={formatDate(client.date_of_birth || onboarding.date_of_birth)} />
-          <Info label="Ύψος" value={client.height_cm ? `${client.height_cm} cm` : "-"} />
-          <Info label="Φύλο" value={client.gender || "-"} />
-          <Info label="Ιατρικές σημειώσεις" value={client.medical_notes || "-"} />
+          <div className="space-y-3">
+            <EditField label="Ημερομηνία γέννησης" type="date" value={form.dateOfBirth} onChange={(value) => updateField("dateOfBirth", value)} />
+            <div>
+              <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Φύλο</Label>
+              <Select
+                items={[
+                  { value: "male", label: "Άνδρας" },
+                  { value: "female", label: "Γυναίκα" },
+                  { value: "other", label: "Άλλο" },
+                ]}
+                value={form.gender}
+                onValueChange={(value) => updateField("gender", value ?? "")}
+              >
+                <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold">
+                  <SelectValue placeholder="Επιλογή" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="male">Άνδρας</SelectItem>
+                  <SelectItem value="female">Γυναίκα</SelectItem>
+                  <SelectItem value="other">Άλλο</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <EditField label="Ύψος (cm)" type="number" value={form.heightCm} onChange={(value) => updateField("heightCm", value)} />
+            <EditField label="Βάρος (kg)" type="number" value={form.weightKg} onChange={(value) => updateField("weightKg", value)} />
+            <EditField label="Στόχος" value={form.fitnessGoal} onChange={(value) => updateField("fitnessGoal", value)} />
+            <div>
+              <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Ιατρικές σημειώσεις</Label>
+              <Textarea className="mt-1" value={form.medicalNotes} onChange={(event) => updateField("medicalNotes", event.target.value)} />
+            </div>
+          </div>
         </InfoCard>
         <InfoCard title="Συνδρομή">
-          <Info label="Κατάσταση" value={client.subscription?.status || currentStatus.label} />
+          <Info label="Κατάσταση" value={client.subscription?.status || "-"} />
           <Info label="Έναρξη" value={formatDate(client.subscription?.start_date)} />
           <Info label="Λήξη" value={formatDate(client.subscription?.end_date)} />
           <Info label="Πακέτο" value={onboarding.selected_package || "-"} />
+          <div className="mt-3 space-y-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+            <EditField label="Επαφή έκτακτης ανάγκης" value={form.emergencyContactName} onChange={(value) => updateField("emergencyContactName", value)} />
+            <EditField label="Τηλέφωνο έκτακτης ανάγκης" value={form.emergencyContactPhone} onChange={(value) => updateField("emergencyContactPhone", value)} />
+          </div>
         </InfoCard>
-        <InfoCard title="Social Media">
+        <InfoCard title="Social Media & Discord">
           {client.socialLinks?.length ? (
             client.socialLinks.map((item) => <Info key={`${item.platform}-${item.url}`} label={item.platform} value={item.url} />)
           ) : (
             <EmptyInline text="Δεν υπάρχουν social links." />
           )}
+          <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+            <EditField label="Discord ID" value={form.discordId} onChange={(value) => updateField("discordId", value)} />
+          </div>
         </InfoCard>
       </section>
+
+      <div className="flex justify-end">
+        <Button type="button" onClick={saveDetails} disabled={saving} className="h-10 px-6 font-black">
+          {saving ? "Αποθήκευση..." : "Αποθήκευση στοιχείων"}
+        </Button>
+      </div>
 
       <InfoCard title="Onboarding φόρμα">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -720,94 +904,60 @@ function OverviewTab({
         </div>
       </InfoCard>
 
-      <section className="grid gap-6 xl:grid-cols-2">
-        <ListCard title="Πληρωμές">
-          {client.payments?.length ? (
-            client.payments.map((payment) => (
-              <div key={payment.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <div className="font-black text-slate-950 dark:text-slate-50">{money(payment.amount, payment.currency)}</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{formatDateTime(payment.created_at)}</div>
-                  {payment.method === "bank_transfer" && (
-                    <div className="mt-1 text-xs font-bold text-slate-400 dark:text-slate-500">Τραπεζικό έμβασμα · {payment.reference_number || "-"}</div>
-                  )}
-                </div>
-                <Badge
-                  className={`h-auto w-fit rounded-md px-3 py-1 text-sm font-black ${
-                    payment.status === "completed"
-                      ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
-                      : payment.status === "pending"
-                        ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"
-                        : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                  }`}
-                >
-                  {payment.status === "completed" ? "Εγκρίθηκε" : payment.status === "pending" ? "Εκκρεμής" : payment.status || "-"}
-                </Badge>
-                {payment.status === "pending" && (
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      onClick={() => onApprovePayment(payment.id)}
-                      disabled={approvingPayment}
-                      className="h-9 bg-emerald-600 px-4 text-sm font-black text-white hover:bg-emerald-700"
-                    >
-                      {approvingPayment ? "Έγκριση..." : "Έγκριση"}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => onRejectPayment(payment.id)}
-                      disabled={rejectingPaymentId === payment.id}
-                      className="h-9 border-red-200 px-4 text-sm font-black text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
-                    >
-                      {rejectingPaymentId === payment.id ? "Απόρριψη..." : "Απόρριψη"}
-                    </Button>
-                  </div>
-                )}
+      <ListCard title="Πληρωμές">
+        {client.payments?.length ? (
+          client.payments.slice(0, 5).map((payment) => (
+            <div key={payment.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="font-black text-slate-950 dark:text-slate-50">{money(payment.amount, payment.currency)}</div>
+                <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{formatDateTime(payment.created_at)}</div>
               </div>
-            ))
-          ) : (
-            <EmptyRow text="Δεν υπάρχουν πληρωμές ακόμα." />
-          )}
-        </ListCard>
-        <ListCard title="Εβδομαδιαία updates">
-          {client.weeklyUpdates?.length ? (
-            client.weeklyUpdates.map((update) => (
-              <DataRow
-                key={update.id}
-                title={update.weight_kg ? `${update.weight_kg} kg` : "Update"}
-                meta={formatDateTime(update.submitted_at)}
-                badge={`${update.training_score || "-"} / ${update.nutrition_score || "-"}`}
-                description={update.notes}
-              />
-            ))
-          ) : (
-            <EmptyRow text="Δεν υπάρχουν εβδομαδιαία updates ακόμα." />
-          )}
-        </ListCard>
-      </section>
-
-      <ListCard title="Progress updates">
-        {client.progressUpdates?.length ? (
-          client.progressUpdates.map((update) => (
-            <DataRow
-              key={update.id}
-              title={update.weight_kg ? `${update.weight_kg} kg` : "Progress update"}
-              meta={formatDateTime(update.submitted_at)}
-              badge={update.photos?.length ? `${update.photos.length} φωτογραφίες` : "Χωρίς φωτογραφίες"}
-              description={update.notes}
-            />
+              <Badge
+                className={`h-auto w-fit rounded-md px-3 py-1 text-sm font-black ${
+                  payment.status === "completed"
+                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
+                    : payment.status === "pending"
+                      ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"
+                      : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                }`}
+              >
+                {payment.status === "completed" ? "Εγκρίθηκε" : payment.status === "pending" ? "Εκκρεμής" : payment.status || "-"}
+              </Badge>
+            </div>
           ))
         ) : (
-          <EmptyRow text="Δεν υπάρχει progress ακόμα." />
+          <EmptyRow text="Δεν υπάρχουν πληρωμές ακόμα." />
         )}
       </ListCard>
 
       <InfoCard title="Ιδιωτικές σημειώσεις coach">
-        <div className="min-h-24 rounded-md bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-900 dark:bg-amber-500/10 dark:text-amber-300">
-          {client.coach_notes || "Δεν υπάρχουν σημειώσεις coach."}
-        </div>
+        <p className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">Ορατές μόνο σε coach/admin — ο πελάτης δεν τις βλέπει ποτέ.</p>
+        <Textarea
+          className="min-h-24"
+          value={form.coachNotes}
+          onChange={(event) => updateField("coachNotes", event.target.value)}
+          placeholder="Δεν υπάρχουν σημειώσεις coach."
+        />
       </InfoCard>
+    </div>
+  );
+}
+
+function EditField({
+  label,
+  value,
+  onChange,
+  type = "text",
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+}) {
+  return (
+    <div>
+      <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">{label}</Label>
+      <Input type={type} className="mt-1 h-10 text-sm font-semibold" value={value} onChange={(event) => onChange(event.target.value)} />
     </div>
   );
 }
@@ -818,25 +968,110 @@ function OverviewTab({
 
 function PaymentsTab({
   client,
+  clientId,
   onApprovePayment,
   onRejectPayment,
   approvingPayment,
   rejectingPaymentId,
+  onUpdated,
 }: {
   client: ClientRecord;
+  clientId: string;
   onApprovePayment: (paymentId: number | string) => void;
   onRejectPayment: (paymentId: number | string) => void;
   approvingPayment: boolean;
   rejectingPaymentId: number | string | null;
+  onUpdated: () => void;
 }) {
   const payments = client.payments || [];
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ amount: "", method: "cash", status: "completed", referenceNumber: "", notes: "" });
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  const submitManualPayment = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setFormError("");
+    try {
+      await api.post(`/clients/${clientId}/payments`, { ...form, amount: Number(form.amount) });
+      setOpen(false);
+      setForm({ amount: "", method: "cash", status: "completed", referenceNumber: "", notes: "" });
+      onUpdated();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Δεν καταχωρήθηκε η πληρωμή.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
-    <Card className="overflow-hidden p-0">
-      <CardHeader className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
-        <CardTitle className="text-xl font-black">Ιστορικό Πληρωμών</CardTitle>
-        <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">Όλες οι πληρωμές του πελάτη και οι χειροκίνητες ενέργειες έγκρισης.</p>
-      </CardHeader>
+    <div className="space-y-6">
+      <Card className="p-6">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Info label="Κατάσταση πληρωμής" value={client.payments?.[0]?.status ? paymentStatusLabels[client.payments[0].status] || client.payments[0].status : "-"} />
+          <Info label="Συνδρομή" value={`${formatDate(client.subscription?.start_date)} — ${formatDate(client.subscription?.end_date)}`} />
+          <Info label="Ημέρες που απομένουν" value={daysRemaining(client.subscription?.end_date)} />
+        </div>
+      </Card>
+
+      <Card className="overflow-hidden p-0">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-800">
+          <div>
+            <CardTitle className="text-xl font-black">Ιστορικό Πληρωμών</CardTitle>
+            <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">Όλες οι πληρωμές του πελάτη και οι χειροκίνητες ενέργειες έγκρισης.</p>
+          </div>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger render={<Button>Νέα Πληρωμή</Button>} />
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Νέα Πληρωμή</DialogTitle>
+                <DialogDescription>Καταχώρησε μια πληρωμή που έγινε εκτός εφαρμογής (μετρητά, κάρτα κ.λπ.).</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={submitManualPayment} className="space-y-4">
+                {formError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+                    {formError}
+                  </div>
+                )}
+                <EditField label="Ποσό (EUR)" type="number" value={form.amount} onChange={(value) => setForm((f) => ({ ...f, amount: value }))} />
+                <div>
+                  <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Τρόπος πληρωμής</Label>
+                  <Select
+                    items={[
+                      { value: "cash", label: "Μετρητά" },
+                      { value: "bank_transfer", label: "Τραπεζικό έμβασμα" },
+                      { value: "card", label: "Κάρτα" },
+                      { value: "paypal", label: "PayPal" },
+                      { value: "stripe", label: "Stripe" },
+                      { value: "other", label: "Άλλο" },
+                    ]}
+                    value={form.method}
+                    onValueChange={(value) => value && setForm((f) => ({ ...f, method: value }))}
+                  >
+                    <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Μετρητά</SelectItem>
+                      <SelectItem value="bank_transfer">Τραπεζικό έμβασμα</SelectItem>
+                      <SelectItem value="card">Κάρτα</SelectItem>
+                      <SelectItem value="paypal">PayPal</SelectItem>
+                      <SelectItem value="stripe">Stripe</SelectItem>
+                      <SelectItem value="other">Άλλο</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <EditField label="Reference" value={form.referenceNumber} onChange={(value) => setForm((f) => ({ ...f, referenceNumber: value }))} />
+                <DialogFooter>
+                  <Button type="submit" disabled={saving}>
+                    {saving ? "Αποθήκευση..." : "Καταχώρηση"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </CardHeader>
 
       <Table>
         <TableHeader className="border-b border-slate-200 bg-slate-50 text-xs font-black uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-400">
@@ -907,7 +1142,8 @@ function PaymentsTab({
           )}
         </TableBody>
       </Table>
-    </Card>
+      </Card>
+    </div>
   );
 }
 
@@ -924,22 +1160,152 @@ function PaymentStatus({ status }: { status?: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// Progress tab
+// ---------------------------------------------------------------------------
+
+function exportWeeklyUpdatesCsv(updates: WeeklyUpdate[], clientName: string) {
+  const header = ["Ημερομηνία", "Βάρος (kg)", "Training rating", "Nutrition rating", "Notes"];
+  const rows = updates.map((update) => [
+    formatDateTime(update.submitted_at),
+    update.weight_kg ?? "",
+    update.training_score ?? "",
+    update.nutrition_score ?? "",
+    (update.notes || "").replace(/"/g, '""'),
+  ]);
+  const csv = [header, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `weekly-updates-${slugifyName(clientName)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function slugifyName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "client";
+}
+
+function ProgressTab({ client }: { client: ClientRecord }) {
+  const weeklyUpdates = client.weeklyUpdates || [];
+  const chartData = [...weeklyUpdates]
+    .filter((update) => update.weight_kg)
+    .reverse()
+    .map((update) => ({ date: formatDate(update.submitted_at), Βάρος: Number(update.weight_kg) }));
+
+  const recentPhotos = (client.progressUpdates || [])
+    .flatMap((update) => update.photos || [])
+    .slice(0, 3);
+
+  return (
+    <div className="space-y-6">
+      <Card className="p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-black">Εξέλιξη βάρους</h3>
+        </div>
+        {chartData.length ? (
+          <AreaChart className="h-64" data={chartData} index="date" categories={["Βάρος"]} colors={["blue"]} showLegend={false} showAnimation />
+        ) : (
+          <EmptyRow text="Δεν υπάρχουν αρκετά δεδομένα για γράφημα ακόμα." />
+        )}
+      </Card>
+
+      <Card className="p-5">
+        <h3 className="mb-4 text-lg font-black">Πρόσφατες φωτογραφίες προόδου</h3>
+        {recentPhotos.length ? (
+          <div className="grid grid-cols-3 gap-3">
+            {recentPhotos.map((photo) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={photo.id}
+                src={resolveMediaUrl(photo.photo_url)}
+                alt=""
+                className="aspect-square w-full rounded-lg object-cover"
+              />
+            ))}
+          </div>
+        ) : (
+          <EmptyRow text="Δεν υπάρχουν φωτογραφίες προόδου ακόμα." />
+        )}
+      </Card>
+
+      <Card className="overflow-hidden p-0">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-800">
+          <CardTitle className="text-xl font-black">Εβδομαδιαία Updates</CardTitle>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={!weeklyUpdates.length}
+            onClick={() => exportWeeklyUpdatesCsv(weeklyUpdates, client.full_name || client.email || "client")}
+          >
+            Export CSV
+          </Button>
+        </CardHeader>
+        <Table>
+          <TableHeader className="border-b border-slate-200 bg-slate-50 text-xs font-black uppercase text-slate-500 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-400">
+            <TableRow>
+              <TableHead className="px-5 py-4">Ημερομηνία</TableHead>
+              <TableHead className="px-5 py-4">Βάρος</TableHead>
+              <TableHead className="px-5 py-4">Training rating</TableHead>
+              <TableHead className="px-5 py-4">Nutrition rating</TableHead>
+              <TableHead className="px-5 py-4">Notes</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody className="divide-y divide-slate-100 dark:divide-slate-800">
+            {weeklyUpdates.map((update) => (
+              <TableRow key={update.id}>
+                <TableCell className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{formatDateTime(update.submitted_at)}</TableCell>
+                <TableCell className="px-5 py-4 font-black text-slate-950 dark:text-slate-50">{update.weight_kg ? `${update.weight_kg} kg` : "-"}</TableCell>
+                <TableCell className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{update.training_score ?? "-"}</TableCell>
+                <TableCell className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{update.nutrition_score ?? "-"}</TableCell>
+                <TableCell className="px-5 py-4 font-semibold text-slate-500 dark:text-slate-400">{update.notes || "-"}</TableCell>
+              </TableRow>
+            ))}
+            {!weeklyUpdates.length && (
+              <TableRow>
+                <TableCell colSpan={5} className="px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
+                  Δεν υπάρχουν εβδομαδιαία updates ακόμα.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Training plan editor
 // ---------------------------------------------------------------------------
 
 function TrainingPlanEditor({
+  clientId,
   plan,
   setPlan,
   exercises,
   onSave,
+  onCreateNew,
   saving,
 }: {
+  clientId: string;
   plan: TrainingPlanState;
   setPlan: React.Dispatch<React.SetStateAction<TrainingPlanState>>;
   exercises: LibraryExercise[];
   onSave: () => void;
+  onCreateNew: () => void;
   saving: boolean;
 }) {
+  const [history, setHistory] = useState<PlanHistoryRow[]>([]);
+  useEffect(() => {
+    api
+      .get<PlanHistoryRow[]>(`/training-plans/${clientId}`)
+      .then(setHistory)
+      .catch(() => setHistory([]));
+    // Re-fetch once a save/create-new finishes (saving flips back to false) so history
+    // reflects the just-archived plan without needing a full page reload.
+  }, [clientId, saving]);
+
   const initialIndex = plan.days?.findIndex((day) => day.exercises?.length) ?? 0;
   const [activeDayIndex, setActiveDayIndex] = useState(Math.max(0, initialIndex));
   const visibleDays = (plan.days || []).slice(0, plan.dayCount || plan.days?.length || 1);
@@ -993,6 +1359,7 @@ function TrainingPlanEditor({
         title="Πρόγραμμα Προπόνησης"
         subtitle="Διάλεξε ημέρες, βάλε ασκήσεις από τη βιβλιοθήκη και συμπλήρωσε Σετ, Επαναλ., Tempo και Rest."
         onSave={onSave}
+        onCreateNew={onCreateNew}
         saving={saving}
       />
 
@@ -1122,6 +1489,8 @@ function TrainingPlanEditor({
         )}
 
         <Field label="Γενικές σημειώσεις προγράμματος" value={plan.description} onChange={(value) => setPlan({ ...plan, description: value })} />
+
+        <PlanHistory rows={history} countLabel={(row) => `${row.day_count ?? 0} ημέρες, ${row.exercise_count ?? 0} ασκήσεις`} />
       </div>
     </Card>
   );
@@ -1212,16 +1581,28 @@ function ExercisePicker({
 // ---------------------------------------------------------------------------
 
 function NutritionPlanEditor({
+  clientId,
   plan,
   setPlan,
   onSave,
+  onCreateNew,
   saving,
 }: {
+  clientId: string;
   plan: NutritionPlanState;
   setPlan: React.Dispatch<React.SetStateAction<NutritionPlanState>>;
   onSave: () => void;
+  onCreateNew: () => void;
   saving: boolean;
 }) {
+  const [history, setHistory] = useState<PlanHistoryRow[]>([]);
+  useEffect(() => {
+    api
+      .get<PlanHistoryRow[]>(`/nutrition-plans/${clientId}`)
+      .then(setHistory)
+      .catch(() => setHistory([]));
+  }, [clientId, saving]);
+
   const updateMeal = (mealIndex: number, patch: Partial<MealEntry>) => {
     setPlan((current) => ({
       ...current,
@@ -1263,6 +1644,7 @@ function NutritionPlanEditor({
         title="Πρόγραμμα Διατροφής"
         subtitle="Ένα ενεργό πρόγραμμα διατροφής για τον πελάτη. Το ανανεώνει μόνο ο admin όταν χρειαστεί."
         onSave={onSave}
+        onCreateNew={onCreateNew}
         saving={saving}
       />
       <div className="space-y-6 p-6">
@@ -1339,6 +1721,8 @@ function NutritionPlanEditor({
           <Plus className="h-4 w-4" />
           Προσθήκη γεύματος
         </Button>
+
+        <PlanHistory rows={history} countLabel={(row) => (row.daily_calories ? `${row.daily_calories} kcal` : "-")} />
       </div>
     </Card>
   );
@@ -1348,16 +1732,93 @@ function NutritionPlanEditor({
 // Shared small components
 // ---------------------------------------------------------------------------
 
-function PlanHeader({ title, subtitle, onSave, saving }: { title: string; subtitle: string; onSave: () => void; saving: boolean }) {
+function PlanHeader({
+  title,
+  subtitle,
+  onSave,
+  onCreateNew,
+  saving,
+}: {
+  title: string;
+  subtitle: string;
+  onSave: () => void;
+  onCreateNew?: () => void;
+  saving: boolean;
+}) {
   return (
     <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-center lg:justify-between dark:border-slate-800">
       <div>
         <h2 className="text-xl font-black">{title}</h2>
         <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{subtitle}</p>
       </div>
-      <Button type="button" onClick={onSave} disabled={saving} className="h-11 bg-red-600 px-5 text-sm font-black text-white shadow-lg shadow-red-200 hover:bg-red-700">
-        {saving ? "Αποθήκευση..." : "Αποθήκευση"}
-      </Button>
+      <div className="flex gap-2">
+        {onCreateNew && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              if (window.confirm("Το τρέχον πλάνο θα μετακινηθεί στο ιστορικό και θα ξεκινήσει ένα καινούργιο, κενό πλάνο. Συνέχεια;")) {
+                onCreateNew();
+              }
+            }}
+            disabled={saving}
+            className="h-11 px-5 text-sm font-black"
+          >
+            Νέο Πλάνο
+          </Button>
+        )}
+        <Button type="button" onClick={onSave} disabled={saving} className="h-11 bg-red-600 px-5 text-sm font-black text-white shadow-lg shadow-red-200 hover:bg-red-700">
+          {saving ? "Αποθήκευση..." : "Αποθήκευση"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+interface PlanHistoryRow {
+  id: number | string;
+  title: string;
+  created_at?: string;
+  status?: string;
+  day_count?: number;
+  exercise_count?: number;
+  daily_calories?: number;
+}
+
+function PlanHistory({ rows, countLabel }: { rows: PlanHistoryRow[]; countLabel: (row: PlanHistoryRow) => string }) {
+  const [open, setOpen] = useState(false);
+  const previous = rows.filter((row) => row.status !== "active");
+  if (!previous.length) return null;
+
+  const statusLabels: Record<string, string> = { archived: "Αρχειοθετημένο", completed: "Ολοκληρωμένο", draft: "Πρόχειρο" };
+
+  return (
+    <div className="rounded-lg border border-slate-200 dark:border-slate-800">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center justify-between px-5 py-4 text-left text-sm font-black text-slate-700 dark:text-slate-200"
+      >
+        Ιστορικό πλάνων ({previous.length})
+        <span className="text-xs font-bold text-slate-400">{open ? "Απόκρυψη" : "Εμφάνιση"}</span>
+      </button>
+      {open && (
+        <div className="divide-y divide-slate-100 border-t border-slate-200 dark:divide-slate-800 dark:border-slate-800">
+          {previous.map((row) => (
+            <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-sm">
+              <div>
+                <div className="font-bold text-slate-900 dark:text-slate-50">{row.title}</div>
+                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  {formatDate(row.created_at)} · {countLabel(row)}
+                </div>
+              </div>
+              <Badge variant="outline" className="font-bold">
+                {statusLabels[row.status || ""] || row.status || "-"}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1466,25 +1927,108 @@ function Info({ label, value }: { label: string; value?: string | number | null 
   );
 }
 
-function DataRow({ title, meta, badge, description }: { title: string; meta: string; badge: string; description?: string }) {
-  return (
-    <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
-      <div>
-        <div className="font-black text-slate-950 dark:text-slate-50">{title}</div>
-        <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{meta}</div>
-        {description && <div className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">{description}</div>}
-      </div>
-      <div className="w-fit rounded-md bg-slate-100 px-3 py-1 text-sm font-black text-slate-700 dark:bg-slate-800 dark:text-slate-300">{badge}</div>
-    </div>
-  );
-}
-
 function EmptyRow({ text }: { text: string }) {
   return <div className="p-5 text-sm font-semibold text-slate-500 dark:text-slate-400">{text}</div>;
 }
 
 function EmptyInline({ text }: { text: string }) {
   return <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">{text}</div>;
+}
+
+// ---------------------------------------------------------------------------
+// Messages tab
+// ---------------------------------------------------------------------------
+
+interface MessageRow {
+  id: number | string;
+  sender_role: "coach" | "client";
+  body: string;
+  created_at?: string;
+}
+
+function MessagesTab({ clientId }: { clientId: string }) {
+  const [messages, setMessages] = useState<MessageRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadMessages = () => {
+    api
+      .get<MessageRow[]>(`/clients/${clientId}/messages`)
+      .then(setMessages)
+      .catch(() => setMessages([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadMessages();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId]);
+
+  const sendMessage = async () => {
+    if (!draft.trim()) return;
+    setSending(true);
+    setError("");
+    try {
+      await api.post(`/clients/${clientId}/messages`, { message: draft.trim() });
+      setDraft("");
+      loadMessages();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν στάλθηκε το μήνυμα.");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Card className="overflow-hidden p-0">
+      <CardHeader className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
+        <CardTitle className="text-xl font-black">Μηνύματα</CardTitle>
+        <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">Ασύγχρονη επικοινωνία με τον πελάτη.</p>
+      </CardHeader>
+
+      <div className="max-h-96 space-y-3 overflow-y-auto p-6">
+        {loading && <EmptyRow text="Φόρτωση μηνυμάτων..." />}
+        {!loading && !messages.length && <EmptyRow text="Δεν υπάρχουν μηνύματα ακόμα." />}
+        {messages.map((item) => (
+          <div key={item.id} className={`flex ${item.sender_role === "coach" ? "justify-end" : "justify-start"}`}>
+            <div
+              className={`max-w-[75%] rounded-lg px-4 py-3 text-sm font-semibold ${
+                item.sender_role === "coach"
+                  ? "bg-red-600 text-white"
+                  : "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-50"
+              }`}
+            >
+              <div>{item.body}</div>
+              <div className={`mt-1 text-xs font-bold ${item.sender_role === "coach" ? "text-red-100" : "text-slate-500 dark:text-slate-400"}`}>
+                {formatDateTime(item.created_at)}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-3 border-t border-slate-200 p-6 dark:border-slate-800">
+        {error && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+            {error}
+          </div>
+        )}
+        <Textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          placeholder="Γράψε ένα μήνυμα..."
+          className="min-h-20"
+        />
+        <div className="flex justify-end">
+          <Button type="button" onClick={sendMessage} disabled={sending || !draft.trim()}>
+            {sending ? "Αποστολή..." : "Αποστολή"}
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
 // ---------------------------------------------------------------------------
