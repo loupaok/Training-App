@@ -467,6 +467,31 @@ async function ensurePaymentProofColumns(connection) {
   }
 }
 
+async function ensureClientDetailColumns(connection) {
+  try {
+    await connection.query('ALTER TABLE clients ADD COLUMN discord_id VARCHAR(50) NULL');
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
+}
+
+async function ensureMessagesSchema(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      client_id INT NOT NULL,
+      coach_id INT NOT NULL,
+      sender_role ENUM('coach', 'client') NOT NULL,
+      body TEXT NOT NULL,
+      read_at TIMESTAMP NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (coach_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_client_id (client_id)
+    )
+  `);
+}
+
 async function ensureNotificationsSchema(connection) {
   await connection.query(`
     CREATE TABLE IF NOT EXISTS notifications (
@@ -1360,6 +1385,11 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
                 lp.status AS payment_status,
                 lp.method AS payment_method,
                 s.status AS subscription_status,
+                s.end_date AS subscription_end_date,
+                CASE
+                  WHEN s.end_date IS NOT NULL AND s.end_date >= CURDATE() AND s.end_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY) THEN 1
+                  ELSE 0
+                END AS is_expiring_soon,
                 CASE
                   WHEN u.status = 'active' THEN 'active'
                   WHEN u.status = 'expired' THEN 'inactive'
@@ -1416,6 +1446,11 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
                 lp.status AS payment_status,
                 lp.method AS payment_method,
                 s.status AS subscription_status,
+                s.end_date AS subscription_end_date,
+                CASE
+                  WHEN s.end_date IS NOT NULL AND s.end_date >= CURDATE() AND s.end_date <= DATE_ADD(CURDATE(), INTERVAL 7 DAY) THEN 1
+                  ELSE 0
+                END AS is_expiring_soon,
                 CASE
                   WHEN u.status = 'active' THEN 'active'
                   WHEN u.status = 'expired' THEN 'inactive'
@@ -1672,12 +1707,13 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
     const connection = await pool.getConnection();
     await ensureOnboardingSchema(connection);
     await ensurePaymentProofColumns(connection);
+    await ensureClientDetailColumns(connection);
 
     const [rows] = await connection.query(
       `SELECT u.id, u.email, u.full_name, u.profile_photo, u.bio, u.is_active,
               u.status AS user_status, u.created_at, u.last_seen_at,
               c.date_of_birth, c.gender, c.phone, c.height_cm, c.weight_kg,
-              c.fitness_goal, c.medical_notes, c.coach_notes,
+              c.fitness_goal, c.medical_notes, c.coach_notes, c.discord_id,
               c.emergency_contact_name, c.emergency_contact_phone,
               cc.status AS coaching_status, cc.coach_id
        FROM users u
@@ -1753,6 +1789,219 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// PUT /clients/:id/details — coach edits a client's personal info / coach-only notes
+router.put('/:id/details', authorizeRole(['coach', 'admin']), [
+  body('dateOfBirth').optional({ nullable: true }).isString(),
+  body('gender').optional({ nullable: true }).isIn(['male', 'female', 'other']),
+  body('heightCm').optional({ nullable: true }).isNumeric(),
+  body('weightKg').optional({ nullable: true }).isNumeric(),
+  body('fitnessGoal').optional({ nullable: true }).isString(),
+  body('medicalNotes').optional({ nullable: true }).isString(),
+  body('emergencyContactName').optional({ nullable: true }).isString(),
+  body('emergencyContactPhone').optional({ nullable: true }).isString(),
+  body('discordId').optional({ nullable: true }).isString(),
+  body('coachNotes').optional({ nullable: true }).isString()
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await ensureClientDetailColumns(connection);
+
+    const fieldMap = {
+      dateOfBirth: 'date_of_birth',
+      gender: 'gender',
+      heightCm: 'height_cm',
+      weightKg: 'weight_kg',
+      fitnessGoal: 'fitness_goal',
+      medicalNotes: 'medical_notes',
+      emergencyContactName: 'emergency_contact_name',
+      emergencyContactPhone: 'emergency_contact_phone',
+      discordId: 'discord_id',
+      coachNotes: 'coach_notes'
+    };
+
+    const updates = [];
+    const values = [];
+    for (const [bodyKey, column] of Object.entries(fieldMap)) {
+      if (req.body[bodyKey] !== undefined) {
+        updates.push(`${column} = ?`);
+        values.push(req.body[bodyKey] === '' ? null : req.body[bodyKey]);
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ message: 'No updates provided' });
+    }
+
+    values.push(req.params.id);
+    const [result] = await connection.query(`UPDATE clients SET ${updates.join(', ')} WHERE user_id = ?`, values);
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'Client not found' });
+    }
+
+    res.json({ message: 'Client details updated' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+// POST /clients/:id/payments — record a manual payment (Coach/Admin only)
+router.post('/:id/payments', authorizeRole(['coach', 'admin']), [
+  body('amount').isFloat({ gt: 0 }).withMessage('Amount must be greater than 0'),
+  body('method').isIn(['cash', 'bank_transfer', 'card', 'paypal', 'stripe', 'other']),
+  body('status').optional().isIn(['pending', 'completed', 'failed', 'refunded']),
+  body('referenceNumber').optional({ nullable: true }).isString(),
+  body('notes').optional({ nullable: true }).isString()
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    const { amount, method, status = 'completed', referenceNumber, notes } = req.body;
+    const [result] = await connection.query(
+      `INSERT INTO payments (client_id, coach_id, amount, currency, method, status, reference_number, notes, paid_at)
+       VALUES (?, ?, ?, 'EUR', ?, ?, ?, ?, ?)`,
+      [
+        req.params.id,
+        req.user.id,
+        amount,
+        method,
+        status,
+        referenceNumber || null,
+        notes || null,
+        status === 'completed' ? new Date() : null
+      ]
+    );
+
+    res.status(201).json({ message: 'Payment recorded', id: result.insertId });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+// GET/POST /clients/me/messages — client-side view/send for their own thread
+// (declared before the /:id/messages wildcard routes below so "me" is never
+// captured as an :id value)
+router.get('/me/messages', authorizeRole(['client']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureMessagesSchema(connection);
+    const [rows] = await connection.query(
+      'SELECT id, sender_role, body, read_at, created_at FROM messages WHERE client_id = ? ORDER BY created_at ASC',
+      [req.user.id]
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.post('/me/messages', authorizeRole(['client']), [
+  body('message').isString().notEmpty()
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await ensureMessagesSchema(connection);
+    const [coachRows] = await connection.query(
+      'SELECT coach_id FROM coach_clients WHERE client_id = ? ORDER BY created_at DESC LIMIT 1',
+      [req.user.id]
+    );
+    if (coachRows.length === 0) {
+      return res.status(400).json({ message: 'No coach assigned yet' });
+    }
+    const coachId = coachRows[0].coach_id;
+
+    await connection.query(
+      `INSERT INTO messages (client_id, coach_id, sender_role, body) VALUES (?, ?, 'client', ?)`,
+      [req.user.id, coachId, req.body.message]
+    );
+    await notifyUser(connection, coachId, {
+      type: 'client_message',
+      title: 'Νέο μήνυμα από πελάτη',
+      body: req.body.message,
+      linkUrl: `/clients/${req.user.id}`
+    });
+
+    res.status(201).json({ message: 'Message sent' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+// GET/POST /clients/:id/messages — coach-side view/send for one client's thread
+router.get('/:id/messages', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureMessagesSchema(connection);
+    const [rows] = await connection.query(
+      'SELECT id, sender_role, body, read_at, created_at FROM messages WHERE client_id = ? ORDER BY created_at ASC',
+      [req.params.id]
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.post('/:id/messages', authorizeRole(['coach', 'admin']), [
+  body('message').isString().notEmpty()
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await ensureMessagesSchema(connection);
+    await connection.query(
+      `INSERT INTO messages (client_id, coach_id, sender_role, body) VALUES (?, ?, 'coach', ?)`,
+      [req.params.id, req.user.id, req.body.message]
+    );
+    await notifyUser(connection, req.params.id, {
+      type: 'coach_message',
+      title: 'Νέο μήνυμα από τον coach',
+      body: req.body.message,
+      linkUrl: '/client-messages'
+    });
+
+    res.status(201).json({ message: 'Message sent' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
   }
 });
 

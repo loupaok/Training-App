@@ -125,6 +125,7 @@ router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
       startDate = null,
       endDate = null,
       meals = [],
+      createNew = false,
     } = req.body;
 
     const coachId = req.user.id;
@@ -133,7 +134,13 @@ router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
       [clientId]
     );
 
-    let planId = existing[0]?.id;
+    // "Create New Plan" archives the previously-active plan instead of overwriting it in
+    // place, so it stays visible in plan history rather than being silently replaced.
+    if (createNew && existing[0]?.id) {
+      await connection.query("UPDATE nutrition_plans SET status = 'archived' WHERE id = ?", [existing[0].id]);
+    }
+
+    let planId = createNew ? null : existing[0]?.id;
     if (planId) {
       await connection.query(
         `UPDATE nutrition_plans

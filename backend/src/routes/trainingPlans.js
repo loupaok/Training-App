@@ -205,6 +205,7 @@ router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
       startDate = null,
       endDate = null,
       days = [],
+      createNew = false,
     } = req.body;
 
     const coachId = req.user.id;
@@ -213,7 +214,13 @@ router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
       [clientId]
     );
 
-    let planId = existing[0]?.id;
+    // "Create New Plan" archives the previously-active plan instead of overwriting it in
+    // place, so it stays visible in plan history rather than being silently replaced.
+    if (createNew && existing[0]?.id) {
+      await connection.query("UPDATE training_plans SET status = 'archived' WHERE id = ?", [existing[0].id]);
+    }
+
+    let planId = createNew ? null : existing[0]?.id;
     if (planId) {
       await connection.query(
         `UPDATE training_plans
@@ -289,7 +296,11 @@ router.get('/:clientId', authorizeRole(['coach', 'admin']), async (req, res) => 
     }
 
     const [rows] = await connection.query(
-      `SELECT tp.*, u.full_name AS coach_name
+      `SELECT tp.*, u.full_name AS coach_name,
+              (SELECT COUNT(*) FROM training_plan_days d WHERE d.training_plan_id = tp.id) AS day_count,
+              (SELECT COUNT(*) FROM training_plan_exercises e
+                 JOIN training_plan_days d2 ON d2.id = e.day_id
+                 WHERE d2.training_plan_id = tp.id) AS exercise_count
        FROM training_plans tp
        LEFT JOIN users u ON u.id = tp.coach_id
        WHERE tp.client_id = ? OR (tp.is_template = 1 AND tp.coach_id = ?)

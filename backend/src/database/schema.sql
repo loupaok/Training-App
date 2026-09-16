@@ -119,10 +119,26 @@ CREATE TABLE IF NOT EXISTS clients (
   medical_notes TEXT,
   emergency_contact_name VARCHAR(255),
   emergency_contact_phone VARCHAR(30),
+  coach_notes TEXT,
+  discord_id VARCHAR(50),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   INDEX idx_user_id (user_id)
+);
+
+-- Async per-client message thread between a coach and their client
+CREATE TABLE IF NOT EXISTS messages (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  client_id INT NOT NULL,
+  coach_id INT NOT NULL,
+  sender_role ENUM('coach', 'client') NOT NULL,
+  body TEXT NOT NULL,
+  read_at TIMESTAMP NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (coach_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX idx_client_id (client_id)
 );
 
 -- Subscription plans available on the platform
