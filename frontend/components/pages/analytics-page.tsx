@@ -54,111 +54,32 @@ interface ClientRevenueItem {
   revenue: string;
 }
 
+function emptyEntry(title: string, revenueLabel: string, labels: string[]): PeriodEntry {
+  return {
+    title,
+    revenueLabel,
+    annualRevenue: "€0",
+    comparison: "0%",
+    activeSubscriptions: 0,
+    pendingAmount: "€0",
+    churnRate: "0%",
+    endingSoon: 0,
+    activeClients: 0,
+    inactiveClients: 0,
+    revenue: labels.map((label) => ({ label, value: 0 })),
+    clients: labels.map((label) => ({ label, value: 0 })),
+  };
+}
+
+// No revenue/subscription backend yet — every period starts at zero rather than showing
+// invented sample numbers. Wire this up to real payments/subscriptions data once that exists.
 const periodData: Record<PeriodKey, PeriodEntry> = {
-  week: {
-    title: "Αυτή η εβδομάδα",
-    revenueLabel: "Έσοδα εβδομάδας",
-    annualRevenue: "€21.740",
-    comparison: "+6.1%",
-    activeSubscriptions: 98,
-    pendingAmount: "€240",
-    churnRate: "1.1%",
-    endingSoon: 4,
-    activeClients: 98,
-    inactiveClients: 14,
-    revenue: [
-      { label: "Δευ", value: 120 },
-      { label: "Τρι", value: 80 },
-      { label: "Τετ", value: 160 },
-      { label: "Πεμ", value: 220 },
-      { label: "Παρ", value: 100 },
-      { label: "Σαβ", value: 0 },
-      { label: "Κυρ", value: 0 },
-    ],
-    clients: [
-      { label: "Δευ", value: 2 },
-      { label: "Τρι", value: 1 },
-      { label: "Τετ", value: 3 },
-      { label: "Πεμ", value: 2 },
-      { label: "Παρ", value: 1 },
-      { label: "Σαβ", value: 0 },
-      { label: "Κυρ", value: 0 },
-    ],
-  },
-  month: {
-    title: "Αυτός ο μήνας",
-    revenueLabel: "Μηνιαία έσοδα",
-    annualRevenue: "€21.740",
-    comparison: "+12.4%",
-    activeSubscriptions: 98,
-    pendingAmount: "€390",
-    churnRate: "2.4%",
-    endingSoon: 12,
-    activeClients: 98,
-    inactiveClients: 14,
-    revenue: [
-      { label: "1η εβδ.", value: 1320 },
-      { label: "2η εβδ.", value: 1680 },
-      { label: "3η εβδ.", value: 1490 },
-      { label: "4η εβδ.", value: 2120 },
-    ],
-    clients: [
-      { label: "1η εβδ.", value: 7 },
-      { label: "2η εβδ.", value: 10 },
-      { label: "3η εβδ.", value: 6 },
-      { label: "4η εβδ.", value: 12 },
-    ],
-  },
-  quarter: {
-    title: "Τρέχον τρίμηνο",
-    revenueLabel: "Έσοδα τριμήνου",
-    annualRevenue: "€21.740",
-    comparison: "+8.7%",
-    activeSubscriptions: 98,
-    pendingAmount: "€740",
-    churnRate: "3.8%",
-    endingSoon: 18,
-    activeClients: 98,
-    inactiveClients: 14,
-    revenue: [
-      { label: "Απρ", value: 5140 },
-      { label: "Μαι", value: 6220 },
-      { label: "Ιουν", value: 6610 },
-    ],
-    clients: [
-      { label: "Απρ", value: 18 },
-      { label: "Μαι", value: 23 },
-      { label: "Ιουν", value: 35 },
-    ],
-  },
-  year: {
-    title: "Τρέχον έτος",
-    revenueLabel: "Ετήσια τάση εσόδων",
-    annualRevenue: "€21.740",
-    comparison: "+18.2%",
-    activeSubscriptions: 98,
-    pendingAmount: "€1.120",
-    churnRate: "6.5%",
-    endingSoon: 32,
-    activeClients: 98,
-    inactiveClients: 14,
-    revenue: [
-      { label: "Ιαν", value: 2620 },
-      { label: "Φεβ", value: 3180 },
-      { label: "Μαρ", value: 3560 },
-      { label: "Απρ", value: 5140 },
-      { label: "Μαι", value: 6220 },
-      { label: "Ιουν", value: 6610 },
-    ],
-    clients: [
-      { label: "Ιαν", value: 9 },
-      { label: "Φεβ", value: 12 },
-      { label: "Μαρ", value: 14 },
-      { label: "Απρ", value: 18 },
-      { label: "Μαι", value: 23 },
-      { label: "Ιουν", value: 35 },
-    ],
-  },
+  week: emptyEntry("Αυτή η εβδομάδα", "Έσοδα εβδομάδας", ["Δευ", "Τρι", "Τετ", "Πεμ", "Παρ", "Σαβ", "Κυρ"]),
+  month: emptyEntry("Αυτός ο μήνας", "Μηνιαία έσοδα", ["1η εβδ.", "2η εβδ.", "3η εβδ.", "4η εβδ."]),
+  quarter: emptyEntry("Τρέχον τρίμηνο", "Έσοδα τριμήνου", ["Μήνας 1", "Μήνας 2", "Μήνας 3"]),
+  year: emptyEntry("Τρέχον έτος", "Ετήσια τάση εσόδων", [
+    "Ιαν", "Φεβ", "Μαρ", "Απρ", "Μαι", "Ιουν", "Ιουλ", "Αυγ", "Σεπ", "Οκτ", "Νοε", "Δεκ",
+  ]),
 };
 
 const payments: Payment[] = [];
