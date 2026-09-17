@@ -430,14 +430,7 @@ function FoodsContent() {
       <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((food) => (
           <Card key={food.id} className="overflow-hidden p-0">
-            <div className="flex h-[100px] items-center justify-center bg-slate-100 dark:bg-slate-800">
-              {food.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={resolveMediaUrl(food.imageUrl)} alt={food.nameGr} className="h-full w-full object-cover" />
-              ) : (
-                <ImageOff className="h-8 w-8 text-slate-300 dark:text-slate-600" />
-              )}
-            </div>
+            <FoodCardImage imageUrl={food.imageUrl} name={food.nameGr} />
             <div className="space-y-2 p-4">
               <div className="flex items-start justify-between gap-2">
                 <span className="truncate font-bold" title={food.nameGr}>
@@ -673,6 +666,31 @@ function FoodsContent() {
         </DialogContent>
       </Dialog>
     </CoachShell>
+  );
+}
+
+function FoodCardImage({ imageUrl, name }: { imageUrl: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [imageUrl]);
+
+  if (!imageUrl || failed) {
+    return (
+      <div className="flex h-[100px] items-center justify-center bg-slate-100 dark:bg-slate-800">
+        <ImageOff className="h-8 w-8 text-slate-300 dark:text-slate-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-[100px] bg-slate-100 dark:bg-slate-800">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={resolveMediaUrl(imageUrl)}
+        alt={name}
+        className="h-full w-full object-cover"
+        onError={() => setFailed(true)}
+      />
+    </div>
   );
 }
 
