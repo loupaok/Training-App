@@ -6,6 +6,7 @@ import {
   LayoutGrid,
   List as ListIcon,
   RefreshCw,
+  Plus,
   Trash2,
   Eye,
   X,
@@ -15,7 +16,6 @@ import {
   Check,
   ImageOff,
   Upload,
-  Download,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,7 +23,6 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -120,7 +119,6 @@ function MediaExercisesContent() {
 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [replaceTarget, setReplaceTarget] = useState<MediaExercise | null>(null);
-  const [wgerOpen, setWgerOpen] = useState(false);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setDebouncedSearch(search), 300);
@@ -269,10 +267,6 @@ function MediaExercisesContent() {
               ))}
             </SelectContent>
           </Select>
-          <Button type="button" variant="outline" className="gap-2 font-bold" onClick={() => setWgerOpen(true)}>
-            <Download className="h-4 w-4" />
-            Fetch from wger
-          </Button>
           <Button
             type="button"
             variant={selectMode ? "default" : "outline"}
@@ -393,8 +387,14 @@ function MediaExercisesContent() {
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
-                      <Button type="button" variant="ghost" size="icon-sm" onClick={() => setReplaceTarget(item)} aria-label="Replace">
-                        <RefreshCw className="h-4 w-4" />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => setReplaceTarget(item)}
+                        aria-label={item.imageUrl ? "Replace" : "Add"}
+                      >
+                        {item.imageUrl ? <RefreshCw className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
                       </Button>
                       <Button
                         type="button"
@@ -454,7 +454,6 @@ function MediaExercisesContent() {
 
       <PreviewDialog items={items} index={previewIndex} onClose={() => setPreviewIndex(null)} onNavigate={setPreviewIndex} />
       <ReplaceImageDialog target={replaceTarget} onClose={() => setReplaceTarget(null)} onSaved={applyImageUpdate} />
-      <WgerFetchDialog open={wgerOpen} onClose={() => setWgerOpen(false)} onApplied={() => { loadStats(); setPage((current) => current); }} />
     </CoachShell>
   );
 }
@@ -502,8 +501,8 @@ function GridCard({
           </div>
         )}
         <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/0 opacity-0 transition-all duration-200 group-hover:bg-black/50 group-hover:opacity-100">
-          <IconOverlayButton label="Replace" onClick={onReplace}>
-            <RefreshCw className="h-4 w-4" />
+          <IconOverlayButton label={item.imageUrl ? "Replace" : "Add"} onClick={onReplace}>
+            {item.imageUrl ? <RefreshCw className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
           </IconOverlayButton>
           <IconOverlayButton label="Remove" onClick={onRemove} disabled={!item.imageUrl}>
             <Trash2 className="h-4 w-4" />
@@ -700,7 +699,7 @@ function ReplaceImageDialog({
     <Dialog open={Boolean(target)} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Αντικατάσταση εικόνας</DialogTitle>
+          <DialogTitle>{target?.imageUrl ? "Αντικατάσταση εικόνας" : "Προσθήκη εικόνας"}</DialogTitle>
           <DialogDescription>{target?.name}</DialogDescription>
         </DialogHeader>
 
@@ -759,127 +758,6 @@ function ReplaceImageDialog({
           </Button>
           <Button type="button" onClick={save} disabled={!file || saving}>
             {saving ? "Αποθήκευση..." : "Αποθήκευση"}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-interface WgerCandidate {
-  id: number | string;
-  name: string;
-  muscleGroup: string;
-}
-
-function WgerFetchDialog({ open, onClose, onApplied }: { open: boolean; onClose: () => void; onApplied: () => void }) {
-  const [candidates, setCandidates] = useState<WgerCandidate[]>([]);
-  const [selected, setSelected] = useState<Set<number | string>>(new Set());
-  const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(false);
-  const [result, setResult] = useState<{ updated: number; notFound: number } | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!open) return;
-    setResult(null);
-    setError("");
-    setSelected(new Set());
-    setLoading(true);
-    api
-      .get<MediaListResponse>(`/media/exercises?filter=noImage&limit=200`)
-      .then((data) => setCandidates(data.items.map((item) => ({ id: item.id, name: item.name, muscleGroup: item.muscleGroup }))))
-      .catch((err) => setError(getErrorMessage(err, "Δεν φορτώθηκαν οι ασκήσεις χωρίς εικόνα.")))
-      .finally(() => setLoading(false));
-  }, [open]);
-
-  const toggleAll = (checked: boolean) => {
-    setSelected(checked ? new Set(candidates.map((item) => item.id)) : new Set());
-  };
-
-  const toggleOne = (id: number | string) => {
-    setSelected((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const runFetch = async () => {
-    if (!selected.size) return;
-    setFetching(true);
-    setError("");
-    setResult(null);
-    try {
-      const response = await api.post<{ updated: { id: number | string }[]; notFound: { id: number | string }[] }>(
-        "/media/fetch-from-wger",
-        { exerciseIds: Array.from(selected) },
-      );
-      setResult({ updated: response.updated.length, notFound: response.notFound.length });
-      setCandidates((current) => current.filter((item) => !response.updated.some((u) => u.id === item.id)));
-      setSelected(new Set());
-      onApplied();
-    } catch (err) {
-      setError(getErrorMessage(err, "Η λήψη από το wger απέτυχε."));
-    } finally {
-      setFetching(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-h-[85vh] w-full max-w-xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Fetch from wger</DialogTitle>
-          <DialogDescription>
-            Αναζήτηση εικόνων στο wger.de βάσει ακριβούς ονόματος άσκησης. Δεν βρίσκουν όλες οι ασκήσεις αντιστοιχία —
-            το wger δεν υποστηρίζει πλέον ασαφή αναζήτηση.
-          </DialogDescription>
-        </DialogHeader>
-
-        {loading && <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Φόρτωση...</p>}
-        {error && <p className="text-sm font-semibold text-red-600">{error}</p>}
-
-        {!loading && candidates.length > 0 && (
-          <>
-            <label className="flex items-center gap-2 border-b border-slate-200 pb-2 text-sm font-bold dark:border-slate-800">
-              <Checkbox checked={selected.size === candidates.length} onCheckedChange={(checked) => toggleAll(checked === true)} />
-              Επιλογή όλων ({candidates.length})
-            </label>
-            <div className="max-h-64 space-y-1 overflow-y-auto">
-              {candidates.map((item) => (
-                <label key={item.id} className="flex items-center gap-2 rounded-md px-1 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800">
-                  <Checkbox checked={selected.has(item.id)} onCheckedChange={() => toggleOne(item.id)} />
-                  <span className="flex-1 truncate">{item.name}</span>
-                  <Badge variant="outline" className="text-[10px]">
-                    {item.muscleGroup}
-                  </Badge>
-                </label>
-              ))}
-            </div>
-          </>
-        )}
-
-        {!loading && !candidates.length && !result && (
-          <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Όλες οι ασκήσεις έχουν ήδη εικόνα.</p>
-        )}
-
-        {fetching && <Progress value={60} className="animate-pulse" />}
-
-        {result && (
-          <div className="rounded-md bg-slate-50 px-4 py-3 text-sm font-semibold dark:bg-slate-800">
-            Ενημερώθηκαν {result.updated}. Χωρίς αντιστοιχία: {result.notFound}.
-          </div>
-        )}
-
-        <div className="flex justify-end gap-2 pt-1">
-          <Button type="button" variant="outline" onClick={onClose}>
-            Κλείσιμο
-          </Button>
-          <Button type="button" onClick={runFetch} disabled={!selected.size || fetching} className="gap-2 font-bold">
-            <Download className="h-4 w-4" />
-            {fetching ? "Λήψη..." : `Fetch selected from wger API (${selected.size})`}
           </Button>
         </div>
       </DialogContent>
