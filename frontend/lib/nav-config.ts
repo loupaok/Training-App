@@ -21,6 +21,7 @@ import {
   MessageCircleMore,
   LayoutTemplate,
   Apple,
+  Images,
   type LucideIcon,
 } from "lucide-react";
 
@@ -61,6 +62,7 @@ export const coachNavSections: CoachNavSection[] = [
     ],
   },
   { key: "foods", label: "Βιβλιοθήκη Τροφίμων", path: "/coach/foods", icon: Apple, coachOrAdminOnly: true },
+  { key: "exercise-media", label: "Media", path: "/coach/media", icon: Images, coachOrAdminOnly: true },
   { key: "analytics", label: "Analytics", path: "/analytics", icon: BarChart3 },
   { key: "media", label: "Media Library", path: "/media-library", icon: ImageIcon },
   { key: "changelog", label: "Αλλαγές & Νέα", path: "/changelog", icon: ScrollText },
