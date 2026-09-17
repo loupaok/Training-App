@@ -17,6 +17,7 @@ import clientDashboardRoutes from './routes/clientDashboard.js';
 import pricingPlanRoutes from './routes/pricingPlans.js';
 import manualNotificationRoutes from './routes/manualNotifications.js';
 import changelogRoutes from './routes/changelog.js';
+import templateRoutes from './routes/templates.js';
 import { authenticateToken, isClient, isCoach } from './middleware/auth.js';
 
 dotenv.config();
@@ -76,6 +77,7 @@ app.use('/api/client-dashboard', authenticateToken, isClient, clientDashboardRou
 app.use('/api/pricing-plans', authenticateToken, pricingPlanRoutes);
 app.use('/api/manual-notifications', authenticateToken, manualNotificationRoutes);
 app.use('/api/changelog', authenticateToken, changelogRoutes);
+app.use('/api/templates', authenticateToken, templateRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

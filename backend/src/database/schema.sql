@@ -236,10 +236,13 @@ CREATE TABLE IF NOT EXISTS update_schedule (
 );
 
 -- Training plans created by coaches and assigned to clients
+-- Note: template_id (added live in trainingPlans.js) references training_templates.id,
+-- no FK constraint (reference-only column, same precedent as notifications.manual_notification_id).
 CREATE TABLE IF NOT EXISTS training_plans (
   id INT AUTO_INCREMENT PRIMARY KEY,
   coach_id INT NOT NULL,
   client_id INT,
+  template_id INT,
   title VARCHAR(255) NOT NULL,
   description TEXT,
   duration_weeks TINYINT UNSIGNED,
@@ -258,10 +261,13 @@ CREATE TABLE IF NOT EXISTS training_plans (
 );
 
 -- Nutrition plans created by coaches and assigned to clients
+-- Note: template_id (added live in nutritionPlans.js) references nutrition_templates.id,
+-- no FK constraint, same precedent as above.
 CREATE TABLE IF NOT EXISTS nutrition_plans (
   id INT AUTO_INCREMENT PRIMARY KEY,
   coach_id INT NOT NULL,
   client_id INT,
+  template_id INT,
   title VARCHAR(255) NOT NULL,
   description TEXT,
   daily_calories INT UNSIGNED,
@@ -280,6 +286,91 @@ CREATE TABLE IF NOT EXISTS nutrition_plans (
   INDEX idx_coach_id (coach_id),
   INDEX idx_client_id (client_id),
   INDEX idx_status (status)
+);
+
+-- Global training-plan template library (coach-authored, usable by any coach/admin)
+CREATE TABLE IF NOT EXISTS training_templates (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  coach_id INT NOT NULL,
+  title VARCHAR(150) NOT NULL,
+  description TEXT,
+  goal ENUM('fat_loss', 'muscle_gain', 'toning', 'maintenance'),
+  level ENUM('beginner', 'intermediate', 'advanced') DEFAULT 'intermediate',
+  days_per_week TINYINT UNSIGNED,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (coach_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS template_training_days (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  template_id INT NOT NULL,
+  day_of_week TINYINT NOT NULL,
+  title VARCHAR(255),
+  notes TEXT,
+  sort_order INT DEFAULT 0,
+  FOREIGN KEY (template_id) REFERENCES training_templates(id) ON DELETE CASCADE,
+  INDEX idx_template_id (template_id)
+);
+
+CREATE TABLE IF NOT EXISTS template_training_exercises (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  day_id INT NOT NULL,
+  exercise_id INT,
+  exercise_name VARCHAR(255) NOT NULL,
+  sets VARCHAR(50),
+  reps VARCHAR(50),
+  tempo VARCHAR(50),
+  rest_seconds VARCHAR(50),
+  target_weight VARCHAR(50),
+  notes TEXT,
+  sort_order INT DEFAULT 0,
+  FOREIGN KEY (day_id) REFERENCES template_training_days(id) ON DELETE CASCADE,
+  INDEX idx_day_id (day_id)
+);
+
+-- Global nutrition-plan template library
+CREATE TABLE IF NOT EXISTS nutrition_templates (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  coach_id INT NOT NULL,
+  title VARCHAR(150) NOT NULL,
+  description TEXT,
+  goal ENUM('fat_loss', 'muscle_gain', 'toning', 'maintenance'),
+  daily_calories INT UNSIGNED,
+  protein_g DECIMAL(6,1),
+  carbs_g DECIMAL(6,1),
+  fat_g DECIMAL(6,1),
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (coach_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS template_nutrition_meals (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  template_id INT NOT NULL,
+  day_of_week TINYINT NOT NULL DEFAULT 1,
+  meal_type ENUM('breakfast', 'lunch', 'snack', 'dinner', 'pre_workout', 'post_workout', 'other') NOT NULL DEFAULT 'other',
+  title VARCHAR(255),
+  notes TEXT,
+  sort_order INT DEFAULT 0,
+  FOREIGN KEY (template_id) REFERENCES nutrition_templates(id) ON DELETE CASCADE,
+  INDEX idx_template_id (template_id)
+);
+
+CREATE TABLE IF NOT EXISTS template_nutrition_foods (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  meal_id INT NOT NULL,
+  food_name VARCHAR(255) NOT NULL,
+  quantity VARCHAR(100),
+  calories INT,
+  protein_g DECIMAL(6,1),
+  carbs_g DECIMAL(6,1),
+  fat_g DECIMAL(6,1),
+  sort_order INT DEFAULT 0,
+  FOREIGN KEY (meal_id) REFERENCES template_nutrition_meals(id) ON DELETE CASCADE,
+  INDEX idx_meal_id (meal_id)
 );
 
 -- Exercises / sets within a training plan

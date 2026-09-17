@@ -22,7 +22,32 @@ async function coachOwnsPlan(connection, coachId, planId) {
 }
 
 
-async function ensureTrainingPlanBuilderSchema(connection) {
+export async function ensureTrainingPlanBuilderSchema(connection) {
+  // Minimal definition here (also created fully in templates.js's ensureTemplatesSchema) —
+  // both are idempotent, needed here only so the template_id LEFT JOIN below never 404s
+  // on a table that hasn't been touched by the templates routes yet.
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS training_templates (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      coach_id INT NOT NULL,
+      title VARCHAR(150) NOT NULL,
+      description TEXT,
+      goal ENUM('fat_loss', 'muscle_gain', 'toning', 'maintenance'),
+      level ENUM('beginner', 'intermediate', 'advanced') DEFAULT 'intermediate',
+      days_per_week TINYINT UNSIGNED,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (coach_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  try {
+    await connection.query('ALTER TABLE training_plans ADD COLUMN template_id INT NULL');
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
+
   await connection.query(`
     CREATE TABLE IF NOT EXISTS training_plan_days (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -129,9 +154,11 @@ async function getFullTrainingPlan(connection, clientId) {
   await ensureTrainingPlanBuilderSchema(connection);
 
   const [plans] = await connection.query(
-    `SELECT * FROM training_plans
-     WHERE client_id = ? AND status = 'active'
-     ORDER BY updated_at DESC, created_at DESC
+    `SELECT tp.*, t.title AS template_title
+     FROM training_plans tp
+     LEFT JOIN training_templates t ON t.id = tp.template_id
+     WHERE tp.client_id = ? AND tp.status = 'active'
+     ORDER BY tp.updated_at DESC, tp.created_at DESC
      LIMIT 1`,
     [clientId]
   );
@@ -189,6 +216,44 @@ router.get('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
   }
 });
 
+// Inserts a plan's days + exercises from the nested shape the builder UI produces.
+// Shared by the /full PUT below and the template-assign endpoint in clients.js.
+export async function insertTrainingPlanDays(connection, planId, days) {
+  for (const [dayIndex, day] of days.entries()) {
+    const exercises = Array.isArray(day.exercises) ? day.exercises : [];
+    const hasContent = day.title || day.notes || exercises.length;
+    if (!hasContent) continue;
+
+    const [dayResult] = await connection.query(
+      `INSERT INTO training_plan_days (training_plan_id, day_of_week, title, notes, sort_order)
+       VALUES (?, ?, ?, ?, ?)`,
+      [planId, Number(day.dayOfWeek ?? day.day_of_week ?? dayIndex), day.title || null, day.notes || null, dayIndex]
+    );
+
+    for (const [exerciseIndex, exercise] of exercises.entries()) {
+      const exerciseName = exercise.exerciseName || exercise.exercise_name || exercise.name;
+      if (!exerciseName && !exercise.exerciseId && !exercise.exercise_id) continue;
+      await connection.query(
+        `INSERT INTO training_plan_exercises
+          (day_id, exercise_id, exercise_name, sets, reps, tempo, rest_seconds, target_weight, notes, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          dayResult.insertId,
+          exercise.exerciseId || exercise.exercise_id || null,
+          exerciseName,
+          exercise.sets || null,
+          exercise.reps || null,
+          exercise.tempo || null,
+          exercise.restSeconds || exercise.rest_seconds || null,
+          exercise.targetWeight || exercise.target_weight || null,
+          exercise.notes || null,
+          exerciseIndex,
+        ]
+      );
+    }
+  }
+}
+
 router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res) => {
   const connection = await pool.getConnection();
 
@@ -222,6 +287,8 @@ router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
 
     let planId = createNew ? null : existing[0]?.id;
     if (planId) {
+      // Deliberately doesn't touch template_id here — a normal edit-and-save of an
+      // already-assigned plan must keep its "based on" reference.
       await connection.query(
         `UPDATE training_plans
          SET coach_id = ?, title = ?, description = ?, duration_weeks = ?, difficulty = ?, start_date = ?, end_date = ?, status = 'active'
@@ -232,46 +299,14 @@ router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
     } else {
       const [result] = await connection.query(
         `INSERT INTO training_plans
-          (coach_id, client_id, title, description, duration_weeks, difficulty, is_template, status, start_date, end_date)
-         VALUES (?, ?, ?, ?, ?, ?, 0, 'active', ?, ?)`,
+          (coach_id, client_id, template_id, title, description, duration_weeks, difficulty, is_template, status, start_date, end_date)
+         VALUES (?, ?, NULL, ?, ?, ?, ?, 0, 'active', ?, ?)`,
         [coachId, clientId, title, description || null, durationWeeks || null, difficulty, startDate || null, endDate || null]
       );
       planId = result.insertId;
     }
 
-    for (const [dayIndex, day] of days.entries()) {
-      const exercises = Array.isArray(day.exercises) ? day.exercises : [];
-      const hasContent = day.title || day.notes || exercises.length;
-      if (!hasContent) continue;
-
-      const [dayResult] = await connection.query(
-        `INSERT INTO training_plan_days (training_plan_id, day_of_week, title, notes, sort_order)
-         VALUES (?, ?, ?, ?, ?)`,
-        [planId, Number(day.dayOfWeek ?? day.day_of_week ?? dayIndex), day.title || null, day.notes || null, dayIndex]
-      );
-
-      for (const [exerciseIndex, exercise] of exercises.entries()) {
-        const exerciseName = exercise.exerciseName || exercise.exercise_name || exercise.name;
-        if (!exerciseName && !exercise.exerciseId && !exercise.exercise_id) continue;
-        await connection.query(
-          `INSERT INTO training_plan_exercises
-            (day_id, exercise_id, exercise_name, sets, reps, tempo, rest_seconds, target_weight, notes, sort_order)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            dayResult.insertId,
-            exercise.exerciseId || exercise.exercise_id || null,
-            exerciseName,
-            exercise.sets || null,
-            exercise.reps || null,
-            exercise.tempo || null,
-            exercise.restSeconds || exercise.rest_seconds || null,
-            exercise.targetWeight || exercise.target_weight || null,
-            exercise.notes || null,
-            exerciseIndex,
-          ]
-        );
-      }
-    }
+    await insertTrainingPlanDays(connection, planId, days);
 
     await connection.commit();
     const plan = await getFullTrainingPlan(connection, clientId);

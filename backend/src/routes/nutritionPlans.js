@@ -22,7 +22,34 @@ async function coachOwnsPlan(connection, coachId, planId) {
 }
 
 
-async function ensureNutritionPlanBuilderSchema(connection) {
+export async function ensureNutritionPlanBuilderSchema(connection) {
+  // Minimal definition here (also created fully in templates.js's ensureTemplatesSchema) —
+  // both are idempotent, needed here only so the template_id LEFT JOIN below never 404s
+  // on a table that hasn't been touched by the templates routes yet.
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS nutrition_templates (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      coach_id INT NOT NULL,
+      title VARCHAR(150) NOT NULL,
+      description TEXT,
+      goal ENUM('fat_loss', 'muscle_gain', 'toning', 'maintenance'),
+      daily_calories INT UNSIGNED,
+      protein_g DECIMAL(6,1),
+      carbs_g DECIMAL(6,1),
+      fat_g DECIMAL(6,1),
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (coach_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  try {
+    await connection.query('ALTER TABLE nutrition_plans ADD COLUMN template_id INT NULL');
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
+
   await connection.query(`
     CREATE TABLE IF NOT EXISTS nutrition_plan_meals (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -38,6 +65,12 @@ async function ensureNutritionPlanBuilderSchema(connection) {
       INDEX idx_nutrition_plan_id (nutrition_plan_id)
     )
   `);
+
+  // Widened so a template meal tagged pre/post-workout can still be copied into a
+  // client's plan without the ENUM rejecting the value.
+  await connection.query(
+    "ALTER TABLE nutrition_plan_meals MODIFY meal_type ENUM('breakfast', 'lunch', 'snack', 'dinner', 'pre_workout', 'post_workout', 'other') NOT NULL DEFAULT 'other'"
+  );
 
   await connection.query(`
     CREATE TABLE IF NOT EXISTS nutrition_plan_foods (
@@ -62,9 +95,11 @@ async function getFullNutritionPlan(connection, clientId) {
   await ensureNutritionPlanBuilderSchema(connection);
 
   const [plans] = await connection.query(
-    `SELECT * FROM nutrition_plans
-     WHERE client_id = ? AND status = 'active'
-     ORDER BY updated_at DESC, created_at DESC
+    `SELECT np.*, t.title AS template_title
+     FROM nutrition_plans np
+     LEFT JOIN nutrition_templates t ON t.id = np.template_id
+     WHERE np.client_id = ? AND np.status = 'active'
+     ORDER BY np.updated_at DESC, np.created_at DESC
      LIMIT 1`,
     [clientId]
   );
@@ -106,6 +141,33 @@ router.get('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
   }
 });
 
+// Inserts a plan's meals + foods from the nested shape the builder UI produces.
+// Shared by the /full PUT below and the template-assign endpoint in clients.js.
+export async function insertNutritionPlanMeals(connection, planId, meals) {
+  for (const [mealIndex, meal] of meals.entries()) {
+    const foods = Array.isArray(meal.foods) ? meal.foods : [];
+    const hasContent = meal.title || meal.notes || foods.length;
+    if (!hasContent) continue;
+
+    const [mealResult] = await connection.query(
+      `INSERT INTO nutrition_plan_meals (nutrition_plan_id, day_of_week, meal_type, title, notes, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [planId, Number(meal.dayOfWeek ?? meal.day_of_week ?? 1), meal.mealType || meal.meal_type || 'other', meal.title || null, meal.notes || null, mealIndex]
+    );
+
+    for (const [foodIndex, food] of foods.entries()) {
+      const foodName = food.foodName || food.food_name;
+      if (!foodName) continue;
+      await connection.query(
+        `INSERT INTO nutrition_plan_foods
+          (meal_id, food_name, quantity, calories, protein_g, carbs_g, fat_g, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [mealResult.insertId, foodName, food.quantity || null, food.calories || null, food.proteinG || food.protein_g || null, food.carbsG || food.carbs_g || null, food.fatG || food.fat_g || null, foodIndex]
+      );
+    }
+  }
+}
+
 router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res) => {
   const connection = await pool.getConnection();
 
@@ -142,6 +204,8 @@ router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
 
     let planId = createNew ? null : existing[0]?.id;
     if (planId) {
+      // Deliberately doesn't touch template_id here — a normal edit-and-save of an
+      // already-assigned plan must keep its "based on" reference.
       await connection.query(
         `UPDATE nutrition_plans
          SET coach_id = ?, title = ?, description = ?, daily_calories = ?, protein_g = ?, carbs_g = ?, fat_g = ?, notes = ?, start_date = ?, end_date = ?, status = 'active'
@@ -152,35 +216,14 @@ router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
     } else {
       const [result] = await connection.query(
         `INSERT INTO nutrition_plans
-          (coach_id, client_id, title, description, daily_calories, protein_g, carbs_g, fat_g, notes, is_template, status, start_date, end_date)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'active', ?, ?)`,
+          (coach_id, client_id, template_id, title, description, daily_calories, protein_g, carbs_g, fat_g, notes, is_template, status, start_date, end_date)
+         VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 0, 'active', ?, ?)`,
         [coachId, clientId, title, description || null, dailyCalories || null, proteinG || null, carbsG || null, fatG || null, notes || null, startDate || null, endDate || null]
       );
       planId = result.insertId;
     }
 
-    for (const [mealIndex, meal] of meals.entries()) {
-      const foods = Array.isArray(meal.foods) ? meal.foods : [];
-      const hasContent = meal.title || meal.notes || foods.length;
-      if (!hasContent) continue;
-
-      const [mealResult] = await connection.query(
-        `INSERT INTO nutrition_plan_meals (nutrition_plan_id, day_of_week, meal_type, title, notes, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [planId, Number(meal.dayOfWeek ?? meal.day_of_week ?? 1), meal.mealType || meal.meal_type || 'other', meal.title || null, meal.notes || null, mealIndex]
-      );
-
-      for (const [foodIndex, food] of foods.entries()) {
-        const foodName = food.foodName || food.food_name;
-        if (!foodName) continue;
-        await connection.query(
-          `INSERT INTO nutrition_plan_foods
-            (meal_id, food_name, quantity, calories, protein_g, carbs_g, fat_g, sort_order)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [mealResult.insertId, foodName, food.quantity || null, food.calories || null, food.proteinG || food.protein_g || null, food.carbsG || food.carbs_g || null, food.fatG || food.fat_g || null, foodIndex]
-        );
-      }
-    }
+    await insertNutritionPlanMeals(connection, planId, meals);
 
     await connection.commit();
     const plan = await getFullNutritionPlan(connection, clientId);

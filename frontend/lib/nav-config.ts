@@ -19,6 +19,7 @@ import {
   Megaphone,
   ScrollText,
   MessageCircleMore,
+  LayoutTemplate,
   type LucideIcon,
 } from "lucide-react";
 
@@ -48,6 +49,7 @@ export const coachNavSections: CoachNavSection[] = [
   { key: "clients", label: "Πελάτες", path: "/clients", icon: Users },
   { key: "updates", label: "Updates Πελατών", path: "/updates", icon: RefreshCw },
   { key: "exercises", label: "Βιβλιοθήκη Ασκήσεων", path: "/exercises", icon: Dumbbell },
+  { key: "templates", label: "Πρότυπα Πλάνων", path: "/coach/templates", icon: LayoutTemplate, coachOrAdminOnly: true },
   { key: "analytics", label: "Analytics", path: "/analytics", icon: BarChart3 },
   { key: "media", label: "Media Library", path: "/media-library", icon: ImageIcon },
   { key: "changelog", label: "Αλλαγές & Νέα", path: "/changelog", icon: ScrollText },

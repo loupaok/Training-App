@@ -7,6 +7,9 @@ import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
 import { getVapidPublicKey, sendPushToUser, sendPushToUsers } from '../lib/webPush.js';
+import { insertTrainingPlanDays } from './trainingPlans.js';
+import { insertNutritionPlanMeals } from './nutritionPlans.js';
+import { getFullTrainingTemplate, getFullNutritionTemplate } from './templates.js';
 
 const router = express.Router();
 
@@ -1998,6 +2001,117 @@ router.post('/:id/messages', authorizeRole(['coach', 'admin']), [
 
     res.status(201).json({ message: 'Message sent' });
   } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+// POST /clients/:id/assign-training-template — copy a template into this client's
+// active plan. The template itself is only ever read here, never modified.
+router.post('/:id/assign-training-template', authorizeRole(['coach', 'admin']), [
+  body('templateId').isInt()
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const connection = await pool.getConnection();
+  try {
+    const template = await getFullTrainingTemplate(connection, req.body.templateId);
+    if (!template) return res.status(404).json({ message: 'Template not found' });
+
+    const [clientRows] = await connection.query('SELECT full_name FROM users WHERE id = ?', [req.params.id]);
+    if (!clientRows.length) return res.status(404).json({ message: 'Client not found' });
+    const clientName = clientRows[0].full_name || '';
+
+    await connection.beginTransaction();
+
+    const [existing] = await connection.query(
+      "SELECT id FROM training_plans WHERE client_id = ? AND status = 'active' ORDER BY updated_at DESC, created_at DESC LIMIT 1",
+      [req.params.id]
+    );
+    if (existing[0]?.id) {
+      await connection.query("UPDATE training_plans SET status = 'archived' WHERE id = ?", [existing[0].id]);
+    }
+
+    const [result] = await connection.query(
+      `INSERT INTO training_plans
+        (coach_id, client_id, template_id, title, description, duration_weeks, difficulty, is_template, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 'active')`,
+      [
+        req.user.id,
+        req.params.id,
+        template.id,
+        clientName ? `${template.title} - ${clientName}` : template.title,
+        template.description || null,
+        template.days_per_week || null,
+        template.level || 'intermediate',
+      ]
+    );
+
+    await insertTrainingPlanDays(connection, result.insertId, template.days || []);
+
+    await connection.commit();
+    res.status(201).json({ message: 'Template assigned', planId: result.insertId });
+  } catch (error) {
+    await connection.rollback();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+// POST /clients/:id/assign-nutrition-template — same as above, for nutrition
+router.post('/:id/assign-nutrition-template', authorizeRole(['coach', 'admin']), [
+  body('templateId').isInt()
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const connection = await pool.getConnection();
+  try {
+    const template = await getFullNutritionTemplate(connection, req.body.templateId);
+    if (!template) return res.status(404).json({ message: 'Template not found' });
+
+    const [clientRows] = await connection.query('SELECT full_name FROM users WHERE id = ?', [req.params.id]);
+    if (!clientRows.length) return res.status(404).json({ message: 'Client not found' });
+    const clientName = clientRows[0].full_name || '';
+
+    await connection.beginTransaction();
+
+    const [existing] = await connection.query(
+      "SELECT id FROM nutrition_plans WHERE client_id = ? AND status = 'active' ORDER BY updated_at DESC, created_at DESC LIMIT 1",
+      [req.params.id]
+    );
+    if (existing[0]?.id) {
+      await connection.query("UPDATE nutrition_plans SET status = 'archived' WHERE id = ?", [existing[0].id]);
+    }
+
+    const [result] = await connection.query(
+      `INSERT INTO nutrition_plans
+        (coach_id, client_id, template_id, title, description, daily_calories, protein_g, carbs_g, fat_g, is_template, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'active')`,
+      [
+        req.user.id,
+        req.params.id,
+        template.id,
+        clientName ? `${template.title} - ${clientName}` : template.title,
+        template.description || null,
+        template.daily_calories || null,
+        template.protein_g || null,
+        template.carbs_g || null,
+        template.fat_g || null,
+      ]
+    );
+
+    await insertNutritionPlanMeals(connection, result.insertId, template.meals || []);
+
+    await connection.commit();
+    res.status(201).json({ message: 'Template assigned', planId: result.insertId });
+  } catch (error) {
+    await connection.rollback();
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   } finally {

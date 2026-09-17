@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl, getInitials } from "@/lib/media";
@@ -27,6 +27,23 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { type PlanHistoryRow } from "@/components/shared/plan-editor-ui";
+import {
+  TrainingPlanEditor,
+  normalizeTrainingPlan,
+  defaultTrainingPlan,
+  type TrainingPlanState,
+  type RawTrainingPlan,
+  type LibraryExercise,
+} from "@/components/shared/training-plan-editor";
+import {
+  NutritionPlanEditor,
+  normalizeNutritionPlan,
+  defaultNutritionPlan,
+  type NutritionPlanState,
+  type RawNutritionPlan,
+} from "@/components/shared/nutrition-plan-editor";
+import { AssignTemplateDialog } from "@/components/shared/assign-template-dialog";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -127,149 +144,6 @@ interface ClientRecord {
   updateSchedule?: UpdateSchedule;
 }
 
-interface LibraryExercise {
-  id: number | string;
-  name?: string;
-  muscleGroup?: string;
-  equipment?: string;
-  type?: string;
-  imageUrl?: string;
-  image_url?: string;
-  videoUrl?: string;
-  video_url?: string;
-}
-
-interface TrainingExerciseEntry {
-  exerciseId: string | number;
-  exerciseName: string;
-  muscleGroup: string;
-  imageUrl: string;
-  videoUrl: string;
-  sets: string | number;
-  reps: string | number;
-  tempo: string;
-  restSeconds: string | number;
-  targetWeight: string | number;
-  notes: string;
-}
-
-interface TrainingDayEntry {
-  dayOfWeek: number;
-  title: string;
-  notes: string;
-  exercises: TrainingExerciseEntry[];
-}
-
-interface TrainingPlanState {
-  title: string;
-  description: string;
-  durationWeeks: number | string;
-  difficulty: string;
-  dayCount?: number;
-  days: TrainingDayEntry[];
-}
-
-interface RawTrainingExercise {
-  exercise_id?: string | number;
-  exerciseId?: string | number;
-  exercise_name?: string;
-  exerciseName?: string;
-  muscle_group?: string;
-  muscleGroup?: string;
-  image_url?: string;
-  imageUrl?: string;
-  video_url?: string;
-  videoUrl?: string;
-  sets?: string | number;
-  reps?: string | number;
-  tempo?: string;
-  rest_seconds?: string | number;
-  restSeconds?: string | number;
-  target_weight?: string | number;
-  targetWeight?: string | number;
-  notes?: string;
-}
-
-interface RawTrainingDay {
-  day_of_week?: number;
-  dayOfWeek?: number;
-  title?: string;
-  notes?: string;
-  exercises?: RawTrainingExercise[];
-}
-
-interface RawTrainingPlan {
-  id?: number | string;
-  days?: RawTrainingDay[];
-  day_count?: number;
-  dayCount?: number;
-  title?: string;
-  description?: string;
-  duration_weeks?: number | string;
-  durationWeeks?: number | string;
-  difficulty?: string;
-}
-
-interface FoodEntry {
-  foodName: string;
-  quantity: string | number;
-  calories: string | number;
-  proteinG: string | number;
-  carbsG: string | number;
-  fatG: string | number;
-}
-
-interface MealEntry {
-  mealType: string;
-  title: string;
-  notes: string;
-  foods: FoodEntry[];
-}
-
-interface NutritionPlanState {
-  title: string;
-  description: string;
-  dailyCalories: string | number;
-  proteinG: string | number;
-  carbsG: string | number;
-  fatG: string | number;
-  notes: string;
-  meals: MealEntry[];
-}
-
-interface RawFood {
-  food_name?: string;
-  foodName?: string;
-  quantity?: string | number;
-  calories?: string | number;
-  protein_g?: string | number;
-  proteinG?: string | number;
-  carbs_g?: string | number;
-  carbsG?: string | number;
-  fat_g?: string | number;
-  fatG?: string | number;
-}
-
-interface RawMeal {
-  meal_type?: string;
-  mealType?: string;
-  title?: string;
-  notes?: string;
-  foods?: RawFood[];
-}
-
-interface RawNutritionPlan {
-  id?: number | string;
-  meals?: RawMeal[];
-  title?: string;
-  description?: string;
-  daily_calories?: string | number;
-  protein_g?: string | number;
-  carbs_g?: string | number;
-  fat_g?: string | number;
-  notes?: string;
-}
-
 interface StatusMetaResult {
   label: string;
   className: string;
@@ -279,7 +153,6 @@ interface StatusMetaResult {
 // Constants + helpers
 // ---------------------------------------------------------------------------
 
-const dayLabels = ["Κυριακή", "Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο"];
 const tabs = [
   { id: "overview", label: "Επισκόπηση" },
   { id: "progress", label: "Πρόοδος" },
@@ -288,43 +161,6 @@ const tabs = [
   { id: "nutrition", label: "Πρόγραμμα Διατροφής" },
   { id: "messages", label: "Μηνύματα" },
 ];
-
-function emptyTrainingDay(dayOfWeek: number): TrainingDayEntry {
-  return {
-    dayOfWeek,
-    title: dayLabels[dayOfWeek],
-    notes: "",
-    exercises: [],
-  };
-}
-
-function defaultTrainingPlan(): TrainingPlanState {
-  return {
-    title: "Πρόγραμμα Προπόνησης",
-    description: "",
-    durationWeeks: 4,
-    difficulty: "intermediate",
-    days: [1, 2, 3, 4, 5, 6, 0].map(emptyTrainingDay),
-  };
-}
-
-function defaultNutritionPlan(): NutritionPlanState {
-  return {
-    title: "Πρόγραμμα Διατροφής",
-    description: "",
-    dailyCalories: "",
-    proteinG: "",
-    carbsG: "",
-    fatG: "",
-    notes: "",
-    meals: [
-      { mealType: "breakfast", title: "Πρωινό", notes: "", foods: [{ foodName: "", quantity: "", calories: "", proteinG: "", carbsG: "", fatG: "" }] },
-      { mealType: "lunch", title: "Μεσημεριανό", notes: "", foods: [{ foodName: "", quantity: "", calories: "", proteinG: "", carbsG: "", fatG: "" }] },
-      { mealType: "snack", title: "Σνακ", notes: "", foods: [{ foodName: "", quantity: "", calories: "", proteinG: "", carbsG: "", fatG: "" }] },
-      { mealType: "dinner", title: "Βραδινό", notes: "", foods: [{ foodName: "", quantity: "", calories: "", proteinG: "", carbsG: "", fatG: "" }] },
-    ],
-  };
-}
 
 function formatDate(value?: string | null): string {
   if (!value) return "-";
@@ -379,74 +215,6 @@ function statusMeta(client: ClientRecord | null): StatusMetaResult {
   return { label: "Ανενεργός", className: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400" };
 }
 
-function normalizeTrainingPlan(plan?: RawTrainingPlan | null): TrainingPlanState {
-  const base = defaultTrainingPlan();
-  if (!plan?.id && !plan?.days?.length) return base;
-  const daysByWeek = new Map((plan.days || []).map((day) => [Number(day.day_of_week ?? day.dayOfWeek), day]));
-  const dayCount = Number(plan.day_count || plan.dayCount || plan.days?.length || base.days.length);
-
-  return {
-    title: plan.title || base.title,
-    description: plan.description || "",
-    durationWeeks: plan.duration_weeks || plan.durationWeeks || 4,
-    difficulty: plan.difficulty || "intermediate",
-    dayCount,
-    days: base.days.slice(0, dayCount).map((defaultDay) => {
-      const source = daysByWeek.get(defaultDay.dayOfWeek);
-      return {
-        dayOfWeek: defaultDay.dayOfWeek,
-        title: source?.title || defaultDay.title,
-        notes: source?.notes || "",
-        exercises: (source?.exercises || []).map((exercise) => ({
-          exerciseId: exercise.exercise_id || exercise.exerciseId || "",
-          exerciseName: exercise.exercise_name || exercise.exerciseName || "",
-          muscleGroup: exercise.muscle_group || exercise.muscleGroup || "",
-          imageUrl: exercise.image_url || exercise.imageUrl || "",
-          videoUrl: exercise.video_url || exercise.videoUrl || "",
-          sets: exercise.sets || "",
-          reps: exercise.reps || "",
-          tempo: exercise.tempo || "",
-          restSeconds: exercise.rest_seconds || exercise.restSeconds || "",
-          targetWeight: exercise.target_weight || exercise.targetWeight || "",
-          notes: exercise.notes || "",
-        })),
-      };
-    }),
-  };
-}
-
-function normalizeNutritionPlan(plan?: RawNutritionPlan | null): NutritionPlanState {
-  const base = defaultNutritionPlan();
-  if (!plan?.id && !plan?.meals?.length) return base;
-
-  return {
-    title: plan.title || base.title,
-    description: plan.description || "",
-    dailyCalories: plan.daily_calories || "",
-    proteinG: plan.protein_g || "",
-    carbsG: plan.carbs_g || "",
-    fatG: plan.fat_g || "",
-    notes: plan.notes || "",
-    meals: (plan.meals?.length ? (plan.meals as RawMeal[]) : (base.meals as RawMeal[])).map((meal) => ({
-      mealType: meal.meal_type || meal.mealType || "other",
-      title: meal.title || "",
-      notes: meal.notes || "",
-      foods: (
-        meal.foods?.length
-          ? (meal.foods as RawFood[])
-          : ([{ foodName: "", quantity: "", calories: "", proteinG: "", carbsG: "", fatG: "" }] as RawFood[])
-      ).map((food) => ({
-        foodName: food.food_name || food.foodName || "",
-        quantity: food.quantity || "",
-        calories: food.calories || "",
-        proteinG: food.protein_g || food.proteinG || "",
-        carbsG: food.carbs_g || food.carbsG || "",
-        fatG: food.fat_g || food.fatG || "",
-      })),
-    })),
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Main content
 // ---------------------------------------------------------------------------
@@ -458,6 +226,8 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
   const [exercises, setExercises] = useState<LibraryExercise[]>([]);
   const [trainingPlan, setTrainingPlan] = useState<TrainingPlanState>(defaultTrainingPlan);
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlanState>(defaultNutritionPlan);
+  const [trainingHistory, setTrainingHistory] = useState<PlanHistoryRow[]>([]);
+  const [nutritionHistory, setNutritionHistory] = useState<PlanHistoryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingTraining, setSavingTraining] = useState(false);
   const [savingNutrition, setSavingNutrition] = useState(false);
@@ -489,6 +259,24 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
     loadClientDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
+
+  const loadPlanHistory = () => {
+    api
+      .get<PlanHistoryRow[]>(`/training-plans/${clientId}`)
+      .then(setTrainingHistory)
+      .catch(() => setTrainingHistory([]));
+    api
+      .get<PlanHistoryRow[]>(`/nutrition-plans/${clientId}`)
+      .then(setNutritionHistory)
+      .catch(() => setNutritionHistory([]));
+  };
+
+  // Re-fetch whenever a save/create-new/assign-template finishes (saving flips back to
+  // false) so history reflects the just-archived plan without a full page reload.
+  useEffect(() => {
+    loadPlanHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clientId, savingTraining, savingNutrition]);
 
   const onboarding = client?.onboarding || {};
   const displayName = client?.full_name || client?.email || "Πελάτης";
@@ -663,26 +451,54 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
               />
             </TabsContent>
 
-            <TabsContent value="training" className="mt-6">
+            <TabsContent value="training" className="mt-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Badge variant="outline" className="h-auto gap-2 px-3 py-1.5 text-sm font-bold">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {trainingPlan.templateId ? `Βασισμένο σε: ${trainingPlan.templateTitle || "Πρότυπο"}` : "Προσαρμοσμένο πλάνο"}
+                </Badge>
+                <AssignTemplateDialog
+                  kind="training"
+                  clientId={clientId}
+                  onAssigned={() => {
+                    loadClientDetail();
+                    loadPlanHistory();
+                  }}
+                />
+              </div>
               <TrainingPlanEditor
-                clientId={clientId}
                 plan={trainingPlan}
                 setPlan={setTrainingPlan}
                 exercises={exercises}
                 onSave={saveTrainingPlan}
                 onCreateNew={createNewTrainingPlan}
                 saving={savingTraining}
+                history={trainingHistory}
               />
             </TabsContent>
 
-            <TabsContent value="nutrition" className="mt-6">
+            <TabsContent value="nutrition" className="mt-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Badge variant="outline" className="h-auto gap-2 px-3 py-1.5 text-sm font-bold">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {nutritionPlan.templateId ? `Βασισμένο σε: ${nutritionPlan.templateTitle || "Πρότυπο"}` : "Προσαρμοσμένο πλάνο"}
+                </Badge>
+                <AssignTemplateDialog
+                  kind="nutrition"
+                  clientId={clientId}
+                  onAssigned={() => {
+                    loadClientDetail();
+                    loadPlanHistory();
+                  }}
+                />
+              </div>
               <NutritionPlanEditor
-                clientId={clientId}
                 plan={nutritionPlan}
                 setPlan={setNutritionPlan}
                 onSave={saveNutritionPlan}
                 onCreateNew={createNewNutritionPlan}
                 saving={savingNutrition}
+                history={nutritionHistory}
               />
             </TabsContent>
 
@@ -1271,616 +1087,6 @@ function ProgressTab({ client }: { client: ClientRecord }) {
           </TableBody>
         </Table>
       </Card>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Training plan editor
-// ---------------------------------------------------------------------------
-
-function TrainingPlanEditor({
-  clientId,
-  plan,
-  setPlan,
-  exercises,
-  onSave,
-  onCreateNew,
-  saving,
-}: {
-  clientId: string;
-  plan: TrainingPlanState;
-  setPlan: React.Dispatch<React.SetStateAction<TrainingPlanState>>;
-  exercises: LibraryExercise[];
-  onSave: () => void;
-  onCreateNew: () => void;
-  saving: boolean;
-}) {
-  const [history, setHistory] = useState<PlanHistoryRow[]>([]);
-  useEffect(() => {
-    api
-      .get<PlanHistoryRow[]>(`/training-plans/${clientId}`)
-      .then(setHistory)
-      .catch(() => setHistory([]));
-    // Re-fetch once a save/create-new finishes (saving flips back to false) so history
-    // reflects the just-archived plan without needing a full page reload.
-  }, [clientId, saving]);
-
-  const initialIndex = plan.days?.findIndex((day) => day.exercises?.length) ?? 0;
-  const [activeDayIndex, setActiveDayIndex] = useState(Math.max(0, initialIndex));
-  const visibleDays = (plan.days || []).slice(0, plan.dayCount || plan.days?.length || 1);
-  const selectedDay = visibleDays[activeDayIndex] || visibleDays[0];
-  const muscleGroups = [...new Set((selectedDay?.exercises || []).map((exercise) => exercise.muscleGroup).filter(Boolean))];
-
-  const setDayCount = (count: number) => {
-    const nextCount = Number(count);
-    setPlan((current) => {
-      const nextDays = [...current.days];
-      while (nextDays.length < nextCount) {
-        const dayOfWeek = nextDays.length + 1 > 6 ? 0 : nextDays.length + 1;
-        nextDays.push(emptyTrainingDay(dayOfWeek));
-      }
-      return { ...current, dayCount: nextCount, days: nextDays.slice(0, nextCount) };
-    });
-    setActiveDayIndex((index) => Math.min(index, nextCount - 1));
-  };
-
-  const updateDay = (dayIndex: number, patch: Partial<TrainingDayEntry>) => {
-    setPlan((current) => ({
-      ...current,
-      days: current.days.map((day, index) => (index === dayIndex ? { ...day, ...patch } : day)),
-    }));
-  };
-
-  const addExercise = (dayIndex: number) => {
-    updateDay(dayIndex, {
-      exercises: [
-        ...(plan.days[dayIndex]?.exercises || []),
-        { exerciseId: "", exerciseName: "", muscleGroup: "", imageUrl: "", videoUrl: "", sets: "", reps: "", tempo: "", restSeconds: "", targetWeight: "", notes: "" },
-      ],
-    });
-  };
-
-  const updateExercise = (dayIndex: number, exerciseIndex: number, patch: Partial<TrainingExerciseEntry>) => {
-    const day = plan.days[dayIndex];
-    updateDay(dayIndex, {
-      exercises: day.exercises.map((exercise, index) => (index === exerciseIndex ? { ...exercise, ...patch } : exercise)),
-    });
-  };
-
-  const removeExercise = (dayIndex: number, exerciseIndex: number) => {
-    const day = plan.days[dayIndex];
-    updateDay(dayIndex, { exercises: day.exercises.filter((_, index) => index !== exerciseIndex) });
-  };
-
-  return (
-    <Card className="p-0">
-      <PlanHeader
-        title="Πρόγραμμα Προπόνησης"
-        subtitle="Διάλεξε ημέρες, βάλε ασκήσεις από τη βιβλιοθήκη και συμπλήρωσε Σετ, Επαναλ., Tempo και Rest."
-        onSave={onSave}
-        onCreateNew={onCreateNew}
-        saving={saving}
-      />
-
-      <div className="space-y-6 p-6">
-        <div className="grid gap-4 xl:grid-cols-[1.2fr_0.7fr_0.7fr_1fr]">
-          <Field label="Τίτλος" value={plan.title} onChange={(value) => setPlan({ ...plan, title: value })} />
-          <div className="block">
-            <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Ημέρες προγράμματος</Label>
-            <Select
-              items={[1, 2, 3, 4, 5, 6, 7].map((count) => ({ value: String(count), label: `${count} ημέρες` }))}
-              value={String(plan.dayCount || visibleDays.length)}
-              onValueChange={(value) => setDayCount(Number(value ?? 0))}
-            >
-              <SelectTrigger className="mt-1 h-11 w-full text-sm font-semibold">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {[1, 2, 3, 4, 5, 6, 7].map((count) => (
-                  <SelectItem key={count} value={String(count)}>
-                    {count} ημέρες
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <SelectField
-            label="Επίπεδο"
-            value={plan.difficulty}
-            onChange={(value) => setPlan({ ...plan, difficulty: value })}
-            options={[
-              ["beginner", "Αρχάριο"],
-              ["intermediate", "Μεσαίο"],
-              ["advanced", "Προχωρημένο"],
-            ]}
-          />
-          <Field label="Διάρκεια εβδομάδες" type="number" value={plan.durationWeeks} onChange={(value) => setPlan({ ...plan, durationWeeks: value })} />
-        </div>
-
-        <div className="flex gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-800">
-          {visibleDays.map((day, index) => {
-            const groups = [...new Set((day.exercises || []).map((exercise) => exercise.muscleGroup).filter(Boolean))];
-            return (
-              <Button
-                key={`${day.dayOfWeek}-${index}`}
-                type="button"
-                variant={activeDayIndex === index ? "default" : "outline"}
-                onClick={() => setActiveDayIndex(index)}
-                className="h-auto min-w-[132px] flex-col items-start whitespace-normal px-4 py-3 text-left"
-              >
-                <div className="text-sm font-bold">Ημέρα {index + 1}</div>
-                <div className={`mt-1 truncate text-xs font-bold ${activeDayIndex === index ? "text-white/90" : "text-slate-500 dark:text-slate-400"}`}>
-                  {groups.length ? groups.join(" / ") : "Χωρίς ασκήσεις"}
-                </div>
-              </Button>
-            );
-          })}
-        </div>
-
-        {selectedDay && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h3 className="text-xl font-bold">Ημέρα {activeDayIndex + 1}</h3>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {muscleGroups.length ? (
-                    muscleGroups.map((group) => (
-                      <span key={group} className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700 dark:bg-red-500/10 dark:text-red-400">
-                        {group}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">Οι μυϊκές ομάδες θα μπουν αυτόματα από τις ασκήσεις.</span>
-                  )}
-                </div>
-              </div>
-              <Button type="button" onClick={() => addExercise(activeDayIndex)} className="h-10 gap-2 bg-red-600 px-4 text-sm font-bold text-white hover:bg-red-700">
-                <Plus className="h-4 w-4" />
-                Προσθήκη άσκησης
-              </Button>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {(selectedDay.exercises || []).map((exercise, exerciseIndex) => (
-                <div
-                  key={`${selectedDay.dayOfWeek}-${exerciseIndex}`}
-                  className="grid gap-3 rounded-md border border-slate-200 bg-white p-3 xl:grid-cols-[minmax(240px,2fr)_88px_100px_100px_96px_auto] dark:border-slate-800 dark:bg-slate-900"
-                >
-                  <ExercisePicker
-                    exercises={exercises}
-                    value={exercise}
-                    onSelect={(selected) =>
-                      updateExercise(activeDayIndex, exerciseIndex, {
-                        exerciseId: selected?.id || "",
-                        exerciseName: selected?.name || "",
-                        muscleGroup: selected?.muscleGroup || "",
-                        imageUrl: selected?.imageUrl || selected?.image_url || "",
-                        videoUrl: selected?.videoUrl || selected?.video_url || "",
-                      })
-                    }
-                  />
-                  <Field compact label="Σετ" value={exercise.sets} onChange={(value) => updateExercise(activeDayIndex, exerciseIndex, { sets: value })} />
-                  <Field compact label="Επαναλ." value={exercise.reps} onChange={(value) => updateExercise(activeDayIndex, exerciseIndex, { reps: value })} />
-                  <Field compact label="Tempo" value={exercise.tempo} onChange={(value) => updateExercise(activeDayIndex, exerciseIndex, { tempo: value })} />
-                  <Field
-                    compact
-                    label="Rest"
-                    value={exercise.restSeconds}
-                    onChange={(value) => updateExercise(activeDayIndex, exerciseIndex, { restSeconds: value })}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => removeExercise(activeDayIndex, exerciseIndex)}
-                    className="h-auto self-end border-red-200 px-3 py-2 text-sm font-bold text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
-                  >
-                    Διαγραφή
-                  </Button>
-                </div>
-              ))}
-              {!selectedDay.exercises?.length && (
-                <div className="rounded-md border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                  Πρόσθεσε την πρώτη άσκηση για αυτή την ημέρα.
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        <Field label="Γενικές σημειώσεις προγράμματος" value={plan.description} onChange={(value) => setPlan({ ...plan, description: value })} />
-
-        <PlanHistory rows={history} countLabel={(row) => `${row.day_count ?? 0} ημέρες, ${row.exercise_count ?? 0} ασκήσεις`} />
-      </div>
-    </Card>
-  );
-}
-
-function ExercisePicker({
-  exercises,
-  value,
-  onSelect,
-}: {
-  exercises: LibraryExercise[];
-  value: TrainingExerciseEntry;
-  onSelect: (exercise: LibraryExercise | null) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const selectedLabel = value?.exerciseName || "";
-  const searchValue = open ? query : selectedLabel;
-  const normalizedQuery = searchValue.trim().toLowerCase();
-  const filteredExercises = (exercises || [])
-    .filter((item) => {
-      if (!normalizedQuery) return true;
-      return [item.name, item.muscleGroup, item.equipment, item.type].join(" ").toLowerCase().includes(normalizedQuery);
-    })
-    .slice(0, 12);
-
-  const chooseExercise = (exercise: LibraryExercise) => {
-    onSelect(exercise);
-    setQuery("");
-    setOpen(false);
-  };
-
-  return (
-    <div className="relative block">
-      <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Άσκηση</Label>
-      <div className="relative mt-1">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
-        <Input
-          value={searchValue}
-          onFocus={() => {
-            setQuery("");
-            setOpen(true);
-          }}
-          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
-          onChange={(event) => {
-            setQuery(event.target.value);
-            setOpen(true);
-          }}
-          placeholder="Αναζήτηση άσκησης..."
-          className="h-10 pl-9 text-sm font-semibold"
-        />
-      </div>
-      {open && (
-        <div className="absolute left-0 right-0 top-[62px] z-30 max-h-72 overflow-y-auto rounded-md border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
-          {filteredExercises.map((item) => (
-            <Button
-              key={item.id}
-              type="button"
-              variant="ghost"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => chooseExercise(item)}
-              className="h-auto w-full justify-start gap-3 whitespace-normal rounded-none border-b border-slate-100 px-3 py-3 text-left last:border-b-0 dark:border-slate-800"
-            >
-              <span className="h-12 w-16 shrink-0 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
-                {item.imageUrl || item.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={resolveMediaUrl(item.imageUrl || item.image_url)} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <span className="grid h-full w-full place-items-center text-[10px] font-bold text-slate-400 dark:text-slate-500">PHOTO</span>
-                )}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-bold text-slate-950 dark:text-slate-50">{item.name}</span>
-                <span className="mt-1 block truncate text-xs font-bold text-slate-500 dark:text-slate-400">{item.muscleGroup || "Χωρίς μυϊκή ομάδα"}</span>
-              </span>
-              {item.equipment && <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-400">{item.equipment}</span>}
-            </Button>
-          ))}
-          {!filteredExercises.length && <div className="px-3 py-4 text-center text-sm font-bold text-slate-500 dark:text-slate-400">Δεν βρέθηκε άσκηση.</div>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Nutrition plan editor
-// ---------------------------------------------------------------------------
-
-function NutritionPlanEditor({
-  clientId,
-  plan,
-  setPlan,
-  onSave,
-  onCreateNew,
-  saving,
-}: {
-  clientId: string;
-  plan: NutritionPlanState;
-  setPlan: React.Dispatch<React.SetStateAction<NutritionPlanState>>;
-  onSave: () => void;
-  onCreateNew: () => void;
-  saving: boolean;
-}) {
-  const [history, setHistory] = useState<PlanHistoryRow[]>([]);
-  useEffect(() => {
-    api
-      .get<PlanHistoryRow[]>(`/nutrition-plans/${clientId}`)
-      .then(setHistory)
-      .catch(() => setHistory([]));
-  }, [clientId, saving]);
-
-  const updateMeal = (mealIndex: number, patch: Partial<MealEntry>) => {
-    setPlan((current) => ({
-      ...current,
-      meals: current.meals.map((meal, index) => (index === mealIndex ? { ...meal, ...patch } : meal)),
-    }));
-  };
-
-  const updateFood = (mealIndex: number, foodIndex: number, patch: Partial<FoodEntry>) => {
-    const meal = plan.meals[mealIndex];
-    updateMeal(mealIndex, {
-      foods: meal.foods.map((food, index) => (index === foodIndex ? { ...food, ...patch } : food)),
-    });
-  };
-
-  const addMeal = () => {
-    setPlan((current) => ({
-      ...current,
-      meals: [...current.meals, { mealType: "other", title: "Γεύμα", notes: "", foods: [{ foodName: "", quantity: "", calories: "", proteinG: "", carbsG: "", fatG: "" }] }],
-    }));
-  };
-
-  const addFood = (mealIndex: number) => {
-    updateMeal(mealIndex, {
-      foods: [...plan.meals[mealIndex].foods, { foodName: "", quantity: "", calories: "", proteinG: "", carbsG: "", fatG: "" }],
-    });
-  };
-
-  const removeMeal = (mealIndex: number) => {
-    setPlan((current) => ({ ...current, meals: current.meals.filter((_, index) => index !== mealIndex) }));
-  };
-
-  const removeFood = (mealIndex: number, foodIndex: number) => {
-    updateMeal(mealIndex, { foods: plan.meals[mealIndex].foods.filter((_, index) => index !== foodIndex) });
-  };
-
-  return (
-    <Card className="p-0">
-      <PlanHeader
-        title="Πρόγραμμα Διατροφής"
-        subtitle="Ένα ενεργό πρόγραμμα διατροφής για τον πελάτη. Το ανανεώνει μόνο ο admin όταν χρειαστεί."
-        onSave={onSave}
-        onCreateNew={onCreateNew}
-        saving={saving}
-      />
-      <div className="space-y-6 p-6">
-        <div className="grid gap-4 lg:grid-cols-5">
-          <Field label="Τίτλος" value={plan.title} onChange={(value) => setPlan({ ...plan, title: value })} />
-          <Field label="Θερμίδες" type="number" value={plan.dailyCalories} onChange={(value) => setPlan({ ...plan, dailyCalories: value })} />
-          <Field label="Πρωτεΐνη g" type="number" value={plan.proteinG} onChange={(value) => setPlan({ ...plan, proteinG: value })} />
-          <Field label="Υδατάνθρακες g" type="number" value={plan.carbsG} onChange={(value) => setPlan({ ...plan, carbsG: value })} />
-          <Field label="Λίπη g" type="number" value={plan.fatG} onChange={(value) => setPlan({ ...plan, fatG: value })} />
-        </div>
-        <Field label="Γενικές οδηγίες διατροφής" value={plan.notes} onChange={(value) => setPlan({ ...plan, notes: value })} />
-
-        {plan.meals.map((meal, mealIndex) => (
-          <div key={mealIndex} className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800">
-            <div className="grid gap-4 md:grid-cols-[1fr_1fr_auto]">
-              <Field label="Γεύμα" value={meal.title} onChange={(value) => updateMeal(mealIndex, { title: value })} />
-              <SelectField
-                label="Τύπος"
-                value={meal.mealType}
-                onChange={(value) => updateMeal(mealIndex, { mealType: value })}
-                options={[
-                  ["breakfast", "Πρωινό"],
-                  ["lunch", "Μεσημεριανό"],
-                  ["snack", "Σνακ"],
-                  ["dinner", "Βραδινό"],
-                  ["other", "Άλλο"],
-                ]}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => removeMeal(mealIndex)}
-                className="h-auto self-end gap-2 border-red-200 bg-white px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:bg-slate-900 dark:text-red-400 dark:hover:bg-red-500/10"
-              >
-                <Trash2 className="h-4 w-4" />
-                Διαγραφή γεύματος
-              </Button>
-            </div>
-            <Field label="Οδηγίες γεύματος" value={meal.notes} onChange={(value) => updateMeal(mealIndex, { notes: value })} className="mt-4" />
-
-            <div className="mt-4 space-y-3">
-              {meal.foods.map((food, foodIndex) => (
-                <div key={foodIndex} className="grid gap-3 rounded-md border border-slate-200 bg-white p-3 xl:grid-cols-[2fr_1fr_0.8fr_0.8fr_0.8fr_0.8fr_auto] dark:border-slate-800 dark:bg-slate-900">
-                  <Field compact label="Τρόφιμο" value={food.foodName} onChange={(value) => updateFood(mealIndex, foodIndex, { foodName: value })} />
-                  <Field compact label="Ποσότητα" value={food.quantity} onChange={(value) => updateFood(mealIndex, foodIndex, { quantity: value })} />
-                  <Field compact label="Kcal" type="number" value={food.calories} onChange={(value) => updateFood(mealIndex, foodIndex, { calories: value })} />
-                  <Field compact label="Πρωτ." type="number" value={food.proteinG} onChange={(value) => updateFood(mealIndex, foodIndex, { proteinG: value })} />
-                  <Field compact label="Υδ/κες" type="number" value={food.carbsG} onChange={(value) => updateFood(mealIndex, foodIndex, { carbsG: value })} />
-                  <Field compact label="Λίπη" type="number" value={food.fatG} onChange={(value) => updateFood(mealIndex, foodIndex, { fatG: value })} />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => removeFood(mealIndex, foodIndex)}
-                    className="h-auto self-end border-red-200 px-3 py-2 text-sm font-bold text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
-                  >
-                    Διαγραφή
-                  </Button>
-                </div>
-              ))}
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => addFood(mealIndex)}
-                className="h-10 w-full gap-2 text-sm font-bold text-slate-700 hover:border-red-200 hover:text-red-600 sm:w-auto dark:text-slate-200 dark:hover:border-red-500/30 dark:hover:text-red-400"
-              >
-                <Plus className="h-4 w-4" />
-                Προσθήκη τροφίμου
-              </Button>
-            </div>
-          </div>
-        ))}
-
-        <Button type="button" variant="outline" onClick={addMeal} className="h-11 gap-2 px-5 text-sm font-bold text-slate-700 hover:border-red-200 hover:text-red-600 dark:text-slate-200 dark:hover:border-red-500/30 dark:hover:text-red-400">
-          <Plus className="h-4 w-4" />
-          Προσθήκη γεύματος
-        </Button>
-
-        <PlanHistory rows={history} countLabel={(row) => (row.daily_calories ? `${row.daily_calories} kcal` : "-")} />
-      </div>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Shared small components
-// ---------------------------------------------------------------------------
-
-function PlanHeader({
-  title,
-  subtitle,
-  onSave,
-  onCreateNew,
-  saving,
-}: {
-  title: string;
-  subtitle: string;
-  onSave: () => void;
-  onCreateNew?: () => void;
-  saving: boolean;
-}) {
-  return (
-    <div className="flex flex-col gap-4 border-b border-slate-200 px-6 py-5 lg:flex-row lg:items-center lg:justify-between dark:border-slate-800">
-      <div>
-        <h2 className="text-xl font-bold">{title}</h2>
-        <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{subtitle}</p>
-      </div>
-      <div className="flex gap-2">
-        {onCreateNew && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => {
-              if (window.confirm("Το τρέχον πλάνο θα μετακινηθεί στο ιστορικό και θα ξεκινήσει ένα καινούργιο, κενό πλάνο. Συνέχεια;")) {
-                onCreateNew();
-              }
-            }}
-            disabled={saving}
-            className="h-11 px-5 text-sm font-bold"
-          >
-            Νέο Πλάνο
-          </Button>
-        )}
-        <Button type="button" onClick={onSave} disabled={saving} className="h-11 bg-red-600 px-5 text-sm font-bold text-white shadow-lg shadow-red-200 hover:bg-red-700">
-          {saving ? "Αποθήκευση..." : "Αποθήκευση"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-interface PlanHistoryRow {
-  id: number | string;
-  title: string;
-  created_at?: string;
-  status?: string;
-  day_count?: number;
-  exercise_count?: number;
-  daily_calories?: number;
-}
-
-function PlanHistory({ rows, countLabel }: { rows: PlanHistoryRow[]; countLabel: (row: PlanHistoryRow) => string }) {
-  const [open, setOpen] = useState(false);
-  const previous = rows.filter((row) => row.status !== "active");
-  if (!previous.length) return null;
-
-  const statusLabels: Record<string, string> = { archived: "Αρχειοθετημένο", completed: "Ολοκληρωμένο", draft: "Πρόχειρο" };
-
-  return (
-    <div className="rounded-lg border border-slate-200 dark:border-slate-800">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center justify-between px-5 py-4 text-left text-sm font-bold text-slate-700 dark:text-slate-200"
-      >
-        Ιστορικό πλάνων ({previous.length})
-        <span className="text-xs font-bold text-slate-400">{open ? "Απόκρυψη" : "Εμφάνιση"}</span>
-      </button>
-      {open && (
-        <div className="divide-y divide-slate-100 border-t border-slate-200 dark:divide-slate-800 dark:border-slate-800">
-          {previous.map((row) => (
-            <div key={row.id} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 text-sm">
-              <div>
-                <div className="font-bold text-slate-900 dark:text-slate-50">{row.title}</div>
-                <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  {formatDate(row.created_at)} · {countLabel(row)}
-                </div>
-              </div>
-              <Badge variant="outline" className="font-bold">
-                {statusLabels[row.status || ""] || row.status || "-"}
-              </Badge>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  type = "text",
-  compact = false,
-  className = "",
-}: {
-  label: string;
-  value: string | number | undefined;
-  onChange: (value: string) => void;
-  type?: string;
-  compact?: boolean;
-  className?: string;
-}) {
-  return (
-    <div className={`block ${className}`}>
-      <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">{label}</Label>
-      <Input
-        type={type}
-        value={value ?? ""}
-        onChange={(event) => onChange(event.target.value)}
-        className={`${compact ? "h-10" : "h-11"} mt-1 w-full text-sm font-semibold`}
-      />
-    </div>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: string | undefined;
-  onChange: (value: string) => void;
-  options: [string, string][];
-}) {
-  return (
-    <div className="block">
-      <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">{label}</Label>
-      <Select
-        items={options.map(([optionValue, optionLabel]) => ({ value: optionValue, label: optionLabel }))}
-        value={value ?? ""}
-        onValueChange={(next) => onChange(next ?? "")}
-      >
-        <SelectTrigger className="mt-1 h-11 w-full text-sm font-semibold">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map(([optionValue, optionLabel]) => (
-            <SelectItem key={optionValue} value={optionValue}>
-              {optionLabel}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
     </div>
   );
 }
