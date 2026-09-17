@@ -20,6 +20,7 @@ import {
   ScrollText,
   MessageCircleMore,
   LayoutTemplate,
+  Apple,
   type LucideIcon,
 } from "lucide-react";
 
@@ -59,6 +60,7 @@ export const coachNavSections: CoachNavSection[] = [
       { key: "templates-nutrition", label: "Πρότυπα Διατροφής", path: "/coach/templates/nutrition", icon: Salad },
     ],
   },
+  { key: "foods", label: "Βιβλιοθήκη Τροφίμων", path: "/coach/foods", icon: Apple, coachOrAdminOnly: true },
   { key: "analytics", label: "Analytics", path: "/analytics", icon: BarChart3 },
   { key: "media", label: "Media Library", path: "/media-library", icon: ImageIcon },
   { key: "changelog", label: "Αλλαγές & Νέα", path: "/changelog", icon: ScrollText },
