@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CoachShell } from "@/components/shell/coach-shell";
@@ -37,7 +38,7 @@ import { cn } from "@/lib/utils";
 
 const PAGE_LIMIT = 40;
 
-const FILTER_TABS: { key: string; label: string }[] = [
+const EXERCISE_FILTER_TABS: { key: string; label: string }[] = [
   { key: "all", label: "Όλα" },
   { key: "hasImage", label: "Με εικόνα ✅" },
   { key: "noImage", label: "Χωρίς ❌" },
@@ -56,15 +57,63 @@ const SORT_OPTIONS: { value: string; label: string }[] = [
   { value: "muscle", label: "Μυϊκή Ομάδα" },
 ];
 
-interface MediaExercise {
+const FOOD_FILTER_TABS: { key: string; label: string }[] = [
+  { key: "all", label: "Όλα" },
+  { key: "hasImage", label: "Με εικόνα ✅" },
+  { key: "noImage", label: "Χωρίς ❌" },
+  { key: "meat", label: "Κρέατα" },
+  { key: "fish", label: "Ψάρια" },
+  { key: "eggs", label: "Αυγά" },
+  { key: "dairy", label: "Γαλακτοκομικά" },
+  { key: "grains", label: "Δημητριακά" },
+  { key: "vegetables", label: "Λαχανικά" },
+  { key: "fruits", label: "Φρούτα" },
+  { key: "legumes", label: "Όσπρια" },
+  { key: "nuts", label: "Ξηροί Καρποί" },
+  { key: "oils", label: "Έλαια" },
+];
+
+const FOOD_CATEGORY_LABELS: Record<string, string> = {
+  meat: "Κρέατα",
+  fish: "Ψάρια",
+  eggs: "Αυγά",
+  dairy: "Γαλακτοκομικά",
+  grains: "Δημητριακά",
+  vegetables: "Λαχανικά",
+  fruits: "Φρούτα",
+  legumes: "Όσπρια",
+  nuts: "Ξηροί Καρποί",
+  oils: "Έλαια",
+  other: "Άλλο",
+};
+
+// The shape both the exercises tab and the foods tab render through — each
+// section's `config.mapItem` translates its own API response into this.
+interface MediaCardItem {
+  id: number | string;
+  name: string;
+  badgeLabel: string;
+  imageUrl: string | null;
+  caption?: string;
+}
+
+interface RawExerciseItem {
   id: number | string;
   name: string;
   muscleGroup: string;
   imageUrl: string | null;
 }
 
-interface MediaListResponse {
-  items: MediaExercise[];
+interface RawFoodItem {
+  id: number | string;
+  nameGr: string;
+  category: string;
+  caloriesPer100g: number | string | null;
+  imageUrl: string | null;
+}
+
+interface ListResponse<T> {
+  items: T[];
   total: number;
   page: number;
   limit: number;
@@ -80,14 +129,14 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-// api.upload() (lib/api/client.ts) is hardcoded to POST; the spec calls for
-// PUT here, so this mirrors that helper locally rather than editing the
-// shared client for one call site.
-async function uploadReplaceImage(id: number | string, file: File): Promise<{ imageUrl: string }> {
+// api.upload() (lib/api/client.ts) is hardcoded to POST; both sections need
+// PUT, so this mirrors that helper locally, parameterized by the full path
+// rather than editing the shared client for these call sites.
+async function uploadReplaceImage(path: string, file: File): Promise<{ imageUrl: string }> {
   const token = typeof window !== "undefined" ? window.localStorage.getItem("token") : null;
   const formData = new FormData();
   formData.append("image", file);
-  const response = await fetch(`${API_BASE_URL}/media/exercises/${id}/image`, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "PUT",
     credentials: "include",
     headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -98,10 +147,61 @@ async function uploadReplaceImage(id: number | string, file: File): Promise<{ im
   return data;
 }
 
-function MediaExercisesContent() {
-  const { user, logout } = useAuth();
+interface MediaSectionConfig<TRaw> {
+  listPath: string;
+  statsPath: string;
+  imagePath: (id: number | string) => string;
+  filterTabs: { key: string; label: string }[];
+  hasSort: boolean;
+  searchPlaceholder: string;
+  badgeColumnLabel: string;
+  statsSingularLabel: string;
+  itemLabel: string; // e.g. "ασκήσεις" / "τρόφιμα", used in pagination + bulk-confirm text
+  mapListParams: (filterKey: string) => Record<string, string>;
+  mapItem: (raw: TRaw) => MediaCardItem;
+}
 
-  const [items, setItems] = useState<MediaExercise[]>([]);
+const exercisesConfig: MediaSectionConfig<RawExerciseItem> = {
+  listPath: "/media/exercises",
+  statsPath: "/media/stats",
+  imagePath: (id) => `/media/exercises/${id}/image`,
+  filterTabs: EXERCISE_FILTER_TABS,
+  hasSort: true,
+  searchPlaceholder: "Αναζήτηση άσκησης...",
+  badgeColumnLabel: "Μυϊκή Ομάδα",
+  statsSingularLabel: "Σύνολο ασκήσεων",
+  itemLabel: "ασκήσεις",
+  mapListParams: (filterKey) => (filterKey && filterKey !== "all" ? ({ filter: filterKey } as Record<string, string>) : {}),
+  mapItem: (raw) => ({ id: raw.id, name: raw.name, badgeLabel: raw.muscleGroup, imageUrl: raw.imageUrl }),
+};
+
+const foodsConfig: MediaSectionConfig<RawFoodItem> = {
+  listPath: "/media/foods",
+  statsPath: "/media/foods/stats",
+  imagePath: (id) => `/media/foods/${id}/image`,
+  filterTabs: FOOD_FILTER_TABS,
+  hasSort: false,
+  searchPlaceholder: "Αναζήτηση τροφίμου...",
+  badgeColumnLabel: "Κατηγορία",
+  statsSingularLabel: "Σύνολο τροφίμων",
+  itemLabel: "τρόφιμα",
+  mapListParams: (filterKey): Record<string, string> => {
+    if (filterKey === "hasImage") return { hasImage: "true" };
+    if (filterKey === "noImage") return { hasImage: "false" };
+    if (filterKey && filterKey !== "all") return { category: filterKey };
+    return {};
+  },
+  mapItem: (raw) => ({
+    id: raw.id,
+    name: raw.nameGr,
+    badgeLabel: FOOD_CATEGORY_LABELS[raw.category] || raw.category,
+    imageUrl: raw.imageUrl,
+    caption: raw.caloriesPer100g != null ? `${Number(raw.caloriesPer100g)} kcal/100g` : undefined,
+  }),
+};
+
+function MediaSection<TRaw>({ config }: { config: MediaSectionConfig<TRaw> }) {
+  const [items, setItems] = useState<MediaCardItem[]>([]);
   const [total, setTotal] = useState(0);
   const [stats, setStats] = useState<MediaStats>({ total: 0, withImage: 0, withoutImage: 0 });
   const [loading, setLoading] = useState(true);
@@ -118,7 +218,7 @@ function MediaExercisesContent() {
   const [selectedIds, setSelectedIds] = useState<Set<number | string>>(new Set());
 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
-  const [replaceTarget, setReplaceTarget] = useState<MediaExercise | null>(null);
+  const [replaceTarget, setReplaceTarget] = useState<MediaCardItem | null>(null);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setDebouncedSearch(search), 300);
@@ -131,13 +231,14 @@ function MediaExercisesContent() {
 
   const loadStats = () => {
     api
-      .get<MediaStats>("/media/stats")
+      .get<MediaStats>(config.statsPath)
       .then(setStats)
       .catch(() => {});
   };
 
   useEffect(() => {
     loadStats();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -147,20 +248,20 @@ function MediaExercisesContent() {
 
     const params = new URLSearchParams();
     if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
-    if (filter && filter !== "all") params.set("filter", filter);
-    params.set("sort", sort);
+    Object.entries(config.mapListParams(filter)).forEach(([key, value]) => params.set(key, value));
+    if (config.hasSort) params.set("sort", sort);
     params.set("page", String(page));
     params.set("limit", String(PAGE_LIMIT));
 
     api
-      .get<MediaListResponse>(`/media/exercises?${params.toString()}`)
+      .get<ListResponse<TRaw>>(`${config.listPath}?${params.toString()}`)
       .then((data) => {
         if (ignore) return;
-        setItems(data.items);
+        setItems(data.items.map(config.mapItem));
         setTotal(data.total);
       })
       .catch((err) => {
-        if (!ignore) setError(getErrorMessage(err, "Δεν φορτώθηκαν οι ασκήσεις."));
+        if (!ignore) setError(getErrorMessage(err, `Δεν φορτώθηκαν τα ${config.itemLabel}.`));
       })
       .finally(() => {
         if (!ignore) setLoading(false);
@@ -169,6 +270,7 @@ function MediaExercisesContent() {
     return () => {
       ignore = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, filter, sort, page]);
 
   const applyImageUpdate = (id: number | string, imageUrl: string | null) => {
@@ -176,10 +278,10 @@ function MediaExercisesContent() {
     loadStats();
   };
 
-  const removeImage = async (item: MediaExercise) => {
+  const removeImage = async (item: MediaCardItem) => {
     if (!window.confirm(`Αφαίρεση εικόνας από "${item.name}";`)) return;
     try {
-      await api.delete(`/media/exercises/${item.id}/image`);
+      await api.delete(config.imagePath(item.id));
       applyImageUpdate(item.id, null);
     } catch (err) {
       setError(getErrorMessage(err, "Δεν αφαιρέθηκε η εικόνα."));
@@ -202,9 +304,9 @@ function MediaExercisesContent() {
 
   const bulkRemoveImages = async () => {
     if (!selectedIds.size) return;
-    if (!window.confirm(`Αφαίρεση εικόνας από ${selectedIds.size} ασκήσεις;`)) return;
+    if (!window.confirm(`Αφαίρεση εικόνας από ${selectedIds.size} ${config.itemLabel};`)) return;
     const ids = Array.from(selectedIds);
-    await Promise.allSettled(ids.map((id) => api.delete(`/media/exercises/${id}/image`)));
+    await Promise.allSettled(ids.map((id) => api.delete(config.imagePath(id))));
     setItems((current) => current.map((item) => (selectedIds.has(item.id) ? { ...item, imageUrl: null } : item)));
     loadStats();
     clearSelection();
@@ -237,7 +339,7 @@ function MediaExercisesContent() {
   };
 
   return (
-    <CoachShell title="Media Library" user={user} logout={logout}>
+    <>
       {/* Top bar */}
       <div className="sticky top-0 z-20 -mx-6 mb-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-slate-50/95 px-6 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
         <div className="flex items-center gap-3">
@@ -255,18 +357,20 @@ function MediaExercisesContent() {
               <ListIcon className="h-4 w-4" />
             </ToggleGroupItem>
           </ToggleGroup>
-          <Select value={sort} onValueChange={(value) => value && setSort(value)}>
-            <SelectTrigger className="h-9 w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SORT_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {config.hasSort && (
+            <Select value={sort} onValueChange={(value) => value && setSort(value)}>
+              <SelectTrigger className="h-9 w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <Button
             type="button"
             variant={selectMode ? "default" : "outline"}
@@ -282,7 +386,7 @@ function MediaExercisesContent() {
       <div className="space-y-3">
         <ScrollArea className="w-full whitespace-nowrap">
           <div className="flex gap-2 pb-2">
-            {FILTER_TABS.map((tab) => (
+            {config.filterTabs.map((tab) => (
               <button
                 key={tab.key}
                 type="button"
@@ -306,7 +410,7 @@ function MediaExercisesContent() {
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Αναζήτηση άσκησης..."
+            placeholder={config.searchPlaceholder}
             className="h-auto border-none bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
           />
         </div>
@@ -314,7 +418,7 @@ function MediaExercisesContent() {
 
       {/* Stats row */}
       <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard label="Σύνολο ασκήσεων" value={stats.total} tone="text-slate-900 dark:text-slate-50" />
+        <StatCard label={config.statsSingularLabel} value={stats.total} tone="text-slate-900 dark:text-slate-50" />
         <StatCard label="Με εικόνα ✅" value={stats.withImage} tone="text-emerald-600 dark:text-emerald-400" />
         <StatCard label="Χωρίς εικόνα ❌" value={stats.withoutImage} tone="text-red-600 dark:text-red-400" />
       </div>
@@ -355,8 +459,8 @@ function MediaExercisesContent() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-14" />
-                <TableHead>Άσκηση</TableHead>
-                <TableHead>Μυϊκή Ομάδα</TableHead>
+                <TableHead>Όνομα</TableHead>
+                <TableHead>{config.badgeColumnLabel}</TableHead>
                 <TableHead>Κατάσταση</TableHead>
                 <TableHead className="text-right">Ενέργειες</TableHead>
               </TableRow>
@@ -376,7 +480,7 @@ function MediaExercisesContent() {
                   </TableCell>
                   <TableCell className="font-semibold">{item.name}</TableCell>
                   <TableCell>
-                    <Badge variant="outline">{item.muscleGroup}</Badge>
+                    <Badge variant="outline">{item.badgeLabel}</Badge>
                   </TableCell>
                   <TableCell>
                     {item.imageUrl ? (
@@ -430,7 +534,7 @@ function MediaExercisesContent() {
             currentPage={page}
             onPageSizeChange={() => {}}
             onPageChange={setPage}
-            itemLabel="ασκήσεις"
+            itemLabel={config.itemLabel}
             variant="pages"
           />
         </div>
@@ -453,8 +557,8 @@ function MediaExercisesContent() {
       )}
 
       <PreviewDialog items={items} index={previewIndex} onClose={() => setPreviewIndex(null)} onNavigate={setPreviewIndex} />
-      <ReplaceImageDialog target={replaceTarget} onClose={() => setReplaceTarget(null)} onSaved={applyImageUpdate} />
-    </CoachShell>
+      <ReplaceImageDialog target={replaceTarget} imagePath={config.imagePath} onClose={() => setReplaceTarget(null)} onSaved={applyImageUpdate} />
+    </>
   );
 }
 
@@ -476,7 +580,7 @@ function GridCard({
   onReplace,
   onRemove,
 }: {
-  item: MediaExercise;
+  item: MediaCardItem;
   selectMode: boolean;
   selected: boolean;
   onToggleSelect: () => void;
@@ -517,8 +621,9 @@ function GridCard({
           {item.name}
         </div>
         <Badge variant="outline" className="gap-1 text-[10px]">
-          🏷️ {item.muscleGroup}
+          🏷️ {item.badgeLabel}
         </Badge>
+        {item.caption && <div className="text-xs text-slate-500 dark:text-slate-400">{item.caption}</div>}
       </div>
     </Card>
   );
@@ -557,7 +662,7 @@ function PreviewDialog({
   onClose,
   onNavigate,
 }: {
-  items: MediaExercise[];
+  items: MediaCardItem[];
   index: number | null;
   onClose: () => void;
   onNavigate: (index: number) => void;
@@ -585,7 +690,7 @@ function PreviewDialog({
           <div className="relative flex flex-col">
             <DialogHeader className="sr-only">
               <DialogTitle>{item.name}</DialogTitle>
-              <DialogDescription>{item.muscleGroup}</DialogDescription>
+              <DialogDescription>{item.badgeLabel}</DialogDescription>
             </DialogHeader>
 
             <button type="button" onClick={onClose} aria-label="Close" className="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full bg-white/10 hover:bg-white/20">
@@ -626,7 +731,7 @@ function PreviewDialog({
               <div>
                 <div className="text-lg font-bold">{item.name}</div>
                 <Badge variant="outline" className="mt-1 border-white/20 text-white">
-                  {item.muscleGroup}
+                  {item.badgeLabel}
                 </Badge>
               </div>
               <div className="flex items-center gap-2 rounded-md bg-white/5 px-3 py-2">
@@ -645,10 +750,12 @@ function PreviewDialog({
 
 function ReplaceImageDialog({
   target,
+  imagePath,
   onClose,
   onSaved,
 }: {
-  target: MediaExercise | null;
+  target: MediaCardItem | null;
+  imagePath: (id: number | string) => string;
   onClose: () => void;
   onSaved: (id: number | string, imageUrl: string) => void;
 }) {
@@ -685,7 +792,7 @@ function ReplaceImageDialog({
     setSaving(true);
     setError("");
     try {
-      const result = await uploadReplaceImage(target.id, file);
+      const result = await uploadReplaceImage(imagePath(target.id), file);
       onSaved(target.id, result.imageUrl);
       onClose();
     } catch (err) {
@@ -765,10 +872,31 @@ function ReplaceImageDialog({
   );
 }
 
+function MediaLibraryContent() {
+  const { user, logout } = useAuth();
+
+  return (
+    <CoachShell title="Media Library" user={user} logout={logout}>
+      <Tabs defaultValue="exercises">
+        <TabsList className="mb-5">
+          <TabsTrigger value="exercises">🏋️ Ασκήσεις</TabsTrigger>
+          <TabsTrigger value="foods">🍎 Τρόφιμα</TabsTrigger>
+        </TabsList>
+        <TabsContent value="exercises">
+          <MediaSection config={exercisesConfig} />
+        </TabsContent>
+        <TabsContent value="foods">
+          <MediaSection config={foodsConfig} />
+        </TabsContent>
+      </Tabs>
+    </CoachShell>
+  );
+}
+
 export default function MediaExercisesPage() {
   return (
     <ProtectedRoute allow="coach">
-      <MediaExercisesContent />
+      <MediaLibraryContent />
     </ProtectedRoute>
   );
 }
