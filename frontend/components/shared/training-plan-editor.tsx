@@ -5,12 +5,14 @@ import { Plus, Search, GripVertical, ChevronDown } from "lucide-react";
 import {
   DndContext,
   DragOverlay,
+  closestCenter,
   pointerWithin,
   PointerSensor,
   useDraggable,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
@@ -327,6 +329,19 @@ export function TrainingPlanEditor({
     ? selectedDay?.exercises[Number(activeDragId.slice(3))]
     : null;
 
+  // The day list sits inside a droppable wrapper (DayDropZone) so drops always have
+  // somewhere to land, even on an empty day. But that means the pointer is often
+  // simultaneously "within" both the wrapper AND the specific exercise card under it,
+  // and plain pointerWithin isn't guaranteed to prefer the more specific one — which
+  // silently broke reordering (over.id resolved to "day-dropzone" instead of the card).
+  // Prefer a direct hit on an exercise card; otherwise fall back to closestCenter so
+  // dropping into empty space (or an empty day) still resolves to something sensible.
+  const collisionDetection: CollisionDetection = (args) => {
+    const pointerHits = pointerWithin(args).filter((collision) => String(collision.id).startsWith("ex-"));
+    if (pointerHits.length > 0) return pointerHits;
+    return closestCenter(args);
+  };
+
   const filteredLibrary = exercises.filter((item) => {
     if (!libraryQuery.trim()) return true;
     const q = libraryQuery.trim().toLowerCase();
@@ -387,7 +402,7 @@ export function TrainingPlanEditor({
             {selectedDay && (
               <DndContext
                 sensors={sensors}
-                collisionDetection={pointerWithin}
+                collisionDetection={collisionDetection}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
               >
