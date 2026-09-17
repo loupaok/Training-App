@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Plus, Search, GripVertical, ChevronDown } from "lucide-react";
 import {
   DndContext,
@@ -38,6 +38,25 @@ import { Field, PlanHeader, PlanHistory, SelectField, type PlanHistoryRow } from
 // ---------------------------------------------------------------------------
 
 const dayLabels = ["Κυριακή", "Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο"];
+
+// ---------------------------------------------------------------------------
+// NEW: right-panel library filter tabs. Raw muscle-group values in the data
+// are granular (e.g. "Τετρακέφαλοι", "Οπίσθιοι Μηριαίοι"), so each broad tab
+// matches by keyword substring rather than an exact value.
+// ---------------------------------------------------------------------------
+
+const LIBRARY_MUSCLE_FILTERS: { key: string; label: string; keywords: string[] | null }[] = [
+  { key: "all", label: "Όλα", keywords: null },
+  { key: "chest", label: "Στήθος", keywords: ["στήθ"] },
+  { key: "back", label: "Πλάτη", keywords: ["πλάτ", "τραπεζοειδ"] },
+  { key: "legs", label: "Πόδια", keywords: ["μηριαί", "τετρακέφαλ", "γάμπ", "γλουτ", "προσαγωγ", "απαγωγ"] },
+  { key: "shoulders", label: "Ώμοι", keywords: ["ώμ", "αυχέν"] },
+  { key: "arms", label: "Χέρια", keywords: ["δικέφαλ", "τρικέφαλ", "πήχ"] },
+  { key: "core", label: "Κορμός", keywords: ["κοιλιακ", "κορμ"] },
+  { key: "cardio", label: "Καρδιο", keywords: ["καρδιο", "αερόβι"] },
+];
+
+const LIBRARY_PAGE_SIZE = 20;
 
 export interface LibraryExercise {
   id: number | string;
@@ -213,7 +232,22 @@ export function TrainingPlanEditor({
 }) {
   const initialIndex = plan.days?.findIndex((day) => day.exercises?.length) ?? 0;
   const [activeDayIndex, setActiveDayIndex] = useState(Math.max(0, initialIndex));
+
+  // ---- NEW (right-panel library performance): debounced search + muscle filter + pagination ----
   const [libraryQuery, setLibraryQuery] = useState("");
+  const [debouncedLibraryQuery, setDebouncedLibraryQuery] = useState("");
+  const [libraryMuscleFilter, setLibraryMuscleFilter] = useState("all");
+  const [libraryVisibleCount, setLibraryVisibleCount] = useState(LIBRARY_PAGE_SIZE);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedLibraryQuery(libraryQuery), 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [libraryQuery]);
+
+  useEffect(() => {
+    setLibraryVisibleCount(LIBRARY_PAGE_SIZE);
+  }, [debouncedLibraryQuery, libraryMuscleFilter]);
+
   const visibleDays = (plan.days || []).slice(0, plan.dayCount || plan.days?.length || 1);
   const selectedDay = visibleDays[activeDayIndex] || visibleDays[0];
   const muscleGroups = [...new Set((selectedDay?.exercises || []).map((exercise) => exercise.muscleGroup).filter(Boolean))];
@@ -342,11 +376,40 @@ export function TrainingPlanEditor({
     return closestCenter(args);
   };
 
-  const filteredLibrary = exercises.filter((item) => {
-    if (!libraryQuery.trim()) return true;
-    const q = libraryQuery.trim().toLowerCase();
-    return [item.name, item.muscleGroup, item.equipment, item.type].join(" ").toLowerCase().includes(q);
-  });
+  const activeMuscleFilter = LIBRARY_MUSCLE_FILTERS.find((filter) => filter.key === libraryMuscleFilter);
+
+  const filteredLibrary = useMemo(() => {
+    const q = debouncedLibraryQuery.trim().toLowerCase();
+    return exercises.filter((item) => {
+      if (q) {
+        const haystack = [item.name, item.muscleGroup, item.equipment, item.type].join(" ").toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      if (activeMuscleFilter?.keywords) {
+        const muscleGroup = (item.muscleGroup || "").toLowerCase();
+        if (!activeMuscleFilter.keywords.some((keyword) => muscleGroup.includes(keyword))) return false;
+      }
+      return true;
+    });
+  }, [exercises, debouncedLibraryQuery, activeMuscleFilter]);
+
+  // Only render a page at a time — the library can hold hundreds of exercises,
+  // and mounting every row (each with an image) at once is what was slow.
+  const visibleLibrary = filteredLibrary.slice(0, libraryVisibleCount);
+  const hasMoreLibraryItems = libraryVisibleCount < filteredLibrary.length;
+  const libraryScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (libraryScrollRef.current) libraryScrollRef.current.scrollTop = 0;
+  }, [debouncedLibraryQuery, libraryMuscleFilter]);
+
+  const handleLibraryScroll = () => {
+    const el = libraryScrollRef.current;
+    if (!el || !hasMoreLibraryItems) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+      setLibraryVisibleCount((count) => Math.min(count + LIBRARY_PAGE_SIZE, filteredLibrary.length));
+    }
+  };
 
   return (
     <Card className="p-0">
@@ -479,7 +542,7 @@ export function TrainingPlanEditor({
 
                   {/* RIGHT 30% — exercise library */}
                   <ResizablePanel defaultSize={30} minSize={22} className="flex flex-col overflow-hidden border-l border-slate-200 dark:border-slate-800">
-                    <div className="border-b border-slate-200 p-3 dark:border-slate-800">
+                    <div className="space-y-3 border-b border-slate-200 p-3 dark:border-slate-800">
                       <div className="relative">
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                         <Input
@@ -489,11 +552,35 @@ export function TrainingPlanEditor({
                           className="h-10 pl-9 text-sm font-semibold"
                         />
                       </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {LIBRARY_MUSCLE_FILTERS.map((filter) => (
+                          <button
+                            key={filter.key}
+                            type="button"
+                            onClick={() => setLibraryMuscleFilter(filter.key)}
+                            className={cn(
+                              "rounded-full border px-2.5 py-1 text-xs font-bold transition-colors",
+                              libraryMuscleFilter === filter.key
+                                ? "border-red-500 bg-red-500 text-white"
+                                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                            )}
+                          >
+                            {filter.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex-1 overflow-y-auto">
-                      {filteredLibrary.map((item) => (
+                    <div
+                      ref={libraryScrollRef}
+                      onScroll={handleLibraryScroll}
+                      className="max-h-[32rem] flex-1 overflow-y-auto"
+                    >
+                      {visibleLibrary.map((item) => (
                         <DraggableLibraryItem key={item.id} item={item} onClick={() => addExerciseFromLibrary(item)} />
                       ))}
+                      {hasMoreLibraryItems && (
+                        <div className="p-3 text-center text-xs font-bold text-slate-400 dark:text-slate-500">Φόρτωση περισσότερων...</div>
+                      )}
                       {!filteredLibrary.length && (
                         <div className="p-4 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">Δεν βρέθηκε άσκηση.</div>
                       )}
