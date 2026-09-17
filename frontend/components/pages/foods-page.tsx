@@ -427,44 +427,45 @@ function FoodsContent() {
         </div>
       )}
 
-      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
         {items.map((food) => (
-          <Card key={food.id} className="overflow-hidden p-0">
+          <Card key={food.id} className="group overflow-hidden p-0 transition-transform hover:scale-105">
             <FoodCardImage imageUrl={food.imageUrl} name={food.nameGr} />
-            <div className="space-y-2 p-4">
-              <div className="flex items-start justify-between gap-2">
-                <span className="truncate font-bold" title={food.nameGr}>
+            <div className="space-y-1 p-2">
+              <div className="flex items-center justify-between gap-1">
+                <span className="truncate text-sm font-semibold" title={food.nameGr}>
                   {food.nameGr}
                 </span>
                 {food.source === "custom" && (
-                  <Badge variant="outline" className="shrink-0 text-[10px]">
+                  <Badge variant="outline" className="shrink-0 px-1 py-0 text-[9px]">
                     Custom
                   </Badge>
                 )}
               </div>
-              <div className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-                {food.caloriesPer100g != null ? Number(food.caloriesPer100g) : "—"} kcal/100g
+              <div className="text-xs text-muted-foreground">
+                {food.caloriesPer100g != null ? Number(food.caloriesPer100g) : "—"} kcal
               </div>
-              <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                P:{food.proteinPer100g != null ? Number(food.proteinPer100g) : "—"} C:
-                {food.carbsPer100g != null ? Number(food.carbsPer100g) : "—"} F:
-                {food.fatsPer100g != null ? Number(food.fatsPer100g) : "—"}
-              </div>
-              <div className="flex gap-2 pt-1">
-                <Button type="button" variant="outline" size="sm" className="flex-1 gap-1.5 font-bold" onClick={() => openEdit(food)}>
-                  <Pencil className="h-3.5 w-3.5" />
-                  Edit
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 font-bold text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10"
-                  onClick={() => deleteFood(food)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Delete
-                </Button>
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 text-xs font-medium">
+                  <span className="text-blue-600 dark:text-blue-400">P:{food.proteinPer100g ?? "—"}</span>
+                  <span className="text-yellow-600 dark:text-yellow-500">C:{food.carbsPer100g ?? "—"}</span>
+                  <span className="text-red-600 dark:text-red-400">F:{food.fatsPer100g ?? "—"}</span>
+                </div>
+                <div className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                  <Button type="button" variant="ghost" size="icon-sm" onClick={() => openEdit(food)} aria-label="Edit">
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10"
+                    onClick={() => deleteFood(food)}
+                    aria-label="Delete"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
               </div>
             </div>
           </Card>
@@ -675,14 +676,14 @@ function FoodCardImage({ imageUrl, name }: { imageUrl: string; name: string }) {
 
   if (!imageUrl || failed) {
     return (
-      <div className="flex h-[100px] items-center justify-center bg-slate-100 dark:bg-slate-800">
+      <div className="flex h-28 items-center justify-center bg-slate-100 dark:bg-slate-800">
         <ImageOff className="h-8 w-8 text-slate-300 dark:text-slate-600" />
       </div>
     );
   }
 
   return (
-    <div className="h-[100px] bg-slate-100 dark:bg-slate-800">
+    <div className="h-28 bg-slate-100 dark:bg-slate-800">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={resolveMediaUrl(imageUrl)}
