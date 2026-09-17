@@ -159,7 +159,10 @@ const FOOD_COLUMNS = `id, name_gr AS nameGr, name_en AS nameEn, category,
 router.get('/', authorizeRole(['coach', 'admin']), async (req, res) => {
   const { search = '', category = '', source = '' } = req.query;
   const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 24));
+  // Capped at 500 (not 100) so a single "fetch everything for the picker"
+  // call, like the Nutrition Plan editor's food picker, can't silently
+  // truncate the library as it grows past 100 entries.
+  const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 24));
   const offset = (page - 1) * limit;
 
   const filters = ['is_active = 1'];

@@ -42,6 +42,7 @@ import {
   defaultNutritionPlan,
   type NutritionPlanState,
   type RawNutritionPlan,
+  type LibraryFood,
 } from "@/components/shared/nutrition-plan-editor";
 import { AssignTemplateDialog } from "@/components/shared/assign-template-dialog";
 
@@ -224,6 +225,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [exercises, setExercises] = useState<LibraryExercise[]>([]);
+  const [foods, setFoods] = useState<LibraryFood[]>([]);
   const [trainingPlan, setTrainingPlan] = useState<TrainingPlanState>(defaultTrainingPlan);
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlanState>(defaultNutritionPlan);
   const [trainingHistory, setTrainingHistory] = useState<PlanHistoryRow[]>([]);
@@ -242,12 +244,14 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
     Promise.all([
       api.get<ClientRecord>(`/clients/${clientId}`),
       api.get<LibraryExercise[]>("/exercises").catch(() => []),
+      api.get<{ items: LibraryFood[] }>("/foods?limit=500").catch(() => ({ items: [] })),
       api.get<RawTrainingPlan>(`/training-plans/${clientId}/full`).catch(() => ({ days: [] })),
       api.get<RawNutritionPlan>(`/nutrition-plans/${clientId}/full`).catch(() => ({ meals: [] })),
     ])
-      .then(([clientData, exerciseRows, trainingData, nutritionData]) => {
+      .then(([clientData, exerciseRows, foodsResponse, trainingData, nutritionData]) => {
         setClient(clientData);
         setExercises(Array.isArray(exerciseRows) ? exerciseRows : []);
+        setFoods(Array.isArray(foodsResponse?.items) ? foodsResponse.items : []);
         setTrainingPlan(normalizeTrainingPlan(trainingData));
         setNutritionPlan(normalizeNutritionPlan(nutritionData));
       })
@@ -495,6 +499,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
               <NutritionPlanEditor
                 plan={nutritionPlan}
                 setPlan={setNutritionPlan}
+                foods={foods}
                 onSave={saveNutritionPlan}
                 onCreateNew={createNewNutritionPlan}
                 saving={savingNutrition}

@@ -17,6 +17,7 @@ import {
   defaultNutritionPlan,
   type NutritionPlanState,
   type RawNutritionPlan,
+  type LibraryFood,
 } from "@/components/shared/nutrition-plan-editor";
 
 function getErrorMessage(error: unknown, fallback: string): string {
@@ -28,9 +29,17 @@ function NutritionTemplateFormContent({ templateId }: { templateId: string | nul
   const router = useRouter();
   const [goal, setGoal] = useState("");
   const [plan, setPlan] = useState<NutritionPlanState>(defaultNutritionPlan);
+  const [foods, setFoods] = useState<LibraryFood[]>([]);
   const [loading, setLoading] = useState(Boolean(templateId));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    api
+      .get<{ items: LibraryFood[] }>("/foods?limit=500")
+      .then((data) => setFoods(Array.isArray(data?.items) ? data.items : []))
+      .catch(() => setFoods([]));
+  }, []);
 
   useEffect(() => {
     if (!templateId) return;
@@ -129,6 +138,7 @@ function NutritionTemplateFormContent({ templateId }: { templateId: string | nul
           <NutritionPlanEditor
             plan={plan}
             setPlan={setPlan}
+            foods={foods}
             onSave={save}
             saving={saving}
             title="Πρόγραμμα Διατροφής Προτύπου"
