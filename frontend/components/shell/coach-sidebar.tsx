@@ -21,9 +21,25 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
   const pathname = usePathname();
   const canSeeCoachSettings = user?.role === "admin" || user?.role === "coach";
   const isAdmin = user?.role === "admin";
-  const settingsSection = coachNavSections.find((section) => section.key === "settings");
-  const settingsHasActiveChild = settingsSection?.children?.some((child) => isActivePath(pathname, child.path));
-  const [settingsOpen, setSettingsOpen] = useState(Boolean(settingsHasActiveChild));
+  // Each expandable section (Ρυθμίσεις, Πρότυπα Πλάνων, ...) tracks its own open state,
+  // starting open if the current route is one of its children.
+  const [openSections, setOpenSections] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    for (const section of coachNavSections) {
+      if (section.children?.some((child) => isActivePath(pathname, child.path))) {
+        initial.add(section.key);
+      }
+    }
+    return initial;
+  });
+  const toggleSection = (key: string) => {
+    setOpenSections((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   return (
     <aside
@@ -54,11 +70,12 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
 
             if (section.children) {
               if (!canSeeCoachSettings) return null;
+              const isOpen = openSections.has(section.key);
               return (
                 <div key={section.key} className={section.spacerBefore ? "mt-4" : ""}>
                   <button
                     type="button"
-                    onClick={() => setSettingsOpen((value) => !value)}
+                    onClick={() => toggleSection(section.key)}
                     title={collapsed ? section.label : undefined}
                     className={cn(
                       "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-100 transition-colors hover:bg-white/10",
@@ -68,10 +85,10 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
                     {Icon && <Icon className="size-4 shrink-0" />}
                     {!collapsed && <span className="flex-1 truncate text-left">{section.label}</span>}
                     {!collapsed && (
-                      <ChevronDown className={cn("size-4 shrink-0 transition-transform", settingsOpen && "rotate-180")} />
+                      <ChevronDown className={cn("size-4 shrink-0 transition-transform", isOpen && "rotate-180")} />
                     )}
                   </button>
-                  {!collapsed && settingsOpen && (
+                  {!collapsed && isOpen && (
                     <div className="ml-4 mt-1 flex flex-col gap-1 border-l border-white/10 pl-3">
                       {section.children.map((child) =>
                         child.path ? (
