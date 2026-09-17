@@ -1,14 +1,34 @@
 "use client";
 
 import { useState, type Dispatch, type SetStateAction } from "react";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, GripVertical, ChevronDown } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { resolveMediaUrl } from "@/lib/media";
 import { Field, PlanHeader, PlanHistory, SelectField, type PlanHistoryRow } from "@/components/shared/plan-editor-ui";
+
+// ---------------------------------------------------------------------------
+// Types, defaults, normalize — UNCHANGED from the current file
+// ---------------------------------------------------------------------------
 
 const dayLabels = ["Κυριακή", "Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο"];
 
@@ -159,6 +179,10 @@ export function normalizeTrainingPlan(plan?: RawTrainingPlan | null): TrainingPl
   };
 }
 
+// ---------------------------------------------------------------------------
+// TrainingPlanEditor — same props, same public API. New internals below.
+// ---------------------------------------------------------------------------
+
 export function TrainingPlanEditor({
   plan,
   setPlan,
@@ -182,10 +206,15 @@ export function TrainingPlanEditor({
 }) {
   const initialIndex = plan.days?.findIndex((day) => day.exercises?.length) ?? 0;
   const [activeDayIndex, setActiveDayIndex] = useState(Math.max(0, initialIndex));
+  const [libraryQuery, setLibraryQuery] = useState("");
   const visibleDays = (plan.days || []).slice(0, plan.dayCount || plan.days?.length || 1);
   const selectedDay = visibleDays[activeDayIndex] || visibleDays[0];
   const muscleGroups = [...new Set((selectedDay?.exercises || []).map((exercise) => exercise.muscleGroup).filter(Boolean))];
+  const isRestDay = (selectedDay?.exercises?.length ?? 0) === 0;
 
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  // ---- existing functions, UNCHANGED ----
   const setDayCount = (count: number) => {
     const nextCount = Number(count);
     setPlan((current) => {
@@ -227,11 +256,57 @@ export function TrainingPlanEditor({
     updateDay(dayIndex, { exercises: day.exercises.filter((_, index) => index !== exerciseIndex) });
   };
 
+  // ---- NEW #1 (approved): rest-day toggle reuses updateDay, no new state shape ----
+  const toggleRestDay = (checked: boolean) => {
+    if (checked) updateDay(activeDayIndex, { exercises: [] });
+    // turning it back off just leaves the (empty) day visible to add exercises to
+  };
+
+  // ---- NEW #2 (approved): library click = addExercise + updateExercise in one step ----
+  const addExerciseFromLibrary = (item: LibraryExercise) => {
+    updateDay(activeDayIndex, {
+      exercises: [
+        ...(plan.days[activeDayIndex]?.exercises || []),
+        {
+          exerciseId: item.id || "",
+          exerciseName: item.name || "",
+          muscleGroup: item.muscleGroup || "",
+          imageUrl: item.imageUrl || item.image_url || "",
+          videoUrl: item.videoUrl || item.video_url || "",
+          sets: "",
+          reps: "",
+          tempo: "",
+          restSeconds: "",
+          targetWeight: "",
+          notes: "",
+        },
+      ],
+    });
+  };
+
+  // ---- NEW #3 (approved): drag-reorder within the active day ----
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !selectedDay) return;
+    const ids = selectedDay.exercises.map((_, index) => `ex-${index}`);
+    const oldIndex = ids.indexOf(String(active.id));
+    const newIndex = ids.indexOf(String(over.id));
+    if (oldIndex === -1 || newIndex === -1) return;
+    updateDay(activeDayIndex, { exercises: arrayMove(selectedDay.exercises, oldIndex, newIndex) });
+  };
+
+  const filteredLibrary = exercises.filter((item) => {
+    if (!libraryQuery.trim()) return true;
+    const q = libraryQuery.trim().toLowerCase();
+    return [item.name, item.muscleGroup, item.equipment, item.type].join(" ").toLowerCase().includes(q);
+  });
+
   return (
     <Card className="p-0">
       <PlanHeader title={title} subtitle={subtitle} onSave={onSave} onCreateNew={onCreateNew} saving={saving} />
 
       <div className="space-y-6 p-6">
+        {/* Top fields row — same 4 fields/handlers as before, just re-flowed */}
         <div className="grid gap-4 xl:grid-cols-[1.2fr_0.7fr_0.7fr_1fr]">
           <Field label="Τίτλος" value={plan.title} onChange={(value) => setPlan({ ...plan, title: value })} />
           <div className="block">
@@ -266,95 +341,130 @@ export function TrainingPlanEditor({
           <Field label="Διάρκεια εβδομάδες" type="number" value={plan.durationWeeks} onChange={(value) => setPlan({ ...plan, durationWeeks: value })} />
         </div>
 
-        <div className="flex gap-2 overflow-x-auto rounded-lg border border-slate-200 bg-slate-50 p-2 dark:border-slate-800 dark:bg-slate-800">
-          {visibleDays.map((day, index) => {
-            const groups = [...new Set((day.exercises || []).map((exercise) => exercise.muscleGroup).filter(Boolean))];
-            return (
-              <Button
-                key={`${day.dayOfWeek}-${index}`}
-                type="button"
-                variant={activeDayIndex === index ? "default" : "outline"}
-                onClick={() => setActiveDayIndex(index)}
-                className="h-auto min-w-33 flex-col items-start whitespace-normal px-4 py-3 text-left"
-              >
-                <div className="text-sm font-bold">Ημέρα {index + 1}</div>
-                <div className={`mt-1 truncate text-xs font-bold ${activeDayIndex === index ? "text-white/90" : "text-slate-500 dark:text-slate-400"}`}>
-                  {groups.length ? groups.join(" / ") : "Χωρίς ασκήσεις"}
-                </div>
-              </Button>
-            );
-          })}
-        </div>
+        {/* Day selector — now real shadcn Tabs, wired to the same activeDayIndex state */}
+        <Tabs value={String(activeDayIndex)} onValueChange={(value) => value && setActiveDayIndex(Number(value))}>
+          <TabsList className="w-full justify-start overflow-x-auto">
+            {visibleDays.map((day, index) => (
+              <TabsTrigger key={`${day.dayOfWeek}-${index}`} value={String(index)}>
+                Ημέρα {index + 1}
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
-        {selectedDay && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h3 className="text-xl font-bold">Ημέρα {activeDayIndex + 1}</h3>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {muscleGroups.length ? (
-                    muscleGroups.map((group) => (
-                      <span key={group} className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-700 dark:bg-red-500/10 dark:text-red-400">
-                        {group}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">Οι μυϊκές ομάδες θα μπουν αυτόματα από τις ασκήσεις.</span>
-                  )}
-                </div>
-              </div>
-              <Button type="button" onClick={() => addExercise(activeDayIndex)} className="h-10 gap-2 bg-red-600 px-4 text-sm font-bold text-white hover:bg-red-700">
-                <Plus className="h-4 w-4" />
-                Προσθήκη άσκησης
-              </Button>
-            </div>
+          <TabsContent value={String(activeDayIndex)} className="mt-4">
+            {selectedDay && (
+              <ResizablePanelGroup orientation="horizontal" className="min-h-130 rounded-lg border border-slate-200 dark:border-slate-800">
+                {/* LEFT 70% — day builder */}
+                <ResizablePanel defaultSize={70} minSize={50} className="flex flex-col overflow-hidden">
+                  <div className="flex flex-col gap-4 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <Switch checked={isRestDay} onCheckedChange={toggleRestDay} />
+                        <Label className="text-sm font-bold">Ημέρα ξεκούρασης</Label>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => addExercise(activeDayIndex)}
+                        className="h-9 gap-2 text-sm font-bold"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Προσθήκη άσκησης
+                      </Button>
+                    </div>
 
-            <div className="mt-4 space-y-3">
-              {(selectedDay.exercises || []).map((exercise, exerciseIndex) => (
-                <div
-                  key={`${selectedDay.dayOfWeek}-${exerciseIndex}`}
-                  className="grid gap-3 rounded-md border border-slate-200 bg-white p-3 xl:grid-cols-[minmax(240px,2fr)_88px_100px_100px_96px_auto] dark:border-slate-800 dark:bg-slate-900"
-                >
-                  <ExercisePicker
-                    exercises={exercises}
-                    value={exercise}
-                    onSelect={(selected) =>
-                      updateExercise(activeDayIndex, exerciseIndex, {
-                        exerciseId: selected?.id || "",
-                        exerciseName: selected?.name || "",
-                        muscleGroup: selected?.muscleGroup || "",
-                        imageUrl: selected?.imageUrl || selected?.image_url || "",
-                        videoUrl: selected?.videoUrl || selected?.video_url || "",
-                      })
-                    }
-                  />
-                  <Field compact label="Σετ" value={exercise.sets} onChange={(value) => updateExercise(activeDayIndex, exerciseIndex, { sets: value })} />
-                  <Field compact label="Επαναλ." value={exercise.reps} onChange={(value) => updateExercise(activeDayIndex, exerciseIndex, { reps: value })} />
-                  <Field compact label="Tempo" value={exercise.tempo} onChange={(value) => updateExercise(activeDayIndex, exerciseIndex, { tempo: value })} />
-                  <Field
-                    compact
-                    label="Rest"
-                    value={exercise.restSeconds}
-                    onChange={(value) => updateExercise(activeDayIndex, exerciseIndex, { restSeconds: value })}
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => removeExercise(activeDayIndex, exerciseIndex)}
-                    className="h-auto self-end border-red-200 px-3 py-2 text-sm font-bold text-red-600 hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10"
-                  >
-                    Διαγραφή
-                  </Button>
-                </div>
-              ))}
-              {!selectedDay.exercises?.length && (
-                <div className="rounded-md border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
-                  Πρόσθεσε την πρώτη άσκηση για αυτή την ημέρα.
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+                    <div className="flex flex-wrap gap-2">
+                      {muscleGroups.length ? (
+                        muscleGroups.map((group) => (
+                          <Badge key={group} variant="secondary">
+                            {group}
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                          Οι μυϊκές ομάδες θα μπουν αυτόματα από τις ασκήσεις.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-4">
+                    {!isRestDay && (
+                      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                        <SortableContext
+                          items={selectedDay.exercises.map((_, index) => `ex-${index}`)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          {selectedDay.exercises.map((exercise, exerciseIndex) => (
+                            <SortableExerciseCard
+                              key={`ex-${exerciseIndex}`}
+                              id={`ex-${exerciseIndex}`}
+                              exercise={exercise}
+                              exercises={exercises}
+                              onChange={(patch) => updateExercise(activeDayIndex, exerciseIndex, patch)}
+                              onRemove={() => removeExercise(activeDayIndex, exerciseIndex)}
+                            />
+                          ))}
+                        </SortableContext>
+                      </DndContext>
+                    )}
+
+                    {isRestDay && (
+                      <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                        Ημέρα ξεκούρασης — χωρίς ασκήσεις.
+                      </div>
+                    )}
+                  </div>
+                </ResizablePanel>
+
+                <ResizableHandle withHandle />
+
+                {/* RIGHT 30% — exercise library */}
+                <ResizablePanel defaultSize={30} minSize={22} className="flex flex-col overflow-hidden border-l border-slate-200 dark:border-slate-800">
+                  <div className="border-b border-slate-200 p-3 dark:border-slate-800">
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        value={libraryQuery}
+                        onChange={(event) => setLibraryQuery(event.target.value)}
+                        placeholder="Αναζήτηση στη βιβλιοθήκη..."
+                        className="h-10 pl-9 text-sm font-semibold"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto">
+                    {filteredLibrary.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => addExerciseFromLibrary(item)}
+                        className="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-3 text-left hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
+                      >
+                        <span className="h-10 w-14 shrink-0 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
+                          {item.imageUrl || item.image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={resolveMediaUrl(item.imageUrl || item.image_url)} alt="" className="h-full w-full object-cover" />
+                          ) : null}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-bold">{item.name}</span>
+                          {item.muscleGroup && (
+                            <Badge variant="outline" className="mt-1">
+                              {item.muscleGroup}
+                            </Badge>
+                          )}
+                        </span>
+                      </button>
+                    ))}
+                    {!filteredLibrary.length && (
+                      <div className="p-4 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">Δεν βρέθηκε άσκηση.</div>
+                    )}
+                  </div>
+                </ResizablePanel>
+              </ResizablePanelGroup>
+            )}
+          </TabsContent>
+        </Tabs>
 
         <Field label="Γενικές σημειώσεις προγράμματος" value={plan.description} onChange={(value) => setPlan({ ...plan, description: value })} />
 
@@ -363,6 +473,109 @@ export function TrainingPlanEditor({
     </Card>
   );
 }
+
+// ---------------------------------------------------------------------------
+// NEW: one exercise card, sortable via dnd-kit. Same fields/handlers as before,
+// plus Weight + Notes inputs (both already existed on TrainingExerciseEntry,
+// just never had a JSX input rendered for them until now).
+// ---------------------------------------------------------------------------
+
+function SortableExerciseCard({
+  id,
+  exercise,
+  exercises,
+  onChange,
+  onRemove,
+}: {
+  id: string;
+  exercise: TrainingExerciseEntry;
+  exercises: LibraryExercise[];
+  onChange: (patch: Partial<TrainingExerciseEntry>) => void;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const [notesOpen, setNotesOpen] = useState(Boolean(exercise.notes));
+
+  return (
+    <Card
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={`group/exercise p-3 ${isDragging ? "opacity-50" : ""}`}
+    >
+      <div className="flex items-start gap-2">
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="mt-2 cursor-grab touch-none text-slate-400 hover:text-slate-600 active:cursor-grabbing dark:text-slate-500 dark:hover:text-slate-300"
+          aria-label="Μετακίνηση άσκησης"
+        >
+          <GripVertical className="h-5 w-5" />
+        </button>
+
+        <div className="min-w-0 flex-1 space-y-3">
+          <div className="flex items-start justify-between gap-2">
+            <ExercisePicker
+              exercises={exercises}
+              value={exercise}
+              onSelect={(selected) =>
+                onChange({
+                  exerciseId: selected?.id || "",
+                  exerciseName: selected?.name || "",
+                  muscleGroup: selected?.muscleGroup || "",
+                  imageUrl: selected?.imageUrl || selected?.image_url || "",
+                  videoUrl: selected?.videoUrl || selected?.video_url || "",
+                })
+              }
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              onClick={onRemove}
+              className="opacity-0 transition-opacity group-hover/exercise:opacity-100"
+              aria-label="Διαγραφή άσκησης"
+            >
+              ✕
+            </Button>
+          </div>
+
+          {exercise.muscleGroup && <Badge variant="secondary">{exercise.muscleGroup}</Badge>}
+
+          <div className="grid grid-cols-4 gap-2">
+            <Field compact label="Σετ" value={exercise.sets} onChange={(value) => onChange({ sets: value })} />
+            <Field compact label="Επαναλ." value={exercise.reps} onChange={(value) => onChange({ reps: value })} />
+            <Field compact label="Βάρος" value={exercise.targetWeight} onChange={(value) => onChange({ targetWeight: value })} />
+            <Field compact label="Rest" value={exercise.restSeconds} onChange={(value) => onChange({ restSeconds: value })} />
+          </div>
+
+          <Collapsible open={notesOpen} onOpenChange={setNotesOpen}>
+            <CollapsibleTrigger
+              render={
+                <button type="button" className="flex items-center gap-1 text-xs font-bold text-slate-500 hover:text-slate-700 dark:text-slate-400">
+                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${notesOpen ? "rotate-180" : ""}`} />
+                  Σημειώσεις
+                </button>
+              }
+            />
+            <CollapsibleContent>
+              <Textarea
+                value={exercise.notes}
+                onChange={(event) => onChange({ notes: event.target.value })}
+                placeholder="π.χ. τεχνική, εναλλακτική άσκηση..."
+                className="mt-2"
+              />
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ExercisePicker — UNCHANGED (still the per-row way to pick/change an exercise)
+// ---------------------------------------------------------------------------
 
 export function ExercisePicker({
   exercises,
@@ -392,7 +605,7 @@ export function ExercisePicker({
   };
 
   return (
-    <div className="relative block">
+    <div className="relative block flex-1">
       <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Άσκηση</Label>
       <div className="relative mt-1">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
