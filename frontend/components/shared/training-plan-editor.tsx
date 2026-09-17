@@ -1,17 +1,22 @@
 "use client";
 
-import { useState, type Dispatch, type SetStateAction } from "react";
+import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Plus, Search, GripVertical, ChevronDown } from "lucide-react";
 import {
   DndContext,
-  closestCenter,
+  DragOverlay,
+  pointerWithin,
   PointerSensor,
+  useDraggable,
+  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -284,16 +289,43 @@ export function TrainingPlanEditor({
     });
   };
 
-  // ---- NEW #3 (approved): drag-reorder within the active day ----
+  // ---- NEW #3 (approved): drag-reorder within the active day, PLUS drag-from-library ----
+  const [activeDragId, setActiveDragId] = useState<string | null>(null);
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragId(String(event.active.id));
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    if (!over || active.id === over.id || !selectedDay) return;
+    setActiveDragId(null);
+    if (!over || !selectedDay) return;
+
+    const activeId = String(active.id);
+
+    // Dropped a library exercise onto the day area — same helper as the click-to-add path.
+    if (activeId.startsWith("lib-")) {
+      const libraryId = activeId.slice(4);
+      const item = exercises.find((candidate) => String(candidate.id) === libraryId);
+      if (item) addExerciseFromLibrary(item);
+      return;
+    }
+
+    // Otherwise it's a reorder within the day's own exercise list.
+    if (active.id === over.id) return;
     const ids = selectedDay.exercises.map((_, index) => `ex-${index}`);
-    const oldIndex = ids.indexOf(String(active.id));
+    const oldIndex = ids.indexOf(activeId);
     const newIndex = ids.indexOf(String(over.id));
     if (oldIndex === -1 || newIndex === -1) return;
     updateDay(activeDayIndex, { exercises: arrayMove(selectedDay.exercises, oldIndex, newIndex) });
   };
+
+  const draggedLibraryItem = activeDragId?.startsWith("lib-")
+    ? exercises.find((item) => String(item.id) === activeDragId.slice(4))
+    : null;
+  const draggedExercise = activeDragId?.startsWith("ex-")
+    ? selectedDay?.exercises[Number(activeDragId.slice(3))]
+    : null;
 
   const filteredLibrary = exercises.filter((item) => {
     if (!libraryQuery.trim()) return true;
@@ -353,115 +385,112 @@ export function TrainingPlanEditor({
 
           <TabsContent value={String(activeDayIndex)} className="mt-4">
             {selectedDay && (
-              <ResizablePanelGroup orientation="horizontal" className="min-h-130 rounded-lg border border-slate-200 dark:border-slate-800">
-                {/* LEFT 70% — day builder */}
-                <ResizablePanel defaultSize={70} minSize={50} className="flex flex-col overflow-hidden">
-                  <div className="flex flex-col gap-4 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <Switch checked={isRestDay} onCheckedChange={toggleRestDay} />
-                        <Label className="text-sm font-bold">Ημέρα ξεκούρασης</Label>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={pointerWithin}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+              >
+                <ResizablePanelGroup orientation="horizontal" className="min-h-130 rounded-lg border border-slate-200 dark:border-slate-800">
+                  {/* LEFT 70% — day builder */}
+                  <ResizablePanel defaultSize={70} minSize={50} className="flex flex-col overflow-hidden">
+                    <div className="flex flex-col gap-4 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <Switch checked={isRestDay} onCheckedChange={toggleRestDay} />
+                          <Label className="text-sm font-bold">Ημέρα ξεκούρασης</Label>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => addExercise(activeDayIndex)}
+                          className="h-9 gap-2 text-sm font-bold"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Προσθήκη άσκησης
+                        </Button>
                       </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => addExercise(activeDayIndex)}
-                        className="h-9 gap-2 text-sm font-bold"
-                      >
-                        <Plus className="h-4 w-4" />
-                        Προσθήκη άσκησης
-                      </Button>
+
+                      <div className="flex flex-wrap gap-2">
+                        {muscleGroups.length ? (
+                          muscleGroups.map((group) => (
+                            <Badge key={group} variant="secondary">
+                              {group}
+                            </Badge>
+                          ))
+                        ) : (
+                          <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+                            Οι μυϊκές ομάδες θα μπουν αυτόματα από τις ασκήσεις.
+                          </span>
+                        )}
+                      </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      {muscleGroups.length ? (
-                        muscleGroups.map((group) => (
-                          <Badge key={group} variant="secondary">
-                            {group}
-                          </Badge>
-                        ))
-                      ) : (
-                        <span className="text-sm font-semibold text-slate-500 dark:text-slate-400">
-                          Οι μυϊκές ομάδες θα μπουν αυτόματα από τις ασκήσεις.
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-4">
-                    {!isRestDay && (
-                      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <div className="flex-1 overflow-y-auto px-4 pb-4">
+                      {!isRestDay && (
                         <SortableContext
                           items={selectedDay.exercises.map((_, index) => `ex-${index}`)}
                           strategy={verticalListSortingStrategy}
                         >
-                          {selectedDay.exercises.map((exercise, exerciseIndex) => (
-                            <SortableExerciseCard
-                              key={`ex-${exerciseIndex}`}
-                              id={`ex-${exerciseIndex}`}
-                              exercise={exercise}
-                              exercises={exercises}
-                              onChange={(patch) => updateExercise(activeDayIndex, exerciseIndex, patch)}
-                              onRemove={() => removeExercise(activeDayIndex, exerciseIndex)}
-                            />
-                          ))}
+                          <DayDropZone>
+                            {selectedDay.exercises.map((exercise, exerciseIndex) => (
+                              <SortableExerciseCard
+                                key={`ex-${exerciseIndex}`}
+                                id={`ex-${exerciseIndex}`}
+                                exercise={exercise}
+                                exercises={exercises}
+                                onChange={(patch) => updateExercise(activeDayIndex, exerciseIndex, patch)}
+                                onRemove={() => removeExercise(activeDayIndex, exerciseIndex)}
+                              />
+                            ))}
+                            {!selectedDay.exercises.length && (
+                              <div className="rounded-md border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+                                Σύρε μια άσκηση από τη βιβλιοθήκη ή πάτησε &quot;Προσθήκη άσκησης&quot;.
+                              </div>
+                            )}
+                          </DayDropZone>
                         </SortableContext>
-                      </DndContext>
-                    )}
+                      )}
 
-                    {isRestDay && (
-                      <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-                        Ημέρα ξεκούρασης — χωρίς ασκήσεις.
-                      </div>
-                    )}
-                  </div>
-                </ResizablePanel>
-
-                <ResizableHandle withHandle />
-
-                {/* RIGHT 30% — exercise library */}
-                <ResizablePanel defaultSize={30} minSize={22} className="flex flex-col overflow-hidden border-l border-slate-200 dark:border-slate-800">
-                  <div className="border-b border-slate-200 p-3 dark:border-slate-800">
-                    <div className="relative">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                      <Input
-                        value={libraryQuery}
-                        onChange={(event) => setLibraryQuery(event.target.value)}
-                        placeholder="Αναζήτηση στη βιβλιοθήκη..."
-                        className="h-10 pl-9 text-sm font-semibold"
-                      />
+                      {isRestDay && (
+                        <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                          Ημέρα ξεκούρασης — χωρίς ασκήσεις.
+                        </div>
+                      )}
                     </div>
-                  </div>
-                  <div className="flex-1 overflow-y-auto">
-                    {filteredLibrary.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => addExerciseFromLibrary(item)}
-                        className="flex w-full items-center gap-3 border-b border-slate-100 px-3 py-3 text-left hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800"
-                      >
-                        <span className="h-10 w-14 shrink-0 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
-                          {item.imageUrl || item.image_url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={resolveMediaUrl(item.imageUrl || item.image_url)} alt="" className="h-full w-full object-cover" />
-                          ) : null}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm font-bold">{item.name}</span>
-                          {item.muscleGroup && (
-                            <Badge variant="outline" className="mt-1">
-                              {item.muscleGroup}
-                            </Badge>
-                          )}
-                        </span>
-                      </button>
-                    ))}
-                    {!filteredLibrary.length && (
-                      <div className="p-4 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">Δεν βρέθηκε άσκηση.</div>
-                    )}
-                  </div>
-                </ResizablePanel>
-              </ResizablePanelGroup>
+                  </ResizablePanel>
+
+                  <ResizableHandle withHandle />
+
+                  {/* RIGHT 30% — exercise library */}
+                  <ResizablePanel defaultSize={30} minSize={22} className="flex flex-col overflow-hidden border-l border-slate-200 dark:border-slate-800">
+                    <div className="border-b border-slate-200 p-3 dark:border-slate-800">
+                      <div className="relative">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                        <Input
+                          value={libraryQuery}
+                          onChange={(event) => setLibraryQuery(event.target.value)}
+                          placeholder="Αναζήτηση στη βιβλιοθήκη..."
+                          className="h-10 pl-9 text-sm font-semibold"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                      {filteredLibrary.map((item) => (
+                        <DraggableLibraryItem key={item.id} item={item} onClick={() => addExerciseFromLibrary(item)} />
+                      ))}
+                      {!filteredLibrary.length && (
+                        <div className="p-4 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">Δεν βρέθηκε άσκηση.</div>
+                      )}
+                    </div>
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+
+                <DragOverlay>
+                  {draggedLibraryItem && <LibraryItemPreview item={draggedLibraryItem} />}
+                  {draggedExercise && <ExercisePreviewCard exercise={draggedExercise} />}
+                </DragOverlay>
+              </DndContext>
             )}
           </TabsContent>
         </Tabs>
@@ -512,6 +541,13 @@ function SortableExerciseCard({
         >
           <GripVertical className="h-5 w-5" />
         </button>
+
+        {exercise.imageUrl && (
+          <span className="h-14 w-14 shrink-0 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={resolveMediaUrl(exercise.imageUrl)} alt="" className="h-full w-full object-cover" />
+          </span>
+        )}
 
         <div className="min-w-0 flex-1 space-y-3">
           <div className="flex items-start justify-between gap-2">
@@ -570,6 +606,88 @@ function SortableExerciseCard({
         </div>
       </div>
     </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// NEW: drag-and-drop plumbing — a droppable wrapper for the day's exercise
+// list, a draggable library row, and the floating previews shown while
+// dragging (dnd-kit renders the dragged element in place as normal, so a
+// DragOverlay preview is what actually follows the cursor).
+// ---------------------------------------------------------------------------
+
+function DayDropZone({ children }: { children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: "day-dropzone" });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "space-y-3 rounded-md p-1 transition-colors",
+        isOver && "bg-red-50/60 ring-2 ring-red-300 dark:bg-red-500/10 dark:ring-red-500/40"
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function DraggableLibraryItem({ item, onClick }: { item: LibraryExercise; onClick: () => void }) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `lib-${item.id}` });
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      onClick={onClick}
+      {...listeners}
+      {...attributes}
+      className={cn(
+        "flex w-full cursor-grab touch-none items-center gap-3 border-b border-slate-100 px-3 py-3 text-left hover:bg-slate-50 active:cursor-grabbing dark:border-slate-800 dark:hover:bg-slate-800",
+        isDragging && "opacity-30"
+      )}
+    >
+      <span className="h-10 w-14 shrink-0 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
+        {item.imageUrl || item.image_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={resolveMediaUrl(item.imageUrl || item.image_url)} alt="" className="h-full w-full object-cover" />
+        ) : null}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-bold">{item.name}</span>
+        {item.muscleGroup && (
+          <Badge variant="outline" className="mt-1">
+            {item.muscleGroup}
+          </Badge>
+        )}
+      </span>
+    </button>
+  );
+}
+
+function LibraryItemPreview({ item }: { item: LibraryExercise }) {
+  return (
+    <div className="flex w-64 items-center gap-3 rounded-md border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-800 dark:bg-slate-900">
+      <span className="h-10 w-14 shrink-0 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
+        {item.imageUrl || item.image_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={resolveMediaUrl(item.imageUrl || item.image_url)} alt="" className="h-full w-full object-cover" />
+        ) : null}
+      </span>
+      <span className="truncate text-sm font-bold">{item.name}</span>
+    </div>
+  );
+}
+
+function ExercisePreviewCard({ exercise }: { exercise: TrainingExerciseEntry }) {
+  return (
+    <div className="flex w-64 items-center gap-3 rounded-md border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-800 dark:bg-slate-900">
+      {exercise.imageUrl && (
+        <span className="h-10 w-14 shrink-0 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={resolveMediaUrl(exercise.imageUrl)} alt="" className="h-full w-full object-cover" />
+        </span>
+      )}
+      <span className="truncate text-sm font-bold">{exercise.exerciseName || "Άσκηση"}</span>
+    </div>
   );
 }
 
