@@ -50,9 +50,9 @@ Profile page. Falls back to in-app notifications only when VAPID keys aren't con
 # 2. Backend
 cd backend
 npm install
-npm run db:init              # creates the coach_management database + tables
-npm run db:exercises         # seeds the exercise library
-node create-first-admin.js   # creates the first admin login
+npm run db:init              
+npm run db:exercises         
+node create-first-admin.js   
 npm run dev                  # http://localhost:5000
 
 # 3. Frontend (separate terminal)
