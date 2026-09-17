@@ -541,12 +541,14 @@ function SortableExerciseCard({
   const [notesOpen, setNotesOpen] = useState(Boolean(exercise.notes));
 
   return (
-    <Card
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`group/exercise p-3 ${isDragging ? "opacity-50" : ""}`}
-    >
-      <div className="flex items-start gap-2">
+    // The sortable ref goes on a plain div we control directly, not on <Card> —
+    // Card doesn't declare `ref` in its own props (it only destructures
+    // className/size before spreading the rest), so this is the one path in the
+    // app that actually needs a guaranteed-attached DOM node for dnd-kit to
+    // measure and animate. Routing it through Card was silently breaking drag.
+    <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }}>
+      <Card className={`group/exercise p-3 ${isDragging ? "opacity-50" : ""}`}>
+        <div className="flex items-start gap-2">
         <button
           type="button"
           {...attributes}
@@ -619,8 +621,9 @@ function SortableExerciseCard({
             </CollapsibleContent>
           </Collapsible>
         </div>
-      </div>
-    </Card>
+        </div>
+      </Card>
+    </div>
   );
 }
 
