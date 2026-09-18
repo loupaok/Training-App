@@ -8,10 +8,10 @@ import { authorizeRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Multer storage — saves to uploads/progress/<clientId>/
+// Multer storage — saves to uploads/media/progress/<clientId>/
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = path.join('uploads', 'progress', req.params.progressId || 'tmp');
+    const dir = path.join('uploads', 'media', 'progress', req.params.progressId || 'tmp');
     fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },

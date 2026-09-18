@@ -7,7 +7,7 @@ import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
 
 const router = express.Router();
-const exerciseUploadDir = path.join(process.cwd(), 'uploads', 'exercises');
+const exerciseUploadDir = path.join(process.cwd(), 'uploads', 'media', 'exercises');
 
 fs.mkdirSync(exerciseUploadDir, { recursive: true });
 
@@ -470,7 +470,7 @@ router.post('/:id/image', authorizeRole(['coach', 'admin']), upload.single('imag
     return res.status(400).json({ message: 'Image file required' });
   }
 
-  const imageUrl = `/uploads/exercises/${req.file.filename}`;
+  const imageUrl = `/uploads/media/exercises/${req.file.filename}`;
 
   try {
     const connection = await pool.getConnection();

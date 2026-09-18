@@ -14,7 +14,7 @@ const limit = Number(args.limit || 10);
 const offset = Number(args.offset || 0);
 const overwrite = Boolean(args.overwrite);
 const dryRun = Boolean(args['dry-run']);
-const outputDir = path.join(process.cwd(), 'uploads', 'exercises', 'ai');
+const outputDir = path.join(process.cwd(), 'uploads', 'media', 'exercises', 'ai');
 
 if (!apiKey && !dryRun) {
   console.error('OPENAI_API_KEY is missing. Set it in backend/.env or your shell, or run with --dry-run.');
@@ -68,7 +68,7 @@ try {
     const imageBuffer = await generateImage(prompt);
     const fileName = `exercise-ai-${exercise.id}-${slugify(exercise.name)}.png`;
     const filePath = path.join(outputDir, fileName);
-    const imageUrl = `/uploads/exercises/ai/${fileName}`;
+    const imageUrl = `/uploads/media/exercises/ai/${fileName}`;
 
     await fs.writeFile(filePath, imageBuffer);
     await archiveCurrentExerciseImage(connection, exercise);

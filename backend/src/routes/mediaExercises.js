@@ -12,7 +12,7 @@ import { authorizeRole } from '../middleware/auth.js';
 // that exercises.js/exercises-page.tsx own is untouched.
 
 const router = express.Router();
-const exerciseUploadDir = path.join(process.cwd(), 'uploads', 'exercises');
+const exerciseUploadDir = path.join(process.cwd(), 'uploads', 'media', 'exercises');
 fs.mkdirSync(exerciseUploadDir, { recursive: true });
 
 const upload = multer({
@@ -112,7 +112,7 @@ router.put('/exercises/:id/image', authorizeRole(['coach', 'admin']), upload.sin
     return res.status(400).json({ message: 'Image file required (jpg, png or webp, max 2MB).' });
   }
 
-  const imageUrl = `/uploads/exercises/${req.file.filename}`;
+  const imageUrl = `/uploads/media/exercises/${req.file.filename}`;
 
   try {
     const connection = await pool.getConnection();

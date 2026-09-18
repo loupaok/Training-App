@@ -10,7 +10,7 @@ import { authorizeRole } from '../middleware/auth.js';
 // field; does not import from or modify foods.js or the food library page.
 
 const router = express.Router();
-const foodUploadDir = path.join(process.cwd(), 'uploads', 'foods');
+const foodUploadDir = path.join(process.cwd(), 'uploads', 'media', 'foods');
 fs.mkdirSync(foodUploadDir, { recursive: true });
 
 const upload = multer({
@@ -96,7 +96,7 @@ router.put('/foods/:id/image', authorizeRole(['coach', 'admin']), upload.single(
     return res.status(400).json({ message: 'Image file required (jpg, png or webp, max 2MB).' });
   }
 
-  const imageUrl = `/uploads/foods/${req.file.filename}`;
+  const imageUrl = `/uploads/media/foods/${req.file.filename}`;
 
   try {
     const connection = await pool.getConnection();
