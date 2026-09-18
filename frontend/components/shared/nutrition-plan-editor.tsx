@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
   Plus,
   Trash2,
@@ -21,7 +21,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { resolveMediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
@@ -192,6 +194,22 @@ const MEAL_ICONS: Record<string, LucideIcon> = {
   other: Utensils,
 };
 
+const FOOD_LIBRARY_CATEGORIES: { key: string; label: string }[] = [
+  { key: "all", label: "Όλα" },
+  { key: "meat", label: "Κρέατα" },
+  { key: "fish", label: "Ψάρια" },
+  { key: "eggs", label: "Αυγά" },
+  { key: "dairy", label: "Γαλακτοκομικά" },
+  { key: "grains", label: "Δημητριακά" },
+  { key: "vegetables", label: "Λαχανικά" },
+  { key: "fruits", label: "Φρούτα" },
+  { key: "legumes", label: "Όσπρια" },
+  { key: "nuts", label: "Ξηροί Καρποί" },
+  { key: "oils", label: "Έλαια" },
+];
+
+const FOOD_LIBRARY_PAGE_SIZE = 20;
+
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
@@ -307,6 +325,40 @@ export function NutritionPlanEditor({
     });
   };
 
+  // ---- NEW (approved): right-panel food library — search/filter/paginate over the existing `foods` prop ----
+  const [libraryQuery, setLibraryQuery] = useState("");
+  const [debouncedLibraryQuery, setDebouncedLibraryQuery] = useState("");
+  const [libraryCategory, setLibraryCategory] = useState("all");
+  const [libraryVisibleCount, setLibraryVisibleCount] = useState(FOOD_LIBRARY_PAGE_SIZE);
+  const libraryScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedLibraryQuery(libraryQuery), 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [libraryQuery]);
+
+  useEffect(() => {
+    setLibraryVisibleCount(FOOD_LIBRARY_PAGE_SIZE);
+    if (libraryScrollRef.current) libraryScrollRef.current.scrollTop = 0;
+  }, [debouncedLibraryQuery, libraryCategory]);
+
+  const filteredLibraryFoods = foods.filter((item) => {
+    if (libraryCategory !== "all" && item.category !== libraryCategory) return false;
+    const q = debouncedLibraryQuery.trim().toLowerCase();
+    if (!q) return true;
+    return [item.nameGr, item.nameEn, item.category].join(" ").toLowerCase().includes(q);
+  });
+  const visibleLibraryFoods = filteredLibraryFoods.slice(0, libraryVisibleCount);
+  const hasMoreLibraryFoods = libraryVisibleCount < filteredLibraryFoods.length;
+
+  const handleLibraryScroll = () => {
+    const el = libraryScrollRef.current;
+    if (!el || !hasMoreLibraryFoods) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 150) {
+      setLibraryVisibleCount((count) => Math.min(count + FOOD_LIBRARY_PAGE_SIZE, filteredLibraryFoods.length));
+    }
+  };
+
   // Purely derived from existing state — no new stored values.
   const proteinKcal = Number(plan.proteinG || 0) * 4;
   const carbsKcal = Number(plan.carbsG || 0) * 4;
@@ -337,6 +389,9 @@ export function NutritionPlanEditor({
     <Card className="p-0">
       <PlanHeader title={title} subtitle={subtitle} onSave={onSave} onCreateNew={onCreateNew} saving={saving} />
 
+      <ResizablePanelGroup orientation="horizontal" className="min-h-130">
+        {/* LEFT 70% — existing editor, layout unchanged */}
+        <ResizablePanel defaultSize={70} minSize={50}>
       <div className="space-y-6 p-6 pb-24">
         <Field label="Τίτλος" value={plan.title} onChange={(value) => setPlan({ ...plan, title: value })} />
 
@@ -512,6 +567,57 @@ export function NutritionPlanEditor({
 
         <PlanHistory rows={history} countLabel={(row) => (row.daily_calories ? `${row.daily_calories} kcal` : "-")} />
       </div>
+        </ResizablePanel>
+
+        <ResizableHandle withHandle />
+
+        {/* RIGHT 30% — food library, new */}
+        <ResizablePanel defaultSize={30} minSize={22} className="flex flex-col overflow-hidden border-l border-slate-200 dark:border-slate-800">
+          <div className="space-y-3 border-b border-slate-200 p-3 dark:border-slate-800">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                value={libraryQuery}
+                onChange={(event) => setLibraryQuery(event.target.value)}
+                placeholder="Αναζήτηση τροφίμου..."
+                className="h-10 pl-9 text-sm font-semibold"
+              />
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {FOOD_LIBRARY_CATEGORIES.map((category) => (
+                <button
+                  key={category.key}
+                  type="button"
+                  onClick={() => setLibraryCategory(category.key)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-xs font-bold transition-colors",
+                    libraryCategory === category.key
+                      ? "border-red-500 bg-red-500 text-white"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300",
+                  )}
+                >
+                  {category.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div
+            ref={libraryScrollRef}
+            onScroll={handleLibraryScroll}
+            className="max-h-[32rem] flex-1 overflow-y-auto"
+          >
+            {visibleLibraryFoods.map((food) => (
+              <LibraryFoodRow key={food.id} food={food} meals={plan.meals} onAddToMeal={(mealIndex) => addFoodFromLibrary(mealIndex, food)} />
+            ))}
+            {hasMoreLibraryFoods && (
+              <div className="p-3 text-center text-xs font-bold text-slate-400 dark:text-slate-500">Φόρτωση περισσότερων...</div>
+            )}
+            {!filteredLibraryFoods.length && (
+              <div className="p-4 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">Δεν βρέθηκε τρόφιμο.</div>
+            )}
+          </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       {/* Sticky bottom summary bar — totals vs targets, purely derived from existing state */}
       <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 bg-white/95 px-6 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
@@ -665,6 +771,72 @@ function FoodPicker({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// NEW: LibraryFoodRow — one row in the right-panel food library. The "+"
+// opens a popover listing meals; picking one calls the existing
+// addFoodFromLibrary(mealIndex, food) unchanged.
+// ---------------------------------------------------------------------------
+
+function LibraryFoodRow({
+  food,
+  meals,
+  onAddToMeal,
+}: {
+  food: LibraryFood;
+  meals: MealEntry[];
+  onAddToMeal: (mealIndex: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5 dark:border-slate-800">
+      <span className="h-10 w-10 shrink-0 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
+        {food.imageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={resolveMediaUrl(food.imageUrl)} alt="" className="h-full w-full object-cover" />
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-bold">{food.nameGr}</span>
+        <span className="block truncate text-xs font-semibold text-slate-500 dark:text-slate-400">
+          {food.caloriesPer100g ?? "—"} kcal · P:{food.proteinPer100g ?? "—"} C:{food.carbsPer100g ?? "—"} F:{food.fatsPer100g ?? "—"}
+        </span>
+      </span>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          render={
+            <button
+              type="button"
+              aria-label="Προσθήκη σε γεύμα"
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
+            />
+          }
+        >
+          <Plus className="h-4 w-4" />
+        </PopoverTrigger>
+        <PopoverContent className="w-56 p-2">
+          <div className="px-1 pb-2 text-xs font-bold text-slate-500 dark:text-slate-400">Προσθήκη σε ποιο γεύμα;</div>
+          <div className="flex flex-col gap-1">
+            {meals.map((meal, mealIndex) => (
+              <button
+                key={mealIndex}
+                type="button"
+                onClick={() => {
+                  onAddToMeal(mealIndex);
+                  setOpen(false);
+                }}
+                className="rounded-md px-2 py-1.5 text-left text-sm font-semibold hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                {meal.title || `Γεύμα ${mealIndex + 1}`}
+              </button>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
