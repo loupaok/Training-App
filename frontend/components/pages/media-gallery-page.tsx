@@ -15,6 +15,7 @@ import {
   CheckSquare,
   Pencil,
   Save,
+  ImagePlus,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -136,6 +137,15 @@ function deletePathFor(item: GalleryItem): string {
   return `/progress/photos/${item.entityId}`;
 }
 
+// Each entity type stores its file through a different owning route (and a
+// different multer field name) — mirrors deletePathFor's per-kind routing.
+function replaceEndpointFor(item: GalleryItem): { path: string; field: string } {
+  if (item.kind === "asset") return { path: `/media/assets/${item.entityId}/file`, field: "file" };
+  if (item.category === "exercise") return { path: `/exercises/${item.parentId}/images/${item.entityId}/file`, field: "image" };
+  if (item.category === "food") return { path: `/media/foods/${item.entityId}/image`, field: "image" };
+  return { path: `/progress/photos/${item.entityId}/file`, field: "photo" };
+}
+
 function MediaGalleryContent() {
   const { user, logout } = useAuth();
   const [folders, setFolders] = useState<MediaFolder[]>([]);
@@ -155,6 +165,7 @@ function MediaGalleryContent() {
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<MediaFolder | null>(null);
   const [moveTargetItems, setMoveTargetItems] = useState<GalleryItem[] | null>(null);
   const [editTarget, setEditTarget] = useState<GalleryItem | null>(null);
+  const [replacingFile, setReplacingFile] = useState(false);
 
   const [categoryItems, setCategoryItems] = useState<GalleryItem[]>([]);
   const [categoryTotal, setCategoryTotal] = useState(0);
@@ -390,6 +401,34 @@ function MediaGalleryContent() {
       toast.success("Η φωτογραφία ενημερώθηκε.");
     } catch (error) {
       toast.error(getErrorMessage(error, "Δεν έγινε ενημέρωση."));
+    }
+  };
+
+  const replacePhotoFile = async (item: GalleryItem, file: File) => {
+    setReplacingFile(true);
+    try {
+      const compressed = await compressImageFile(file, { maxWidth: 1800, maxHeight: 1800, quality: 0.84 });
+      const { path, field } = replaceEndpointFor(item);
+      const formData = new FormData();
+      formData.append(field, compressed);
+      const response = await api.upload<{ imageUrl?: string; url?: string }>(path, formData, "PUT");
+      const newUrl = response.imageUrl || response.url || "";
+
+      if (item.kind === "asset" && newUrl) {
+        setAssets((current) => current.map((asset) => (asset.id === item.entityId ? { ...asset, url: newUrl } : asset)));
+      }
+      if (newUrl) {
+        setEditTarget((current) => (current && current.id === item.id ? { ...current, url: newUrl } : current));
+      }
+      if (categoryContext) {
+        fetchCategoryPage(categoryContext.category, selectedFolderId as number, 1, true);
+      }
+      loadLibrary();
+      toast.success("Η φωτογραφία αντικαταστάθηκε.");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Δεν έγινε αντικατάσταση της φωτογραφίας."));
+    } finally {
+      setReplacingFile(false);
     }
   };
 
@@ -719,7 +758,14 @@ function MediaGalleryContent() {
         </DialogContent>
       </Dialog>
 
-      <EditPhotoDialog item={editTarget} folders={folders} onClose={() => setEditTarget(null)} onSave={saveEdit} />
+      <EditPhotoDialog
+        item={editTarget}
+        folders={folders}
+        onClose={() => setEditTarget(null)}
+        onSave={saveEdit}
+        onReplaceFile={replacePhotoFile}
+        replacing={replacingFile}
+      />
     </CoachShell>
   );
 }
@@ -877,14 +923,19 @@ function EditPhotoDialog({
   folders,
   onClose,
   onSave,
+  onReplaceFile,
+  replacing,
 }: {
   item: GalleryItem | null;
   folders: MediaFolder[];
   onClose: () => void;
   onSave: (item: GalleryItem, title: string, folderId: number | null) => void;
+  onReplaceFile: (item: GalleryItem, file: File) => void;
+  replacing: boolean;
 }) {
   const [title, setTitle] = useState("");
   const [folderValue, setFolderValue] = useState("root");
+  const replaceInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!item) return;
@@ -895,10 +946,17 @@ function EditPhotoDialog({
   if (!item) return null;
   const isCustom = item.kind === "asset";
   const options = flattenFolderOptions(folders, item.category ?? null);
+  const src = resolveMediaUrl(item.url);
 
   const handleSave = () => {
     const folderId = folderValue === "root" ? null : Number(folderValue);
     onSave(item, title, folderId);
+  };
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) onReplaceFile(item, file);
+    event.target.value = "";
   };
 
   return (
@@ -908,6 +966,25 @@ function EditPhotoDialog({
           <DialogTitle>Επεξεργασία φωτογραφίας</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1.5">
+            <div className="relative aspect-video w-full overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
+              {src && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={src} alt={item.title} className="h-full w-full object-cover" />
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={replacing}
+              onClick={() => replaceInputRef.current?.click()}
+              className="gap-2"
+            >
+              <ImagePlus className="h-4 w-4" /> {replacing ? "Μεταφόρτωση..." : "Αλλαγή φωτογραφίας"}
+            </Button>
+            <input ref={replaceInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+          </div>
           {isCustom ? (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="edit-photo-title">Όνομα/Τίτλος</Label>

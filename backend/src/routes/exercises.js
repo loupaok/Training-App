@@ -596,6 +596,39 @@ router.delete('/:id/images/:imageId', authorizeRole(['coach', 'admin']), async (
   }
 });
 
+// PUT /:id/images/:imageId/file — swap the file for an existing exercise_images
+// row (keeps the same row/id, just points it at a newly uploaded image).
+router.put('/:id/images/:imageId/file', authorizeRole(['coach', 'admin']), upload.single('image'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: 'Image file required' });
+  }
+
+  try {
+    const connection = await pool.getConnection();
+    await ensureExerciseImagesTable(connection);
+    const [[image]] = await connection.query(
+      'SELECT id, is_primary AS isPrimary FROM exercise_images WHERE id = ? AND exercise_id = ?',
+      [req.params.imageId, req.params.id]
+    );
+
+    if (!image) {
+      connection.release();
+      return res.status(404).json({ message: 'Image not found' });
+    }
+
+    const imageUrl = `/uploads/media/exercises/${req.file.filename}`;
+    await connection.query('UPDATE exercise_images SET image_url = ? WHERE id = ?', [imageUrl, image.id]);
+    if (image.isPrimary) {
+      await connection.query('UPDATE exercises SET image_url = ? WHERE id = ?', [imageUrl, req.params.id]);
+    }
+    connection.release();
+    res.json({ message: 'Exercise image replaced', imageUrl });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.delete('/:id', authorizeRole(['coach', 'admin']), async (req, res) => {
   try {
     const connection = await pool.getConnection();

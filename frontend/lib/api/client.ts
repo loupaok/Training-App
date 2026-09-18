@@ -54,7 +54,7 @@ export const api = {
     return request<T>(endpoint, { method: "DELETE" });
   },
 
-  async upload<T = unknown>(endpoint: string, formData: FormData): Promise<T> {
+  async upload<T = unknown>(endpoint: string, formData: FormData, method: "POST" | "PUT" = "POST"): Promise<T> {
     const token = typeof window !== "undefined" ? window.localStorage.getItem("token") : null;
     const headers: Record<string, string> = {};
 
@@ -63,7 +63,7 @@ export const api = {
     }
 
     const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-      method: "POST",
+      method,
       credentials: "include",
       headers,
       body: formData,

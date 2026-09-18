@@ -215,6 +215,81 @@ router.delete('/photos/:photoId', authorizeRole(['coach', 'admin']), async (req,
   }
 });
 
+// PUT /progress/photos/:photoId/file — swap the file for an existing progress
+// photo (keeps the same row/id, just points it at a newly uploaded image).
+// Distinct from POST /:progressId/photos below, which adds new rows.
+async function loadProgressPhotoContext(req, res, next) {
+  try {
+    const connection = await pool.getConnection();
+    const [rows] = await connection.query(
+      `SELECT pp.photo_url AS photoUrl, pp.progress_update_id AS progressUpdateId, cc.coach_id AS coachId
+       FROM progress_photos pp
+       LEFT JOIN coach_clients cc ON cc.client_id = pp.client_id
+       WHERE pp.id = ?`,
+      [req.params.photoId]
+    );
+    connection.release();
+
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Progress photo not found' });
+    }
+    if (req.user.role === 'coach' && rows[0].coachId !== req.user.id) {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    req.progressPhotoContext = rows[0];
+    next();
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+}
+
+const replacePhotoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join('uploads', 'media', 'progress', String(req.progressPhotoContext?.progressUpdateId || 'tmp'));
+      fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname);
+      cb(null, `${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
+    },
+  }),
+  limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = /jpeg|jpg|png|webp/;
+    const valid = allowed.test(path.extname(file.originalname).toLowerCase()) && allowed.test(file.mimetype);
+    valid ? cb(null, true) : cb(new Error('Only image files are allowed'));
+  },
+});
+
+router.put('/photos/:photoId/file', authorizeRole(['coach', 'admin']), loadProgressPhotoContext, (req, res, next) => {
+  replacePhotoUpload.single('photo')(req, res, (err) => {
+    if (err) return res.status(400).json({ message: err.message });
+    next();
+  });
+}, async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: 'Image file required' });
+  }
+
+  try {
+    const connection = await pool.getConnection();
+    const newUrl = req.file.path.replace(/\\/g, '/');
+    await connection.query('UPDATE progress_photos SET photo_url = ? WHERE id = ?', [newUrl, req.params.photoId]);
+    connection.release();
+
+    const oldPath = path.join(req.progressPhotoContext.photoUrl);
+    if (oldPath !== path.join(newUrl) && fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+
+    res.json({ message: 'Progress photo replaced', url: newUrl });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // POST /progress/:progressId/photos — upload photos for a progress update
 router.post('/:progressId/photos', authorizeRole(['coach', 'admin']), (req, res, next) => {
   upload.array('photos', 10)(req, res, err => {

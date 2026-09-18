@@ -357,6 +357,30 @@ router.put('/assets/:id/folder', authorizeRole(['coach', 'admin']), [
   }
 });
 
+// PUT /assets/:id/file — swap the file for an existing media_asset (keeps the
+// same row/id, just points it at a newly uploaded image).
+router.put('/assets/:id/file', authorizeRole(['coach', 'admin']), upload.single('file'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: 'Image file required' });
+  }
+
+  try {
+    const connection = await pool.getConnection();
+    await ensureMediaTable(connection);
+    const url = `/uploads/media/${req.file.filename}`;
+    const [result] = await connection.query('UPDATE media_assets SET url = ? WHERE id = ?', [url, req.params.id]);
+    connection.release();
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'Asset not found' });
+    }
+    res.json({ message: 'Media asset replaced', url });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.put('/assets/bulk-move', authorizeRole(['coach', 'admin']), [
   body('ids').isArray({ min: 1 }),
   body('folderId').optional({ nullable: true }),
