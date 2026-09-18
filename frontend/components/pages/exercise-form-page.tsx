@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronDown, Play, Trash2 } from "lucide-react";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -424,34 +423,18 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
       {loading ? (
         <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Φόρτωση...</p>
       ) : exercise && editForm ? (
-        <Card className="p-6">
-          <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="mx-auto max-w-3xl pb-8">
+          {/* TOP — two columns */}
+          <div className="grid grid-cols-1 gap-8 sm:grid-cols-[35%_1fr]">
+            {/* LEFT — image + gallery */}
             <div>
-              <h1 className="text-2xl font-bold dark:text-slate-50">{isCreating ? "Νέα Άσκηση" : editForm.name || "Χωρίς όνομα"}</h1>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {editForm.muscleGroup && (
-                  <Badge className="bg-red-50 text-red-700 hover:bg-red-50 dark:bg-red-500/10 dark:text-red-400">{editForm.muscleGroup}</Badge>
-                )}
-                {editForm.equipment && <Badge variant="outline">{editForm.equipment}</Badge>}
-              </div>
-            </div>
-            {isReadOnly && !isCreating && (
-              <Button type="button" variant="outline" size="sm" onClick={() => setModalMode("edit")} className="gap-2 font-bold">
-                ✏️ Επεξεργασία
-              </Button>
-            )}
-          </div>
-
-          <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-12">
-            {/* LEFT 40% — image + gallery */}
-            <div className="md:col-span-5">
               <div className="group relative aspect-square overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800">
                 <ExerciseImageSlider exercise={{ ...exercise, name: editForm.name, imageUrl: editForm.imageUrl }} large />
                 {!isReadOnly && (
                   <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/0 opacity-0 transition-all duration-200 group-hover:bg-black/40 group-hover:opacity-100">
                     <label
                       className={cn(
-                        "flex h-9 items-center gap-1.5 rounded-full bg-white/95 px-3 text-xs font-bold text-slate-900 shadow",
+                        "flex h-9 items-center gap-1.5 rounded-full bg-white/95 px-3 text-xs font-medium text-slate-900 shadow-sm",
                         isCreating ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-white",
                       )}
                     >
@@ -468,7 +451,7 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
                       type="button"
                       onClick={clearThumbnail}
                       disabled={!editForm.imageUrl || saving}
-                      className="flex h-9 items-center gap-1.5 rounded-full bg-white/95 px-3 text-xs font-bold text-red-600 shadow hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                      className="flex h-9 items-center gap-1.5 rounded-full bg-white/95 px-3 text-xs font-medium text-red-600 shadow-sm hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       🗑️ Διαγραφή
                     </button>
@@ -476,18 +459,18 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
                 )}
               </div>
 
-              {(currentImages.length > 0 || !isReadOnly) && (
+              {currentImages.length > 0 && (
                 <ScrollArea className="mt-3 w-full whitespace-nowrap">
                   <div className="flex gap-2 pb-2">
                     {currentImages.map((image, index) => (
                       <div
                         key={`${image.id}-${image.imageUrl}`}
-                        className="group/thumb relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 dark:border-slate-800"
+                        className="group/thumb relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800"
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={resolveMediaUrl(image.imageUrl)} alt="" className="h-full w-full object-cover" />
                         {(image.isPrimary || image.imageUrl === editForm.imageUrl || index === 0) && (
-                          <span className="absolute left-0.5 top-0.5 rounded bg-red-600 px-1 text-[8px] font-bold text-white">P</span>
+                          <span className="absolute left-0.5 top-0.5 rounded bg-red-600 px-1 text-[8px] font-medium text-white">P</span>
                         )}
                         {!isReadOnly && (
                           <button
@@ -497,134 +480,127 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
                             aria-label="Διαγραφή φωτογραφίας"
                             className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover/thumb:opacity-100 disabled:cursor-not-allowed"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         )}
                       </div>
                     ))}
-                    {!isReadOnly && (
-                      <button
-                        type="button"
-                        onClick={openMediaPicker}
-                        className="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border border-dashed border-slate-300 text-[10px] font-bold text-slate-400 hover:border-red-300 hover:text-red-600 dark:border-slate-700"
-                      >
-                        + Προσθήκη
-                      </button>
-                    )}
                   </div>
                   <ScrollBar orientation="horizontal" />
                 </ScrollArea>
               )}
 
-              {mediaMessage && (
-                <div className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{mediaMessage}</div>
+              {!isReadOnly && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={openMediaPicker}
+                  className="mt-2 h-7 px-2 text-xs font-normal text-slate-500 hover:text-red-600 dark:text-slate-400"
+                >
+                  + Προσθήκη εικόνας
+                </Button>
               )}
+
+              {mediaMessage && <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">{mediaMessage}</div>}
             </div>
 
-            {/* RIGHT 60% — fields */}
-            <div className="md:col-span-7">
+            {/* RIGHT — identity + description */}
+            <div>
+              {editForm.muscleGroup && (
+                <Badge className="mb-3 bg-red-50 font-normal text-red-700 hover:bg-red-50 dark:bg-red-500/10 dark:text-red-400">
+                  {editForm.muscleGroup}
+                </Badge>
+              )}
+
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                {isReadOnly ? (
+                  <h1 className="text-2xl font-bold dark:text-slate-50">{editForm.name || "Χωρίς όνομα"}</h1>
+                ) : (
+                  <Input
+                    value={editForm.name}
+                    onChange={(event) => updateEditField("name", event.target.value)}
+                    placeholder="Όνομα άσκησης"
+                    className="h-auto flex-1 border-none bg-transparent p-0 text-2xl font-bold shadow-none focus-visible:ring-0 dark:text-slate-50"
+                  />
+                )}
+                {isReadOnly && !isCreating && (
+                  <Button type="button" variant="outline" size="sm" onClick={() => setModalMode("edit")} className="shrink-0 gap-1.5 font-normal">
+                    ✏️ Επεξεργασία
+                  </Button>
+                )}
+              </div>
+
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {[editForm.equipment, editForm.type].filter(Boolean).join(" · ") || "—"}
+              </p>
+
+              <Separator className="my-5" />
+
               {isReadOnly ? (
-                <div className="space-y-5">
-                  <div className="grid grid-cols-2 gap-4">
-                    <Info label="Τύπος" value={editForm.type} />
-                    <Info label="Σε προγράμματα" value={editForm.programsCount || 0} />
-                  </div>
-                  <div>
-                    <h3 className="font-bold dark:text-slate-50">Περιγραφή / Πώς γίνεται</h3>
-                    <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-700 dark:text-slate-200">
-                      {editForm.instructions || "Δεν έχει προστεθεί περιγραφή."}
-                    </p>
-                  </div>
-                  <Collapsible defaultOpen={Boolean(editForm.videoUrl)}>
-                    <CollapsibleTrigger
-                      render={
-                        <button
-                          type="button"
-                          className="flex w-full items-center justify-between gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-200"
-                        >
-                          <span>🎥 Βίντεο οδηγιών</span>
-                          <ChevronDown className="h-4 w-4 transition-transform data-panel-open:rotate-180" />
-                        </button>
-                      }
-                    />
-                    <CollapsibleContent className="mt-3">
-                      <VideoEmbed url={editForm.videoUrl} />
-                    </CollapsibleContent>
-                  </Collapsible>
-                </div>
+                <p className="whitespace-pre-line text-sm leading-relaxed text-slate-500 dark:text-slate-400">
+                  {editForm.instructions || "Δεν έχει προστεθεί περιγραφή."}
+                </p>
               ) : (
-                <div className="space-y-5">
-                  <EditInput label="Όνομα" value={editForm.name} onChange={(value) => updateEditField("name", value)} />
-                  <div className="grid grid-cols-2 gap-4">
-                    <EditSelect
-                      label="Μυϊκή ομάδα"
-                      value={editForm.muscleGroup}
-                      onChange={(value) => updateEditField("muscleGroup", value)}
-                      options={muscleGroupOptions}
-                    />
-                    <EditSelect
-                      label="Εξοπλισμός"
-                      value={editForm.equipment}
-                      onChange={(value) => updateEditField("equipment", value)}
-                      options={equipmentOptions}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <EditSelect
-                      label="Τύπος"
-                      value={editForm.type}
-                      onChange={(value) => updateEditField("type", value)}
-                      options={typeOptions}
-                    />
-                    <EditInput
-                      label="Σε προγράμματα"
-                      type="number"
-                      value={editForm.programsCount}
-                      onChange={(value) => updateEditField("programsCount", value)}
-                    />
-                  </div>
-
-                  <div>
-                    <Label className="block">
-                      <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Περιγραφή</span>
-                    </Label>
-                    <Textarea
-                      value={editForm.instructions}
-                      onChange={(event) => updateEditField("instructions", event.target.value)}
-                      className="mt-2 min-h-32 w-full rounded-lg border-slate-200 bg-slate-50 p-4 text-sm leading-7 focus-visible:border-red-300 dark:border-slate-800 dark:bg-slate-800"
-                    />
-                  </div>
-
-                  <Collapsible defaultOpen={Boolean(editForm.videoUrl)}>
-                    <CollapsibleTrigger
-                      render={
-                        <button
-                          type="button"
-                          className="flex w-full items-center justify-between gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-200"
-                        >
-                          <span>🎥 Βίντεο οδηγιών</span>
-                          <ChevronDown className="h-4 w-4 transition-transform data-panel-open:rotate-180" />
-                        </button>
-                      }
-                    />
-                    <CollapsibleContent className="mt-3 space-y-3">
-                      <Input
-                        value={editForm.videoUrl}
-                        onChange={(event) => updateEditField("videoUrl", event.target.value)}
-                        placeholder="YouTube, Vimeo ή embed URL"
-                        className="h-11 focus-visible:border-red-300"
-                      />
-                      <VideoEmbed url={editForm.videoUrl} />
-                    </CollapsibleContent>
-                  </Collapsible>
-                </div>
+                <Textarea
+                  value={editForm.instructions}
+                  onChange={(event) => updateEditField("instructions", event.target.value)}
+                  placeholder="Περιγραφή / οδηγίες εκτέλεσης..."
+                  className="min-h-28 w-full resize-none border-none bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0"
+                />
               )}
             </div>
           </div>
 
+          {/* MIDDLE — stats row */}
+          <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {isReadOnly ? (
+              <>
+                <StatBox label="Μυϊκή ομάδα" value={editForm.muscleGroup || "—"} />
+                <StatBox label="Εξοπλισμός" value={editForm.equipment || "—"} />
+                <StatBox label="Τύπος" value={editForm.type || "—"} />
+                <StatBox label="Σε προγράμματα" value={editForm.programsCount || 0} />
+              </>
+            ) : (
+              <>
+                <EditSelect label="Μυϊκή ομάδα" value={editForm.muscleGroup} onChange={(value) => updateEditField("muscleGroup", value)} options={muscleGroupOptions} />
+                <EditSelect label="Εξοπλισμός" value={editForm.equipment} onChange={(value) => updateEditField("equipment", value)} options={equipmentOptions} />
+                <EditSelect label="Τύπος" value={editForm.type} onChange={(value) => updateEditField("type", value)} options={typeOptions} />
+                <EditInput label="Σε προγράμματα" type="number" value={editForm.programsCount} onChange={(value) => updateEditField("programsCount", value)} />
+              </>
+            )}
+          </div>
+
+          {/* VIDEO */}
+          {(isReadOnly ? Boolean(editForm.videoUrl) : true) && (
+            <Collapsible className="mt-8">
+              <CollapsibleTrigger
+                render={
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-2 py-2 text-sm font-medium text-slate-700 hover:text-red-600 dark:text-slate-200"
+                  >
+                    <span>🎥 Βίντεο οδηγιών</span>
+                    <ChevronDown className="h-4 w-4 text-slate-400 transition-transform data-panel-open:rotate-180" />
+                  </button>
+                }
+              />
+              <CollapsibleContent className="space-y-3 pt-2">
+                {!isReadOnly && (
+                  <Input
+                    value={editForm.videoUrl}
+                    onChange={(event) => updateEditField("videoUrl", event.target.value)}
+                    placeholder="YouTube, Vimeo ή embed URL"
+                    className="h-10"
+                  />
+                )}
+                <VideoEmbed url={editForm.videoUrl} />
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+
           {!isReadOnly && (
-            <>
-              <Separator className="my-6" />
+            <div className="sticky bottom-0 mt-8 border-t border-slate-200 bg-white/95 py-4 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
               <div className="flex items-center justify-between gap-3">
                 {!isCreating ? (
                   <Button
@@ -632,7 +608,7 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
                     variant="ghost"
                     onClick={deleteExercise}
                     disabled={saving}
-                    className="gap-2 font-bold text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10"
+                    className="gap-2 font-normal text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10"
                   >
                     🗑️ Διαγραφή
                   </Button>
@@ -640,17 +616,17 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
                   <span />
                 )}
                 <div className="flex gap-2">
-                  <Button type="button" variant="outline" onClick={() => router.push("/exercises")} className="font-bold">
+                  <Button type="button" variant="outline" onClick={() => router.push("/exercises")} className="font-normal">
                     Ακύρωση
                   </Button>
-                  <Button onClick={saveExercise} disabled={saving} className="gap-2 px-6 font-bold">
+                  <Button onClick={saveExercise} disabled={saving} className="gap-2 px-6 font-medium">
                     💾 {saving ? "Αποθήκευση..." : isCreating ? "Προσθήκη Άσκησης" : "Αποθήκευση"}
                   </Button>
                 </div>
               </div>
-            </>
+            </div>
           )}
-        </Card>
+        </div>
       ) : null}
 
       <Dialog open={mediaPickerOpen} onOpenChange={setMediaPickerOpen}>
@@ -710,12 +686,12 @@ function EditInput({
   return (
     <Label className="block">
       <span className="w-full">
-        <span className="block text-sm font-bold text-slate-700 dark:text-slate-200">{label}</span>
+        <span className="block text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
         <Input
           type={type}
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="mt-2 h-11 focus-visible:border-red-300"
+          className="mt-1 h-9 focus-visible:border-red-300"
         />
       </span>
     </Label>
@@ -737,13 +713,13 @@ function EditSelect({
 
   return (
     <label className="block">
-      <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{label}</span>
+      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
       <Select
         items={[{ value: UNSET_VALUE, label: "Επιλογή" }, ...selectOptions.map((option) => ({ value: option, label: option }))]}
         value={value || UNSET_VALUE}
         onValueChange={(next: string | null) => onChange(!next || next === UNSET_VALUE ? "" : next)}
       >
-        <SelectTrigger className="mt-2 h-11 w-full focus-visible:border-red-300">
+        <SelectTrigger className="mt-1 h-9 w-full focus-visible:border-red-300">
           <SelectValue placeholder="Επιλογή" />
         </SelectTrigger>
         <SelectContent>
@@ -773,11 +749,11 @@ function PickerImage({ asset }: { asset: MediaAsset }) {
   );
 }
 
-function Info({ label, value }: { label: string; value: string | number }) {
+function StatBox({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+    <div className="rounded-lg bg-slate-50 px-3 py-2.5 dark:bg-slate-900">
       <div className="text-xs text-slate-500 dark:text-slate-400">{label}</div>
-      <div className="mt-1 font-bold dark:text-slate-50">{value}</div>
+      <div className="mt-0.5 truncate text-sm font-medium dark:text-slate-50">{value}</div>
     </div>
   );
 }
