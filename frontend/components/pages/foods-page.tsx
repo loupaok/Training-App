@@ -624,10 +624,9 @@ function FoodsContent() {
               {pickerItems.length < pickerTotal && (
                 <Button
                   type="button"
-                  variant="ghost"
                   disabled={pickerLoading}
                   onClick={() => pickerFolderId !== null && fetchPickerPage(pickerFolderId, pickerPage + 1, false)}
-                  className="mt-1 w-full font-medium text-slate-500 hover:text-red-600 dark:text-slate-400"
+                  className="mt-1 w-full bg-gray-800 py-3 font-medium text-white dark:bg-zinc-800"
                 >
                   {pickerLoading ? "Φόρτωση..." : `Εμφάνιση περισσότερων (${pickerTotal - pickerItems.length} ακόμα)`}
                 </Button>
