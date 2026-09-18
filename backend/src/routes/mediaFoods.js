@@ -4,6 +4,7 @@ import multer from 'multer';
 import path from 'path';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
+import { ensureMediaCategories } from './media.js';
 
 // Sibling to mediaExercises.js — a third router mounted at the same
 // '/api/media' prefix, purely additive. Manages only the foods.image_url
@@ -116,6 +117,8 @@ router.put('/foods/:id/image', authorizeRole(['coach', 'admin']), upload.single(
 router.delete('/foods/:id/image', authorizeRole(['coach', 'admin']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
+    await ensureMediaCategories(connection);
+    await connection.query('DELETE FROM media_category_items WHERE category = ? AND entity_id = ?', ['food', req.params.id]);
     const [result] = await connection.query('UPDATE foods SET image_url = NULL WHERE id = ?', [req.params.id]);
     connection.release();
 

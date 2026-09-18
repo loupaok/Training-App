@@ -5,6 +5,7 @@ import path from 'path';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
+import { ensureMediaCategories } from './media.js';
 
 const router = express.Router();
 const exerciseUploadDir = path.join(process.cwd(), 'uploads', 'media', 'exercises');
@@ -559,6 +560,7 @@ router.delete('/:id/images/:imageId', authorizeRole(['coach', 'admin']), async (
   try {
     const connection = await pool.getConnection();
     await ensureExerciseImagesTable(connection);
+    await ensureMediaCategories(connection);
     const [[image]] = await connection.query(
       'SELECT image_url AS imageUrl, is_primary AS isPrimary FROM exercise_images WHERE id = ? AND exercise_id = ?',
       [req.params.imageId, req.params.id]
@@ -570,6 +572,7 @@ router.delete('/:id/images/:imageId', authorizeRole(['coach', 'admin']), async (
     }
 
     await connection.query('DELETE FROM exercise_images WHERE id = ? AND exercise_id = ?', [req.params.imageId, req.params.id]);
+    await connection.query('DELETE FROM media_category_items WHERE category = ? AND entity_id = ?', ['exercise', req.params.imageId]);
 
     if (image.isPrimary) {
       const [[nextImage]] = await connection.query(
@@ -596,6 +599,13 @@ router.delete('/:id/images/:imageId', authorizeRole(['coach', 'admin']), async (
 router.delete('/:id', authorizeRole(['coach', 'admin']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
+    await ensureMediaCategories(connection);
+    await connection.query(
+      `DELETE mci FROM media_category_items mci
+       JOIN exercise_images ei ON ei.id = mci.entity_id AND mci.category = 'exercise'
+       WHERE ei.exercise_id = ?`,
+      [req.params.id]
+    );
     const [result] = await connection.query('DELETE FROM exercises WHERE id = ?', [req.params.id]);
     connection.release();
 

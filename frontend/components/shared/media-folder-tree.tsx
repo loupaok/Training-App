@@ -7,16 +7,21 @@ import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
 
+export type MediaCategory = "exercise" | "food" | "progress_photo";
+
 export interface MediaFolder {
   id: number;
   name: string;
   parentId: number | null;
   itemCount: number;
+  category?: MediaCategory | null;
 }
 
 interface TreeNode extends MediaFolder {
   children: TreeNode[];
 }
+
+const CATEGORY_ORDER: Record<MediaCategory, number> = { exercise: 0, food: 1, progress_photo: 2 };
 
 function buildTree(folders: MediaFolder[]): TreeNode[] {
   const byId = new Map<number, TreeNode>(folders.map((folder) => [folder.id, { ...folder, children: [] }]));
@@ -33,6 +38,14 @@ function buildTree(folders: MediaFolder[]): TreeNode[] {
     nodes.forEach((node) => sortRec(node.children));
   };
   sortRec(roots);
+  // Fixed category roots always come first, in Ασκήσεις → Τρόφιμα → Πρόοδος
+  // order, ahead of any alphabetically-sorted custom top-level folders.
+  roots.sort((a, b) => {
+    const rankA = a.category ? CATEGORY_ORDER[a.category] : 3;
+    const rankB = b.category ? CATEGORY_ORDER[b.category] : 3;
+    if (rankA !== rankB) return rankA - rankB;
+    return a.name.localeCompare(b.name, "el");
+  });
   return roots;
 }
 
@@ -113,6 +126,7 @@ export function MediaFolderTree({
     const isDropTarget = dragActive && dropTargetId === node.id;
     const isCollapsed = collapsed.has(node.id);
     const hasChildren = node.children.length > 0;
+    const isCategoryRoot = Boolean(node.category);
 
     return (
       <div key={node.id}>
@@ -133,7 +147,9 @@ export function MediaFolderTree({
                 }}
                 className={cn(
                   "group flex items-center gap-1 rounded-md py-1.5 pr-1 text-sm",
-                  isSelected ? "bg-red-50 font-semibold text-red-700 dark:bg-red-500/10 dark:text-red-400" : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800",
+                  isSelected
+                    ? "bg-red-50 font-semibold text-red-700 dark:bg-red-500/10 dark:text-red-400"
+                    : cn("text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800", isCategoryRoot && "font-semibold"),
                   isDropTarget && "ring-2 ring-red-400",
                 )}
                 style={{ paddingLeft: `${depth * 16 + 4}px` }}
@@ -170,16 +186,22 @@ export function MediaFolderTree({
             <ContextMenuItem onClick={() => onSelect(node.id)}>
               <Folder className="h-4 w-4" /> Άνοιγμα
             </ContextMenuItem>
-            <ContextMenuItem onClick={() => startRename(node)}>
-              <Pencil className="h-4 w-4" /> Μετονομασία
-            </ContextMenuItem>
+            {!isCategoryRoot && (
+              <ContextMenuItem onClick={() => startRename(node)}>
+                <Pencil className="h-4 w-4" /> Μετονομασία
+              </ContextMenuItem>
+            )}
             <ContextMenuItem onClick={() => startCreate(node.id)}>
               <FolderPlus className="h-4 w-4" /> Νέος υποφάκελος
             </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem variant="destructive" onClick={() => onDelete(node)}>
-              <Trash2 className="h-4 w-4" /> Διαγραφή
-            </ContextMenuItem>
+            {!isCategoryRoot && (
+              <>
+                <ContextMenuSeparator />
+                <ContextMenuItem variant="destructive" onClick={() => onDelete(node)}>
+                  <Trash2 className="h-4 w-4" /> Διαγραφή
+                </ContextMenuItem>
+              </>
+            )}
           </ContextMenuContent>
         </ContextMenu>
 

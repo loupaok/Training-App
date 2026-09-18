@@ -35,12 +35,14 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CoachShell } from "@/components/shell/coach-shell";
-import { MediaFolderTree, type MediaFolder } from "@/components/shared/media-folder-tree";
+import { MediaFolderTree, type MediaFolder, type MediaCategory } from "@/components/shared/media-folder-tree";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl } from "@/lib/media";
 import { compressImageFile } from "@/lib/image-compression";
 import { cn } from "@/lib/utils";
+
+const PAGE_SIZE = 48;
 
 interface RawMediaItem {
   id: number | string;
@@ -48,6 +50,19 @@ interface RawMediaItem {
   title: string;
   url?: string;
   folderId?: number | string | null;
+}
+
+// Unified shape for anything the grid can render, whether it's a custom
+// media_assets upload or a centralized exercise/food/progress-photo item.
+interface GalleryItem {
+  id: string; // unique within the current view: "asset-5" or "exercise-1901"
+  entityId: number;
+  title: string;
+  url: string;
+  folderId: number | null;
+  kind: "asset" | "category";
+  category?: MediaCategory;
+  parentId?: number; // exercise id, only present for kind="category" && category="exercise"
 }
 
 interface MediaAssetItem {
@@ -61,6 +76,38 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
+function resolveCategoryContext(folders: MediaFolder[], folderId: number | null): { category: MediaCategory; rootId: number } | null {
+  if (folderId === null) return null;
+  const byId = new Map(folders.map((folder) => [folder.id, folder]));
+  let current = byId.get(folderId);
+  while (current) {
+    if (current.category) return { category: current.category, rootId: current.id };
+    current = current.parentId ? byId.get(current.parentId) : undefined;
+  }
+  return null;
+}
+
+function categoryOfFolder(folders: MediaFolder[], folderId: number | null): MediaCategory | null {
+  if (folderId === null) return null;
+  return resolveCategoryContext(folders, folderId)?.category ?? null;
+}
+
+// Folders to offer as move destinations: only the same category's subtree for
+// category items, or only non-category folders for custom uploads.
+function foldersForMoveTarget(folders: MediaFolder[], category: MediaCategory | null): MediaFolder[] {
+  if (!category) {
+    return folders.filter((folder) => categoryOfFolder(folders, folder.id) === null);
+  }
+  return folders.filter((folder) => categoryOfFolder(folders, folder.id) === category);
+}
+
+function deletePathFor(item: GalleryItem): string {
+  if (item.kind === "asset") return `/media/media_asset/${item.entityId}`;
+  if (item.category === "exercise") return `/exercises/${item.parentId}/images/${item.entityId}`;
+  if (item.category === "food") return `/media/foods/${item.entityId}/image`;
+  return `/progress/photos/${item.entityId}`;
+}
+
 function MediaGalleryContent() {
   const { user, logout } = useAuth();
   const [folders, setFolders] = useState<MediaFolder[]>([]);
@@ -69,20 +116,28 @@ function MediaGalleryContent() {
 
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const [selectMode, setSelectMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  const [dragAssetId, setDragAssetId] = useState<number | null>(null);
+  const [dragItem, setDragItem] = useState<GalleryItem | null>(null);
   const [dropTarget, setDropTarget] = useState<number | null | "root">(null);
 
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<MediaFolder | null>(null);
-  const [moveTargetIds, setMoveTargetIds] = useState<number[] | null>(null);
+  const [moveTargetItems, setMoveTargetItems] = useState<GalleryItem[] | null>(null);
+
+  const [categoryItems, setCategoryItems] = useState<GalleryItem[]>([]);
+  const [categoryTotal, setCategoryTotal] = useState(0);
+  const [categoryPage, setCategoryPage] = useState(1);
+  const [categoryLoading, setCategoryLoading] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const categoryContext = useMemo(() => resolveCategoryContext(folders, selectedFolderId), [folders, selectedFolderId]);
 
   const loadLibrary = () => {
     setLoading(true);
@@ -110,13 +165,50 @@ function MediaGalleryContent() {
     loadLibrary();
   }, []);
 
-  const visibleAssets = useMemo(() => {
-    return assets.filter((asset) => {
-      const matchesFolder = selectedFolderId === null || asset.folderId === selectedFolderId;
-      const matchesSearch = !search || asset.title.toLowerCase().includes(search.toLowerCase());
-      return matchesFolder && matchesSearch;
-    });
-  }, [assets, selectedFolderId, search]);
+  // Debounce search — matches the 300ms pattern used elsewhere in this app.
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedSearch(search), 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [search]);
+
+  const fetchCategoryPage = (category: MediaCategory, folderId: number, page: number, replace: boolean) => {
+    setCategoryLoading(true);
+    const params = new URLSearchParams({ folderId: String(folderId), page: String(page), limit: String(PAGE_SIZE) });
+    if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
+    api
+      .get<{ items: GalleryItem[]; total: number; page: number }>(`/media/categories/${category}?${params.toString()}`)
+      .then((response) => {
+        const mapped = response.items.map((item) => ({ ...item, id: `${category}-${item.entityId}`, kind: "category" as const }));
+        setCategoryItems((current) => (replace ? mapped : [...current, ...mapped]));
+        setCategoryTotal(response.total);
+        setCategoryPage(response.page);
+      })
+      .catch(() => {
+        if (replace) setCategoryItems([]);
+      })
+      .finally(() => setCategoryLoading(false));
+  };
+
+  useEffect(() => {
+    if (!categoryContext) {
+      setCategoryItems([]);
+      setCategoryTotal(0);
+      return;
+    }
+    fetchCategoryPage(categoryContext.category, selectedFolderId as number, 1, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryContext?.category, selectedFolderId, debouncedSearch]);
+
+  const displayItems: GalleryItem[] = useMemo(() => {
+    if (categoryContext) return categoryItems;
+    return assets
+      .filter((asset) => {
+        const matchesFolder = selectedFolderId === null || asset.folderId === selectedFolderId;
+        const matchesSearch = !debouncedSearch || asset.title.toLowerCase().includes(debouncedSearch.toLowerCase());
+        return matchesFolder && matchesSearch;
+      })
+      .map((asset) => ({ id: `asset-${asset.id}`, entityId: asset.id, title: asset.title, url: asset.url, folderId: asset.folderId, kind: "asset" as const }));
+  }, [categoryContext, categoryItems, assets, selectedFolderId, debouncedSearch]);
 
   const breadcrumbChain = useMemo(() => {
     if (selectedFolderId === null) return [];
@@ -130,7 +222,7 @@ function MediaGalleryContent() {
     return chain;
   }, [folders, selectedFolderId]);
 
-  const toggleSelect = (id: number) => {
+  const toggleSelect = (id: string) => {
     setSelectedIds((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
@@ -178,17 +270,42 @@ function MediaGalleryContent() {
     }
   };
 
-  const moveAssets = async (ids: number[], folderId: number | null) => {
+  const refreshAfterMove = (movedCategory: MediaCategory | null, folderId: number) => {
+    if (movedCategory && categoryContext) {
+      fetchCategoryPage(movedCategory, selectedFolderId as number, 1, true);
+    }
+    loadLibrary();
+    const folderName = folderId ? folders.find((folder) => folder.id === folderId)?.name : "Όλα τα αρχεία";
+    toast.success(`Μετακινήθηκε στον φάκελο ${folderName || ""}`.trim());
+  };
+
+  const moveItems = async (items: GalleryItem[], folderId: number) => {
+    if (!items.length) return;
+    const category = items[0].category ?? null;
+    const targetCategory = categoryOfFolder(folders, folderId);
+    if (targetCategory !== category) {
+      toast.error("Δεν μπορείς να μετακινήσεις εικόνες εκτός της κατηγορίας τους.");
+      return;
+    }
+
     try {
-      if (ids.length === 1) {
-        await api.put(`/media/assets/${ids[0]}/folder`, { folderId });
+      if (category) {
+        const entityIds = items.map((item) => item.entityId);
+        if (entityIds.length === 1) {
+          await api.put(`/media/categories/${category}/${entityIds[0]}/folder`, { folderId });
+        } else {
+          await api.put(`/media/categories/${category}/bulk-move`, { entityIds, folderId });
+        }
       } else {
-        await api.put("/media/assets/bulk-move", { ids, folderId });
+        const assetIds = items.map((item) => item.entityId);
+        if (assetIds.length === 1) {
+          await api.put(`/media/assets/${assetIds[0]}/folder`, { folderId });
+        } else {
+          await api.put("/media/assets/bulk-move", { ids: assetIds, folderId });
+        }
+        setAssets((current) => current.map((asset) => (assetIds.includes(asset.id) ? { ...asset, folderId } : asset)));
       }
-      setAssets((current) => current.map((asset) => (ids.includes(asset.id) ? { ...asset, folderId } : asset)));
-      loadLibrary();
-      const folderName = folderId ? folders.find((folder) => folder.id === folderId)?.name : "Όλα τα αρχεία";
-      toast.success(`Μετακινήθηκε στον φάκελο ${folderName || ""}`.trim());
+      refreshAfterMove(category, folderId);
     } catch (error) {
       toast.error(getErrorMessage(error, "Δεν έγινε μετακίνηση."));
     }
@@ -196,16 +313,21 @@ function MediaGalleryContent() {
 
   const handleDropOnFolder = (folderId: number | null) => {
     setDropTarget(null);
-    if (dragAssetId == null) return;
-    const ids = selectMode && selectedIds.has(dragAssetId) ? Array.from(selectedIds) : [dragAssetId];
-    setDragAssetId(null);
-    moveAssets(ids, folderId);
+    if (!dragItem || folderId === null) return;
+    const items = selectMode && selectedIds.has(dragItem.id) ? displayItems.filter((item) => selectedIds.has(item.id)) : [dragItem];
+    setDragItem(null);
+    moveItems(items, folderId);
   };
 
-  const deleteAsset = async (id: number) => {
+  const deleteItem = async (item: GalleryItem) => {
     try {
-      await api.delete(`/media/media_asset/${id}`);
-      setAssets((current) => current.filter((asset) => asset.id !== id));
+      await api.delete(deletePathFor(item));
+      if (item.kind === "asset") {
+        setAssets((current) => current.filter((asset) => asset.id !== item.entityId));
+      } else if (categoryContext) {
+        fetchCategoryPage(categoryContext.category, selectedFolderId as number, 1, true);
+      }
+      loadLibrary();
       toast.success("Η φωτογραφία διαγράφηκε.");
     } catch (error) {
       toast.error(getErrorMessage(error, "Δεν έγινε διαγραφή."));
@@ -213,13 +335,19 @@ function MediaGalleryContent() {
   };
 
   const bulkDelete = async () => {
-    const ids = Array.from(selectedIds);
-    if (!ids.length) return;
-    const confirmed = window.confirm(`Να διαγραφούν ${ids.length} φωτογραφίες;`);
+    const items = displayItems.filter((item) => selectedIds.has(item.id));
+    if (!items.length) return;
+    const confirmed = window.confirm(`Να διαγραφούν ${items.length} φωτογραφίες;`);
     if (!confirmed) return;
-    await Promise.all(ids.map((id) => api.delete(`/media/media_asset/${id}`).catch(() => null)));
-    setAssets((current) => current.filter((asset) => !ids.includes(asset.id)));
-    toast.success(`${ids.length} φωτογραφίες διαγράφηκαν.`);
+    await Promise.all(items.map((item) => api.delete(deletePathFor(item)).catch(() => null)));
+    if (categoryContext) {
+      fetchCategoryPage(categoryContext.category, selectedFolderId as number, 1, true);
+    } else {
+      const removedIds = new Set(items.map((item) => item.entityId));
+      setAssets((current) => current.filter((asset) => !removedIds.has(asset.id)));
+    }
+    loadLibrary();
+    toast.success(`${items.length} φωτογραφίες διαγράφηκαν.`);
     clearSelection();
   };
 
@@ -248,7 +376,9 @@ function MediaGalleryContent() {
     }
   };
 
-  const moveDialogAssetCount = moveTargetIds?.length || 0;
+  const moveDialogCategory = moveTargetItems?.[0]?.category ?? null;
+  const moveDialogFolders = useMemo(() => foldersForMoveTarget(folders, moveDialogCategory), [folders, moveDialogCategory]);
+  const canLoadMoreCategory = categoryContext ? categoryItems.length < categoryTotal : false;
 
   return (
     <CoachShell title="Media Library" user={user} logout={logout}>
@@ -264,15 +394,17 @@ function MediaGalleryContent() {
               <CheckSquare className="h-4 w-4" /> Επιλογή πολλαπλών
             </Button>
           )}
-          <Button
-            type="button"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="gap-2 bg-red-600 font-medium hover:bg-red-700"
-          >
-            <Upload className="h-4 w-4" /> {uploading ? "Ανέβασμα..." : "Ανέβασμα"}
-          </Button>
+          {!categoryContext && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="gap-2 bg-red-600 font-medium hover:bg-red-700"
+            >
+              <Upload className="h-4 w-4" /> {uploading ? "Ανέβασμα..." : "Ανέβασμα"}
+            </Button>
+          )}
           <input ref={fileInputRef} type="file" accept="image/*" onChange={uploadFile} className="hidden" />
         </div>
       </div>
@@ -286,7 +418,7 @@ function MediaGalleryContent() {
             onCreate={createFolder}
             onRename={renameFolder}
             onDelete={setDeleteFolderTarget}
-            dragActive={dragAssetId !== null}
+            dragActive={dragItem !== null}
             dropTargetId={dropTarget}
             onDropTargetChange={setDropTarget}
             onDropAsset={handleDropOnFolder}
@@ -333,30 +465,43 @@ function MediaGalleryContent() {
           </div>
 
           <div className="flex-1 overflow-y-auto p-4">
-            {loading ? (
+            {loading || (categoryContext && categoryLoading && !categoryItems.length) ? (
               <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Φόρτωση...</p>
-            ) : !visibleAssets.length ? (
+            ) : !displayItems.length ? (
               <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
                 <ImageOff className="h-10 w-10 text-slate-300 dark:text-slate-700" />
                 <p className="font-semibold text-slate-500 dark:text-slate-400">Δεν βρέθηκαν φωτογραφίες.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-                {visibleAssets.map((asset, index) => (
-                  <GalleryCard
-                    key={asset.id}
-                    asset={asset}
-                    selectMode={selectMode}
-                    selected={selectedIds.has(asset.id)}
-                    onToggleSelect={() => toggleSelect(asset.id)}
-                    onPreview={() => setPreviewIndex(index)}
-                    onMove={() => setMoveTargetIds([asset.id])}
-                    onDelete={() => deleteAsset(asset.id)}
-                    onDragStart={() => setDragAssetId(asset.id)}
-                    onDragEnd={() => setDragAssetId(null)}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                  {displayItems.map((item, index) => (
+                    <GalleryCard
+                      key={item.id}
+                      item={item}
+                      selectMode={selectMode}
+                      selected={selectedIds.has(item.id)}
+                      onToggleSelect={() => toggleSelect(item.id)}
+                      onPreview={() => setPreviewIndex(index)}
+                      onMove={() => setMoveTargetItems([item])}
+                      onDelete={() => deleteItem(item)}
+                      onDragStart={() => setDragItem(item)}
+                      onDragEnd={() => setDragItem(null)}
+                    />
+                  ))}
+                </div>
+                {canLoadMoreCategory && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => categoryContext && fetchCategoryPage(categoryContext.category, selectedFolderId as number, categoryPage + 1, false)}
+                    disabled={categoryLoading}
+                    className="mt-4 w-full font-medium text-slate-500 hover:text-red-600 dark:text-slate-400"
+                  >
+                    {categoryLoading ? "Φόρτωση..." : `Φόρτωση περισσότερων (${categoryTotal - categoryItems.length} ακόμα)`}
+                  </Button>
+                )}
+              </>
             )}
           </div>
         </ResizablePanel>
@@ -366,7 +511,13 @@ function MediaGalleryContent() {
         <div className="fixed bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-900 px-5 py-3 text-white shadow-lg dark:bg-slate-800">
           <div className="flex items-center gap-4">
             <span className="text-sm font-semibold">{selectedIds.size} εικόνες επιλεγμένες</span>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setMoveTargetIds(Array.from(selectedIds))} className="gap-2 text-white hover:bg-white/10 hover:text-white">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setMoveTargetItems(displayItems.filter((item) => selectedIds.has(item.id)))}
+              className="gap-2 text-white hover:bg-white/10 hover:text-white"
+            >
               <FolderInput className="h-4 w-4" /> Μετακίνηση
             </Button>
             <Button type="button" size="sm" variant="ghost" onClick={bulkDelete} className="gap-2 text-red-300 hover:bg-white/10 hover:text-red-200">
@@ -376,7 +527,7 @@ function MediaGalleryContent() {
         </div>
       )}
 
-      <PreviewDialog assets={visibleAssets} index={previewIndex} onClose={() => setPreviewIndex(null)} onNavigate={setPreviewIndex} />
+      <PreviewDialog items={displayItems} index={previewIndex} onClose={() => setPreviewIndex(null)} onNavigate={setPreviewIndex} />
 
       <AlertDialog open={Boolean(deleteFolderTarget)} onOpenChange={(open) => !open && setDeleteFolderTarget(null)}>
         <AlertDialogContent>
@@ -393,19 +544,21 @@ function MediaGalleryContent() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={moveTargetIds !== null} onOpenChange={(open) => !open && setMoveTargetIds(null)}>
+      <Dialog open={moveTargetItems !== null} onOpenChange={(open) => !open && setMoveTargetItems(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Μετακίνηση σε...</DialogTitle>
-            <DialogDescription>{moveDialogAssetCount} {moveDialogAssetCount === 1 ? "εικόνα" : "εικόνες"}</DialogDescription>
+            <DialogDescription>
+              {moveTargetItems?.length || 0} {(moveTargetItems?.length || 0) === 1 ? "εικόνα" : "εικόνες"}
+            </DialogDescription>
           </DialogHeader>
           <div className="max-h-96 overflow-y-auto rounded-md border border-slate-200 dark:border-slate-800">
             <MediaFolderTree
-              folders={folders}
+              folders={moveDialogFolders}
               selectedFolderId={null}
               onSelect={(folderId) => {
-                if (moveTargetIds) moveAssets(moveTargetIds, folderId);
-                setMoveTargetIds(null);
+                if (moveTargetItems && folderId !== null) moveItems(moveTargetItems, folderId);
+                setMoveTargetItems(null);
               }}
               onCreate={createFolder}
               onRename={renameFolder}
@@ -423,7 +576,7 @@ function MediaGalleryContent() {
 }
 
 function GalleryCard({
-  asset,
+  item,
   selectMode,
   selected,
   onToggleSelect,
@@ -433,7 +586,7 @@ function GalleryCard({
   onDragStart,
   onDragEnd,
 }: {
-  asset: MediaAssetItem;
+  item: GalleryItem;
   selectMode: boolean;
   selected: boolean;
   onToggleSelect: () => void;
@@ -443,7 +596,7 @@ function GalleryCard({
   onDragStart: () => void;
   onDragEnd: () => void;
 }) {
-  const src = resolveMediaUrl(asset.url);
+  const src = resolveMediaUrl(item.url);
   const [failed, setFailed] = useState(false);
 
   return (
@@ -471,7 +624,7 @@ function GalleryCard({
             </div>
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={src} alt={asset.title} onError={() => setFailed(true)} loading="lazy" className="h-full w-full object-cover" />
+            <img src={src} alt={item.title} onError={() => setFailed(true)} loading="lazy" className="h-full w-full object-cover" />
           )}
           {!selectMode && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 bg-black/0 opacity-0 transition-all group-hover:bg-black/30 group-hover:opacity-100">
@@ -481,7 +634,7 @@ function GalleryCard({
             </div>
           )}
         </button>
-        <div className="truncate px-2.5 py-2 text-xs font-medium text-slate-600 dark:text-slate-300">{asset.title}</div>
+        <div className="truncate px-2.5 py-2 text-xs font-medium text-slate-600 dark:text-slate-300">{item.title}</div>
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onClick={onPreview}>
@@ -500,39 +653,39 @@ function GalleryCard({
 }
 
 function PreviewDialog({
-  assets,
+  items,
   index,
   onClose,
   onNavigate,
 }: {
-  assets: MediaAssetItem[];
+  items: GalleryItem[];
   index: number | null;
   onClose: () => void;
   onNavigate: (index: number) => void;
 }) {
   const open = index !== null;
-  const asset = index !== null ? assets[index] : null;
+  const item = index !== null ? items[index] : null;
 
   useEffect(() => {
     if (!open) return;
     const handler = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
       if (event.key === "ArrowLeft" && index !== null && index > 0) onNavigate(index - 1);
-      if (event.key === "ArrowRight" && index !== null && index < assets.length - 1) onNavigate(index + 1);
+      if (event.key === "ArrowRight" && index !== null && index < items.length - 1) onNavigate(index + 1);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, index, assets.length]);
+  }, [open, index, items.length]);
 
-  if (!asset || index === null) return null;
-  const src = resolveMediaUrl(asset.url);
+  if (!item || index === null) return null;
+  const src = resolveMediaUrl(item.url);
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent showCloseButton={false} className="max-h-[90vh] w-full max-w-4xl overflow-hidden bg-black/95 p-0 sm:max-w-4xl">
         <DialogHeader className="sr-only">
-          <DialogTitle>{asset.title}</DialogTitle>
+          <DialogTitle>{item.title}</DialogTitle>
           <DialogDescription>Προεπισκόπηση φωτογραφίας</DialogDescription>
         </DialogHeader>
         <button type="button" onClick={onClose} aria-label="Close" className="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full bg-white/10 hover:bg-white/20">
@@ -540,21 +693,21 @@ function PreviewDialog({
         </button>
         <div className="relative flex h-[80vh] items-center justify-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={src} alt={asset.title} className="max-h-full max-w-full object-contain" />
+          <img src={src} alt={item.title} className="max-h-full max-w-full object-contain" />
           {index > 0 && (
             <button type="button" onClick={() => onNavigate(index - 1)} aria-label="Previous" className="absolute left-3 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/10 hover:bg-white/20">
               <ChevronLeft className="h-5 w-5 text-white" />
             </button>
           )}
-          {index < assets.length - 1 && (
+          {index < items.length - 1 && (
             <button type="button" onClick={() => onNavigate(index + 1)} aria-label="Next" className="absolute right-3 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/10 hover:bg-white/20">
               <ChevronRight className="h-5 w-5 text-white" />
             </button>
           )}
         </div>
         <div className="flex items-center justify-between gap-3 bg-black/60 px-4 py-3 text-white">
-          <span className="truncate text-sm font-medium">{asset.title}</span>
-          <Badge variant="secondary">{index + 1} / {assets.length}</Badge>
+          <span className="truncate text-sm font-medium">{item.title}</span>
+          <Badge variant="secondary">{index + 1} / {items.length}</Badge>
         </div>
       </DialogContent>
     </Dialog>

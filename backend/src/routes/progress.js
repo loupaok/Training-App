@@ -5,6 +5,7 @@ import fs from 'fs';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
+import { ensureMediaCategories } from './media.js';
 
 const router = express.Router();
 
@@ -168,6 +169,46 @@ router.delete('/:id', authorizeRole(['coach', 'admin']), async (req, res) => {
 
     connection.release();
     res.json({ message: 'Progress update and photos deleted successfully' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// DELETE /progress/photos/:photoId — delete a single progress photo (file + row).
+// Distinct from DELETE /:id above, which deletes an entire progress update and
+// all of its photos; this removes just one, e.g. from the Media Gallery.
+router.delete('/photos/:photoId', authorizeRole(['coach', 'admin']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+
+    const [rows] = await connection.query(
+      `SELECT pp.photo_url AS photoUrl, cc.coach_id AS coachId
+       FROM progress_photos pp
+       LEFT JOIN coach_clients cc ON cc.client_id = pp.client_id
+       WHERE pp.id = ?`,
+      [req.params.photoId]
+    );
+
+    if (rows.length === 0) {
+      connection.release();
+      return res.status(404).json({ message: 'Progress photo not found' });
+    }
+
+    if (req.user.role === 'coach' && rows[0].coachId !== req.user.id) {
+      connection.release();
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    await ensureMediaCategories(connection);
+    await connection.query('DELETE FROM media_category_items WHERE category = ? AND entity_id = ?', ['progress_photo', req.params.photoId]);
+    await connection.query('DELETE FROM progress_photos WHERE id = ?', [req.params.photoId]);
+    connection.release();
+
+    const filePath = path.join(rows[0].photoUrl);
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+
+    res.json({ message: 'Progress photo deleted' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
