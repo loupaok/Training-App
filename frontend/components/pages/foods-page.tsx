@@ -193,6 +193,8 @@ function FoodsContent() {
   const [pickerTotal, setPickerTotal] = useState(0);
   const [pickerPage, setPickerPage] = useState(1);
   const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerAppliedSearch, setPickerAppliedSearch] = useState("");
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
   // Debounce search input by 300ms before it drives any fetch.
@@ -321,39 +323,60 @@ function FoodsContent() {
     setPickerPage(page);
   };
 
-  const openPicker = async () => {
-    setPickerOpen(true);
+  useEffect(() => {
+    if (!pickerOpen) return;
+    let ignore = false;
     setPickerLoading(true);
+    const query = pickerSearch.trim();
+    const timer = window.setTimeout(async () => {
+      try {
+        const media = await api.get<Array<{ id: number | string; title: string; url?: string; folderId?: number | string | null }>>(
+          query ? `/media?search=${encodeURIComponent(query)}` : "/media",
+        );
+        if (ignore) return;
+        const mapped = media
+          .filter((item) => item.url)
+          .map((item) => ({
+            entityId: Number(item.id),
+            title: item.title,
+            url: item.url as string,
+            folderId: item.folderId === null || item.folderId === undefined || item.folderId === "" ? null : Number(item.folderId),
+          }));
+        setPickerAllItems(mapped);
+        setPickerAppliedSearch(query);
+      } catch {
+        if (ignore) return;
+        setPickerAllItems([]);
+        setPickerAppliedSearch(query);
+      } finally {
+        if (!ignore) setPickerLoading(false);
+      }
+    }, query ? 300 : 0);
+    return () => {
+      ignore = true;
+      window.clearTimeout(timer);
+    };
+  }, [pickerOpen, pickerSearch]);
+
+  useEffect(() => {
+    showPickerPage(pickerAllItems, pickerAppliedSearch ? null : pickerFolderId, 1, true);
+  }, [pickerAllItems, pickerAppliedSearch, pickerFolderId]);
+
+  const openPicker = async () => {
+    setPickerSearch("");
+    setPickerAppliedSearch("");
+    setPickerAllItems([]);
+    setPickerFolderId(null);
+    setPickerOpen(true);
     try {
-      const [folders, media] = await Promise.all([
-        api.get<MediaFolder[]>("/media/folders"),
-        api.get<Array<{ id: number | string; title: string; url?: string; folderId?: number | string | null }>>("/media"),
-      ]);
-      const mapped = media
-        .filter((item) => item.url)
-        .map((item) => ({
-          entityId: Number(item.id),
-          title: item.title,
-          url: item.url as string,
-          folderId: item.folderId === null || item.folderId === undefined || item.folderId === "" ? null : Number(item.folderId),
-        }));
-      setPickerFolders(folders);
-      setPickerAllItems(mapped);
-      setPickerFolderId(null);
-      showPickerPage(mapped, null, 1, true);
+      setPickerFolders(await api.get<MediaFolder[]>("/media/folders"));
     } catch {
       setPickerFolders([]);
-      setPickerAllItems([]);
-      setPickerItems([]);
-      setPickerTotal(0);
-    } finally {
-      setPickerLoading(false);
     }
   };
 
   const choosePickerFolder = (folderId: number | null) => {
     setPickerFolderId(folderId);
-    showPickerPage(pickerAllItems, folderId, 1, true);
   };
 
   const choosePickerImage = async (url: string) => {
@@ -655,6 +678,16 @@ function FoodsContent() {
             <DialogTitle>Επιλογή φωτογραφίας από Media Library</DialogTitle>
             <DialogDescription>Επίλεξε φωτογραφία από τα αρχεία της Media Library.</DialogDescription>
           </DialogHeader>
+          <div className="relative">
+            <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+            <Input
+              value={pickerSearch}
+              onChange={(event) => setPickerSearch(event.target.value)}
+              placeholder="Αναζήτηση φωτογραφίας..."
+              aria-label="Αναζήτηση φωτογραφίας"
+              className="pl-9"
+            />
+          </div>
           {pickerFolders.length > 0 && (
             <Select
               value={pickerFolderId != null ? String(pickerFolderId) : "root"}
@@ -698,7 +731,7 @@ function FoodsContent() {
                 <Button
                   type="button"
                   disabled={pickerLoading}
-                  onClick={() => showPickerPage(pickerAllItems, pickerFolderId, pickerPage + 1, false)}
+                  onClick={() => showPickerPage(pickerAllItems, pickerAppliedSearch ? null : pickerFolderId, pickerPage + 1, false)}
                   className="mt-1 w-full bg-gray-800 py-3 font-medium text-white dark:bg-zinc-800"
                 >
                   {pickerLoading ? "Φόρτωση..." : `Εμφάνιση περισσότερων (${pickerTotal - pickerItems.length} ακόμα)`}

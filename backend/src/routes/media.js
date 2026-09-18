@@ -91,23 +91,41 @@ async function ensureMediaCategories(connection) {
 export { ensureMediaCategories };
 
 router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+  const limit = req.query.limit === undefined ? null : Number(req.query.limit);
+  if (limit !== null && (!Number.isSafeInteger(limit) || limit < 1)) {
+    return res.status(400).json({ message: 'limit must be a positive integer' });
+  }
+  let connection;
   try {
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
     await ensureMediaTable(connection);
 
+    const params = [];
+    let filter = '';
+    if (search) {
+      const pattern = `%${search.replace(/[!%_]/g, '!$&')}%`;
+      filter = `WHERE ma.title LIKE ? ESCAPE '!' OR SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(ma.url, '?', 1), '#', 1), '/', -1) LIKE ? ESCAPE '!'`;
+      params.push(pattern, pattern);
+    }
+    if (limit !== null) params.push(limit);
     const [mediaRows] = await connection.query(
       `SELECT ma.id, ma.title, ma.asset_type AS assetType, ma.url, ma.source,
               ma.folder_id AS folderId, mf.name AS folderName, 'media_asset' AS kind
        FROM media_assets ma
        LEFT JOIN media_folders mf ON mf.id = ma.folder_id
-       ORDER BY ma.updated_at DESC`
+       ${filter}
+       ORDER BY ma.updated_at DESC, ma.id DESC
+       ${limit !== null ? 'LIMIT ?' : ''}`,
+      params
     );
 
-    connection.release();
     res.json(mediaRows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection?.release();
   }
 });
 

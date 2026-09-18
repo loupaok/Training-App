@@ -3,7 +3,7 @@
 import { startTransition, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronDown, Play, Trash2, Plus } from "lucide-react";
+import { ChevronLeft, ChevronDown, Play, Trash2, Plus, Search } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -344,19 +344,33 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
     }
   };
 
-  const openMediaPicker = async () => {
-    setMediaPickerOpen(true);
+  useEffect(() => {
+    if (!mediaPickerOpen) return;
+    let ignore = false;
+    const query = mediaSearch.trim();
+    const timer = window.setTimeout(async () => {
+      setVisibleMediaCount(MEDIA_PAGE_SIZE);
+      try {
+        const assets = await api.get<MediaAsset[]>(query ? `/media?search=${encodeURIComponent(query)}` : "/media");
+        if (ignore) return;
+        const photos = assets.filter((asset) => asset.assetType === "photo");
+        // Keep rendering a large result set from blocking input.
+        startTransition(() => setMediaAssets(photos));
+      } catch {
+        if (!ignore) setMediaAssets([]);
+      }
+    }, query ? 300 : 0);
+    return () => {
+      ignore = true;
+      window.clearTimeout(timer);
+    };
+  }, [mediaPickerOpen, mediaSearch]);
+
+  const openMediaPicker = () => {
     setMediaSearch("");
+    setMediaAssets([]);
     setVisibleMediaCount(MEDIA_PAGE_SIZE);
-    try {
-      const assets = await api.get<MediaAsset[]>("/media");
-      const photos = assets.filter((asset) => asset.assetType === "photo");
-      // Deprioritized: the library can hold hundreds of photos, so mounting them all
-      // synchronously right after the triggering click is what was blowing up INP.
-      startTransition(() => setMediaAssets(photos));
-    } catch {
-      setMediaAssets([]);
-    }
+    setMediaPickerOpen(true);
   };
 
   const chooseMediaAsset = async (asset: MediaAsset) => {
@@ -438,13 +452,7 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
     reorderImages(String(active.id), String(over.id));
   };
 
-  const filteredMediaAssets = mediaAssets.filter((asset) => {
-    return (
-      !mediaSearch ||
-      asset.title.toLowerCase().includes(mediaSearch.toLowerCase()) ||
-      asset.folderName?.toLowerCase().includes(mediaSearch.toLowerCase())
-    );
-  });
+  const filteredMediaAssets = mediaAssets;
 
   const isReadOnly = modalMode === "view";
   const currentImages = exercise && editForm ? normalizeExerciseImages({ ...exercise, imageUrl: editForm.imageUrl }) : [];
@@ -703,16 +711,20 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
             <DialogDescription>Διάλεξε φωτογραφία που είναι ήδη αποθηκευμένη στη βάση.</DialogDescription>
           </DialogHeader>
           <div>
-            <Input
-              value={mediaSearch}
-              onChange={(event) => {
-                const value = event.target.value;
-                setMediaSearch(value);
-                setVisibleMediaCount(MEDIA_PAGE_SIZE);
-              }}
-              placeholder="Αναζήτηση φωτογραφίας ή φακέλου..."
-              className="h-12 focus-visible:border-red-300"
-            />
+            <div className="relative">
+              <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              <Input
+                value={mediaSearch}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setMediaSearch(value);
+                  setVisibleMediaCount(MEDIA_PAGE_SIZE);
+                }}
+                placeholder="Αναζήτηση φωτογραφίας..."
+                aria-label="Αναζήτηση φωτογραφίας"
+                className="h-12 pl-9 focus-visible:border-red-300"
+              />
+            </div>
             <div className="mt-5 grid max-h-[58vh] grid-cols-2 gap-4 overflow-y-auto pr-2 sm:grid-cols-4">
               {filteredMediaAssets.slice(0, visibleMediaCount).map((asset) => (
                 <Button
