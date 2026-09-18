@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type KeyboardEvent } from "react";
+import { useState, type DragEvent, type KeyboardEvent } from "react";
 import { ChevronRight, ChevronDown, Folder, FolderOpen, Plus, Pencil, Trash2, FolderPlus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -49,6 +49,13 @@ function buildTree(folders: MediaFolder[]): TreeNode[] {
   return roots;
 }
 
+// A drag carrying real OS files (dragged in from the desktop / file explorer)
+// is distinct from an internal drag of an existing gallery card — the browser
+// reports it via dataTransfer.types, before any drop actually happens.
+function isFileDrag(event: DragEvent): boolean {
+  return Boolean(event.dataTransfer?.types?.includes("Files"));
+}
+
 export function MediaFolderTree({
   folders,
   selectedFolderId,
@@ -60,6 +67,7 @@ export function MediaFolderTree({
   dropTargetId,
   onDropTargetChange,
   onDropAsset,
+  onFileDrop,
 }: {
   folders: MediaFolder[];
   selectedFolderId: number | null;
@@ -71,6 +79,7 @@ export function MediaFolderTree({
   dropTargetId: number | null | "root";
   onDropTargetChange: (id: number | null | "root") => void;
   onDropAsset: (folderId: number | null) => void;
+  onFileDrop?: (folderId: number | null, files: FileList) => void;
 }) {
   const tree = buildTree(folders);
   const [creatingParentId, setCreatingParentId] = useState<number | "root-create" | "none">("none");
@@ -78,6 +87,7 @@ export function MediaFolderTree({
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [fileDropTarget, setFileDropTarget] = useState<number | "root" | null>(null);
 
   const startCreate = (parentId: number | null) => {
     setCreatingParentId(parentId === null ? "root-create" : parentId);
@@ -123,7 +133,7 @@ export function MediaFolderTree({
 
   const renderNode = (node: TreeNode, depth: number) => {
     const isSelected = selectedFolderId === node.id;
-    const isDropTarget = dragActive && dropTargetId === node.id;
+    const isDropTarget = (dragActive && dropTargetId === node.id) || fileDropTarget === node.id;
     const isCollapsed = collapsed.has(node.id);
     const hasChildren = node.children.length > 0;
     const isCategoryRoot = Boolean(node.category);
@@ -135,12 +145,23 @@ export function MediaFolderTree({
             render={
               <div
                 onDragOver={(event) => {
-                  if (!dragActive) return;
-                  event.preventDefault();
+                  if (dragActive || (onFileDrop && isFileDrag(event))) event.preventDefault();
                 }}
-                onDragEnter={() => dragActive && onDropTargetChange(node.id)}
-                onDragLeave={() => dragActive && onDropTargetChange(null)}
+                onDragEnter={(event) => {
+                  if (dragActive) onDropTargetChange(node.id);
+                  else if (onFileDrop && isFileDrag(event)) setFileDropTarget(node.id);
+                }}
+                onDragLeave={() => {
+                  if (dragActive) onDropTargetChange(null);
+                  else setFileDropTarget(null);
+                }}
                 onDrop={(event) => {
+                  if (onFileDrop && isFileDrag(event)) {
+                    event.preventDefault();
+                    setFileDropTarget(null);
+                    if (event.dataTransfer.files.length) onFileDrop(node.id, event.dataTransfer.files);
+                    return;
+                  }
                   if (!dragActive) return;
                   event.preventDefault();
                   onDropAsset(node.id);
@@ -228,10 +249,24 @@ export function MediaFolderTree({
     <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto p-2">
         <div
-          onDragOver={(event) => dragActive && event.preventDefault()}
-          onDragEnter={() => dragActive && onDropTargetChange("root")}
-          onDragLeave={() => dragActive && onDropTargetChange(null)}
+          onDragOver={(event) => {
+            if (dragActive || (onFileDrop && isFileDrag(event))) event.preventDefault();
+          }}
+          onDragEnter={(event) => {
+            if (dragActive) onDropTargetChange("root");
+            else if (onFileDrop && isFileDrag(event)) setFileDropTarget("root");
+          }}
+          onDragLeave={() => {
+            if (dragActive) onDropTargetChange(null);
+            else setFileDropTarget(null);
+          }}
           onDrop={(event) => {
+            if (onFileDrop && isFileDrag(event)) {
+              event.preventDefault();
+              setFileDropTarget(null);
+              if (event.dataTransfer.files.length) onFileDrop(null, event.dataTransfer.files);
+              return;
+            }
             if (!dragActive) return;
             event.preventDefault();
             onDropAsset(null);
@@ -239,7 +274,7 @@ export function MediaFolderTree({
           className={cn(
             "mb-1 flex items-center gap-2 rounded-md py-1.5 pl-1 pr-2 text-sm",
             selectedFolderId === null ? "bg-red-50 font-semibold text-red-700 dark:bg-red-500/10 dark:text-red-400" : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800",
-            dragActive && dropTargetId === "root" && "ring-2 ring-red-400",
+            (dragActive && dropTargetId === "root") || fileDropTarget === "root" ? "ring-2 ring-red-400" : "",
           )}
         >
           <button type="button" onClick={() => onSelect(null)} className="flex min-w-0 flex-1 items-center gap-2 text-left">

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { toast } from "sonner";
 import {
   Search,
@@ -351,29 +351,59 @@ function MediaGalleryContent() {
     clearSelection();
   };
 
+  const uploadFilesToFolder = async (files: File[], folderId: number | null) => {
+    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
+    if (!imageFiles.length) return;
+
+    if (categoryOfFolder(folders, folderId) !== null) {
+      toast.error("Δεν μπορείς να ανεβάσεις φωτογραφίες εδώ — αυτός ο φάκελος συγκεντρώνει εικόνες αυτόματα.");
+      return;
+    }
+
+    setUploading(true);
+    let succeeded = 0;
+    for (const file of imageFiles) {
+      try {
+        const compressed = await compressImageFile(file, { maxWidth: 1800, maxHeight: 1800, quality: 0.84 });
+        const formData = new FormData();
+        formData.append("file", compressed);
+        formData.append("title", file.name.replace(/\.[^.]+$/, ""));
+        formData.append("assetType", "photo");
+        if (folderId !== null) formData.append("folderId", String(folderId));
+        const created = await api.upload<{ id: number; title: string; url: string; folderId: number | null }>("/media/upload", formData);
+        setAssets((current) => [{ id: created.id, title: created.title, url: created.url, folderId: created.folderId }, ...current]);
+        succeeded += 1;
+      } catch (error) {
+        toast.error(getErrorMessage(error, `Το upload του "${file.name}" απέτυχε.`));
+      }
+    }
+    if (succeeded && folderId !== null) {
+      setFolders((current) => current.map((folder) => (folder.id === folderId ? { ...folder, itemCount: folder.itemCount + succeeded } : folder)));
+    }
+    if (succeeded) {
+      toast.success(succeeded === 1 ? "Η φωτογραφία ανέβηκε." : `${succeeded} φωτογραφίες ανέβηκαν.`);
+    }
+    setUploading(false);
+  };
+
   const uploadFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    setUploading(true);
-    try {
-      const compressed = await compressImageFile(file, { maxWidth: 1800, maxHeight: 1800, quality: 0.84 });
-      const formData = new FormData();
-      formData.append("file", compressed);
-      formData.append("title", file.name.replace(/\.[^.]+$/, ""));
-      formData.append("assetType", "photo");
-      if (selectedFolderId !== null) formData.append("folderId", String(selectedFolderId));
-      const created = await api.upload<{ id: number; title: string; url: string; folderId: number | null }>("/media/upload", formData);
-      setAssets((current) => [{ id: created.id, title: created.title, url: created.url, folderId: created.folderId }, ...current]);
-      if (selectedFolderId !== null) {
-        setFolders((current) => current.map((folder) => (folder.id === selectedFolderId ? { ...folder, itemCount: folder.itemCount + 1 } : folder)));
-      }
-      toast.success("Η φωτογραφία ανέβηκε.");
-    } catch (error) {
-      toast.error(getErrorMessage(error, "Το upload απέτυχε."));
-    } finally {
-      setUploading(false);
-      event.target.value = "";
-    }
+    await uploadFilesToFolder([file], selectedFolderId);
+    event.target.value = "";
+  };
+
+  const handleTreeFileDrop = (folderId: number | null, files: FileList) => {
+    uploadFilesToFolder(Array.from(files), folderId);
+  };
+
+  const [contentDropActive, setContentDropActive] = useState(false);
+  const handleContentDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!event.dataTransfer?.types?.includes("Files")) return;
+    event.preventDefault();
+    setContentDropActive(false);
+    if (categoryContext) return;
+    if (event.dataTransfer.files.length) uploadFilesToFolder(Array.from(event.dataTransfer.files), selectedFolderId);
   };
 
   const moveDialogCategory = moveTargetItems?.[0]?.category ?? null;
@@ -422,6 +452,7 @@ function MediaGalleryContent() {
             dropTargetId={dropTarget}
             onDropTargetChange={setDropTarget}
             onDropAsset={handleDropOnFolder}
+            onFileDrop={handleTreeFileDrop}
           />
         </ResizablePanel>
 
@@ -464,7 +495,25 @@ function MediaGalleryContent() {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4">
+          <div
+            onDragOver={(event) => {
+              if (!categoryContext && event.dataTransfer?.types?.includes("Files")) event.preventDefault();
+            }}
+            onDragEnter={(event) => {
+              if (!categoryContext && event.dataTransfer?.types?.includes("Files")) setContentDropActive(true);
+            }}
+            onDragLeave={(event) => {
+              if (event.currentTarget.contains(event.relatedTarget as Node)) return;
+              setContentDropActive(false);
+            }}
+            onDrop={handleContentDrop}
+            className={cn("relative flex-1 overflow-y-auto p-4", contentDropActive && "bg-red-50/60 dark:bg-red-500/5")}
+          >
+            {contentDropActive && (
+              <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-red-400 bg-white/70 text-sm font-semibold text-red-600 dark:bg-slate-950/70">
+                Άσε το αρχείο εδώ για ανέβασμα
+              </div>
+            )}
             {loading || (categoryContext && categoryLoading && !categoryItems.length) ? (
               <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Φόρτωση...</p>
             ) : !displayItems.length ? (
