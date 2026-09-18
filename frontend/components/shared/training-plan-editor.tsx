@@ -471,7 +471,7 @@ export function TrainingPlanEditor({
               >
                 <ResizablePanelGroup orientation="horizontal" className="min-h-130 rounded-lg border border-slate-200 dark:border-slate-800">
                   {/* LEFT 70% — day builder */}
-                  <ResizablePanel defaultSize={70} minSize={50} className="flex flex-col overflow-hidden">
+                  <ResizablePanel defaultSize="70" minSize="50" className="flex flex-col overflow-hidden">
                     <div className="flex flex-col gap-4 p-4">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
@@ -541,7 +541,7 @@ export function TrainingPlanEditor({
                   <ResizableHandle withHandle />
 
                   {/* RIGHT 30% — exercise library */}
-                  <ResizablePanel defaultSize={30} minSize={22} className="flex flex-col overflow-hidden border-l border-slate-200 dark:border-slate-800">
+                  <ResizablePanel defaultSize="30" minSize="22" className="flex flex-col overflow-hidden border-l border-slate-200 dark:border-slate-800">
                     <div className="space-y-3 border-b border-slate-200 p-3 dark:border-slate-800">
                       <div className="relative">
                         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />

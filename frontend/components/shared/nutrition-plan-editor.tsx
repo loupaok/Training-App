@@ -468,7 +468,7 @@ export function NutritionPlanEditor({
       <DndContext sensors={dndSensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <ResizablePanelGroup orientation="horizontal" className="min-h-130">
         {/* LEFT 70% — meals, unchanged */}
-        <ResizablePanel defaultSize={70} minSize={50}>
+        <ResizablePanel defaultSize="70" minSize="50">
       <div className="space-y-6 p-6 pb-24">
         {plan.meals.map((meal, mealIndex) => {
           const MealIcon = MEAL_ICONS[meal.mealType] || Utensils;
@@ -635,7 +635,7 @@ export function NutritionPlanEditor({
         <ResizableHandle withHandle />
 
         {/* RIGHT 30% — food library, new */}
-        <ResizablePanel defaultSize={30} minSize={22} className="flex flex-col overflow-hidden border-l border-slate-200 dark:border-slate-800">
+        <ResizablePanel defaultSize="30" minSize="22" className="flex flex-col overflow-hidden border-l border-slate-200 dark:border-slate-800">
           <div className="space-y-3 border-b border-slate-200 p-3 dark:border-slate-800">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
