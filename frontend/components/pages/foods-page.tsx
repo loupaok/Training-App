@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Search, Plus, Pencil, Trash2, ImageOff, Images } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { Search, Plus, Pencil, Trash2, ImageOff, Images, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import PaginationControls from "@/components/shared/pagination-controls";
 import type { MediaFolder } from "@/components/shared/media-folder-tree";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
+import { compressImageFile } from "@/lib/image-compression";
 import { resolveMediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
 
@@ -186,6 +187,7 @@ function FoodsContent() {
   const [editingId, setEditingId] = useState<number | string | null>(null);
   const [form, setForm] = useState<FoodForm>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [formMessage, setFormMessage] = useState("");
 
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -195,6 +197,7 @@ function FoodsContent() {
   const [pickerTotal, setPickerTotal] = useState(0);
   const [pickerPage, setPickerPage] = useState(1);
   const [pickerLoading, setPickerLoading] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   // Debounce search input by 300ms before it drives any fetch.
   useEffect(() => {
@@ -352,6 +355,37 @@ function FoodsContent() {
   const choosePickerImage = (url: string) => {
     updateForm("imageUrl", url);
     setPickerOpen(false);
+  };
+
+  const uploadFoodImage = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setFormMessage("Παρακαλώ επίλεξε αρχείο εικόνας.");
+      event.target.value = "";
+      return;
+    }
+
+    setUploadingImage(true);
+    setFormMessage("");
+
+    try {
+      const compressed = await compressImageFile(file, { maxWidth: 1800, maxHeight: 1800, quality: 0.84 });
+      const title = form.nameGr.trim() || file.name.replace(/\.[^.]+$/, "") || "Food image";
+      const formData = new FormData();
+      formData.append("file", compressed);
+      formData.append("title", title);
+      formData.append("assetType", "photo");
+
+      const uploaded = await api.upload<{ url: string }>("/media/upload", formData);
+      updateForm("imageUrl", uploaded.url);
+    } catch (err) {
+      setFormMessage(getErrorMessage(err, "Δεν ανέβηκε η φωτογραφία."));
+    } finally {
+      setUploadingImage(false);
+      event.target.value = "";
+    }
   };
 
   const activeCategoryLabel = useMemo(
@@ -554,10 +588,23 @@ function FoodsContent() {
                     </div>
                   )}
                 </div>
-                <Button type="button" variant="outline" onClick={openPicker} className="h-10 gap-2 font-bold">
-                  <Images className="h-4 w-4" />
-                  Επιλογή από Media Library
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" onClick={openPicker} className="h-10 gap-2 font-bold">
+                    <Images className="h-4 w-4" />
+                    Επιλογή από Media Library
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={uploadingImage}
+                    onClick={() => uploadInputRef.current?.click()}
+                    className="h-10 gap-2 font-bold"
+                  >
+                    <Upload className="h-4 w-4" />
+                    {uploadingImage ? "Ανέβασμα..." : "Ανέβασμα από υπολογιστή"}
+                  </Button>
+                  <input ref={uploadInputRef} type="file" accept="image/*" onChange={uploadFoodImage} className="hidden" />
+                </div>
               </div>
             </div>
 
