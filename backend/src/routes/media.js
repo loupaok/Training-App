@@ -69,32 +69,8 @@ async function ensureMediaTable(connection) {
   }
 }
 
-export const CATEGORY_ROOT_NAMES = {
-  exercise: 'Ασκήσεις',
-  food: 'Τρόφιμα',
-  progress_photo: 'Πρόοδος',
-};
-
-// Centralized-image categories: exercise/food/progress-photo rows already live in
-// their own tables (exercise_images, foods, progress_photos) — this never copies
-// or duplicates that data, it just tracks which Media Gallery subfolder each one
-// is filed into. A fixed, non-deletable root folder per category is seeded once,
-// and every existing item is backfilled to sit at its category's root by default
-// (same "always has a folder_id" shape media_assets already uses, not a sparse
-// "no row = default" one, so counts/joins stay simple).
 async function ensureMediaCategories(connection) {
   await ensureMediaTable(connection);
-
-  const [categoryColumn] = await connection.query(
-    `SELECT COLUMN_NAME
-     FROM INFORMATION_SCHEMA.COLUMNS
-     WHERE TABLE_SCHEMA = DATABASE()
-       AND TABLE_NAME = 'media_folders'
-       AND COLUMN_NAME = 'category'`
-  );
-  if (categoryColumn.length === 0) {
-    await connection.query("ALTER TABLE media_folders ADD COLUMN category ENUM('exercise', 'food', 'progress_photo') NULL");
-  }
 
   await connection.query(`
     CREATE TABLE IF NOT EXISTS media_category_items (
@@ -109,57 +85,7 @@ async function ensureMediaCategories(connection) {
     )
   `);
 
-  const rootIds = {};
-  for (const [category, name] of Object.entries(CATEGORY_ROOT_NAMES)) {
-    const [[existing]] = await connection.query('SELECT id FROM media_folders WHERE category = ? LIMIT 1', [category]);
-    if (existing) {
-      rootIds[category] = existing.id;
-    } else {
-      const [result] = await connection.query(
-        'INSERT INTO media_folders (name, parent_id, category) VALUES (?, NULL, ?)',
-        [name, category]
-      );
-      rootIds[category] = result.insertId;
-    }
-  }
-
-  await connection.query(
-    `INSERT INTO media_category_items (category, entity_id, folder_id)
-     SELECT 'exercise', ei.id, ?
-     FROM exercise_images ei
-     WHERE NOT EXISTS (SELECT 1 FROM media_category_items mci WHERE mci.category = 'exercise' AND mci.entity_id = ei.id)`,
-    [rootIds.exercise]
-  );
-  await connection.query(
-    `INSERT INTO media_category_items (category, entity_id, folder_id)
-     SELECT 'food', f.id, ?
-     FROM foods f
-     WHERE f.image_url IS NOT NULL AND f.image_url <> ''
-       AND NOT EXISTS (SELECT 1 FROM media_category_items mci WHERE mci.category = 'food' AND mci.entity_id = f.id)`,
-    [rootIds.food]
-  );
-  await connection.query(
-    `INSERT INTO media_category_items (category, entity_id, folder_id)
-     SELECT 'progress_photo', pp.id, ?
-     FROM progress_photos pp
-     WHERE NOT EXISTS (SELECT 1 FROM media_category_items mci WHERE mci.category = 'progress_photo' AND mci.entity_id = pp.id)`,
-    [rootIds.progress_photo]
-  );
-
-  return rootIds;
-}
-
-// Walks a folder's parent chain to find which category (if any) it belongs to —
-// either the folder itself is a category root, or it descends from one.
-export async function folderCategory(connection, folderId) {
-  let currentId = folderId;
-  for (let hop = 0; currentId && hop < 25; hop += 1) {
-    const [[row]] = await connection.query('SELECT parent_id AS parentId, category FROM media_folders WHERE id = ?', [currentId]);
-    if (!row) return null;
-    if (row.category) return row.category;
-    currentId = row.parentId;
-  }
-  return null;
+  return {};
 }
 
 export { ensureMediaCategories };
@@ -177,17 +103,8 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
        ORDER BY ma.updated_at DESC`
     );
 
-    const [exerciseRows] = await connection.query(
-      `SELECT id, name AS title, image_url AS url, 'photo' AS assetType,
-              'exercise' AS source, CONCAT('Μυϊκή Ομάδα: ', muscle_group) AS folderName,
-              CONCAT('muscle-', muscle_group) AS folderId, 'exercise_image' AS kind
-       FROM exercises
-       WHERE image_url IS NOT NULL AND image_url <> ''
-       ORDER BY name`
-    );
-
     connection.release();
-    res.json([...mediaRows, ...exerciseRows]);
+    res.json(mediaRows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -197,12 +114,11 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
 router.get('/folders', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
-    await ensureMediaCategories(connection);
+    await ensureMediaTable(connection);
 
     const [folders] = await connection.query(
-      `SELECT mf.id, mf.name, mf.parent_id AS parentId, mf.category,
-              (SELECT COUNT(*) FROM media_assets ma WHERE ma.folder_id = mf.id) +
-              (SELECT COUNT(*) FROM media_category_items mci WHERE mci.folder_id = mf.id) AS itemCount
+      `SELECT mf.id, mf.name, mf.parent_id AS parentId, NULL AS category,
+              (SELECT COUNT(*) FROM media_assets ma WHERE ma.folder_id = mf.id) AS itemCount
        FROM media_folders mf
        ORDER BY mf.name`
     );
@@ -251,14 +167,10 @@ router.put('/folders/:id', authorizeRole(['coach', 'admin']), [
     const connection = await pool.getConnection();
     await ensureMediaTable(connection);
 
-    const [[folder]] = await connection.query('SELECT category FROM media_folders WHERE id = ?', [req.params.id]);
+    const [[folder]] = await connection.query('SELECT id FROM media_folders WHERE id = ?', [req.params.id]);
     if (!folder) {
       connection.release();
       return res.status(404).json({ message: 'Folder not found' });
-    }
-    if (folder.category) {
-      connection.release();
-      return res.status(400).json({ message: 'This folder cannot be renamed' });
     }
 
     const [result] = await connection.query(
@@ -286,18 +198,13 @@ router.delete('/folders/:id', authorizeRole(['coach', 'admin']), async (req, res
     const connection = await pool.getConnection();
     await ensureMediaTable(connection);
 
-    const [[folder]] = await connection.query('SELECT parent_id AS parentId, category FROM media_folders WHERE id = ?', [req.params.id]);
+    const [[folder]] = await connection.query('SELECT parent_id AS parentId FROM media_folders WHERE id = ?', [req.params.id]);
     if (!folder) {
       connection.release();
       return res.status(404).json({ message: 'Folder not found' });
     }
-    if (folder.category) {
-      connection.release();
-      return res.status(400).json({ message: 'This folder cannot be deleted' });
-    }
 
     await connection.query('UPDATE media_assets SET folder_id = ? WHERE folder_id = ?', [folder.parentId, req.params.id]);
-    await connection.query('UPDATE media_category_items SET folder_id = ? WHERE folder_id = ?', [folder.parentId, req.params.id]);
     await connection.query('UPDATE media_folders SET parent_id = ? WHERE parent_id = ?', [folder.parentId, req.params.id]);
     await connection.query('DELETE FROM media_folders WHERE id = ?', [req.params.id]);
     connection.release();
@@ -357,7 +264,7 @@ router.put('/assets/:id/folder', authorizeRole(['coach', 'admin']), [
   }
 });
 
-// PUT /assets/:id/file — swap the file for an existing media_asset (keeps the
+// PUT /assets/:id/file swaps the file for an existing media_asset (keeps the
 // same row/id, just points it at a newly uploaded image).
 router.put('/assets/:id/file', authorizeRole(['coach', 'admin']), upload.single('file'), async (req, res) => {
   if (!req.file) {

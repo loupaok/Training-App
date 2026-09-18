@@ -135,6 +135,7 @@ interface MediaPickerItem {
   entityId: number;
   title: string;
   url: string;
+  folderId: number | null;
 }
 
 const PICKER_PAGE_SIZE = 20;
@@ -143,13 +144,7 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-// Flattens the Τρόφιμα category's folder subtree into a depth-indented list
-// for the picker's folder <Select> — mirrors the Media Gallery's own
-// flattenFolderOptions, kept local here since this page stays self-contained.
-function foodFolderOptions(folders: MediaFolder[]): Array<{ id: number; label: string }> {
-  const root = folders.find((folder) => folder.category === "food");
-  if (!root) return [];
-
+function pickerFolderOptions(folders: MediaFolder[]): Array<{ id: number; label: string }> {
   const byParent = new Map<number | null, MediaFolder[]>();
   folders.forEach((folder) => {
     const list = byParent.get(folder.parentId) ?? [];
@@ -157,15 +152,15 @@ function foodFolderOptions(folders: MediaFolder[]): Array<{ id: number; label: s
     byParent.set(folder.parentId, list);
   });
 
-  const result: Array<{ id: number; label: string }> = [{ id: root.id, label: root.name }];
-  const walk = (parentId: number, depth: number) => {
+  const result: Array<{ id: number; label: string }> = [];
+  const walk = (parentId: number | null, depth: number) => {
     const children = (byParent.get(parentId) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "el"));
-    children.forEach((child) => {
-      result.push({ id: child.id, label: `${"— ".repeat(depth)}${child.name}` });
-      walk(child.id, depth + 1);
+    children.forEach((folder) => {
+      result.push({ id: folder.id, label: `${"  ".repeat(depth)}${folder.name}` });
+      walk(folder.id, depth + 1);
     });
   };
-  walk(root.id, 1);
+  walk(null, 0);
   return result;
 }
 
@@ -194,6 +189,7 @@ function FoodsContent() {
   const [pickerFolders, setPickerFolders] = useState<MediaFolder[]>([]);
   const [pickerFolderId, setPickerFolderId] = useState<number | null>(null);
   const [pickerItems, setPickerItems] = useState<MediaPickerItem[]>([]);
+  const [pickerAllItems, setPickerAllItems] = useState<MediaPickerItem[]>([]);
   const [pickerTotal, setPickerTotal] = useState(0);
   const [pickerPage, setPickerPage] = useState(1);
   const [pickerLoading, setPickerLoading] = useState(false);
@@ -317,43 +313,66 @@ function FoodsContent() {
     }
   };
 
-  const fetchPickerPage = (folderId: number, page: number, replace: boolean) => {
-    setPickerLoading(true);
-    const params = new URLSearchParams({ folderId: String(folderId), page: String(page), limit: String(PICKER_PAGE_SIZE) });
-    api
-      .get<{ items: MediaPickerItem[]; total: number; page: number }>(`/media/categories/food?${params.toString()}`)
-      .then((data) => {
-        setPickerItems((current) => (replace ? data.items : [...current, ...data.items]));
-        setPickerTotal(data.total);
-        setPickerPage(data.page);
-      })
-      .catch(() => {
-        if (replace) setPickerItems([]);
-      })
-      .finally(() => setPickerLoading(false));
+  const showPickerPage = (allItems: MediaPickerItem[], folderId: number | null, page: number, replace: boolean) => {
+    const filtered = allItems.filter((item) => folderId === null || item.folderId === folderId);
+    const nextItems = filtered.slice(0, page * PICKER_PAGE_SIZE);
+    setPickerItems((current) => (replace ? nextItems : nextItems.length > current.length ? nextItems : current));
+    setPickerTotal(filtered.length);
+    setPickerPage(page);
   };
 
   const openPicker = async () => {
     setPickerOpen(true);
+    setPickerLoading(true);
     try {
-      const folders = await api.get<MediaFolder[]>("/media/folders");
+      const [folders, media] = await Promise.all([
+        api.get<MediaFolder[]>("/media/folders"),
+        api.get<Array<{ id: number | string; title: string; url?: string; folderId?: number | string | null }>>("/media"),
+      ]);
+      const mapped = media
+        .filter((item) => item.url)
+        .map((item) => ({
+          entityId: Number(item.id),
+          title: item.title,
+          url: item.url as string,
+          folderId: item.folderId === null || item.folderId === undefined || item.folderId === "" ? null : Number(item.folderId),
+        }));
       setPickerFolders(folders);
-      const root = folders.find((folder) => folder.category === "food");
-      const rootId = root ? root.id : null;
-      setPickerFolderId(rootId);
-      if (rootId !== null) fetchPickerPage(rootId, 1, true);
+      setPickerAllItems(mapped);
+      setPickerFolderId(null);
+      showPickerPage(mapped, null, 1, true);
     } catch {
       setPickerFolders([]);
+      setPickerAllItems([]);
+      setPickerItems([]);
+      setPickerTotal(0);
+    } finally {
+      setPickerLoading(false);
     }
   };
 
-  const choosePickerFolder = (folderId: number) => {
+  const choosePickerFolder = (folderId: number | null) => {
     setPickerFolderId(folderId);
-    fetchPickerPage(folderId, 1, true);
+    showPickerPage(pickerAllItems, folderId, 1, true);
   };
 
-  const choosePickerImage = (url: string) => {
-    updateForm("imageUrl", url);
+  const choosePickerImage = async (url: string) => {
+    if (editingId != null) {
+      setUploadingImage(true);
+      setFormMessage("");
+      try {
+        const updated = await api.post<Food>(`/foods/${editingId}/copy-image`, { imageUrl: url });
+        updateForm("imageUrl", updated.imageUrl);
+        setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      } catch (err) {
+        setFormMessage(getErrorMessage(err, "Δεν αντιγράφηκε η φωτογραφία."));
+        setUploadingImage(false);
+        return;
+      }
+      setUploadingImage(false);
+    } else {
+      updateForm("imageUrl", url);
+    }
     setPickerOpen(false);
   };
 
@@ -379,7 +398,13 @@ function FoodsContent() {
       formData.append("assetType", "photo");
 
       const uploaded = await api.upload<{ url: string }>("/media/upload", formData);
-      updateForm("imageUrl", uploaded.url);
+      if (editingId != null) {
+        const updated = await api.post<Food>(`/foods/${editingId}/copy-image`, { imageUrl: uploaded.url });
+        updateForm("imageUrl", updated.imageUrl);
+        setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      } else {
+        updateForm("imageUrl", uploaded.url);
+      }
     } catch (err) {
       setFormMessage(getErrorMessage(err, "Δεν ανέβηκε η φωτογραφία."));
     } finally {
@@ -628,18 +653,19 @@ function FoodsContent() {
         <DialogContent className="max-h-[85vh] w-full max-w-xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Επιλογή φωτογραφίας από Media Library</DialogTitle>
-            <DialogDescription>Οι φωτογραφίες τροφίμων είναι οργανωμένες στον φάκελο Τρόφιμα.</DialogDescription>
+            <DialogDescription>Επίλεξε φωτογραφία από τα αρχεία της Media Library.</DialogDescription>
           </DialogHeader>
           {pickerFolders.length > 0 && (
             <Select
-              value={pickerFolderId != null ? String(pickerFolderId) : undefined}
-              onValueChange={(value) => value && choosePickerFolder(Number(value))}
+              value={pickerFolderId != null ? String(pickerFolderId) : "root"}
+              onValueChange={(value) => choosePickerFolder(value === "root" ? null : Number(value))}
             >
               <SelectTrigger className="h-10 w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {foodFolderOptions(pickerFolders).map((option) => (
+                <SelectItem value="root">Όλα τα αρχεία</SelectItem>
+                {pickerFolderOptions(pickerFolders).map((option) => (
                   <SelectItem key={option.id} value={String(option.id)}>
                     {option.label}
                   </SelectItem>
@@ -672,7 +698,7 @@ function FoodsContent() {
                 <Button
                   type="button"
                   disabled={pickerLoading}
-                  onClick={() => pickerFolderId !== null && fetchPickerPage(pickerFolderId, pickerPage + 1, false)}
+                  onClick={() => showPickerPage(pickerAllItems, pickerFolderId, pickerPage + 1, false)}
                   className="mt-1 w-full bg-gray-800 py-3 font-medium text-white dark:bg-zinc-800"
                 >
                   {pickerLoading ? "Φόρτωση..." : `Εμφάνιση περισσότερων (${pickerTotal - pickerItems.length} ακόμα)`}

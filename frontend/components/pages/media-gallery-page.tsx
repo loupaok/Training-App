@@ -41,7 +41,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CoachShell } from "@/components/shell/coach-shell";
-import { MediaFolderTree, type MediaFolder, type MediaCategory } from "@/components/shared/media-folder-tree";
+import { MediaFolderTree, type MediaFolder } from "@/components/shared/media-folder-tree";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl } from "@/lib/media";
@@ -52,23 +52,19 @@ const PAGE_SIZE = 20;
 
 interface RawMediaItem {
   id: number | string;
-  kind: "media_asset" | "exercise_image";
+  kind: "media_asset";
   title: string;
   url?: string;
   folderId?: number | string | null;
 }
 
-// Unified shape for anything the grid can render, whether it's a custom
-// media_assets upload or a centralized exercise/food/progress-photo item.
 interface GalleryItem {
-  id: string; // unique within the current view: "asset-5" or "exercise-1901"
+  id: string;
   entityId: number;
   title: string;
   url: string;
   folderId: number | null;
-  kind: "asset" | "category";
-  category?: MediaCategory;
-  parentId?: number; // exercise id, only present for kind="category" && category="exercise"
+  kind: "asset";
 }
 
 interface MediaAssetItem {
@@ -82,38 +78,9 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-function resolveCategoryContext(folders: MediaFolder[], folderId: number | null): { category: MediaCategory; rootId: number } | null {
-  if (folderId === null) return null;
-  const byId = new Map(folders.map((folder) => [folder.id, folder]));
-  let current = byId.get(folderId);
-  while (current) {
-    if (current.category) return { category: current.category, rootId: current.id };
-    current = current.parentId ? byId.get(current.parentId) : undefined;
-  }
-  return null;
-}
-
-function categoryOfFolder(folders: MediaFolder[], folderId: number | null): MediaCategory | null {
-  if (folderId === null) return null;
-  return resolveCategoryContext(folders, folderId)?.category ?? null;
-}
-
-// Folders to offer as move destinations: only the same category's subtree for
-// category items, or only non-category folders for custom uploads.
-function foldersForMoveTarget(folders: MediaFolder[], category: MediaCategory | null): MediaFolder[] {
-  if (!category) {
-    return folders.filter((folder) => categoryOfFolder(folders, folder.id) === null);
-  }
-  return folders.filter((folder) => categoryOfFolder(folders, folder.id) === category);
-}
-
-// Flattens a category/custom folder subtree into a depth-indented list for
-// use as <Select> options — the same scoping foldersForMoveTarget uses, just
-// walked in tree order instead of left as a flat unordered array.
-function flattenFolderOptions(folders: MediaFolder[], category: MediaCategory | null): Array<{ id: number; label: string }> {
-  const scoped = foldersForMoveTarget(folders, category);
+function flattenFolderOptions(folders: MediaFolder[]): Array<{ id: number; label: string }> {
   const byParent = new Map<number | null, MediaFolder[]>();
-  scoped.forEach((folder) => {
+  folders.forEach((folder) => {
     const list = byParent.get(folder.parentId) ?? [];
     list.push(folder);
     byParent.set(folder.parentId, list);
@@ -122,7 +89,7 @@ function flattenFolderOptions(folders: MediaFolder[], category: MediaCategory | 
   const walk = (parentId: number | null, depth: number) => {
     const children = (byParent.get(parentId) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "el"));
     children.forEach((folder) => {
-      result.push({ id: folder.id, label: `${"— ".repeat(depth)}${folder.name}` });
+      result.push({ id: folder.id, label: `${"  ".repeat(depth)}${folder.name}` });
       walk(folder.id, depth + 1);
     });
   };
@@ -131,19 +98,11 @@ function flattenFolderOptions(folders: MediaFolder[], category: MediaCategory | 
 }
 
 function deletePathFor(item: GalleryItem): string {
-  if (item.kind === "asset") return `/media/media_asset/${item.entityId}`;
-  if (item.category === "exercise") return `/exercises/${item.parentId}/images/${item.entityId}`;
-  if (item.category === "food") return `/media/foods/${item.entityId}/image`;
-  return `/progress/photos/${item.entityId}`;
+  return `/media/media_asset/${item.entityId}`;
 }
 
-// Each entity type stores its file through a different owning route (and a
-// different multer field name) — mirrors deletePathFor's per-kind routing.
 function replaceEndpointFor(item: GalleryItem): { path: string; field: string } {
-  if (item.kind === "asset") return { path: `/media/assets/${item.entityId}/file`, field: "file" };
-  if (item.category === "exercise") return { path: `/exercises/${item.parentId}/images/${item.entityId}/file`, field: "image" };
-  if (item.category === "food") return { path: `/media/foods/${item.entityId}/image`, field: "image" };
-  return { path: `/progress/photos/${item.entityId}/file`, field: "photo" };
+  return { path: `/media/assets/${item.entityId}/file`, field: "file" };
 }
 
 function MediaGalleryContent() {
@@ -167,10 +126,6 @@ function MediaGalleryContent() {
   const [editTarget, setEditTarget] = useState<GalleryItem | null>(null);
   const [replacingFile, setReplacingFile] = useState(false);
 
-  const [categoryItems, setCategoryItems] = useState<GalleryItem[]>([]);
-  const [categoryTotal, setCategoryTotal] = useState(0);
-  const [categoryPage, setCategoryPage] = useState(1);
-  const [categoryLoading, setCategoryLoading] = useState(false);
 
   // Client-side load-more window for the custom "Όλα τα αρχεία" view, which
   // (unlike the category views) has no server-side pagination — every asset
@@ -179,7 +134,6 @@ function MediaGalleryContent() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const categoryContext = useMemo(() => resolveCategoryContext(folders, selectedFolderId), [folders, selectedFolderId]);
 
   const loadLibrary = () => {
     setLoading(true);
@@ -213,36 +167,8 @@ function MediaGalleryContent() {
     return () => window.clearTimeout(timeoutId);
   }, [search]);
 
-  const fetchCategoryPage = (category: MediaCategory, folderId: number, page: number, replace: boolean) => {
-    setCategoryLoading(true);
-    const params = new URLSearchParams({ folderId: String(folderId), page: String(page), limit: String(PAGE_SIZE) });
-    if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
-    api
-      .get<{ items: GalleryItem[]; total: number; page: number }>(`/media/categories/${category}?${params.toString()}`)
-      .then((response) => {
-        const mapped = response.items.map((item) => ({ ...item, id: `${category}-${item.entityId}`, kind: "category" as const }));
-        setCategoryItems((current) => (replace ? mapped : [...current, ...mapped]));
-        setCategoryTotal(response.total);
-        setCategoryPage(response.page);
-      })
-      .catch(() => {
-        if (replace) setCategoryItems([]);
-      })
-      .finally(() => setCategoryLoading(false));
-  };
-
-  useEffect(() => {
-    if (!categoryContext) {
-      setCategoryItems([]);
-      setCategoryTotal(0);
-      return;
-    }
-    fetchCategoryPage(categoryContext.category, selectedFolderId as number, 1, true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryContext?.category, selectedFolderId, debouncedSearch]);
 
   const filteredAssetItems: GalleryItem[] = useMemo(() => {
-    if (categoryContext) return [];
     return assets
       .filter((asset) => {
         const matchesFolder = selectedFolderId === null || asset.folderId === selectedFolderId;
@@ -250,7 +176,7 @@ function MediaGalleryContent() {
         return matchesFolder && matchesSearch;
       })
       .map((asset) => ({ id: `asset-${asset.id}`, entityId: asset.id, title: asset.title, url: asset.url, folderId: asset.folderId, kind: "asset" as const }));
-  }, [categoryContext, assets, selectedFolderId, debouncedSearch]);
+  }, [assets, selectedFolderId, debouncedSearch]);
 
   // Reset the reveal window whenever the underlying filtered set changes, so
   // switching folders/searching doesn't leave a stale "load more" position.
@@ -259,11 +185,10 @@ function MediaGalleryContent() {
   }, [selectedFolderId, debouncedSearch]);
 
   const displayItems: GalleryItem[] = useMemo(() => {
-    if (categoryContext) return categoryItems;
     return filteredAssetItems.slice(0, assetVisibleCount);
-  }, [categoryContext, categoryItems, filteredAssetItems, assetVisibleCount]);
+  }, [filteredAssetItems, assetVisibleCount]);
 
-  const canLoadMoreAssets = !categoryContext && assetVisibleCount < filteredAssetItems.length;
+  const canLoadMoreAssets = assetVisibleCount < filteredAssetItems.length;
 
   const breadcrumbChain = useMemo(() => {
     if (selectedFolderId === null) return [];
@@ -325,42 +250,24 @@ function MediaGalleryContent() {
     }
   };
 
-  const refreshAfterMove = (movedCategory: MediaCategory | null, folderId: number) => {
-    if (movedCategory && categoryContext) {
-      fetchCategoryPage(movedCategory, selectedFolderId as number, 1, true);
-    }
+  const refreshAfterMove = (folderId: number) => {
     loadLibrary();
     const folderName = folderId ? folders.find((folder) => folder.id === folderId)?.name : "Όλα τα αρχεία";
-    toast.success(`Μετακινήθηκε στον φάκελο ${folderName || ""} ✅`.trim());
+    toast.success(`Μετακινήθηκε στον φάκελο ${folderName || ""}`.trim());
   };
 
   const moveItems = async (items: GalleryItem[], folderId: number) => {
     if (!items.length) return;
-    const category = items[0].category ?? null;
-    const targetCategory = categoryOfFolder(folders, folderId);
-    if (targetCategory !== category) {
-      toast.error("Δεν μπορείς να μετακινήσεις εικόνες εκτός της κατηγορίας τους.");
-      return;
-    }
+    const assetIds = items.map((item) => item.entityId);
 
     try {
-      if (category) {
-        const entityIds = items.map((item) => item.entityId);
-        if (entityIds.length === 1) {
-          await api.put(`/media/categories/${category}/${entityIds[0]}/folder`, { folderId });
-        } else {
-          await api.put(`/media/categories/${category}/bulk-move`, { entityIds, folderId });
-        }
+      if (assetIds.length === 1) {
+        await api.put(`/media/assets/${assetIds[0]}/folder`, { folderId });
       } else {
-        const assetIds = items.map((item) => item.entityId);
-        if (assetIds.length === 1) {
-          await api.put(`/media/assets/${assetIds[0]}/folder`, { folderId });
-        } else {
-          await api.put("/media/assets/bulk-move", { ids: assetIds, folderId });
-        }
-        setAssets((current) => current.map((asset) => (assetIds.includes(asset.id) ? { ...asset, folderId } : asset)));
+        await api.put("/media/assets/bulk-move", { ids: assetIds, folderId });
       }
-      refreshAfterMove(category, folderId);
+      setAssets((current) => current.map((asset) => (assetIds.includes(asset.id) ? { ...asset, folderId } : asset)));
+      refreshAfterMove(folderId);
     } catch (error) {
       toast.error(getErrorMessage(error, "Δεν έγινε μετακίνηση."));
     }
@@ -368,7 +275,7 @@ function MediaGalleryContent() {
 
   const saveEdit = async (item: GalleryItem, title: string, folderId: number | null) => {
     const trimmedTitle = title.trim();
-    const titleChanged = item.kind === "asset" && trimmedTitle && trimmedTitle !== item.title;
+    const titleChanged = trimmedTitle && trimmedTitle !== item.title;
     const folderChanged = folderId !== item.folderId;
 
     try {
@@ -376,26 +283,15 @@ function MediaGalleryContent() {
         await api.put(`/media/media_asset/${item.entityId}`, { title: trimmedTitle });
       }
       if (folderChanged) {
-        if (item.category) {
-          if (folderId === null) throw new Error("Category items must stay inside their category.");
-          await api.put(`/media/categories/${item.category}/${item.entityId}/folder`, { folderId });
-        } else {
-          await api.put(`/media/assets/${item.entityId}/folder`, { folderId });
-        }
+        await api.put(`/media/assets/${item.entityId}/folder`, { folderId });
       }
-
-      if (item.kind === "asset") {
-        setAssets((current) =>
-          current.map((asset) =>
-            asset.id === item.entityId
-              ? { ...asset, title: titleChanged ? trimmedTitle : asset.title, folderId: folderChanged ? folderId : asset.folderId }
-              : asset,
-          ),
-        );
-      }
-      if (categoryContext) {
-        fetchCategoryPage(categoryContext.category, selectedFolderId as number, 1, true);
-      }
+      setAssets((current) =>
+        current.map((asset) =>
+          asset.id === item.entityId
+            ? { ...asset, title: titleChanged ? trimmedTitle : asset.title, folderId: folderChanged ? folderId : asset.folderId }
+            : asset,
+        ),
+      );
       loadLibrary();
       setEditTarget(null);
       toast.success("Η φωτογραφία ενημερώθηκε.");
@@ -420,9 +316,6 @@ function MediaGalleryContent() {
       if (newUrl) {
         setEditTarget((current) => (current && current.id === item.id ? { ...current, url: newUrl } : current));
       }
-      if (categoryContext) {
-        fetchCategoryPage(categoryContext.category, selectedFolderId as number, 1, true);
-      }
       loadLibrary();
       toast.success("Η φωτογραφία αντικαταστάθηκε.");
     } catch (error) {
@@ -435,11 +328,7 @@ function MediaGalleryContent() {
   const deleteItem = async (item: GalleryItem) => {
     try {
       await api.delete(deletePathFor(item));
-      if (item.kind === "asset") {
-        setAssets((current) => current.filter((asset) => asset.id !== item.entityId));
-      } else if (categoryContext) {
-        fetchCategoryPage(categoryContext.category, selectedFolderId as number, 1, true);
-      }
+      setAssets((current) => current.filter((asset) => asset.id !== item.entityId));
       loadLibrary();
       toast.success("Η φωτογραφία διαγράφηκε.");
     } catch (error) {
@@ -453,12 +342,8 @@ function MediaGalleryContent() {
     const confirmed = window.confirm(`Να διαγραφούν ${items.length} φωτογραφίες;`);
     if (!confirmed) return;
     await Promise.all(items.map((item) => api.delete(deletePathFor(item)).catch(() => null)));
-    if (categoryContext) {
-      fetchCategoryPage(categoryContext.category, selectedFolderId as number, 1, true);
-    } else {
-      const removedIds = new Set(items.map((item) => item.entityId));
-      setAssets((current) => current.filter((asset) => !removedIds.has(asset.id)));
-    }
+    const removedIds = new Set(items.map((item) => item.entityId));
+    setAssets((current) => current.filter((asset) => !removedIds.has(asset.id)));
     loadLibrary();
     toast.success(`${items.length} φωτογραφίες διαγράφηκαν.`);
     clearSelection();
@@ -468,10 +353,6 @@ function MediaGalleryContent() {
     const imageFiles = files.filter((file) => file.type.startsWith("image/"));
     if (!imageFiles.length) return;
 
-    if (categoryOfFolder(folders, folderId) !== null) {
-      toast.error("Δεν μπορείς να ανεβάσεις φωτογραφίες εδώ — αυτός ο φάκελος συγκεντρώνει εικόνες αυτόματα.");
-      return;
-    }
 
     setUploading(true);
     let succeeded = 0;
@@ -538,13 +419,10 @@ function MediaGalleryContent() {
     if (!event.dataTransfer?.types?.includes("Files")) return;
     event.preventDefault();
     setContentDropActive(false);
-    if (categoryContext) return;
     if (event.dataTransfer.files.length) uploadFilesToFolder(Array.from(event.dataTransfer.files), selectedFolderId);
   };
 
-  const moveDialogCategory = moveTargetItems?.[0]?.category ?? null;
-  const moveDialogFolders = useMemo(() => foldersForMoveTarget(folders, moveDialogCategory), [folders, moveDialogCategory]);
-  const canLoadMoreCategory = categoryContext ? categoryItems.length < categoryTotal : false;
+  const moveDialogFolders = folders;
 
   return (
     <CoachShell title="Media Library" user={user} logout={logout}>
@@ -560,7 +438,6 @@ function MediaGalleryContent() {
               <CheckSquare className="h-4 w-4" /> Επιλογή πολλαπλών
             </Button>
           )}
-          {!categoryContext && (
             <Button
               type="button"
               size="sm"
@@ -570,7 +447,6 @@ function MediaGalleryContent() {
             >
               <Upload className="h-4 w-4" /> {uploading ? "Ανέβασμα..." : "Ανέβασμα"}
             </Button>
-          )}
           <input ref={fileInputRef} type="file" accept="image/*" onChange={uploadFile} className="hidden" />
         </div>
       </div>
@@ -629,10 +505,10 @@ function MediaGalleryContent() {
 
           <div
             onDragOver={(event) => {
-              if (!categoryContext && event.dataTransfer?.types?.includes("Files")) event.preventDefault();
+              if (event.dataTransfer?.types?.includes("Files")) event.preventDefault();
             }}
             onDragEnter={(event) => {
-              if (!categoryContext && event.dataTransfer?.types?.includes("Files")) setContentDropActive(true);
+              if (event.dataTransfer?.types?.includes("Files")) setContentDropActive(true);
             }}
             onDragLeave={(event) => {
               if (event.currentTarget.contains(event.relatedTarget as Node)) return;
@@ -646,7 +522,7 @@ function MediaGalleryContent() {
                 Άσε το αρχείο εδώ για ανέβασμα
               </div>
             )}
-            {loading || (categoryContext && categoryLoading && !categoryItems.length) ? (
+            {loading ? (
               <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Φόρτωση...</p>
             ) : !displayItems.length ? (
               <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
@@ -670,23 +546,11 @@ function MediaGalleryContent() {
                     />
                   ))}
                 </div>
-                {canLoadMoreCategory && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => categoryContext && fetchCategoryPage(categoryContext.category, selectedFolderId as number, categoryPage + 1, false)}
-                    disabled={categoryLoading}
-                    className="mt-4 w-full font-medium text-slate-500 hover:text-red-600 dark:text-slate-400"
-                  >
-                    {categoryLoading ? "Φόρτωση..." : `Εμφάνιση περισσότερων (${categoryTotal - categoryItems.length} ακόμα)`}
-                  </Button>
-                )}
                 {canLoadMoreAssets && (
                   <Button
                     type="button"
-                    variant="ghost"
                     onClick={() => setAssetVisibleCount((current) => current + PAGE_SIZE)}
-                    className="mt-4 w-full font-medium text-slate-500 hover:text-red-600 dark:text-slate-400"
+                    className="mt-4 w-full bg-gray-800 py-3 font-medium text-white dark:bg-zinc-800"
                   >
                     {`Εμφάνιση περισσότερων (${filteredAssetItems.length - assetVisibleCount} ακόμα)`}
                   </Button>
@@ -944,8 +808,7 @@ function EditPhotoDialog({
   }, [item]);
 
   if (!item) return null;
-  const isCustom = item.kind === "asset";
-  const options = flattenFolderOptions(folders, item.category ?? null);
+  const options = flattenFolderOptions(folders);
   const src = resolveMediaUrl(item.url);
 
   const handleSave = () => {
@@ -985,14 +848,10 @@ function EditPhotoDialog({
             </Button>
             <input ref={replaceInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
           </div>
-          {isCustom ? (
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="edit-photo-title">Όνομα/Τίτλος</Label>
-              <Input id="edit-photo-title" value={title} onChange={(event) => setTitle(event.target.value)} />
-            </div>
-          ) : (
-            <p className="truncate text-sm font-medium text-slate-600 dark:text-slate-300">{item.title}</p>
-          )}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="edit-photo-title">Όνομα/Τίτλος</Label>
+            <Input id="edit-photo-title" value={title} onChange={(event) => setTitle(event.target.value)} />
+          </div>
           <div className="flex flex-col gap-1.5">
             <Label>Φάκελος</Label>
             <Select value={folderValue} onValueChange={(value) => value && setFolderValue(value)}>
@@ -1000,7 +859,7 @@ function EditPhotoDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {isCustom && <SelectItem value="root">Όλα τα αρχεία (χωρίς φάκελο)</SelectItem>}
+                <SelectItem value="root">Όλα τα αρχεία (χωρίς φάκελο)</SelectItem>
                 {options.map((option) => (
                   <SelectItem key={option.id} value={String(option.id)}>
                     {option.label}

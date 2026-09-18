@@ -1,4 +1,6 @@
 import express from 'express';
+import fs from 'fs';
+import path from 'path';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
@@ -14,6 +16,18 @@ const CATEGORIES = [
   'legumes', 'grains', 'nuts', 'oils', 'other',
 ];
 const SERVING_UNITS = ['g', 'ml', 'piece', 'tbsp', 'cup'];
+const foodOwnedUploadDir = path.join(process.cwd(), 'uploads', 'media', 'foods');
+
+function resolveLocalUploadPath(imageUrl) {
+  const pathname = new URL(imageUrl, 'http://local').pathname;
+  const decodedPath = decodeURIComponent(pathname);
+  if (!decodedPath.startsWith('/uploads/')) return null;
+
+  const uploadsRoot = path.resolve(process.cwd(), 'uploads');
+  const localPath = path.resolve(process.cwd(), decodedPath.replace(/^\/+/, ''));
+  if (localPath !== uploadsRoot && !localPath.startsWith(`${uploadsRoot}${path.sep}`)) return null;
+  return localPath;
+}
 
 async function ensureFoodsSchema(connection) {
   await connection.query(`
@@ -264,6 +278,54 @@ router.post('/', authorizeRole(['coach', 'admin']), foodValidators, async (req, 
     if (error.code === 'ER_DUP_ENTRY') {
       return res.status(409).json({ message: 'Υπάρχει ήδη τρόφιμο με αυτό το όνομα.' });
     }
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/:id/copy-image', authorizeRole(['coach', 'admin']), [
+  body('imageUrl').isString().notEmpty(),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ message: 'Image URL is required.', errors: errors.array() });
+  }
+
+  const sourcePath = resolveLocalUploadPath(req.body.imageUrl);
+  if (!sourcePath) {
+    return res.status(400).json({ message: 'Only local Media Library images can be copied.' });
+  }
+
+  try {
+    const connection = await pool.getConnection();
+    await ensureFoodsSchema(connection);
+
+    const [rows] = await connection.query('SELECT id FROM foods WHERE id = ?', [req.params.id]);
+    if (!rows.length) {
+      connection.release();
+      return res.status(404).json({ message: 'Food not found' });
+    }
+
+    if (!fs.existsSync(sourcePath)) {
+      connection.release();
+      return res.status(404).json({ message: 'Source image file not found.' });
+    }
+
+    fs.mkdirSync(foodOwnedUploadDir, { recursive: true });
+    const destinationFilename = `food_${req.params.id}_photo.jpg`;
+    const destinationPath = path.join(foodOwnedUploadDir, destinationFilename);
+    const imageUrl = `/uploads/media/foods/${destinationFilename}`;
+
+    if (path.resolve(sourcePath) !== path.resolve(destinationPath)) {
+      await fs.promises.copyFile(sourcePath, destinationPath);
+    }
+
+    await connection.query('UPDATE foods SET image_url = ? WHERE id = ?', [imageUrl, req.params.id]);
+    const [updatedRows] = await connection.query(`SELECT ${FOOD_COLUMNS} FROM foods WHERE id = ?`, [req.params.id]);
+    connection.release();
+
+    res.json(mapFoodRow(updatedRows[0]));
+  } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
