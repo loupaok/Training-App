@@ -13,6 +13,7 @@
     "ai:exercise-thumbnails": "node generate-exercise-ai-thumbnails.js",
     "db:food-images": "node seed-food-images.js",
     "db:food-images-local": "node download-food-images.js",
+    "migrate:exercise-images": "node scripts/migrate-exercise-images.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
