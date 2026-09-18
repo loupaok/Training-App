@@ -12,6 +12,7 @@
     "db:exercise-descriptions-el": "node update-exercise-descriptions-el.js",
     "ai:exercise-thumbnails": "node generate-exercise-ai-thumbnails.js",
     "db:food-images": "node seed-food-images.js",
+    "db:food-images-local": "node download-food-images.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
