@@ -509,6 +509,52 @@ router.post('/:id/images', authorizeRole(['coach', 'admin']), [
   }
 });
 
+router.put('/:id/images/reorder', authorizeRole(['coach', 'admin']), [
+  body('order').isArray({ min: 1 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  try {
+    const connection = await pool.getConnection();
+    await ensureExerciseImagesTable(connection);
+
+    const [existingRows] = await connection.query(
+      'SELECT id FROM exercise_images WHERE exercise_id = ?',
+      [req.params.id]
+    );
+    const existingIds = new Set(existingRows.map((row) => row.id));
+    const orderedIds = req.body.order.map(Number);
+
+    if (orderedIds.length !== existingIds.size || orderedIds.some((id) => !existingIds.has(id))) {
+      connection.release();
+      return res.status(400).json({ message: 'Order must include exactly the current images for this exercise' });
+    }
+
+    for (let index = 0; index < orderedIds.length; index += 1) {
+      await connection.query(
+        'UPDATE exercise_images SET sort_order = ?, is_primary = ? WHERE id = ?',
+        [index, index === 0 ? 1 : 0, orderedIds[index]]
+      );
+    }
+
+    const [[primaryImage]] = await connection.query(
+      'SELECT image_url AS imageUrl FROM exercise_images WHERE id = ?',
+      [orderedIds[0]]
+    );
+    await connection.query('UPDATE exercises SET image_url = ? WHERE id = ?', [primaryImage?.imageUrl || null, req.params.id]);
+
+    const imagesMap = await getExerciseImagesMap(connection, [Number(req.params.id)]);
+    connection.release();
+    res.json({ message: 'Exercise images reordered', images: imagesMap.get(Number(req.params.id)) || [] });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.delete('/:id/images/:imageId', authorizeRole(['coach', 'admin']), async (req, res) => {
   try {
     const connection = await pool.getConnection();

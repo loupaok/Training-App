@@ -1,9 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronDown, Play, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronDown, Play, Trash2, Plus } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +22,7 @@ import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -140,6 +151,8 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
   const [mediaSearch, setMediaSearch] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
   useEffect(() => {
     api
@@ -387,6 +400,38 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
     }
   };
 
+  const reorderImages = async (fromId: string, toId: string) => {
+    if (!exercise || fromId === toId) return;
+    const ids = currentImages.map((image) => String(image.id));
+    const oldIndex = ids.indexOf(fromId);
+    const newIndex = ids.indexOf(toId);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(currentImages, oldIndex, newIndex);
+    const nextImageUrl = reordered[0]?.imageUrl || "";
+    setEditForm((current) => (current ? { ...current, imageUrl: nextImageUrl } : current));
+    updateExercise({
+      images: reordered.map((image, index) => ({ id: image.id, imageUrl: image.imageUrl, altText: image.altText, isPrimary: index === 0 })),
+      imageUrls: reordered.map((image) => image.imageUrl),
+      imageUrl: nextImageUrl,
+    });
+
+    try {
+      const response = await api.put<{ images?: RawExerciseImage[] }>(`/exercises/${exercise.id}/images/reorder`, {
+        order: reordered.map((image) => image.id),
+      });
+      updateExerciseImages(response.images || []);
+    } catch (error) {
+      setMediaMessage(getErrorMessage(error, "Δεν αποθηκεύτηκε η σειρά των φωτογραφιών."));
+    }
+  };
+
+  const handleImageDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+    reorderImages(String(active.id), String(over.id));
+  };
+
   const filteredMediaAssets = mediaAssets.filter((asset) => {
     return (
       !mediaSearch ||
@@ -432,21 +477,24 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
                 <ExerciseImageSlider exercise={{ ...exercise, name: editForm.name, imageUrl: editForm.imageUrl }} large />
                 {!isReadOnly && (
                   <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/0 opacity-0 transition-all duration-200 group-hover:bg-black/40 group-hover:opacity-100">
-                    <label
-                      className={cn(
-                        "flex h-9 items-center gap-1.5 rounded-full bg-white/95 px-3 text-xs font-medium text-slate-900 shadow-sm",
-                        isCreating ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-white",
-                      )}
-                    >
-                      🔄 Αλλαγή
-                      <input
-                        type="file"
-                        accept="image/jpeg,image/png,image/webp,image/gif"
-                        onChange={uploadImage}
-                        disabled={isCreating || saving}
-                        className="hidden"
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <button
+                            type="button"
+                            className="flex h-9 items-center gap-1.5 rounded-full bg-white/95 px-3 text-xs font-medium text-slate-900 shadow-sm cursor-pointer hover:bg-white"
+                          >
+                            🔄 Αλλαγή
+                          </button>
+                        }
                       />
-                    </label>
+                      <DropdownMenuContent align="center">
+                        <DropdownMenuItem onClick={openMediaPicker}>📁 Από Media Library</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => fileInputRef.current?.click()} disabled={isCreating}>
+                          💻 Από τον υπολογιστή
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     <button
                       type="button"
                       onClick={clearThumbnail}
@@ -459,47 +507,60 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
                 )}
               </div>
 
-              {currentImages.length > 0 && (
-                <ScrollArea className="mt-3 w-full whitespace-nowrap">
-                  <div className="flex gap-2 pb-2">
-                    {currentImages.map((image, index) => (
-                      <div
-                        key={`${image.id}-${image.imageUrl}`}
-                        className="group/thumb relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={resolveMediaUrl(image.imageUrl)} alt="" className="h-full w-full object-cover" />
-                        {(image.isPrimary || image.imageUrl === editForm.imageUrl || index === 0) && (
-                          <span className="absolute left-0.5 top-0.5 rounded bg-red-600 px-1 text-[8px] font-medium text-white">P</span>
-                        )}
-                        {!isReadOnly && (
-                          <button
-                            type="button"
-                            onClick={() => deleteExerciseImage(image)}
-                            disabled={saving || !image.id || String(image.id).startsWith("local")}
-                            aria-label="Διαγραφή φωτογραφίας"
-                            className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 transition-opacity group-hover/thumb:opacity-100 disabled:cursor-not-allowed"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <ScrollBar orientation="horizontal" />
-                </ScrollArea>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                onChange={uploadImage}
+                disabled={isCreating || saving}
+                className="hidden"
+              />
+
+              {isReadOnly ? (
+                currentImages.length > 0 && (
+                  <ScrollArea className="mt-4 w-full whitespace-nowrap">
+                    <div className="flex gap-3 pb-2">
+                      {currentImages.map((image, index) => (
+                        <div
+                          key={`${image.id}-${image.imageUrl}`}
+                          className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={resolveMediaUrl(image.imageUrl)} alt="" className="h-full w-full object-cover" />
+                          {(image.isPrimary || index === 0) && (
+                            <span className="absolute left-1 top-1 rounded bg-red-600 px-1.5 py-0.5 text-[9px] font-medium text-white">1</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <ScrollBar orientation="horizontal" />
+                  </ScrollArea>
+                )
+              ) : (
+                <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleImageDragEnd}>
+                  <ScrollArea className="mt-4 w-full whitespace-nowrap">
+                    <div className="flex gap-3 pb-2">
+                      <SortableContext items={currentImages.map((image) => String(image.id))} strategy={horizontalListSortingStrategy}>
+                        {currentImages.map((image, index) => (
+                          <SortableThumb
+                            key={image.id}
+                            image={image}
+                            isPrimary={image.isPrimary || image.imageUrl === editForm.imageUrl || index === 0}
+                            dragDisabled={currentImages.length < 2 || String(image.id).startsWith("local")}
+                            deleteDisabled={saving || !image.id || String(image.id).startsWith("local")}
+                            onDelete={() => deleteExerciseImage(image)}
+                          />
+                        ))}
+                      </SortableContext>
+                      <AddImageTile onPickLibrary={openMediaPicker} onPickUpload={() => fileInputRef.current?.click()} />
+                    </div>
+                    <ScrollBar orientation="horizontal" />
+                  </ScrollArea>
+                </DndContext>
               )}
 
-              {!isReadOnly && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={openMediaPicker}
-                  className="mt-2 h-7 px-2 text-xs font-normal text-slate-500 hover:text-red-600 dark:text-slate-400"
-                >
-                  + Προσθήκη εικόνας
-                </Button>
+              {!isReadOnly && currentImages.length > 1 && (
+                <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">Σύρε για αλλαγή σειράς — η πρώτη είναι η κύρια εικόνα.</p>
               )}
 
               {mediaMessage && <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">{mediaMessage}</div>}
@@ -669,6 +730,75 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
         </DialogContent>
       </Dialog>
     </CoachShell>
+  );
+}
+
+function SortableThumb({
+  image,
+  isPrimary,
+  dragDisabled,
+  deleteDisabled,
+  onDelete,
+}: {
+  image: NormalizedExerciseImage;
+  isPrimary: boolean;
+  dragDisabled: boolean;
+  deleteDisabled: boolean;
+  onDelete: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: String(image.id),
+    disabled: dragDisabled,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      {...(dragDisabled ? {} : { ...attributes, ...listeners })}
+      className={cn(
+        "group/thumb relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800",
+        !dragDisabled && "cursor-grab touch-none active:cursor-grabbing",
+        isDragging && "z-10 opacity-60",
+      )}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={resolveMediaUrl(image.imageUrl)} alt="" className="h-full w-full object-cover" draggable={false} />
+      {isPrimary && <span className="absolute left-1 top-1 rounded bg-red-600 px-1.5 py-0.5 text-[9px] font-medium text-white">1</span>}
+      <button
+        type="button"
+        onClick={onDelete}
+        onPointerDown={(event) => event.stopPropagation()}
+        disabled={deleteDisabled}
+        aria-label="Διαγραφή φωτογραφίας"
+        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover/thumb:opacity-100 disabled:cursor-not-allowed"
+      >
+        <Trash2 className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
+function AddImageTile({ onPickLibrary, onPickUpload }: { onPickLibrary: () => void; onPickUpload: () => void }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <button
+            type="button"
+            aria-label="Προσθήκη εικόνας"
+            className="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-slate-300 text-slate-400 hover:border-red-300 hover:text-red-600 dark:border-slate-700"
+          >
+            <Plus className="h-5 w-5" />
+            <span className="text-[10px] font-medium">Προσθήκη</span>
+          </button>
+        }
+      />
+      <DropdownMenuContent align="start">
+        <DropdownMenuItem onClick={onPickLibrary}>📁 Από Media Library</DropdownMenuItem>
+        <DropdownMenuItem onClick={onPickUpload}>💻 Από τον υπολογιστή</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
