@@ -1,1 +1,1 @@
-export { default } from "@/components/pages/media-exercises-page";
+export { default } from "@/components/pages/media-gallery-page";
