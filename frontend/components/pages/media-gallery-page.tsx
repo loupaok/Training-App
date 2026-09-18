@@ -362,16 +362,36 @@ function MediaGalleryContent() {
 
     setUploading(true);
     let succeeded = 0;
+    let skipped = 0;
+    // Track titles claimed by this same batch too, not just already-loaded
+    // state, so dropping the same file (or duplicate files) together doesn't
+    // upload it twice in a row.
+    const claimedTitles = new Set(
+      assets.filter((asset) => asset.folderId === folderId).map((asset) => asset.title.toLowerCase()),
+    );
+
     for (const file of imageFiles) {
+      const derivedTitle = file.name.replace(/\.[^.]+$/, "");
+      if (claimedTitles.has(derivedTitle.toLowerCase())) {
+        skipped += 1;
+        continue;
+      }
+
       try {
         const compressed = await compressImageFile(file, { maxWidth: 1800, maxHeight: 1800, quality: 0.84 });
         const formData = new FormData();
         formData.append("file", compressed);
-        formData.append("title", file.name.replace(/\.[^.]+$/, ""));
+        formData.append("title", derivedTitle);
         formData.append("assetType", "photo");
         if (folderId !== null) formData.append("folderId", String(folderId));
-        const created = await api.upload<{ id: number; title: string; url: string; folderId: number | null }>("/media/upload", formData);
-        setAssets((current) => [{ id: created.id, title: created.title, url: created.url, folderId: created.folderId }, ...current]);
+        const created = await api.upload<{ id: number; title: string; url: string; folderId: number | string | null }>("/media/upload", formData);
+        // The upload endpoint echoes back folderId as whatever FormData sent (a
+        // string), unlike GET /media which normalizes it — normalize here too,
+        // or folder-scoped filters/dedup checks silently stop matching this
+        // item until the next full reload.
+        const createdFolderId = created.folderId === null || created.folderId === undefined || created.folderId === "" ? null : Number(created.folderId);
+        setAssets((current) => [{ id: created.id, title: created.title, url: created.url, folderId: createdFolderId }, ...current]);
+        claimedTitles.add(derivedTitle.toLowerCase());
         succeeded += 1;
       } catch (error) {
         toast.error(getErrorMessage(error, `Το upload του "${file.name}" απέτυχε.`));
@@ -382,6 +402,9 @@ function MediaGalleryContent() {
     }
     if (succeeded) {
       toast.success(succeeded === 1 ? "Η φωτογραφία ανέβηκε." : `${succeeded} φωτογραφίες ανέβηκαν.`);
+    }
+    if (skipped) {
+      toast.error(skipped === 1 ? "Η φωτογραφία υπάρχει ήδη σε αυτόν τον φάκελο." : `${skipped} φωτογραφίες υπάρχουν ήδη σε αυτόν τον φάκελο.`);
     }
     setUploading(false);
   };
