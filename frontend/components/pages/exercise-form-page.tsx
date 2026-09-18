@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronDown, Play, Trash2, Plus } from "lucide-react";
@@ -53,6 +53,7 @@ import {
 } from "@/components/shared/exercise-visuals";
 
 const UNSET_VALUE = "__unset__";
+const MEDIA_PAGE_SIZE = 48;
 
 interface EditForm {
   name: string;
@@ -151,6 +152,7 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
   const [mediaSearch, setMediaSearch] = useState("");
+  const [visibleMediaCount, setVisibleMediaCount] = useState(MEDIA_PAGE_SIZE);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -345,9 +347,13 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
   const openMediaPicker = async () => {
     setMediaPickerOpen(true);
     setMediaSearch("");
+    setVisibleMediaCount(MEDIA_PAGE_SIZE);
     try {
       const assets = await api.get<MediaAsset[]>("/media");
-      setMediaAssets(assets.filter((asset) => asset.assetType === "photo"));
+      const photos = assets.filter((asset) => asset.assetType === "photo");
+      // Deprioritized: the library can hold hundreds of photos, so mounting them all
+      // synchronously right after the triggering click is what was blowing up INP.
+      startTransition(() => setMediaAssets(photos));
     } catch {
       setMediaAssets([]);
     }
@@ -699,12 +705,16 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
           <div>
             <Input
               value={mediaSearch}
-              onChange={(event) => setMediaSearch(event.target.value)}
+              onChange={(event) => {
+                const value = event.target.value;
+                setMediaSearch(value);
+                setVisibleMediaCount(MEDIA_PAGE_SIZE);
+              }}
               placeholder="Αναζήτηση φωτογραφίας ή φακέλου..."
               className="h-12 focus-visible:border-red-300"
             />
             <div className="mt-5 grid max-h-[58vh] grid-cols-2 gap-4 overflow-y-auto pr-2 sm:grid-cols-4">
-              {filteredMediaAssets.map((asset) => (
+              {filteredMediaAssets.slice(0, visibleMediaCount).map((asset) => (
                 <Button
                   key={`${asset.kind}-${asset.id}`}
                   variant="outline"
@@ -721,6 +731,16 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
                 </Button>
               ))}
             </div>
+            {visibleMediaCount < filteredMediaAssets.length && (
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setVisibleMediaCount((count) => count + MEDIA_PAGE_SIZE)}
+                className="mt-4 w-full font-medium text-slate-500 hover:text-red-600 dark:text-slate-400"
+              >
+                Φόρτωση περισσότερων ({filteredMediaAssets.length - visibleMediaCount} ακόμα)
+              </Button>
+            )}
             {!filteredMediaAssets.length && (
               <div className="mt-8 rounded-lg border border-dashed border-slate-300 p-8 text-center font-semibold text-slate-500 dark:border-slate-700 dark:text-slate-400">
                 Δεν βρέθηκαν φωτογραφίες στη Media Library.
@@ -875,7 +895,14 @@ function PickerImage({ asset }: { asset: MediaAsset }) {
 
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={src} alt={asset.title} onError={() => setFailed(true)} className="h-full w-full object-cover" />
+    <img
+      src={src}
+      alt={asset.title}
+      onError={() => setFailed(true)}
+      loading="lazy"
+      decoding="async"
+      className="h-full w-full object-cover"
+    />
   );
 }
 

@@ -108,8 +108,11 @@ export function ExerciseImageSlider({ exercise, large = false }: { exercise: Par
             type="button"
             variant="secondary"
             size="icon"
-            onClick={() => setIndex((value) => (value - 1 + images.length) % images.length)}
-            className="absolute left-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-white/90 text-slate-900 shadow hover:bg-white"
+            onClick={(event) => {
+              setIndex((value) => (value - 1 + images.length) % images.length);
+              event.currentTarget.blur();
+            }}
+            className="absolute left-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-white/90 text-slate-900 shadow hover:bg-white/90"
           >
             <ChevronLeft className="h-5 w-5" />
           </Button>
@@ -117,8 +120,11 @@ export function ExerciseImageSlider({ exercise, large = false }: { exercise: Par
             type="button"
             variant="secondary"
             size="icon"
-            onClick={() => setIndex((value) => (value + 1) % images.length)}
-            className="absolute right-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-white/90 text-slate-900 shadow hover:bg-white"
+            onClick={(event) => {
+              setIndex((value) => (value + 1) % images.length);
+              event.currentTarget.blur();
+            }}
+            className="absolute right-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-white/90 text-slate-900 shadow hover:bg-white/90"
           >
             <ChevronRight className="h-5 w-5" />
           </Button>
