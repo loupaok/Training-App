@@ -802,7 +802,7 @@ function ExercisesContent() {
           if (!open) setSelected(null);
         }}
       >
-        <DialogContent className="max-h-[90vh] w-full max-w-[900px] overflow-y-auto">
+        <DialogContent className="max-h-[90vh] w-full max-w-5xl overflow-y-auto sm:max-w-5xl">
           {selected && editForm && (
             <>
               <DialogHeader>
