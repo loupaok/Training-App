@@ -18,6 +18,7 @@ import {
   ChevronDown,
   Search,
   AlertTriangle,
+  ImageOff,
   Coffee,
   UtensilsCrossed,
   Cookie,
@@ -530,10 +531,14 @@ export function NutritionPlanEditor({
                             <TableRow key={foodIndex}>
                               <TableCell className="align-top">
                                 <div className="flex items-start gap-2">
-                                  {findLibraryFoodImage(food, foods) && (
-                                    <span className="mt-0.5 h-9 w-9 shrink-0 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
-                                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                                      <img src={resolveMediaUrl(findLibraryFoodImage(food, foods))} alt="" className="h-full w-full object-cover" />
+                                  {food.foodId != null && (
+                                    <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
+                                      {findLibraryFoodImage(food, foods) ? (
+                                        // eslint-disable-next-line @next/next/no-img-element
+                                        <img src={resolveMediaUrl(findLibraryFoodImage(food, foods))} alt="" className="h-full w-full object-cover" />
+                                      ) : (
+                                        <ImageOff className="h-4 w-4 text-slate-300 dark:text-slate-600" />
+                                      )}
                                     </span>
                                   )}
                                   <FoodPicker
