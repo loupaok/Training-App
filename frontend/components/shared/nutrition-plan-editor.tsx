@@ -389,10 +389,8 @@ export function NutritionPlanEditor({
     <Card className="p-0">
       <PlanHeader title={title} subtitle={subtitle} onSave={onSave} onCreateNew={onCreateNew} saving={saving} />
 
-      <ResizablePanelGroup orientation="horizontal" className="min-h-130">
-        {/* LEFT 70% — existing editor, layout unchanged */}
-        <ResizablePanel defaultSize={70} minSize={50}>
-      <div className="space-y-6 p-6 pb-24">
+      {/* Full-width, above the resizable split — plan-level fields, not scoped to either panel */}
+      <div className="space-y-6 p-6 pb-0">
         <Field label="Τίτλος" value={plan.title} onChange={(value) => setPlan({ ...plan, title: value })} />
 
         {/* Macro targets — big kcal number + split bars + the same editable target fields */}
@@ -420,7 +418,12 @@ export function NutritionPlanEditor({
         </div>
 
         <Field label="Γενικές οδηγίες διατροφής" value={plan.notes} onChange={(value) => setPlan({ ...plan, notes: value })} />
+      </div>
 
+      <ResizablePanelGroup orientation="horizontal" className="min-h-130">
+        {/* LEFT 70% — meals, unchanged */}
+        <ResizablePanel defaultSize={70} minSize={50}>
+      <div className="space-y-6 p-6 pb-24">
         {plan.meals.map((meal, mealIndex) => {
           const MealIcon = MEAL_ICONS[meal.mealType] || Utensils;
           return (
