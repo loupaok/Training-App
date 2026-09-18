@@ -13,13 +13,18 @@ import {
   ImageOff,
   FolderInput,
   CheckSquare,
+  Pencil,
+  Save,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -42,7 +47,7 @@ import { resolveMediaUrl } from "@/lib/media";
 import { compressImageFile } from "@/lib/image-compression";
 import { cn } from "@/lib/utils";
 
-const PAGE_SIZE = 48;
+const PAGE_SIZE = 20;
 
 interface RawMediaItem {
   id: number | string;
@@ -101,6 +106,29 @@ function foldersForMoveTarget(folders: MediaFolder[], category: MediaCategory | 
   return folders.filter((folder) => categoryOfFolder(folders, folder.id) === category);
 }
 
+// Flattens a category/custom folder subtree into a depth-indented list for
+// use as <Select> options — the same scoping foldersForMoveTarget uses, just
+// walked in tree order instead of left as a flat unordered array.
+function flattenFolderOptions(folders: MediaFolder[], category: MediaCategory | null): Array<{ id: number; label: string }> {
+  const scoped = foldersForMoveTarget(folders, category);
+  const byParent = new Map<number | null, MediaFolder[]>();
+  scoped.forEach((folder) => {
+    const list = byParent.get(folder.parentId) ?? [];
+    list.push(folder);
+    byParent.set(folder.parentId, list);
+  });
+  const result: Array<{ id: number; label: string }> = [];
+  const walk = (parentId: number | null, depth: number) => {
+    const children = (byParent.get(parentId) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "el"));
+    children.forEach((folder) => {
+      result.push({ id: folder.id, label: `${"— ".repeat(depth)}${folder.name}` });
+      walk(folder.id, depth + 1);
+    });
+  };
+  walk(null, 0);
+  return result;
+}
+
 function deletePathFor(item: GalleryItem): string {
   if (item.kind === "asset") return `/media/media_asset/${item.entityId}`;
   if (item.category === "exercise") return `/exercises/${item.parentId}/images/${item.entityId}`;
@@ -124,16 +152,19 @@ function MediaGalleryContent() {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  const [dragItem, setDragItem] = useState<GalleryItem | null>(null);
-  const [dropTarget, setDropTarget] = useState<number | null | "root">(null);
-
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<MediaFolder | null>(null);
   const [moveTargetItems, setMoveTargetItems] = useState<GalleryItem[] | null>(null);
+  const [editTarget, setEditTarget] = useState<GalleryItem | null>(null);
 
   const [categoryItems, setCategoryItems] = useState<GalleryItem[]>([]);
   const [categoryTotal, setCategoryTotal] = useState(0);
   const [categoryPage, setCategoryPage] = useState(1);
   const [categoryLoading, setCategoryLoading] = useState(false);
+
+  // Client-side load-more window for the custom "Όλα τα αρχεία" view, which
+  // (unlike the category views) has no server-side pagination — every asset
+  // is already loaded, we just reveal it in pages of PAGE_SIZE.
+  const [assetVisibleCount, setAssetVisibleCount] = useState(PAGE_SIZE);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -199,8 +230,8 @@ function MediaGalleryContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoryContext?.category, selectedFolderId, debouncedSearch]);
 
-  const displayItems: GalleryItem[] = useMemo(() => {
-    if (categoryContext) return categoryItems;
+  const filteredAssetItems: GalleryItem[] = useMemo(() => {
+    if (categoryContext) return [];
     return assets
       .filter((asset) => {
         const matchesFolder = selectedFolderId === null || asset.folderId === selectedFolderId;
@@ -208,7 +239,20 @@ function MediaGalleryContent() {
         return matchesFolder && matchesSearch;
       })
       .map((asset) => ({ id: `asset-${asset.id}`, entityId: asset.id, title: asset.title, url: asset.url, folderId: asset.folderId, kind: "asset" as const }));
-  }, [categoryContext, categoryItems, assets, selectedFolderId, debouncedSearch]);
+  }, [categoryContext, assets, selectedFolderId, debouncedSearch]);
+
+  // Reset the reveal window whenever the underlying filtered set changes, so
+  // switching folders/searching doesn't leave a stale "load more" position.
+  useEffect(() => {
+    setAssetVisibleCount(PAGE_SIZE);
+  }, [selectedFolderId, debouncedSearch]);
+
+  const displayItems: GalleryItem[] = useMemo(() => {
+    if (categoryContext) return categoryItems;
+    return filteredAssetItems.slice(0, assetVisibleCount);
+  }, [categoryContext, categoryItems, filteredAssetItems, assetVisibleCount]);
+
+  const canLoadMoreAssets = !categoryContext && assetVisibleCount < filteredAssetItems.length;
 
   const breadcrumbChain = useMemo(() => {
     if (selectedFolderId === null) return [];
@@ -276,7 +320,7 @@ function MediaGalleryContent() {
     }
     loadLibrary();
     const folderName = folderId ? folders.find((folder) => folder.id === folderId)?.name : "Όλα τα αρχεία";
-    toast.success(`Μετακινήθηκε στον φάκελο ${folderName || ""}`.trim());
+    toast.success(`Μετακινήθηκε στον φάκελο ${folderName || ""} ✅`.trim());
   };
 
   const moveItems = async (items: GalleryItem[], folderId: number) => {
@@ -311,12 +355,42 @@ function MediaGalleryContent() {
     }
   };
 
-  const handleDropOnFolder = (folderId: number | null) => {
-    setDropTarget(null);
-    if (!dragItem || folderId === null) return;
-    const items = selectMode && selectedIds.has(dragItem.id) ? displayItems.filter((item) => selectedIds.has(item.id)) : [dragItem];
-    setDragItem(null);
-    moveItems(items, folderId);
+  const saveEdit = async (item: GalleryItem, title: string, folderId: number | null) => {
+    const trimmedTitle = title.trim();
+    const titleChanged = item.kind === "asset" && trimmedTitle && trimmedTitle !== item.title;
+    const folderChanged = folderId !== item.folderId;
+
+    try {
+      if (titleChanged) {
+        await api.put(`/media/media_asset/${item.entityId}`, { title: trimmedTitle });
+      }
+      if (folderChanged) {
+        if (item.category) {
+          if (folderId === null) throw new Error("Category items must stay inside their category.");
+          await api.put(`/media/categories/${item.category}/${item.entityId}/folder`, { folderId });
+        } else {
+          await api.put(`/media/assets/${item.entityId}/folder`, { folderId });
+        }
+      }
+
+      if (item.kind === "asset") {
+        setAssets((current) =>
+          current.map((asset) =>
+            asset.id === item.entityId
+              ? { ...asset, title: titleChanged ? trimmedTitle : asset.title, folderId: folderChanged ? folderId : asset.folderId }
+              : asset,
+          ),
+        );
+      }
+      if (categoryContext) {
+        fetchCategoryPage(categoryContext.category, selectedFolderId as number, 1, true);
+      }
+      loadLibrary();
+      setEditTarget(null);
+      toast.success("Η φωτογραφία ενημερώθηκε.");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Δεν έγινε ενημέρωση."));
+    }
   };
 
   const deleteItem = async (item: GalleryItem) => {
@@ -471,10 +545,6 @@ function MediaGalleryContent() {
             onCreate={createFolder}
             onRename={renameFolder}
             onDelete={setDeleteFolderTarget}
-            dragActive={dragItem !== null}
-            dropTargetId={dropTarget}
-            onDropTargetChange={setDropTarget}
-            onDropAsset={handleDropOnFolder}
             onFileDrop={handleTreeFileDrop}
           />
         </ResizablePanel>
@@ -557,8 +627,7 @@ function MediaGalleryContent() {
                       onPreview={() => setPreviewIndex(index)}
                       onMove={() => setMoveTargetItems([item])}
                       onDelete={() => deleteItem(item)}
-                      onDragStart={() => setDragItem(item)}
-                      onDragEnd={() => setDragItem(null)}
+                      onEdit={() => setEditTarget(item)}
                     />
                   ))}
                 </div>
@@ -570,7 +639,17 @@ function MediaGalleryContent() {
                     disabled={categoryLoading}
                     className="mt-4 w-full font-medium text-slate-500 hover:text-red-600 dark:text-slate-400"
                   >
-                    {categoryLoading ? "Φόρτωση..." : `Φόρτωση περισσότερων (${categoryTotal - categoryItems.length} ακόμα)`}
+                    {categoryLoading ? "Φόρτωση..." : `Εμφάνιση περισσότερων (${categoryTotal - categoryItems.length} ακόμα)`}
+                  </Button>
+                )}
+                {canLoadMoreAssets && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => setAssetVisibleCount((current) => current + PAGE_SIZE)}
+                    className="mt-4 w-full font-medium text-slate-500 hover:text-red-600 dark:text-slate-400"
+                  >
+                    {`Εμφάνιση περισσότερων (${filteredAssetItems.length - assetVisibleCount} ακόμα)`}
                   </Button>
                 )}
               </>
@@ -624,7 +703,7 @@ function MediaGalleryContent() {
               {moveTargetItems?.length || 0} {(moveTargetItems?.length || 0) === 1 ? "εικόνα" : "εικόνες"}
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-96 overflow-y-auto rounded-md border border-slate-200 dark:border-slate-800">
+          <ScrollArea className="h-96 rounded-md border border-slate-200 dark:border-slate-800">
             <MediaFolderTree
               folders={moveDialogFolders}
               selectedFolderId={null}
@@ -635,14 +714,12 @@ function MediaGalleryContent() {
               onCreate={createFolder}
               onRename={renameFolder}
               onDelete={setDeleteFolderTarget}
-              dragActive={false}
-              dropTargetId={null}
-              onDropTargetChange={() => {}}
-              onDropAsset={() => {}}
             />
-          </div>
+          </ScrollArea>
         </DialogContent>
       </Dialog>
+
+      <EditPhotoDialog item={editTarget} folders={folders} onClose={() => setEditTarget(null)} onSave={saveEdit} />
     </CoachShell>
   );
 }
@@ -655,8 +732,7 @@ function GalleryCard({
   onPreview,
   onMove,
   onDelete,
-  onDragStart,
-  onDragEnd,
+  onEdit,
 }: {
   item: GalleryItem;
   selectMode: boolean;
@@ -665,8 +741,7 @@ function GalleryCard({
   onPreview: () => void;
   onMove: () => void;
   onDelete: () => void;
-  onDragStart: () => void;
-  onDragEnd: () => void;
+  onEdit: () => void;
 }) {
   const src = resolveMediaUrl(item.url);
   const [failed, setFailed] = useState(false);
@@ -674,14 +749,7 @@ function GalleryCard({
   return (
     <ContextMenu>
       <ContextMenuTrigger
-        render={
-          <Card
-            draggable={!selectMode}
-            onDragStart={onDragStart}
-            onDragEnd={onDragEnd}
-            className={cn("group relative overflow-hidden p-0", !selectMode && "cursor-grab active:cursor-grabbing", selected && "ring-2 ring-red-500")}
-          />
-        }
+        render={<Card className={cn("group relative overflow-hidden p-0", selected && "ring-2 ring-red-500")} />}
       >
         {selectMode && (
           <div className="absolute left-2 top-2 z-10">
@@ -689,7 +757,13 @@ function GalleryCard({
           </div>
         )}
 
-        <button type="button" onClick={selectMode ? onToggleSelect : onPreview} className="relative block aspect-square w-full overflow-hidden bg-slate-100 dark:bg-slate-800">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={selectMode ? onToggleSelect : onPreview}
+          onKeyDown={(event) => { if (event.key === "Enter") (selectMode ? onToggleSelect : onPreview)(); }}
+          className="relative block aspect-square w-full overflow-hidden bg-slate-100 dark:bg-slate-800"
+        >
           {!src || failed ? (
             <div className="flex h-full w-full items-center justify-center">
               <ImageOff className="h-8 w-8 text-slate-300 dark:text-slate-600" />
@@ -700,12 +774,21 @@ function GalleryCard({
           )}
           {!selectMode && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 bg-black/0 opacity-0 transition-all group-hover:bg-black/30 group-hover:opacity-100">
-              <span className="pointer-events-auto rounded-full bg-white/95 p-2 text-slate-900 shadow" onClick={(event) => { event.stopPropagation(); onPreview(); }}>
+              <button type="button" className="pointer-events-auto rounded-full bg-white/95 p-2 text-slate-900 shadow" onClick={(event) => { event.stopPropagation(); onPreview(); }}>
                 <Eye className="h-4 w-4" />
-              </span>
+              </button>
             </div>
           )}
-        </button>
+          {!selectMode && (
+            <button
+              type="button"
+              onClick={(event) => { event.stopPropagation(); onEdit(); }}
+              className="absolute inset-x-0 bottom-0 z-10 flex items-center justify-center gap-1.5 bg-black/70 py-1.5 text-xs font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100"
+            >
+              <Pencil className="h-3.5 w-3.5" /> Επεξεργασία
+            </button>
+          )}
+        </div>
         <div className="truncate px-2.5 py-2 text-xs font-medium text-slate-600 dark:text-slate-300">{item.title}</div>
       </ContextMenuTrigger>
       <ContextMenuContent>
@@ -714,6 +797,9 @@ function GalleryCard({
         </ContextMenuItem>
         <ContextMenuItem onClick={onMove}>
           <FolderInput className="h-4 w-4" /> Μετακίνηση σε...
+        </ContextMenuItem>
+        <ContextMenuItem onClick={onEdit}>
+          <Pencil className="h-4 w-4" /> Επεξεργασία
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem variant="destructive" onClick={onDelete}>
@@ -781,6 +867,80 @@ function PreviewDialog({
           <span className="truncate text-sm font-medium">{item.title}</span>
           <Badge variant="secondary">{index + 1} / {items.length}</Badge>
         </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function EditPhotoDialog({
+  item,
+  folders,
+  onClose,
+  onSave,
+}: {
+  item: GalleryItem | null;
+  folders: MediaFolder[];
+  onClose: () => void;
+  onSave: (item: GalleryItem, title: string, folderId: number | null) => void;
+}) {
+  const [title, setTitle] = useState("");
+  const [folderValue, setFolderValue] = useState("root");
+
+  useEffect(() => {
+    if (!item) return;
+    setTitle(item.title);
+    setFolderValue(item.folderId === null ? "root" : String(item.folderId));
+  }, [item]);
+
+  if (!item) return null;
+  const isCustom = item.kind === "asset";
+  const options = flattenFolderOptions(folders, item.category ?? null);
+
+  const handleSave = () => {
+    const folderId = folderValue === "root" ? null : Number(folderValue);
+    onSave(item, title, folderId);
+  };
+
+  return (
+    <Dialog open={Boolean(item)} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Επεξεργασία φωτογραφίας</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          {isCustom ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="edit-photo-title">Όνομα/Τίτλος</Label>
+              <Input id="edit-photo-title" value={title} onChange={(event) => setTitle(event.target.value)} />
+            </div>
+          ) : (
+            <p className="truncate text-sm font-medium text-slate-600 dark:text-slate-300">{item.title}</p>
+          )}
+          <div className="flex flex-col gap-1.5">
+            <Label>Φάκελος</Label>
+            <Select value={folderValue} onValueChange={(value) => value && setFolderValue(value)}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {isCustom && <SelectItem value="root">Όλα τα αρχεία (χωρίς φάκελο)</SelectItem>}
+                {options.map((option) => (
+                  <SelectItem key={option.id} value={String(option.id)}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Ακύρωση
+          </Button>
+          <Button type="button" onClick={handleSave} className="gap-2 bg-red-600 hover:bg-red-700">
+            <Save className="h-4 w-4" /> Αποθήκευση
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

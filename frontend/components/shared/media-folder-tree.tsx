@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, type DragEvent, type KeyboardEvent } from "react";
-import { ChevronRight, ChevronDown, Folder, FolderOpen, Plus, Pencil, Trash2, FolderPlus } from "lucide-react";
+import { ChevronRight, ChevronDown, Folder, FolderOpen, Plus, Pencil, Trash2, FolderPlus, MoreVertical } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 export type MediaCategory = "exercise" | "food" | "progress_photo";
@@ -63,10 +64,6 @@ export function MediaFolderTree({
   onCreate,
   onRename,
   onDelete,
-  dragActive,
-  dropTargetId,
-  onDropTargetChange,
-  onDropAsset,
   onFileDrop,
 }: {
   folders: MediaFolder[];
@@ -75,10 +72,6 @@ export function MediaFolderTree({
   onCreate: (name: string, parentId: number | null) => void;
   onRename: (id: number, name: string) => void;
   onDelete: (folder: MediaFolder) => void;
-  dragActive: boolean;
-  dropTargetId: number | null | "root";
-  onDropTargetChange: (id: number | null | "root") => void;
-  onDropAsset: (folderId: number | null) => void;
   onFileDrop?: (folderId: number | null, files: FileList) => void;
 }) {
   const tree = buildTree(folders);
@@ -133,7 +126,7 @@ export function MediaFolderTree({
 
   const renderNode = (node: TreeNode, depth: number) => {
     const isSelected = selectedFolderId === node.id;
-    const isDropTarget = (dragActive && dropTargetId === node.id) || fileDropTarget === node.id;
+    const isDropTarget = fileDropTarget === node.id;
     const isCollapsed = collapsed.has(node.id);
     const hasChildren = node.children.length > 0;
     const isCategoryRoot = Boolean(node.category);
@@ -145,26 +138,18 @@ export function MediaFolderTree({
             render={
               <div
                 onDragOver={(event) => {
-                  if (dragActive || (onFileDrop && isFileDrag(event))) event.preventDefault();
+                  if (onFileDrop && isFileDrag(event)) event.preventDefault();
                 }}
                 onDragEnter={(event) => {
-                  if (dragActive) onDropTargetChange(node.id);
-                  else if (onFileDrop && isFileDrag(event)) setFileDropTarget(node.id);
+                  if (onFileDrop && isFileDrag(event)) setFileDropTarget(node.id);
                 }}
-                onDragLeave={() => {
-                  if (dragActive) onDropTargetChange(null);
-                  else setFileDropTarget(null);
-                }}
+                onDragLeave={() => setFileDropTarget(null)}
                 onDrop={(event) => {
                   if (onFileDrop && isFileDrag(event)) {
                     event.preventDefault();
                     setFileDropTarget(null);
                     if (event.dataTransfer.files.length) onFileDrop(node.id, event.dataTransfer.files);
-                    return;
                   }
-                  if (!dragActive) return;
-                  event.preventDefault();
-                  onDropAsset(node.id);
                 }}
                 className={cn(
                   "group flex items-center gap-1 rounded-md py-1.5 pr-1 text-sm",
@@ -201,6 +186,31 @@ export function MediaFolderTree({
                 <span className="truncate">{node.name}</span>
                 <span className="ml-auto shrink-0 text-xs text-slate-400">{node.itemCount}</span>
               </button>
+            )}
+
+            {!isCategoryRoot && renamingId !== node.id && (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label="Επιλογές φακέλου"
+                      className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 opacity-0 hover:bg-slate-200 hover:text-slate-700 group-hover:opacity-100 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                      onClick={(event) => event.stopPropagation()}
+                    />
+                  }
+                >
+                  <MoreVertical className="h-3.5 w-3.5" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => startRename(node)}>
+                    <Pencil className="h-4 w-4" /> Μετονομασία
+                  </DropdownMenuItem>
+                  <DropdownMenuItem variant="destructive" onClick={() => onDelete(node)}>
+                    <Trash2 className="h-4 w-4" /> Διαγραφή
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </ContextMenuTrigger>
           <ContextMenuContent>
@@ -247,44 +257,13 @@ export function MediaFolderTree({
 
   return (
     <div className="flex h-full flex-col">
+      <div className="border-b border-slate-200 p-2 dark:border-slate-800">
+        <Button type="button" variant="outline" size="sm" onClick={() => startCreate(null)} className="w-full justify-center gap-2 font-medium">
+          <Plus className="h-4 w-4" /> Νέος Φάκελος
+        </Button>
+      </div>
+
       <div className="flex-1 overflow-y-auto p-2">
-        <div
-          onDragOver={(event) => {
-            if (dragActive || (onFileDrop && isFileDrag(event))) event.preventDefault();
-          }}
-          onDragEnter={(event) => {
-            if (dragActive) onDropTargetChange("root");
-            else if (onFileDrop && isFileDrag(event)) setFileDropTarget("root");
-          }}
-          onDragLeave={() => {
-            if (dragActive) onDropTargetChange(null);
-            else setFileDropTarget(null);
-          }}
-          onDrop={(event) => {
-            if (onFileDrop && isFileDrag(event)) {
-              event.preventDefault();
-              setFileDropTarget(null);
-              if (event.dataTransfer.files.length) onFileDrop(null, event.dataTransfer.files);
-              return;
-            }
-            if (!dragActive) return;
-            event.preventDefault();
-            onDropAsset(null);
-          }}
-          className={cn(
-            "mb-1 flex items-center gap-2 rounded-md py-1.5 pl-1 pr-2 text-sm",
-            selectedFolderId === null ? "bg-red-50 font-semibold text-red-700 dark:bg-red-500/10 dark:text-red-400" : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800",
-            (dragActive && dropTargetId === "root") || fileDropTarget === "root" ? "ring-2 ring-red-400" : "",
-          )}
-        >
-          <button type="button" onClick={() => onSelect(null)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-            {selectedFolderId === null ? <FolderOpen className="h-4 w-4 shrink-0" /> : <Folder className="h-4 w-4 shrink-0 text-slate-400" />}
-            <span className="truncate">Όλα τα αρχεία</span>
-          </button>
-        </div>
-
-        {tree.map((node) => renderNode(node, 0))}
-
         {creatingParentId === "root-create" && (
           <div className="flex items-center gap-1 py-1 pl-1">
             <Input
@@ -298,12 +277,35 @@ export function MediaFolderTree({
             />
           </div>
         )}
-      </div>
 
-      <div className="border-t border-slate-200 p-2 dark:border-slate-800">
-        <Button type="button" variant="ghost" size="sm" onClick={() => startCreate(null)} className="w-full justify-start gap-2 font-normal text-slate-600 dark:text-slate-300">
-          <Plus className="h-4 w-4" /> Νέος Φάκελος
-        </Button>
+        <div
+          onDragOver={(event) => {
+            if (onFileDrop && isFileDrag(event)) event.preventDefault();
+          }}
+          onDragEnter={(event) => {
+            if (onFileDrop && isFileDrag(event)) setFileDropTarget("root");
+          }}
+          onDragLeave={() => setFileDropTarget(null)}
+          onDrop={(event) => {
+            if (onFileDrop && isFileDrag(event)) {
+              event.preventDefault();
+              setFileDropTarget(null);
+              if (event.dataTransfer.files.length) onFileDrop(null, event.dataTransfer.files);
+            }
+          }}
+          className={cn(
+            "mb-1 flex items-center gap-2 rounded-md py-1.5 pl-1 pr-2 text-sm",
+            selectedFolderId === null ? "bg-red-50 font-semibold text-red-700 dark:bg-red-500/10 dark:text-red-400" : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800",
+            fileDropTarget === "root" ? "ring-2 ring-red-400" : "",
+          )}
+        >
+          <button type="button" onClick={() => onSelect(null)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+            {selectedFolderId === null ? <FolderOpen className="h-4 w-4 shrink-0" /> : <Folder className="h-4 w-4 shrink-0 text-slate-400" />}
+            <span className="truncate">Όλα τα αρχεία</span>
+          </button>
+        </div>
+
+        {tree.map((node) => renderNode(node, 0))}
       </div>
     </div>
   );
