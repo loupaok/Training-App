@@ -104,30 +104,28 @@ export function ExerciseImageSlider({ exercise, large = false }: { exercise: Par
       <img src={resolveMediaUrl(activeImage.imageUrl)} alt={exercise.name || ""} className="h-full w-full object-cover" />
       {images.length > 1 && (
         <>
-          <Button
+          <button
             type="button"
-            variant="secondary"
-            size="icon"
+            aria-label="Προηγούμενη φωτογραφία"
             onClick={(event) => {
               setIndex((value) => (value - 1 + images.length) % images.length);
               event.currentTarget.blur();
             }}
-            className="absolute left-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-white/90 text-slate-900 shadow hover:bg-white/90"
+            className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow outline-none"
           >
             <ChevronLeft className="h-5 w-5" />
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
-            variant="secondary"
-            size="icon"
+            aria-label="Επόμενη φωτογραφία"
             onClick={(event) => {
               setIndex((value) => (value + 1) % images.length);
               event.currentTarget.blur();
             }}
-            className="absolute right-3 top-1/2 h-9 w-9 -translate-y-1/2 rounded-full bg-white/90 text-slate-900 shadow hover:bg-white/90"
+            className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow outline-none"
           >
             <ChevronRight className="h-5 w-5" />
-          </Button>
+          </button>
           <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
             {images.map((image, imageIndex) => (
               <Button
