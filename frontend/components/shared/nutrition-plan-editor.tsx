@@ -2,6 +2,17 @@
 
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
   Plus,
   Trash2,
   ChevronDown,
@@ -224,6 +235,13 @@ function scaleFoodMacros(food: LibraryFood, grams: number) {
   };
 }
 
+// Presentation-only lookup — no new FoodEntry field. Rows added via the
+// library already carry foodId; freeform rows just render no image.
+function findLibraryFoodImage(entry: FoodEntry, foods: LibraryFood[]): string | undefined {
+  if (entry.foodId == null) return undefined;
+  return foods.find((item) => String(item.id) === String(entry.foodId))?.imageUrl;
+}
+
 // ---------------------------------------------------------------------------
 // NutritionPlanEditor — same exported prop signature plus one new, optional
 // `foods` prop (defaults to [] so existing call sites keep compiling).
@@ -359,6 +377,32 @@ export function NutritionPlanEditor({
     }
   };
 
+  // ---- NEW (approved): drag a food card from the right panel onto a meal on the left ----
+  const dndSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  const [activeDragFoodId, setActiveDragFoodId] = useState<string | null>(null);
+  const activeDragFood = activeDragFoodId
+    ? foods.find((item) => `lib-food-${item.id}` === activeDragFoodId)
+    : null;
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveDragFoodId(String(event.active.id));
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveDragFoodId(null);
+    if (!over) return;
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    if (!activeId.startsWith("lib-food-") || !overId.startsWith("meal-")) return;
+
+    const foodId = activeId.slice("lib-food-".length);
+    const mealIndex = Number(overId.slice("meal-".length));
+    const food = foods.find((item) => String(item.id) === foodId);
+    if (food && !Number.isNaN(mealIndex)) addFoodFromLibrary(mealIndex, food);
+  };
+
   // Purely derived from existing state — no new stored values.
   const proteinKcal = Number(plan.proteinG || 0) * 4;
   const carbsKcal = Number(plan.carbsG || 0) * 4;
@@ -420,6 +464,7 @@ export function NutritionPlanEditor({
         <Field label="Γενικές οδηγίες διατροφής" value={plan.notes} onChange={(value) => setPlan({ ...plan, notes: value })} />
       </div>
 
+      <DndContext sensors={dndSensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <ResizablePanelGroup orientation="horizontal" className="min-h-130">
         {/* LEFT 70% — meals, unchanged */}
         <ResizablePanel defaultSize={70} minSize={50}>
@@ -427,7 +472,8 @@ export function NutritionPlanEditor({
         {plan.meals.map((meal, mealIndex) => {
           const MealIcon = MEAL_ICONS[meal.mealType] || Utensils;
           return (
-            <Card key={mealIndex}>
+            <MealDropZone key={mealIndex} mealIndex={mealIndex}>
+            <Card>
               <CardHeader>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="flex items-center gap-3">
@@ -483,12 +529,20 @@ export function NutritionPlanEditor({
                           {meal.foods.map((food, foodIndex) => (
                             <TableRow key={foodIndex}>
                               <TableCell className="align-top">
-                                <FoodPicker
-                                  foods={foods}
-                                  food={food}
-                                  onChangeName={(value) => updateFoodName(mealIndex, foodIndex, value)}
-                                  onSelectFood={(libraryFood) => selectFoodFromLibrary(mealIndex, foodIndex, libraryFood)}
-                                />
+                                <div className="flex items-start gap-2">
+                                  {findLibraryFoodImage(food, foods) && (
+                                    <span className="mt-0.5 h-9 w-9 shrink-0 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img src={resolveMediaUrl(findLibraryFoodImage(food, foods))} alt="" className="h-full w-full object-cover" />
+                                    </span>
+                                  )}
+                                  <FoodPicker
+                                    foods={foods}
+                                    food={food}
+                                    onChangeName={(value) => updateFoodName(mealIndex, foodIndex, value)}
+                                    onSelectFood={(libraryFood) => selectFoodFromLibrary(mealIndex, foodIndex, libraryFood)}
+                                  />
+                                </div>
                               </TableCell>
                               <TableCell className="align-top">
                                 <Input
@@ -560,6 +614,7 @@ export function NutritionPlanEditor({
                 </Collapsible>
               </CardContent>
             </Card>
+            </MealDropZone>
           );
         })}
 
@@ -621,6 +676,11 @@ export function NutritionPlanEditor({
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>
+
+      <DragOverlay>
+        {activeDragFood && <LibraryFoodDragPreview food={activeDragFood} />}
+      </DragOverlay>
+      </DndContext>
 
       {/* Sticky bottom summary bar — totals vs targets, purely derived from existing state */}
       <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-4 border-t border-slate-200 bg-white/95 px-6 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
@@ -794,9 +854,18 @@ function LibraryFoodRow({
   onAddToMeal: (mealIndex: number) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `lib-food-${food.id}` });
 
   return (
-    <div className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5 dark:border-slate-800">
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={cn(
+        "flex cursor-grab touch-none items-center gap-3 border-b border-slate-100 px-3 py-2.5 active:cursor-grabbing dark:border-slate-800",
+        isDragging && "opacity-30",
+      )}
+    >
       <span className="h-10 w-10 shrink-0 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
         {food.imageUrl && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -840,6 +909,39 @@ function LibraryFoodRow({
           </div>
         </PopoverContent>
       </Popover>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// NEW: MealDropZone — makes a meal card a drop target for a dragged food row.
+// Card doesn't forward `ref` (only className/size before spreading props),
+// so the droppable ref goes on a wrapping div, same fix used in
+// training-plan-editor.tsx for the same reason.
+// ---------------------------------------------------------------------------
+
+function MealDropZone({ mealIndex, children }: { mealIndex: number; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `meal-${mealIndex}` });
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn("rounded-lg transition-shadow", isOver && "ring-2 ring-red-400 ring-offset-2 dark:ring-offset-slate-900")}
+    >
+      {children}
+    </div>
+  );
+}
+
+function LibraryFoodDragPreview({ food }: { food: LibraryFood }) {
+  return (
+    <div className="flex w-64 items-center gap-3 rounded-md border border-slate-200 bg-white p-2 shadow-lg dark:border-slate-800 dark:bg-slate-900">
+      <span className="h-10 w-10 shrink-0 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
+        {food.imageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={resolveMediaUrl(food.imageUrl)} alt="" className="h-full w-full object-cover" />
+        )}
+      </span>
+      <span className="truncate text-sm font-bold">{food.nameGr}</span>
     </div>
   );
 }
