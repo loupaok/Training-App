@@ -257,6 +257,30 @@ router.get('/filters', authorizeRole(['coach', 'admin', 'moderator']), async (re
   }
 });
 
+router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureExerciseImagesTable(connection);
+    const [rows] = await connection.query(
+      `SELECT id, name, muscle_group AS muscleGroup, secondary_muscles AS secondaryMuscles,
+              equipment, level, type, image_url AS imageUrl, video_url AS videoUrl,
+              instructions, programs_count AS programsCount
+       FROM exercises WHERE id = ?`,
+      [req.params.id]
+    );
+    if (!rows.length) {
+      connection.release();
+      return res.status(404).json({ message: 'Exercise not found' });
+    }
+    const imagesMap = await getExerciseImagesMap(connection, [rows[0].id]);
+    connection.release();
+    res.json(attachImages(rows, imagesMap)[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.post('/', authorizeRole(['coach', 'admin']), [
   body('name').optional().isString(),
   body('muscleGroup').optional().isString(),
