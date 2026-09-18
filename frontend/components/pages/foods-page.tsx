@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, Plus, Pencil, Trash2, ImageOff, Import } from "lucide-react";
+import { Search, Plus, Pencil, Trash2, ImageOff, Images } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CoachShell } from "@/components/shell/coach-shell";
 import PaginationControls from "@/components/shared/pagination-controls";
+import type { MediaFolder } from "@/components/shared/media-folder-tree";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl } from "@/lib/media";
@@ -129,27 +130,42 @@ function foodToForm(food: Food): FoodForm {
   };
 }
 
-interface UnsplashResult {
-  id: string;
-  imageUrl: string;
-  fullImageUrl: string;
-  credit: string;
+interface MediaPickerItem {
+  entityId: number;
+  title: string;
+  url: string;
 }
 
-interface OpenFoodFactsResult {
-  code: string;
-  name: string;
-  brand: string;
-  imageUrl: string;
-  caloriesPer100g: number | null;
-  proteinPer100g: number | null;
-  carbsPer100g: number | null;
-  fatsPer100g: number | null;
-  fiberPer100g: number | null;
-}
+const PICKER_PAGE_SIZE = 20;
 
 function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+// Flattens the Τρόφιμα category's folder subtree into a depth-indented list
+// for the picker's folder <Select> — mirrors the Media Gallery's own
+// flattenFolderOptions, kept local here since this page stays self-contained.
+function foodFolderOptions(folders: MediaFolder[]): Array<{ id: number; label: string }> {
+  const root = folders.find((folder) => folder.category === "food");
+  if (!root) return [];
+
+  const byParent = new Map<number | null, MediaFolder[]>();
+  folders.forEach((folder) => {
+    const list = byParent.get(folder.parentId) ?? [];
+    list.push(folder);
+    byParent.set(folder.parentId, list);
+  });
+
+  const result: Array<{ id: number; label: string }> = [{ id: root.id, label: root.name }];
+  const walk = (parentId: number, depth: number) => {
+    const children = (byParent.get(parentId) ?? []).slice().sort((a, b) => a.name.localeCompare(b.name, "el"));
+    children.forEach((child) => {
+      result.push({ id: child.id, label: `${"— ".repeat(depth)}${child.name}` });
+      walk(child.id, depth + 1);
+    });
+  };
+  walk(root.id, 1);
+  return result;
 }
 
 function FoodsContent() {
@@ -172,16 +188,13 @@ function FoodsContent() {
   const [saving, setSaving] = useState(false);
   const [formMessage, setFormMessage] = useState("");
 
-  const [unsplashQuery, setUnsplashQuery] = useState("");
-  const [unsplashResults, setUnsplashResults] = useState<UnsplashResult[]>([]);
-  const [unsplashLoading, setUnsplashLoading] = useState(false);
-  const [unsplashMessage, setUnsplashMessage] = useState("");
-
-  const [offOpen, setOffOpen] = useState(false);
-  const [offQuery, setOffQuery] = useState("");
-  const [offResults, setOffResults] = useState<OpenFoodFactsResult[]>([]);
-  const [offLoading, setOffLoading] = useState(false);
-  const [offMessage, setOffMessage] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerFolders, setPickerFolders] = useState<MediaFolder[]>([]);
+  const [pickerFolderId, setPickerFolderId] = useState<number | null>(null);
+  const [pickerItems, setPickerItems] = useState<MediaPickerItem[]>([]);
+  const [pickerTotal, setPickerTotal] = useState(0);
+  const [pickerPage, setPickerPage] = useState(1);
+  const [pickerLoading, setPickerLoading] = useState(false);
 
   // Debounce search input by 300ms before it drives any fetch.
   useEffect(() => {
@@ -230,9 +243,6 @@ function FoodsContent() {
     setEditingId(null);
     setForm(emptyForm);
     setFormMessage("");
-    setUnsplashResults([]);
-    setUnsplashMessage("");
-    setUnsplashQuery("");
     setDialogOpen(true);
   };
 
@@ -241,9 +251,6 @@ function FoodsContent() {
     setEditingId(food.id);
     setForm(foodToForm(food));
     setFormMessage("");
-    setUnsplashResults([]);
-    setUnsplashMessage("");
-    setUnsplashQuery(food.nameEn || food.nameGr);
     setDialogOpen(true);
   };
 
@@ -307,64 +314,44 @@ function FoodsContent() {
     }
   };
 
-  const searchUnsplash = async () => {
-    const query = (unsplashQuery || form.nameEn).trim();
-    if (!query) return;
-    setUnsplashLoading(true);
-    setUnsplashMessage("");
+  const fetchPickerPage = (folderId: number, page: number, replace: boolean) => {
+    setPickerLoading(true);
+    const params = new URLSearchParams({ folderId: String(folderId), page: String(page), limit: String(PICKER_PAGE_SIZE) });
+    api
+      .get<{ items: MediaPickerItem[]; total: number; page: number }>(`/media/categories/food?${params.toString()}`)
+      .then((data) => {
+        setPickerItems((current) => (replace ? data.items : [...current, ...data.items]));
+        setPickerTotal(data.total);
+        setPickerPage(data.page);
+      })
+      .catch(() => {
+        if (replace) setPickerItems([]);
+      })
+      .finally(() => setPickerLoading(false));
+  };
+
+  const openPicker = async () => {
+    setPickerOpen(true);
     try {
-      const data = await api.get<{ results: UnsplashResult[]; message?: string }>(
-        `/foods/search/unsplash?q=${encodeURIComponent(query)}`,
-      );
-      setUnsplashResults(data.results || []);
-      if (data.message) setUnsplashMessage(data.message);
-      else if (!data.results?.length) setUnsplashMessage("Δεν βρέθηκαν φωτογραφίες.");
-    } catch (err) {
-      setUnsplashMessage(getErrorMessage(err, "Η αναζήτηση φωτογραφίας απέτυχε."));
-    } finally {
-      setUnsplashLoading(false);
+      const folders = await api.get<MediaFolder[]>("/media/folders");
+      setPickerFolders(folders);
+      const root = folders.find((folder) => folder.category === "food");
+      const rootId = root ? root.id : null;
+      setPickerFolderId(rootId);
+      if (rootId !== null) fetchPickerPage(rootId, 1, true);
+    } catch {
+      setPickerFolders([]);
     }
   };
 
-  const searchOpenFoodFacts = async () => {
-    if (!offQuery.trim()) return;
-    setOffLoading(true);
-    setOffMessage("");
-    try {
-      const data = await api.get<{ results: OpenFoodFactsResult[] }>(
-        `/foods/search/openfoodfacts?q=${encodeURIComponent(offQuery.trim())}`,
-      );
-      setOffResults(data.results || []);
-      if (!data.results?.length) setOffMessage("Δεν βρέθηκαν προϊόντα.");
-    } catch (err) {
-      setOffMessage(getErrorMessage(err, "Η αναζήτηση στο Open Food Facts απέτυχε. Δοκίμασε ξανά."));
-    } finally {
-      setOffLoading(false);
-    }
+  const choosePickerFolder = (folderId: number) => {
+    setPickerFolderId(folderId);
+    fetchPickerPage(folderId, 1, true);
   };
 
-  const importFromOpenFoodFacts = (result: OpenFoodFactsResult) => {
-    setOffOpen(false);
-    setIsCreating(true);
-    setEditingId(null);
-    setForm({
-      nameGr: result.name || "",
-      nameEn: result.name || "",
-      category: "other",
-      caloriesPer100g: result.caloriesPer100g != null ? String(result.caloriesPer100g) : "",
-      proteinPer100g: result.proteinPer100g != null ? String(result.proteinPer100g) : "",
-      carbsPer100g: result.carbsPer100g != null ? String(result.carbsPer100g) : "",
-      fatsPer100g: result.fatsPer100g != null ? String(result.fatsPer100g) : "",
-      fiberPer100g: result.fiberPer100g != null ? String(result.fiberPer100g) : "",
-      servingSize: "100",
-      servingUnit: "g",
-      imageUrl: result.imageUrl || "",
-    });
-    setFormMessage("Έλεγξε τα στοιχεία που εισήχθησαν από το Open Food Facts πριν αποθηκεύσεις.");
-    setUnsplashResults([]);
-    setUnsplashMessage("");
-    setUnsplashQuery(result.name || "");
-    setDialogOpen(true);
+  const choosePickerImage = (url: string) => {
+    updateForm("imageUrl", url);
+    setPickerOpen(false);
   };
 
   const activeCategoryLabel = useMemo(
@@ -382,10 +369,6 @@ function FoodsContent() {
           </Badge>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" className="gap-2 font-bold" onClick={() => setOffOpen(true)}>
-            <Import className="h-4 w-4" />
-            Εισαγωγή από Open Food Facts
-          </Button>
           <Button type="button" className="gap-2 font-bold" onClick={openCreate}>
             <Plus className="h-4 w-4" />
             Νέο Τρόφιμο
@@ -442,30 +425,34 @@ function FoodsContent() {
                   </Badge>
                 )}
               </div>
-              <div className="text-xs text-muted-foreground">
+              <div className="text-sm text-muted-foreground">
                 {food.caloriesPer100g != null ? Number(food.caloriesPer100g) : "—"} kcal
               </div>
-              <div className="flex items-center justify-between gap-1">
-                <div className="flex items-center gap-1.5 text-xs font-medium">
-                  <span className="text-blue-600 dark:text-blue-400">P:{food.proteinPer100g ?? "—"}</span>
-                  <span className="text-yellow-600 dark:text-yellow-500">C:{food.carbsPer100g ?? "—"}</span>
-                  <span className="text-red-600 dark:text-red-400">F:{food.fatsPer100g ?? "—"}</span>
-                </div>
-                <div className="flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                  <Button type="button" variant="ghost" size="icon-sm" onClick={() => openEdit(food)} aria-label="Edit">
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10"
-                    onClick={() => deleteFood(food)}
-                    aria-label="Delete"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+              <div className="flex flex-col text-xs font-medium">
+                <span className="text-blue-600 dark:text-blue-400">
+                  Πρωτεΐνη: {food.proteinPer100g != null ? Math.round(Number(food.proteinPer100g)) : "—"}g
+                </span>
+                <span className="text-yellow-600 dark:text-yellow-500">
+                  Υδατάνθρακες: {food.carbsPer100g != null ? Math.round(Number(food.carbsPer100g)) : "—"}g
+                </span>
+                <span className="text-red-600 dark:text-red-400">
+                  Λίπη: {food.fatsPer100g != null ? Math.round(Number(food.fatsPer100g)) : "—"}g
+                </span>
+              </div>
+              <div className="flex justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                <Button type="button" variant="ghost" size="icon-sm" onClick={() => openEdit(food)} aria-label="Edit">
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10"
+                  onClick={() => deleteFood(food)}
+                  aria-label="Delete"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
               </div>
             </div>
           </Card>
@@ -556,50 +543,22 @@ function FoodsContent() {
 
             <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800">
               <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Φωτογραφία</span>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Input
-                  value={unsplashQuery}
-                  onChange={(event) => setUnsplashQuery(event.target.value)}
-                  placeholder="Όρος αναζήτησης (π.χ. name_en)"
-                  className="h-10 max-w-xs flex-1"
-                />
-                <Button type="button" variant="outline" onClick={searchUnsplash} disabled={unsplashLoading} className="h-10 gap-2 font-bold">
-                  <Search className="h-4 w-4" />
-                  {unsplashLoading ? "Αναζήτηση..." : "Αναζήτηση φωτογραφίας"}
+              <div className="mt-3 flex items-center gap-3">
+                <div className="h-20 w-20 shrink-0 overflow-hidden rounded-md bg-slate-200 dark:bg-slate-700">
+                  {form.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={resolveMediaUrl(form.imageUrl)} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center">
+                      <ImageOff className="h-6 w-6 text-slate-300 dark:text-slate-600" />
+                    </div>
+                  )}
+                </div>
+                <Button type="button" variant="outline" onClick={openPicker} className="h-10 gap-2 font-bold">
+                  <Images className="h-4 w-4" />
+                  Επιλογή από Media Library
                 </Button>
               </div>
-              {unsplashMessage && <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">{unsplashMessage}</p>}
-              {unsplashResults.length > 0 && (
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  {unsplashResults.map((result) => (
-                    <button
-                      key={result.id}
-                      type="button"
-                      onClick={() => updateForm("imageUrl", result.fullImageUrl || result.imageUrl)}
-                      className={cn(
-                        "relative h-24 overflow-hidden rounded-md border-2",
-                        form.imageUrl === (result.fullImageUrl || result.imageUrl) ? "border-red-500" : "border-transparent",
-                      )}
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={result.imageUrl} alt={result.credit} className="h-full w-full object-cover" />
-                    </button>
-                  ))}
-                </div>
-              )}
-              <LabeledInput
-                label="Ή URL φωτογραφίας"
-                value={form.imageUrl}
-                onChange={(value) => updateForm("imageUrl", value)}
-                placeholder="https://..."
-                className="mt-3"
-              />
-              {form.imageUrl && (
-                <div className="mt-3 h-24 w-24 overflow-hidden rounded-md bg-slate-200 dark:bg-slate-700">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={resolveMediaUrl(form.imageUrl)} alt="" className="h-full w-full object-cover" />
-                </div>
-              )}
             </div>
 
             {formMessage && (
@@ -617,53 +576,64 @@ function FoodsContent() {
         </DialogContent>
       </Dialog>
 
-      {/* Import from Open Food Facts Dialog */}
-      <Dialog open={offOpen} onOpenChange={setOffOpen}>
+      {/* Media Library photo picker */}
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
         <DialogContent className="max-h-[85vh] w-full max-w-xl overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Εισαγωγή από Open Food Facts</DialogTitle>
-            <DialogDescription>Βρες ένα προϊόν και εισήγαγε τα μακροθρεπτικά του στη φόρμα.</DialogDescription>
+            <DialogTitle>Επιλογή φωτογραφίας από Media Library</DialogTitle>
+            <DialogDescription>Οι φωτογραφίες τροφίμων είναι οργανωμένες στον φάκελο Τρόφιμα.</DialogDescription>
           </DialogHeader>
-          <div className="flex gap-2">
-            <Input
-              value={offQuery}
-              onChange={(event) => setOffQuery(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && searchOpenFoodFacts()}
-              placeholder="π.χ. chicken breast"
-              className="h-11 flex-1"
-            />
-            <Button type="button" onClick={searchOpenFoodFacts} disabled={offLoading} className="h-11 gap-2 font-bold">
-              <Search className="h-4 w-4" />
-              {offLoading ? "Αναζήτηση..." : "Αναζήτηση"}
-            </Button>
-          </div>
-          {offMessage && <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">{offMessage}</p>}
-          <div className="space-y-2">
-            {offResults.map((result) => (
-              <div
-                key={result.code}
-                className="flex items-center gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800"
-              >
-                <span className="h-14 w-14 shrink-0 overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
-                  {result.imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={result.imageUrl} alt="" className="h-full w-full object-cover" />
-                  ) : null}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-bold">{result.name}</div>
-                  <div className="truncate text-xs text-slate-500 dark:text-slate-400">
-                    {result.brand ? `${result.brand} · ` : ""}
-                    {result.caloriesPer100g ?? "—"} kcal · P:{result.proteinPer100g ?? "—"} C:{result.carbsPer100g ?? "—"} F:
-                    {result.fatsPer100g ?? "—"}
-                  </div>
-                </div>
-                <Button type="button" variant="outline" size="sm" className="shrink-0 font-bold" onClick={() => importFromOpenFoodFacts(result)}>
-                  Εισαγωγή
-                </Button>
+          {pickerFolders.length > 0 && (
+            <Select
+              value={pickerFolderId != null ? String(pickerFolderId) : undefined}
+              onValueChange={(value) => value && choosePickerFolder(Number(value))}
+            >
+              <SelectTrigger className="h-10 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {foodFolderOptions(pickerFolders).map((option) => (
+                  <SelectItem key={option.id} value={String(option.id)}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {pickerLoading && !pickerItems.length ? (
+            <p className="py-8 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">Φόρτωση...</p>
+          ) : !pickerItems.length ? (
+            <p className="py-8 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
+              Δεν βρέθηκαν φωτογραφίες σε αυτόν τον φάκελο.
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                {pickerItems.map((item) => (
+                  <button
+                    key={item.entityId}
+                    type="button"
+                    onClick={() => choosePickerImage(item.url)}
+                    className="relative aspect-square overflow-hidden rounded-md border-2 border-transparent hover:border-red-400"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={resolveMediaUrl(item.url)} alt={item.title} className="h-full w-full object-cover" />
+                  </button>
+                ))}
               </div>
-            ))}
-          </div>
+              {pickerItems.length < pickerTotal && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={pickerLoading}
+                  onClick={() => pickerFolderId !== null && fetchPickerPage(pickerFolderId, pickerPage + 1, false)}
+                  className="mt-1 w-full font-medium text-slate-500 hover:text-red-600 dark:text-slate-400"
+                >
+                  {pickerLoading ? "Φόρτωση..." : `Εμφάνιση περισσότερων (${pickerTotal - pickerItems.length} ακόμα)`}
+                </Button>
+              )}
+            </>
+          )}
         </DialogContent>
       </Dialog>
     </CoachShell>
