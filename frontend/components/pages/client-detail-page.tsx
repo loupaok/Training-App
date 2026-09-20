@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { Alert, AlertTitle, AlertAction } from "@/components/ui/alert";
 import { AreaChart, SparkLineChart, ProgressCircle, ProgressBar } from "@tremor/react";
 import {
   Table,
@@ -158,9 +159,9 @@ interface StatusMetaResult {
 const tabs = [
   { id: "overview", label: "Επισκόπηση" },
   { id: "progress", label: "Πρόοδος" },
-  { id: "payments", label: "Ιστορικό Πληρωμών" },
   { id: "training", label: "Πρόγραμμα Προπόνησης" },
   { id: "nutrition", label: "Πρόγραμμα Διατροφής" },
+  { id: "payments", label: "Πληρωμές" },
   { id: "messages", label: "Μηνύματα" },
 ];
 
@@ -623,20 +624,6 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
               <ProgressTab client={client} />
             </TabsContent>
 
-            <TabsContent value="payments" className="mt-6">
-              <PaymentsTab
-                client={client}
-                clientId={clientId}
-                onApprovePayment={approvePayment}
-                onRejectPayment={rejectPayment}
-                approvingPayment={approvingPayment}
-                rejectingPaymentId={rejectingPaymentId}
-                onUpdated={loadClientDetail}
-                manualPaymentOpen={manualPaymentOpen}
-                onManualPaymentOpenChange={setManualPaymentOpen}
-              />
-            </TabsContent>
-
             <TabsContent value="training" className="mt-6 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <Badge variant="outline" className="h-auto gap-2 px-3 py-1.5 text-sm font-bold">
@@ -686,6 +673,20 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 onCreateNew={createNewNutritionPlan}
                 saving={savingNutrition}
                 history={nutritionHistory}
+              />
+            </TabsContent>
+
+            <TabsContent value="payments" className="mt-6">
+              <PaymentsTab
+                client={client}
+                clientId={clientId}
+                onApprovePayment={approvePayment}
+                onRejectPayment={rejectPayment}
+                approvingPayment={approvingPayment}
+                rejectingPaymentId={rejectingPaymentId}
+                onUpdated={loadClientDetail}
+                manualPaymentOpen={manualPaymentOpen}
+                onManualPaymentOpenChange={setManualPaymentOpen}
               />
             </TabsContent>
 
@@ -830,28 +831,27 @@ function NextActionsPanel({ client }: { client: ClientRecord }) {
   return (
     <div className="space-y-2">
       {visible.map((action) => (
-        <div
+        <Alert
           key={action.id}
+          variant={action.severity === "red" ? "destructive" : "default"}
           className={cn(
-            "flex items-center justify-between gap-3 rounded-lg border p-4 text-sm font-bold",
-            action.severity === "red"
-              ? "border-red-200 bg-red-50 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400"
-              : "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-400",
+            action.severity === "amber" &&
+              "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-400",
           )}
         >
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            {action.text}
-          </div>
-          <button
-            type="button"
-            onClick={() => setDismissed((current) => new Set(current).add(action.id))}
-            aria-label="Απόρριψη"
-            className="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>{action.text}</AlertTitle>
+          <AlertAction>
+            <button
+              type="button"
+              onClick={() => setDismissed((current) => new Set(current).add(action.id))}
+              aria-label="Απόρριψη"
+              className="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </AlertAction>
+        </Alert>
       ))}
     </div>
   );
