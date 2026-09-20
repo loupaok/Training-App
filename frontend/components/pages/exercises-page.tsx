@@ -20,6 +20,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
@@ -278,19 +279,24 @@ function ExercisesContent() {
           <ScrollBar orientation="horizontal" />
         </ScrollArea>
 
-        <ScrollArea className="w-full whitespace-nowrap">
-          <div className="flex gap-2 pb-2">
-            <FilterPill active={!equipment} onClick={() => setEquipment("")} variant="outline">
-              Όλα
-            </FilterPill>
+        <Select
+          items={[{ value: "all", label: "Όλοι" }, ...EQUIPMENT_TABS.map((option) => ({ value: option, label: option }))]}
+          value={equipment || "all"}
+          onValueChange={(value) => value && setEquipment(value === "all" ? "" : value)}
+        >
+          <SelectTrigger className="h-10 w-full gap-2 sm:w-64">
+            <span className="text-slate-500 dark:text-slate-400">Εξοπλισμός:</span>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Όλοι</SelectItem>
             {EQUIPMENT_TABS.map((option) => (
-              <FilterPill key={option} active={equipment === option} onClick={() => setEquipment(option)} variant="outline">
+              <SelectItem key={option} value={option}>
                 {option}
-              </FilterPill>
+              </SelectItem>
             ))}
-          </div>
-          <ScrollBar orientation="horizontal" />
-        </ScrollArea>
+          </SelectContent>
+        </Select>
 
         {(muscleGroup || equipment) && (
           <div className="flex flex-wrap items-center gap-2">
@@ -463,12 +469,10 @@ function FilterPill({
   children,
   active,
   onClick,
-  variant = "default",
 }: {
   children: React.ReactNode;
   active: boolean;
   onClick: () => void;
-  variant?: "default" | "outline";
 }) {
   return (
     <button
@@ -477,9 +481,7 @@ function FilterPill({
       className={cn(
         "shrink-0 whitespace-nowrap rounded-full border px-3.5 py-2 text-sm font-bold transition-colors",
         active
-          ? variant === "outline"
-            ? "border-slate-800 bg-slate-800 text-white dark:border-slate-200 dark:bg-slate-200 dark:text-slate-900"
-            : "border-red-500 bg-red-500 text-white"
+          ? "border-red-500 bg-red-500 text-white"
           : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300",
       )}
     >
