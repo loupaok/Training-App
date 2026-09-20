@@ -1798,9 +1798,9 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
 // PUT /clients/:id/details — coach edits a client's personal info / coach-only notes
 router.put('/:id/details', authorizeRole(['coach', 'admin']), [
   body('dateOfBirth').optional({ nullable: true }).isString(),
-  body('gender').optional({ nullable: true }).isIn(['male', 'female', 'other']),
-  body('heightCm').optional({ nullable: true }).isNumeric(),
-  body('weightKg').optional({ nullable: true }).isNumeric(),
+  body('gender').optional({ nullable: true, checkFalsy: true }).isIn(['male', 'female', 'other']),
+  body('heightCm').optional({ nullable: true, checkFalsy: true }).isNumeric(),
+  body('weightKg').optional({ nullable: true, checkFalsy: true }).isNumeric(),
   body('fitnessGoal').optional({ nullable: true }).isString(),
   body('medicalNotes').optional({ nullable: true }).isString(),
   body('emergencyContactName').optional({ nullable: true }).isString(),
