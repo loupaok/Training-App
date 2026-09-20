@@ -1402,8 +1402,22 @@ function ProgressTab({ client }: { client: ClientRecord }) {
     .flatMap((update) => update.photos || [])
     .slice(0, 3);
 
+  // weeklyUpdates arrives newest-first, so index 0 is the most recent weight
+  // entry and the last entry in the filtered list is the oldest one available
+  // (bounded by whatever the backend already returns — no new fetch here).
+  const weightEntries = weeklyUpdates.filter((update) => update.weight_kg);
+  const currentWeight = weightEntries.length ? Number(weightEntries[0].weight_kg) : null;
+  const initialWeight = weightEntries.length ? Number(weightEntries[weightEntries.length - 1].weight_kg) : null;
+  const weightChange = currentWeight !== null && initialWeight !== null ? currentWeight - initialWeight : null;
+
   return (
     <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <WeightStatCard label="Αρχικό βάρος" value={initialWeight} />
+        <WeightStatCard label="Τρέχον βάρος" value={currentWeight} />
+        <WeightStatCard label="Αλλαγή" value={weightChange} isChange />
+      </div>
+
       <Card className="p-5">
         <div className="mb-4 flex items-center justify-between">
           <h3 className="text-lg font-bold">Εξέλιξη βάρους</h3>
@@ -1477,6 +1491,34 @@ function ProgressTab({ client }: { client: ClientRecord }) {
         </Table>
       </Card>
     </div>
+  );
+}
+
+function WeightStatCard({
+  label,
+  value,
+  isChange = false,
+}: {
+  label: string;
+  value: number | null;
+  isChange?: boolean;
+}) {
+  let toneClass = "text-slate-900 dark:text-slate-50";
+  if (isChange) {
+    toneClass =
+      value === null || value === 0
+        ? "text-slate-500 dark:text-slate-400"
+        : value < 0
+          ? "text-emerald-600 dark:text-emerald-400"
+          : "text-red-600 dark:text-red-400";
+  }
+  const display = value === null ? "-" : `${isChange && value > 0 ? "+" : ""}${value.toFixed(1)} kg`;
+
+  return (
+    <Card className="p-5">
+      <div className="text-sm font-bold text-slate-500 dark:text-slate-400">{label}</div>
+      <div className={`mt-2 text-2xl font-bold ${toneClass}`}>{display}</div>
+    </Card>
   );
 }
 
