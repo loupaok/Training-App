@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
-import { Sparkles, Mail, Dumbbell, Apple, CreditCard, Ban, X, AlertTriangle } from "lucide-react";
+import { Sparkles, Mail, Dumbbell, Apple, CreditCard, Ban, X, AlertTriangle, ChevronDown, Clock } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl, getInitials } from "@/lib/media";
@@ -21,6 +21,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Alert, AlertTitle, AlertAction } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { AreaChart, SparkLineChart, ProgressCircle, ProgressBar } from "@tremor/react";
 import {
   Table,
@@ -164,6 +166,7 @@ const tabs = [
   { id: "nutrition", label: "Πρόγραμμα Διατροφής" },
   { id: "payments", label: "Πληρωμές" },
   { id: "messages", label: "Μηνύματα" },
+  { id: "activity", label: "Ιστορικό" },
 ];
 
 function formatDate(value?: string | null): string {
@@ -701,6 +704,10 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
 
             <TabsContent value="messages" className="mt-6">
               <MessagesTab clientId={clientId} />
+            </TabsContent>
+
+            <TabsContent value="activity" className="mt-6">
+              <ActivityTab client={client} trainingHistory={trainingHistory} nutritionHistory={nutritionHistory} />
             </TabsContent>
           </Tabs>
         </div>
@@ -1645,6 +1652,263 @@ function MessagesTab({ clientId }: { clientId: string }) {
         </div>
       </div>
     </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Activity tab (Ιστορικό) — assembled client-side from data this page
+// already fetches (weekly updates, payments, plan-history, registration).
+// No new backend endpoint.
+// ---------------------------------------------------------------------------
+
+type ActivityType = "update" | "payment" | "training" | "nutrition" | "registration";
+
+interface ActivityItem {
+  id: string;
+  type: ActivityType;
+  date: string;
+  title: string;
+  detail: string;
+  detailTone?: "amber" | "red";
+  notes?: string;
+}
+
+const ACTIVITY_META: Record<ActivityType, { icon: string; color: string }> = {
+  update: { icon: "📋", color: "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400" },
+  payment: { icon: "💳", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-400" },
+  training: { icon: "🏋️", color: "bg-purple-100 text-purple-700 dark:bg-purple-500/20 dark:text-purple-400" },
+  nutrition: { icon: "🥗", color: "bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-400" },
+  registration: { icon: "👤", color: "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-300" },
+};
+
+function activityColorClass(item: ActivityItem): string {
+  if (item.type === "payment") {
+    if (item.detailTone === "amber") return "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400";
+    if (item.detailTone === "red") return "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400";
+  }
+  return ACTIVITY_META[item.type].color;
+}
+
+function stars(score?: number | string): string {
+  const value = Math.round(Number(score) || 0);
+  return value > 0 ? "⭐".repeat(Math.min(5, value)) : "-";
+}
+
+function buildActivityFeed(
+  client: ClientRecord,
+  trainingHistory: PlanHistoryRow[],
+  nutritionHistory: PlanHistoryRow[],
+): ActivityItem[] {
+  const items: ActivityItem[] = [];
+
+  (client.weeklyUpdates || []).forEach((update) => {
+    if (!update.submitted_at) return;
+    items.push({
+      id: `update-${update.id}`,
+      type: "update",
+      date: update.submitted_at,
+      title: "Εβδομαδιαίο update",
+      detail: `Βάρος: ${update.weight_kg ? `${update.weight_kg}kg` : "-"} · Προπόνηση ${stars(update.training_score)} · Διατροφή ${stars(update.nutrition_score)}`,
+      notes: update.notes || undefined,
+    });
+  });
+
+  (client.payments || []).forEach((payment) => {
+    if (!payment.created_at) return;
+    const title =
+      payment.status === "completed"
+        ? "Πληρωμή επιβεβαιώθηκε"
+        : payment.status === "pending"
+          ? "Πληρωμή εκκρεμεί"
+          : payment.status === "failed"
+            ? "Πληρωμή απέτυχε"
+            : "Πληρωμή";
+    const methodLabel = payment.method === "bank_transfer" ? "Τραπεζικό έμβασμα" : payment.method || "-";
+    items.push({
+      id: `payment-${payment.id}`,
+      type: "payment",
+      date: payment.created_at,
+      title,
+      detail: `${money(payment.amount, payment.currency)} · ${methodLabel}`,
+      detailTone: payment.status === "pending" ? "amber" : payment.status === "failed" ? "red" : undefined,
+    });
+  });
+
+  trainingHistory.forEach((plan) => {
+    if (!plan.created_at) return;
+    items.push({
+      id: `training-${plan.id}`,
+      type: "training",
+      date: plan.created_at,
+      title: "Νέο πρόγραμμα προπόνησης",
+      detail: plan.title || "-",
+    });
+  });
+
+  nutritionHistory.forEach((plan) => {
+    if (!plan.created_at) return;
+    items.push({
+      id: `nutrition-${plan.id}`,
+      type: "nutrition",
+      date: plan.created_at,
+      title: "Νέο πρόγραμμα διατροφής",
+      detail: plan.title || "-",
+    });
+  });
+
+  if (client.created_at) {
+    const earliestPayment = [...(client.payments || [])].sort(
+      (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime(),
+    )[0];
+    const goal = client.fitness_goal || client.onboarding?.goal;
+    const amountPart = earliestPayment?.amount ? ` · ${money(earliestPayment.amount, earliestPayment.currency)}/μήνα` : "";
+    items.push({
+      id: "registration",
+      type: "registration",
+      date: client.created_at,
+      title: "Εγγραφή πελάτη",
+      detail: `${goal ? `Στόχος: ${goal}` : "Χωρίς καταγεγραμμένο στόχο"}${amountPart}`,
+    });
+  }
+
+  return items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
+const GREEK_MONTHS = [
+  "ΙΑΝΟΥΑΡΙΟΣ",
+  "ΦΕΒΡΟΥΑΡΙΟΣ",
+  "ΜΑΡΤΙΟΣ",
+  "ΑΠΡΙΛΙΟΣ",
+  "ΜΑΙΟΣ",
+  "ΙΟΥΝΙΟΣ",
+  "ΙΟΥΛΙΟΣ",
+  "ΑΥΓΟΥΣΤΟΣ",
+  "ΣΕΠΤΕΜΒΡΙΟΣ",
+  "ΟΚΤΩΒΡΙΟΣ",
+  "ΝΟΕΜΒΡΙΟΣ",
+  "ΔΕΚΕΜΒΡΙΟΣ",
+];
+
+function activityBucket(dateStr: string): { key: string; label: string } {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const mondayOffset = (startOfToday.getDay() + 6) % 7;
+  const startOfThisWeek = new Date(startOfToday);
+  startOfThisWeek.setDate(startOfThisWeek.getDate() - mondayOffset);
+  const startOfLastWeek = new Date(startOfThisWeek);
+  startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
+
+  if (date >= startOfToday) return { key: "today", label: "ΣΗΜΕΡΑ" };
+  if (date >= startOfThisWeek) return { key: "this-week", label: "ΑΥΤΗ ΤΗΝ ΕΒΔΟΜΑΔΑ" };
+  if (date >= startOfLastWeek) return { key: "last-week", label: "ΠΡΟΗΓΟΥΜΕΝΗ ΕΒΔΟΜΑΔΑ" };
+  return { key: `${date.getFullYear()}-${date.getMonth()}`, label: `${GREEK_MONTHS[date.getMonth()]} ${date.getFullYear()}` };
+}
+
+function relativeTimeLabel(dateStr: string): string {
+  const diffMs = Date.now() - new Date(dateStr).getTime();
+  const diffDays = Math.floor(diffMs / 86400000);
+  if (diffDays <= 0) return "σήμερα";
+  if (diffDays === 1) return "χθες";
+  if (diffDays < 7) return `${diffDays} μέρες πριν`;
+  const weeks = Math.floor(diffDays / 7);
+  if (weeks < 5) return `${weeks} εβδ. πριν`;
+  const months = Math.floor(diffDays / 30);
+  if (months < 12) return `${months} μήνες πριν`;
+  return `${Math.floor(diffDays / 365)} χρόνια πριν`;
+}
+
+function ActivityTab({
+  client,
+  trainingHistory,
+  nutritionHistory,
+}: {
+  client: ClientRecord;
+  trainingHistory: PlanHistoryRow[];
+  nutritionHistory: PlanHistoryRow[];
+}) {
+  const items = useMemo(() => buildActivityFeed(client, trainingHistory, nutritionHistory), [client, trainingHistory, nutritionHistory]);
+
+  if (!items.length) {
+    return (
+      <Card className="flex flex-col items-center justify-center gap-3 p-16 text-center">
+        <Clock className="h-10 w-10 text-slate-300 dark:text-slate-700" />
+        <p className="font-bold text-slate-500 dark:text-slate-400">Δεν υπάρχει ιστορικό ακόμα</p>
+      </Card>
+    );
+  }
+
+  const groups: { key: string; label: string; items: ActivityItem[] }[] = [];
+  items.forEach((item) => {
+    const bucket = activityBucket(item.date);
+    const existing = groups.find((group) => group.key === bucket.key);
+    if (existing) existing.items.push(item);
+    else groups.push({ key: bucket.key, label: bucket.label, items: [item] });
+  });
+
+  return (
+    <Card className="p-6">
+      <ScrollArea className="h-[70vh] pr-4">
+        <div className="space-y-8">
+          {groups.map((group) => (
+            <div key={group.key}>
+              <h3 className="mb-4 text-xs font-bold tracking-wide text-slate-400 dark:text-slate-500">{group.label}</h3>
+              <div className="relative space-y-5 border-l-2 border-slate-200 pl-6 dark:border-slate-800">
+                {group.items.map((item) => (
+                  <ActivityRow key={item.id} item={item} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </ScrollArea>
+    </Card>
+  );
+}
+
+function ActivityRow({ item }: { item: ActivityItem }) {
+  const [open, setOpen] = useState(false);
+  const meta = ACTIVITY_META[item.type];
+
+  return (
+    <div className="relative">
+      <span
+        className={`absolute -left-[31px] top-0 flex h-7 w-7 items-center justify-center rounded-full text-sm ${activityColorClass(item)}`}
+      >
+        {meta.icon}
+      </span>
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="font-bold text-slate-950 dark:text-slate-50">{item.title}</div>
+            <div className="mt-0.5 text-sm font-semibold text-slate-500 dark:text-slate-400">{item.detail}</div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="text-xs font-bold text-slate-400 dark:text-slate-500">{relativeTimeLabel(item.date)}</span>
+            {item.notes && (
+              <CollapsibleTrigger
+                render={
+                  <button
+                    type="button"
+                    aria-label="Περισσότερα"
+                    className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  />
+                }
+              >
+                <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
+              </CollapsibleTrigger>
+            )}
+          </div>
+        </div>
+        {item.notes && (
+          <CollapsibleContent>
+            <p className="mt-2 rounded-md bg-slate-50 p-3 text-sm font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              {item.notes}
+            </p>
+          </CollapsibleContent>
+        )}
+      </Collapsible>
+    </div>
   );
 }
 
