@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Plus, Pencil, Calendar, Trash2, Search, X, Mail, Ban } from "lucide-react";
+import { Plus, Pencil, Eye, Trash2, Search, X, Mail, Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -138,12 +138,6 @@ function mapApiClient(row: ClientApiRow): MappedClient {
     initials: getInitials(row.full_name || row.email),
     tone: "bg-slate-900",
   };
-}
-
-function FilterBox({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`flex h-[68px] items-center rounded-lg border border-slate-200 bg-white px-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 ${className}`}>{children}</div>
-  );
 }
 
 function ClientsContent() {
@@ -411,82 +405,76 @@ function ClientsContent() {
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-12">
-        <FilterBox className="lg:col-span-4">
-          <Search className="mr-3 h-5 w-5 shrink-0 text-slate-500 dark:text-slate-400" />
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex h-9 min-w-[180px] flex-1 items-center gap-2 rounded-md border border-slate-200 px-2.5 dark:border-slate-800">
+          <Search className="h-4 w-4 shrink-0 text-slate-400" />
           <Input
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Αναζήτηση πελάτη..."
-            className="h-auto border-none bg-transparent p-0 text-base shadow-none focus-visible:ring-0"
+            className="h-auto border-none bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
           />
-        </FilterBox>
+        </div>
 
-        <FilterBox className="lg:col-span-2">
-          <Select
-            items={[
-              { value: "all", label: "Κατάσταση: Όλοι" },
-              { value: "active", label: "Ενεργοί" },
-              { value: "expiring", label: "Λήγουν" },
-              { value: "inactive", label: "Έληξε" },
-              { value: "pending", label: "Εκκρεμής έγκριση" },
-            ]}
-            value={statusFilter}
-            onValueChange={(value) => setStatusFilter(value ?? "all")}
-          >
-            <SelectTrigger className="h-full w-full border-none px-0 shadow-none">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Κατάσταση: Όλοι</SelectItem>
-              <SelectItem value="active">Ενεργοί</SelectItem>
-              <SelectItem value="expiring">Λήγουν</SelectItem>
-              <SelectItem value="inactive">Έληξε</SelectItem>
-              <SelectItem value="pending">Εκκρεμής έγκριση</SelectItem>
-            </SelectContent>
-          </Select>
-        </FilterBox>
+        <Select
+          items={[
+            { value: "all", label: "Κατάσταση: Όλοι" },
+            { value: "active", label: "Ενεργοί" },
+            { value: "expiring", label: "Λήγουν" },
+            { value: "inactive", label: "Έληξε" },
+            { value: "pending", label: "Εκκρεμής έγκριση" },
+          ]}
+          value={statusFilter}
+          onValueChange={(value) => setStatusFilter(value ?? "all")}
+        >
+          <SelectTrigger size="sm" className="w-auto shrink-0 font-semibold">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Κατάσταση: Όλοι</SelectItem>
+            <SelectItem value="active">Ενεργοί</SelectItem>
+            <SelectItem value="expiring">Λήγουν</SelectItem>
+            <SelectItem value="inactive">Έληξε</SelectItem>
+            <SelectItem value="pending">Εκκρεμής έγκριση</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <FilterBox className="lg:col-span-2">
-          <Select items={programOptions} value={programFilter} onValueChange={(value) => setProgramFilter(value ?? "all")}>
-            <SelectTrigger className="h-full w-full border-none px-0 shadow-none">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {programOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FilterBox>
+        <Select items={programOptions} value={programFilter} onValueChange={(value) => setProgramFilter(value ?? "all")}>
+          <SelectTrigger size="sm" className="w-auto shrink-0 font-semibold">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {programOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-        <FilterBox className="lg:col-span-3">
-          <Select
-            items={[
-              { value: "name", label: "Ταξινόμηση: Όνομα A-Z" },
-              { value: "subscriptionExpiry", label: "Λήξη συνδρομής" },
-              { value: "lastUpdate", label: "Τελευταίο update" },
-              { value: "newest", label: "Ημ. εγγραφής" },
-            ]}
-            value={sortBy}
-            onValueChange={(value) => setSortBy(value ?? "newest")}
-          >
-            <SelectTrigger className="h-full w-full border-none px-0 shadow-none">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="name">Ταξινόμηση: Όνομα A-Z</SelectItem>
-              <SelectItem value="subscriptionExpiry">Λήξη συνδρομής</SelectItem>
-              <SelectItem value="lastUpdate">Τελευταίο update</SelectItem>
-              <SelectItem value="newest">Ημ. εγγραφής</SelectItem>
-            </SelectContent>
-          </Select>
-        </FilterBox>
+        <Select
+          items={[
+            { value: "name", label: "Ταξινόμηση: Όνομα A-Z" },
+            { value: "subscriptionExpiry", label: "Λήξη συνδρομής" },
+            { value: "lastUpdate", label: "Τελευταίο update" },
+            { value: "newest", label: "Ημ. εγγραφής" },
+          ]}
+          value={sortBy}
+          onValueChange={(value) => setSortBy(value ?? "newest")}
+        >
+          <SelectTrigger size="sm" className="w-auto shrink-0 font-semibold">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="name">Ταξινόμηση: Όνομα A-Z</SelectItem>
+            <SelectItem value="subscriptionExpiry">Λήξη συνδρομής</SelectItem>
+            <SelectItem value="lastUpdate">Τελευταίο update</SelectItem>
+            <SelectItem value="newest">Ημ. εγγραφής</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <Button variant="outline" onClick={resetFilters} className="h-[68px] font-bold lg:col-span-1">
+        <Button variant="outline" size="sm" onClick={resetFilters} className="shrink-0 font-bold">
           Reset
         </Button>
       </div>
@@ -572,22 +560,22 @@ function ClientsContent() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      title="Επεξεργασία πελάτη"
-                      aria-label="Επεξεργασία πελάτη"
+                      title="Προβολή πελάτη"
+                      aria-label="Προβολή πελάτη"
                       nativeButton={false}
-                      render={<Link href={`/clients/${client.id}?action=edit`} />}
+                      render={<Link href={`/clients/${client.id}`} />}
                     >
-                      <Pencil className="h-4 w-4" />
+                      <Eye className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      title="Προσθήκη update"
-                      aria-label="Προσθήκη update"
+                      title="Επεξεργασία πελάτη"
+                      aria-label="Επεξεργασία πελάτη"
                       nativeButton={false}
-                      render={<Link href={`/clients/${client.id}?action=update`} />}
+                      render={<Link href={`/clients/${client.id}`} />}
                     >
-                      <Calendar className="h-4 w-4" />
+                      <Pencil className="h-4 w-4" />
                     </Button>
                     <Button
                       variant="ghost"
