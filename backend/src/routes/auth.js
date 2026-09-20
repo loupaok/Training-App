@@ -51,7 +51,7 @@ function readCookie(req, name) {
     ?.slice(name.length + 1);
 }
 
-function setAuthCookies(res, accessToken, refreshToken) {
+export function setAuthCookies(res, accessToken, refreshToken) {
   res.cookie('accessToken', accessToken, cookieOptions(7 * 24 * 60 * 60 * 1000));
   if (refreshToken) {
     res.cookie('refreshToken', refreshToken, cookieOptions(30 * 24 * 60 * 60 * 1000));
@@ -63,7 +63,7 @@ function clearAuthCookies(res) {
   res.clearCookie('refreshToken', { path: '/' });
 }
 
-function generateAccessToken(user) {
+export function generateAccessToken(user) {
   return jwt.sign(
     { id: user.id, email: user.email, role: user.role },
     process.env.JWT_SECRET,
@@ -71,7 +71,7 @@ function generateAccessToken(user) {
   );
 }
 
-function generateRefreshToken() {
+export function generateRefreshToken() {
   return crypto.randomBytes(64).toString('hex');
 }
 
@@ -89,7 +89,7 @@ function getRedirectPath(user, onboardingCompleted = true) {
   return '/login';
 }
 
-async function ensureAuthSchema(connection) {
+export async function ensureAuthSchema(connection) {
   for (const statement of [
     'ALTER TABLE users ADD COLUMN first_name VARCHAR(100)',
     'ALTER TABLE users ADD COLUMN last_name VARCHAR(100)',
@@ -129,6 +129,18 @@ async function getOnboardingCompleted(connection, userId, role) {
   try {
     const [rows] = await connection.query(
       'SELECT id FROM onboarding_forms WHERE client_id = ?',
+      [userId]
+    );
+    if (rows.length > 0) return true;
+  } catch (error) {
+    if (error.code !== 'ER_NO_SUCH_TABLE') throw error;
+  }
+
+  // Clients created through the new /register wizard skip onboarding_forms
+  // entirely — their questionnaire answers are the completion signal instead.
+  try {
+    const [rows] = await connection.query(
+      'SELECT id FROM questionnaire_answers WHERE client_id = ? LIMIT 1',
       [userId]
     );
     return rows.length > 0;

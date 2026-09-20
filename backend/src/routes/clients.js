@@ -403,7 +403,7 @@ function normalizeSocialLinks(raw) {
   }
 }
 
-async function getDefaultCoachId(connection) {
+export async function getDefaultCoachId(connection) {
   const [rows] = await connection.query(
     "SELECT id FROM users WHERE role IN ('admin', 'coach') AND is_active = 1 ORDER BY FIELD(role, 'coach', 'admin'), id LIMIT 1"
   );
@@ -495,7 +495,7 @@ async function ensureMessagesSchema(connection) {
   `);
 }
 
-async function ensureNotificationsSchema(connection) {
+export async function ensureNotificationsSchema(connection) {
   await connection.query(`
     CREATE TABLE IF NOT EXISTS notifications (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -525,7 +525,7 @@ async function ensureNotificationsSchema(connection) {
   }
 }
 
-async function notifyCoaches(connection, notification) {
+export async function notifyCoaches(connection, notification) {
   await ensureNotificationsSchema(connection);
   const [coaches] = await connection.query(
     "SELECT id FROM users WHERE role IN ('admin', 'coach') AND is_active = 1"

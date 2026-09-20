@@ -1,0 +1,299 @@
+import express from 'express';
+import { body, validationResult } from 'express-validator';
+import { pool } from '../index.js';
+import { authenticateToken, authorizeRole } from '../middleware/auth.js';
+
+const router = express.Router();
+
+const QUESTION_TYPES = ['single_select', 'multi_select', 'text', 'number', 'textarea'];
+
+const seedQuestions = [
+  {
+    question: 'Ποιος είναι ο κύριος στόχος σου;',
+    type: 'single_select',
+    options: ['Απώλεια λίπους', 'Αύξηση μυϊκής μάζας', 'Γράμμωση', 'Βελτίωση αντοχής', 'Υγεία & ευεξία'],
+    isRequired: true,
+    placeholder: null,
+    sortOrder: 1,
+  },
+  {
+    question: 'Ποιο είναι το επίπεδό σου;',
+    type: 'single_select',
+    options: ['Αρχάριος (0-1 χρόνια)', 'Μέτριος (1-3 χρόνια)', 'Προχωρημένος (3+ χρόνια)'],
+    isRequired: true,
+    placeholder: null,
+    sortOrder: 2,
+  },
+  {
+    question: 'Πόσες μέρες μπορείς να προπονηθείς;',
+    type: 'single_select',
+    options: ['2 μέρες', '3 μέρες', '4 μέρες', '5 μέρες', '6 μέρες'],
+    isRequired: true,
+    placeholder: null,
+    sortOrder: 3,
+  },
+  {
+    question: 'Έχεις πρόσβαση σε γυμναστήριο;',
+    type: 'single_select',
+    options: ['Ναι, γυμναστήριο', 'Home gym', 'Όχι, bodyweight μόνο'],
+    isRequired: true,
+    placeholder: null,
+    sortOrder: 4,
+  },
+  {
+    question: 'Έχεις τραυματισμούς ή προβλήματα υγείας;',
+    type: 'textarea',
+    options: null,
+    isRequired: false,
+    placeholder: 'Περίγραψε αν υπάρχουν...',
+    sortOrder: 5,
+  },
+  {
+    question: 'Ποιο είναι το τρέχον βάρος σου (kg);',
+    type: 'number',
+    options: null,
+    isRequired: true,
+    placeholder: 'π.χ. 80',
+    sortOrder: 6,
+  },
+  {
+    question: 'Ποιο είναι το ύψος σου (cm);',
+    type: 'number',
+    options: null,
+    isRequired: true,
+    placeholder: 'π.χ. 175',
+    sortOrder: 7,
+  },
+  {
+    question: 'Έχεις διατροφικούς περιορισμούς ή αλλεργίες;',
+    type: 'textarea',
+    options: null,
+    isRequired: false,
+    placeholder: 'π.χ. χορτοφαγία, γλουτένη...',
+    sortOrder: 8,
+  },
+  {
+    question: 'Πότε θέλεις να στέλνεις το εβδομαδιαίο update;',
+    type: 'multi_select',
+    options: ['Δευτέρα', 'Τρίτη', 'Τετάρτη', 'Πέμπτη', 'Παρασκευή', 'Σάββατο', 'Κυριακή'],
+    isRequired: true,
+    placeholder: null,
+    sortOrder: 9,
+  },
+  {
+    question: 'Πώς μας βρήκες;',
+    type: 'single_select',
+    options: ['Instagram', 'TikTok', 'Google', 'Φίλος/Γνωστός', 'Άλλο'],
+    isRequired: false,
+    placeholder: null,
+    sortOrder: 10,
+  },
+];
+
+export async function ensureQuestionnaireSchema(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS questionnaire_questions (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      question TEXT NOT NULL,
+      type ENUM('single_select', 'multi_select', 'text', 'number', 'textarea') NOT NULL,
+      options JSON,
+      is_required TINYINT(1) NOT NULL DEFAULT 1,
+      placeholder VARCHAR(255),
+      sort_order INT NOT NULL DEFAULT 0,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      INDEX idx_active_order (is_active, sort_order)
+    )
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS questionnaire_answers (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      client_id INT NOT NULL,
+      question_id INT NOT NULL,
+      answer TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (question_id) REFERENCES questionnaire_questions(id) ON DELETE CASCADE,
+      INDEX idx_client_id (client_id),
+      INDEX idx_question_id (question_id)
+    )
+  `);
+
+  const [rows] = await connection.query('SELECT COUNT(*) AS total FROM questionnaire_questions');
+  if (Number(rows[0]?.total || 0) === 0) {
+    await connection.query(
+      `INSERT INTO questionnaire_questions
+        (question, type, options, is_required, placeholder, sort_order, is_active)
+       VALUES ?`,
+      [seedQuestions.map((q) => [
+        q.question,
+        q.type,
+        q.options ? JSON.stringify(q.options) : null,
+        q.isRequired ? 1 : 0,
+        q.placeholder,
+        q.sortOrder,
+        1,
+      ])]
+    );
+  }
+}
+
+function normalizeQuestion(row) {
+  let options = [];
+  try {
+    options = typeof row.options === 'string' ? JSON.parse(row.options || '[]') : (row.options || []);
+  } catch {
+    options = [];
+  }
+
+  return {
+    id: row.id,
+    question: row.question,
+    type: row.type,
+    options,
+    isRequired: Boolean(row.is_required),
+    placeholder: row.placeholder || '',
+    sortOrder: row.sort_order,
+    isActive: Boolean(row.is_active),
+  };
+}
+
+// Public — no auth required.
+router.get('/questions', async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureQuestionnaireSchema(connection);
+    const [rows] = await connection.query(
+      'SELECT * FROM questionnaire_questions WHERE is_active = 1 ORDER BY sort_order ASC, id ASC'
+    );
+    connection.release();
+    res.json(rows.map(normalizeQuestion));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Coach only — every question, active + inactive, for the admin builder.
+router.get('/manage', authenticateToken, authorizeRole(['coach']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureQuestionnaireSchema(connection);
+    const [rows] = await connection.query('SELECT * FROM questionnaire_questions ORDER BY sort_order ASC, id ASC');
+    connection.release();
+    res.json(rows.map(normalizeQuestion));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.put('/questions/reorder', authenticateToken, authorizeRole(['coach']), [
+  body('ids').isArray({ min: 1 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  try {
+    const connection = await pool.getConnection();
+    await ensureQuestionnaireSchema(connection);
+    const { ids } = req.body;
+    for (let index = 0; index < ids.length; index += 1) {
+      await connection.query('UPDATE questionnaire_questions SET sort_order = ? WHERE id = ?', [index, ids[index]]);
+    }
+    connection.release();
+    res.json({ message: 'Questions reordered' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/questions', authenticateToken, authorizeRole(['coach']), [
+  body('question').notEmpty(),
+  body('type').isIn(QUESTION_TYPES),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  try {
+    const connection = await pool.getConnection();
+    await ensureQuestionnaireSchema(connection);
+
+    const [result] = await connection.query(
+      `INSERT INTO questionnaire_questions
+        (question, type, options, is_required, placeholder, sort_order, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        req.body.question,
+        req.body.type,
+        req.body.options ? JSON.stringify(req.body.options) : null,
+        req.body.isRequired === false ? 0 : 1,
+        req.body.placeholder || null,
+        req.body.sortOrder || 0,
+        req.body.isActive === false ? 0 : 1,
+      ]
+    );
+
+    const [rows] = await connection.query('SELECT * FROM questionnaire_questions WHERE id = ?', [result.insertId]);
+    connection.release();
+    res.status(201).json(normalizeQuestion(rows[0]));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.put('/questions/:id', authenticateToken, authorizeRole(['coach']), [
+  body('question').notEmpty(),
+  body('type').isIn(QUESTION_TYPES),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  try {
+    const connection = await pool.getConnection();
+    await ensureQuestionnaireSchema(connection);
+
+    await connection.query(
+      `UPDATE questionnaire_questions
+       SET question = ?, type = ?, options = ?, is_required = ?, placeholder = ?, sort_order = ?, is_active = ?
+       WHERE id = ?`,
+      [
+        req.body.question,
+        req.body.type,
+        req.body.options ? JSON.stringify(req.body.options) : null,
+        req.body.isRequired === false ? 0 : 1,
+        req.body.placeholder || null,
+        req.body.sortOrder || 0,
+        req.body.isActive === false ? 0 : 1,
+        req.params.id,
+      ]
+    );
+
+    const [rows] = await connection.query('SELECT * FROM questionnaire_questions WHERE id = ?', [req.params.id]);
+    connection.release();
+    if (!rows.length) return res.status(404).json({ message: 'Question not found' });
+    res.json(normalizeQuestion(rows[0]));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.delete('/questions/:id', authenticateToken, authorizeRole(['coach']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureQuestionnaireSchema(connection);
+    await connection.query('DELETE FROM questionnaire_questions WHERE id = ?', [req.params.id]);
+    connection.release();
+    res.json({ message: 'Question deleted' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+export default router;
