@@ -2,9 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { Plus, Pencil, Calendar, Trash2, Search, X } from "lucide-react";
+import { toast } from "sonner";
+import { Plus, Pencil, Calendar, Trash2, Search, X, Mail, Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -16,6 +20,7 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { getInitials } from "@/lib/media";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
+import { cn } from "@/lib/utils";
 
 interface ClientApiRow {
   id: number | string;
@@ -34,6 +39,7 @@ interface ClientApiRow {
   profile_photo?: string | null;
   subscription_end_date?: string | null;
   is_expiring_soon?: boolean | number;
+  latest_update_at?: string | null;
 }
 
 interface MappedClient {
@@ -50,6 +56,8 @@ interface MappedClient {
   nextUpdate: string;
   nextUpdateDate: string;
   subscriptionExpiry: string;
+  subscriptionExpiryRaw: string;
+  lastUpdateAtRaw: string;
   onlineStatus: string;
   isOnline: boolean;
   createdAt: string;
@@ -121,6 +129,8 @@ function mapApiClient(row: ClientApiRow): MappedClient {
     nextUpdate: formatDate(row.next_update_date),
     nextUpdateDate: row.next_update_date || "2099-12-31",
     subscriptionExpiry: formatDate(row.subscription_end_date || undefined),
+    subscriptionExpiryRaw: row.subscription_end_date || "2099-12-31",
+    lastUpdateAtRaw: row.latest_update_at || "1970-01-01",
     onlineStatus: row.is_online ? "Online" : "Offline",
     isOnline: Boolean(row.is_online),
     createdAt: row.created_at || new Date().toISOString(),
@@ -128,10 +138,6 @@ function mapApiClient(row: ClientApiRow): MappedClient {
     initials: getInitials(row.full_name || row.email),
     tone: "bg-slate-900",
   };
-}
-
-function getWeightNumber(value: string): number {
-  return Number.parseFloat(String(value).replace(",", ".")) || 0;
 }
 
 function FilterBox({ children, className = "" }: { children: React.ReactNode; className?: string }) {
@@ -149,12 +155,23 @@ function ClientsContent() {
   const [showAddClient, setShowAddClient] = useState(false);
   const [clientForm, setClientForm] = useState(emptyClientForm);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [programFilter, setProgramFilter] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
   const [deletingClientId, setDeletingClientId] = useState<number | string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number | string>>(new Set());
+  const [bulkMessageOpen, setBulkMessageOpen] = useState(false);
+  const [bulkMessageText, setBulkMessageText] = useState("");
+  const [bulkSending, setBulkSending] = useState(false);
+
+  // Debounce search input by 300ms before it drives filtering.
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => setDebouncedSearch(search), 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [search]);
 
   const loadClients = useCallback(async () => {
     setLoadingClients(true);
@@ -175,7 +192,7 @@ function ClientsContent() {
   }, [loadClients]);
 
   const filteredClients = useMemo(() => {
-    const searchTerm = search.trim().toLowerCase();
+    const searchTerm = debouncedSearch.trim().toLowerCase();
     const results = clientRows.filter((client) => {
       const matchesSearch =
         !searchTerm || [client.name, client.email, client.program, client.status].join(" ").toLowerCase().includes(searchTerm);
@@ -185,13 +202,12 @@ function ClientsContent() {
     });
 
     return [...results].sort((a, b) => {
-      if (sortBy === "oldest") return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      if (sortBy === "nextUpdate") return new Date(a.nextUpdateDate).getTime() - new Date(b.nextUpdateDate).getTime();
       if (sortBy === "name") return a.name.localeCompare(b.name, "el");
-      if (sortBy === "weightDesc") return getWeightNumber(b.currentWeight) - getWeightNumber(a.currentWeight);
+      if (sortBy === "subscriptionExpiry") return new Date(a.subscriptionExpiryRaw).getTime() - new Date(b.subscriptionExpiryRaw).getTime();
+      if (sortBy === "lastUpdate") return new Date(b.lastUpdateAtRaw).getTime() - new Date(a.lastUpdateAtRaw).getTime();
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [clientRows, programFilter, search, sortBy, statusFilter]);
+  }, [clientRows, programFilter, debouncedSearch, sortBy, statusFilter]);
 
   const programOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -206,9 +222,21 @@ function ClientsContent() {
     return filteredClients.slice(start, start + pageSize);
   }, [currentPage, filteredClients, pageSize]);
 
+  const stats = useMemo(() => {
+    const total = clientRows.length;
+    const active = clientRows.filter((client) => client.statusKey === "active").length;
+    const expiring = clientRows.filter((client) => client.statusKey === "expiring").length;
+    const pending = clientRows.filter((client) => client.statusKey === "pending").length;
+    return { total, active, expiring, pending, activePct: total ? Math.round((active / total) * 100) : 0 };
+  }, [clientRows]);
+
+  const toggleStatusCard = (key: string) => {
+    setStatusFilter((current) => (current === key ? "all" : key));
+  };
+
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, statusFilter, programFilter, sortBy]);
+  }, [debouncedSearch, statusFilter, programFilter, sortBy]);
 
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(filteredClients.length / pageSize));
@@ -272,6 +300,57 @@ function ClientsContent() {
     }
   };
 
+  const toggleSelected = (id: number | string, checked: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllOnPage = (checked: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      paginatedClients.forEach((client) => {
+        if (checked) next.add(client.id);
+        else next.delete(client.id);
+      });
+      return next;
+    });
+  };
+
+  const handleBulkSendMessage = async () => {
+    const text = bulkMessageText.trim();
+    if (!text) return;
+    const ids = Array.from(selectedIds);
+    setBulkSending(true);
+    const results = await Promise.allSettled(ids.map((id) => api.post(`/clients/${id}/messages`, { message: text })));
+    const failed = results.filter((result) => result.status === "rejected").length;
+    setBulkSending(false);
+    setBulkMessageOpen(false);
+    setBulkMessageText("");
+    setSelectedIds(new Set());
+    if (failed) toast.error(`Το μήνυμα απέτυχε για ${failed} από ${ids.length} πελάτες.`);
+    else toast.success(`Το μήνυμα στάλθηκε σε ${ids.length} πελάτες.`);
+  };
+
+  const handleBulkDeactivate = async () => {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    const confirmed = window.confirm(`Απενεργοποίηση ${ids.length} πελατών;`);
+    if (!confirmed) return;
+
+    setBulkSending(true);
+    const results = await Promise.allSettled(ids.map((id) => api.put(`/clients/${id}`, { isActive: false })));
+    const failed = results.filter((result) => result.status === "rejected").length;
+    setBulkSending(false);
+    setSelectedIds(new Set());
+    if (failed) toast.error(`Η απενεργοποίηση απέτυχε για ${failed} από ${ids.length} πελάτες.`);
+    else toast.success(`${ids.length} πελάτες απενεργοποιήθηκαν.`);
+    loadClients();
+  };
+
   return (
     <CoachShell title="Πελάτες" user={user} logout={logout}>
       <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -297,6 +376,41 @@ function ClientsContent() {
         <div className="mb-5 rounded-lg border border-green-200 bg-green-50 px-5 py-4 text-sm font-bold text-green-700 dark:border-green-900 dark:bg-green-950/50 dark:text-green-200">{clientMessage}</div>
       )}
 
+      <div className="mb-5 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <StatFilterCard
+          label="Σύνολο"
+          value={stats.total}
+          note="πελάτες"
+          tone="text-slate-900 dark:text-slate-50"
+          active={statusFilter === "all"}
+          onClick={() => setStatusFilter("all")}
+        />
+        <StatFilterCard
+          label="Ενεργοί"
+          value={stats.active}
+          note={`${stats.activePct}%`}
+          tone="text-emerald-600 dark:text-emerald-400"
+          active={statusFilter === "active"}
+          onClick={() => toggleStatusCard("active")}
+        />
+        <StatFilterCard
+          label="Λήγουν"
+          value={stats.expiring}
+          note="εντός 7 ημερών"
+          tone="text-orange-600 dark:text-orange-400"
+          active={statusFilter === "expiring"}
+          onClick={() => toggleStatusCard("expiring")}
+        />
+        <StatFilterCard
+          label="Εκκρεμείς"
+          value={stats.pending}
+          note="προς έγκριση"
+          tone="text-amber-600 dark:text-amber-400"
+          active={statusFilter === "pending"}
+          onClick={() => toggleStatusCard("pending")}
+        />
+      </div>
+
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-12">
         <FilterBox className="lg:col-span-4">
           <Search className="mr-3 h-5 w-5 shrink-0 text-slate-500 dark:text-slate-400" />
@@ -312,11 +426,11 @@ function ClientsContent() {
         <FilterBox className="lg:col-span-2">
           <Select
             items={[
-              { value: "all", label: "Κατάσταση: Όλα" },
-              { value: "active", label: "Ενεργοί Πελάτες" },
-              { value: "expiring", label: "Λήγουν Σύντομα" },
-              { value: "pending", label: "Εκκρεμείς Πληρωμές" },
-              { value: "inactive", label: "Ανενεργοί Πελάτες" },
+              { value: "all", label: "Κατάσταση: Όλοι" },
+              { value: "active", label: "Ενεργοί" },
+              { value: "expiring", label: "Λήγουν" },
+              { value: "inactive", label: "Έληξε" },
+              { value: "pending", label: "Εκκρεμής έγκριση" },
             ]}
             value={statusFilter}
             onValueChange={(value) => setStatusFilter(value ?? "all")}
@@ -325,11 +439,11 @@ function ClientsContent() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Κατάσταση: Όλα</SelectItem>
-              <SelectItem value="active">Ενεργοί Πελάτες</SelectItem>
-              <SelectItem value="expiring">Λήγουν Σύντομα</SelectItem>
-              <SelectItem value="pending">Εκκρεμείς Πληρωμές</SelectItem>
-              <SelectItem value="inactive">Ανενεργοί Πελάτες</SelectItem>
+              <SelectItem value="all">Κατάσταση: Όλοι</SelectItem>
+              <SelectItem value="active">Ενεργοί</SelectItem>
+              <SelectItem value="expiring">Λήγουν</SelectItem>
+              <SelectItem value="inactive">Έληξε</SelectItem>
+              <SelectItem value="pending">Εκκρεμής έγκριση</SelectItem>
             </SelectContent>
           </Select>
         </FilterBox>
@@ -352,11 +466,10 @@ function ClientsContent() {
         <FilterBox className="lg:col-span-3">
           <Select
             items={[
-              { value: "newest", label: "Ταξινόμηση: Νεότεροι" },
-              { value: "oldest", label: "Παλαιότεροι" },
-              { value: "nextUpdate", label: "Επόμενο Update" },
-              { value: "name", label: "Αλφαβητικά" },
-              { value: "weightDesc", label: "Βάρος: Μεγαλύτερο" },
+              { value: "name", label: "Ταξινόμηση: Όνομα A-Z" },
+              { value: "subscriptionExpiry", label: "Λήξη συνδρομής" },
+              { value: "lastUpdate", label: "Τελευταίο update" },
+              { value: "newest", label: "Ημ. εγγραφής" },
             ]}
             value={sortBy}
             onValueChange={(value) => setSortBy(value ?? "newest")}
@@ -365,11 +478,10 @@ function ClientsContent() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="newest">Ταξινόμηση: Νεότεροι</SelectItem>
-              <SelectItem value="oldest">Παλαιότεροι</SelectItem>
-              <SelectItem value="nextUpdate">Επόμενο Update</SelectItem>
-              <SelectItem value="name">Αλφαβητικά</SelectItem>
-              <SelectItem value="weightDesc">Βάρος: Μεγαλύτερο</SelectItem>
+              <SelectItem value="name">Ταξινόμηση: Όνομα A-Z</SelectItem>
+              <SelectItem value="subscriptionExpiry">Λήξη συνδρομής</SelectItem>
+              <SelectItem value="lastUpdate">Τελευταίο update</SelectItem>
+              <SelectItem value="newest">Ημ. εγγραφής</SelectItem>
             </SelectContent>
           </Select>
         </FilterBox>
@@ -395,7 +507,14 @@ function ClientsContent() {
         <Table>
           <TableHeader>
             <TableRow className="h-[72px]">
-              <TableHead className="w-[30%] px-8 text-base font-bold text-slate-950 dark:text-slate-50">Πελάτης</TableHead>
+              <TableHead className="w-12 px-4">
+                <Checkbox
+                  checked={paginatedClients.length > 0 && paginatedClients.every((client) => selectedIds.has(client.id))}
+                  onCheckedChange={(checked) => toggleSelectAllOnPage(Boolean(checked))}
+                  aria-label="Επιλογή όλων"
+                />
+              </TableHead>
+              <TableHead className="w-[28%] px-8 text-base font-bold text-slate-950 dark:text-slate-50">Πελάτης</TableHead>
               <TableHead className="w-[13%] px-5 text-base font-bold text-slate-950 dark:text-slate-50">Κατάσταση</TableHead>
               <TableHead className="w-[13%] px-5 text-base font-bold text-slate-950 dark:text-slate-50">Τρέχον Βάρος</TableHead>
               <TableHead className="w-[20%] px-5 text-base font-bold text-slate-950 dark:text-slate-50">Επόμενο Update</TableHead>
@@ -406,6 +525,13 @@ function ClientsContent() {
           <TableBody>
             {paginatedClients.map((client) => (
               <TableRow key={client.id} className="h-[104px]">
+                <TableCell className="px-4">
+                  <Checkbox
+                    checked={selectedIds.has(client.id)}
+                    onCheckedChange={(checked) => toggleSelected(client.id, Boolean(checked))}
+                    aria-label={`Επιλογή ${client.name}`}
+                  />
+                </TableCell>
                 <TableCell className="px-8">
                   <Link href={`/clients/${client.id}`} className="flex items-center gap-4 text-slate-950 hover:text-red-600 dark:text-slate-50">
                     <UserAvatar initials={client.initials} tone={client.tone} photoUrl={client.profilePhoto} />
@@ -479,7 +605,7 @@ function ClientsContent() {
             ))}
             {!paginatedClients.length && (
               <TableRow>
-                <TableCell colSpan={6} className="px-8 py-12 text-center font-semibold text-slate-500 dark:text-slate-400">
+                <TableCell colSpan={7} className="px-8 py-12 text-center font-semibold text-slate-500 dark:text-slate-400">
                   {loadingClients ? "Φόρτωση πελατών..." : "Δεν υπάρχουν εγγεγραμμένοι πελάτες με αυτά τα φίλτρα."}
                 </TableCell>
               </TableRow>
@@ -558,7 +684,103 @@ function ClientsContent() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-900 px-5 py-3 text-white shadow-lg dark:bg-slate-800">
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-semibold">{selectedIds.size} πελάτες επιλεγμένοι</span>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setBulkMessageOpen(true)}
+              className="gap-2 text-white hover:bg-white/10 hover:text-white"
+            >
+              <Mail className="h-4 w-4" /> Μήνυμα
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={handleBulkDeactivate}
+              disabled={bulkSending}
+              className="gap-2 text-red-300 hover:bg-white/10 hover:text-red-200"
+            >
+              <Ban className="h-4 w-4" /> Απενεργοποίηση
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setSelectedIds(new Set())}
+              className="text-white hover:bg-white/10 hover:text-white"
+            >
+              Ακύρωση
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <Dialog open={bulkMessageOpen} onOpenChange={setBulkMessageOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Μήνυμα σε {selectedIds.size} πελάτες</DialogTitle>
+            <DialogDescription>Το μήνυμα θα σταλεί ξεχωριστά σε κάθε επιλεγμένο πελάτη.</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={bulkMessageText}
+            onChange={(event) => setBulkMessageText(event.target.value)}
+            placeholder="Γράψε το μήνυμά σου..."
+            rows={4}
+          />
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setBulkMessageOpen(false)}>
+              Ακύρωση
+            </Button>
+            <Button type="button" onClick={handleBulkSendMessage} disabled={bulkSending || !bulkMessageText.trim()}>
+              {bulkSending ? "Αποστολή..." : "Αποστολή"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </CoachShell>
+  );
+}
+
+function StatFilterCard({
+  label,
+  value,
+  note,
+  tone,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  note: string;
+  tone: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Card
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") onClick();
+      }}
+      className={cn(
+        "cursor-pointer p-5 transition-colors hover:border-slate-300 dark:hover:border-slate-700",
+        active && "border-red-500 ring-1 ring-red-500 dark:border-red-500",
+      )}
+    >
+      <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">{label}</div>
+      <div className="mt-1 flex items-baseline gap-2">
+        <span className={cn("text-3xl font-bold", tone)}>{value}</span>
+        <span className="text-sm text-slate-400 dark:text-slate-500">{note}</span>
+      </div>
+    </Card>
   );
 }
 
