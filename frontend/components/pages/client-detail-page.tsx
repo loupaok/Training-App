@@ -20,6 +20,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Alert, AlertTitle, AlertAction } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 import { AreaChart, SparkLineChart, ProgressCircle, ProgressBar } from "@tremor/react";
 import {
   Table,
@@ -617,7 +618,15 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
             </Card>
 
             <TabsContent value="overview" className="mt-6">
-              <OverviewTab client={client} clientId={clientId} onboarding={onboarding} onUpdated={loadClientDetail} />
+              <OverviewTab
+                client={client}
+                clientId={clientId}
+                onboarding={onboarding}
+                onUpdated={loadClientDetail}
+                currentStatus={currentStatus}
+                onApprovePayment={approvePayment}
+                approvingPayment={approvingPayment}
+              />
             </TabsContent>
 
             <TabsContent value="progress" className="mt-6">
@@ -885,21 +894,47 @@ function toDetailsForm(client: ClientRecord): ClientDetailsForm {
   };
 }
 
+const updateDayOptions = [
+  { value: 1, label: "Δευτέρα" },
+  { value: 2, label: "Τρίτη" },
+  { value: 3, label: "Τετάρτη" },
+  { value: 4, label: "Πέμπτη" },
+  { value: 5, label: "Παρασκευή" },
+  { value: 6, label: "Σάββατο" },
+  { value: 0, label: "Κυριακή" },
+];
+
+function subscriptionProgressPct(client: ClientRecord): number {
+  const start = client.subscription?.start_date ? new Date(client.subscription.start_date).getTime() : null;
+  const end = client.subscription?.end_date ? new Date(client.subscription.end_date).getTime() : null;
+  if (!start || !end || end <= start) return 0;
+  const now = Date.now();
+  const pct = ((end - now) / (end - start)) * 100;
+  return Math.min(100, Math.max(0, Math.round(pct)));
+}
+
 function OverviewTab({
   client,
   clientId,
   onboarding,
   onUpdated,
+  currentStatus,
+  onApprovePayment,
+  approvingPayment,
 }: {
   client: ClientRecord;
   clientId: string;
   onboarding: Onboarding;
   onUpdated: () => void;
+  currentStatus: StatusMetaResult;
+  onApprovePayment: (paymentId: number | string) => void;
+  approvingPayment: boolean;
 }) {
   const [form, setForm] = useState<ClientDetailsForm>(() => toDetailsForm(client));
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [savingUpdateDay, setSavingUpdateDay] = useState(false);
 
   useEffect(() => {
     setForm(toDetailsForm(client));
@@ -924,6 +959,24 @@ function OverviewTab({
     }
   };
 
+  const saveUpdateDay = async (value: string) => {
+    setSavingUpdateDay(true);
+    setSaveMessage("");
+    setSaveError("");
+    try {
+      await api.put(`/clients/${clientId}/update-day`, { updateDay: Number(value) });
+      setSaveMessage("Η ημέρα update ενημερώθηκε.");
+      onUpdated();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Δεν ενημερώθηκε η ημέρα update.");
+    } finally {
+      setSavingUpdateDay(false);
+    }
+  };
+
+  const latestPayment = client.payments?.[0];
+  const pendingPayment = latestPayment?.status === "pending" ? latestPayment : null;
+
   return (
     <div className="space-y-6">
       {(saveMessage || saveError) && (
@@ -938,117 +991,156 @@ function OverviewTab({
         </div>
       )}
 
-      <section className="grid gap-6 xl:grid-cols-3">
-        <InfoCard title="Στοιχεία">
-          <div className="space-y-3">
-            <EditField label="Ημερομηνία γέννησης" type="date" value={form.dateOfBirth} onChange={(value) => updateField("dateOfBirth", value)} />
-            <div>
-              <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Φύλο</Label>
-              <Select
-                items={[
-                  { value: "male", label: "Άνδρας" },
-                  { value: "female", label: "Γυναίκα" },
-                  { value: "other", label: "Άλλο" },
-                ]}
-                value={form.gender}
-                onValueChange={(value) => updateField("gender", value ?? "")}
-              >
-                <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold">
-                  <SelectValue placeholder="Επιλογή" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="male">Άνδρας</SelectItem>
-                  <SelectItem value="female">Γυναίκα</SelectItem>
-                  <SelectItem value="other">Άλλο</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <EditField label="Ύψος (cm)" type="number" value={form.heightCm} onChange={(value) => updateField("heightCm", value)} />
-            <EditField label="Βάρος (kg)" type="number" value={form.weightKg} onChange={(value) => updateField("weightKg", value)} />
-            <EditField label="Στόχος" value={form.fitnessGoal} onChange={(value) => updateField("fitnessGoal", value)} />
-            <div>
-              <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Ιατρικές σημειώσεις</Label>
-              <Textarea className="mt-1" value={form.medicalNotes} onChange={(event) => updateField("medicalNotes", event.target.value)} />
-            </div>
-          </div>
-        </InfoCard>
-        <InfoCard title="Συνδρομή">
-          <Info label="Κατάσταση" value={client.subscription?.status || "-"} />
-          <Info label="Έναρξη" value={formatDate(client.subscription?.start_date)} />
-          <Info label="Λήξη" value={formatDate(client.subscription?.end_date)} />
-          <Info label="Πακέτο" value={onboarding.selected_package || "-"} />
-          <div className="mt-3 space-y-3 border-t border-slate-200 pt-3 dark:border-slate-800">
-            <EditField label="Επαφή έκτακτης ανάγκης" value={form.emergencyContactName} onChange={(value) => updateField("emergencyContactName", value)} />
-            <EditField label="Τηλέφωνο έκτακτης ανάγκης" value={form.emergencyContactPhone} onChange={(value) => updateField("emergencyContactPhone", value)} />
-          </div>
-        </InfoCard>
-        <InfoCard title="Social Media & Discord">
-          {client.socialLinks?.length ? (
-            client.socialLinks.map((item) => <Info key={`${item.platform}-${item.url}`} label={item.platform} value={item.url} />)
-          ) : (
-            <EmptyInline text="Δεν υπάρχουν social links." />
-          )}
-          <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
-            <EditField label="Discord ID" value={form.discordId} onChange={(value) => updateField("discordId", value)} />
-          </div>
-        </InfoCard>
-      </section>
-
-      <div className="flex justify-end">
-        <Button type="button" onClick={saveDetails} disabled={saving} className="h-10 px-6 font-bold">
-          {saving ? "Αποθήκευση..." : "Αποθήκευση στοιχείων"}
-        </Button>
-      </div>
-
-      <InfoCard title="Onboarding φόρμα">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <Info label="Επάγγελμα / πρόγραμμα" value={onboarding.occupation_schedule || "-"} />
-          <Info label="Πρόβλημα υγείας" value={onboarding.health_problem || "-"} />
-          <Info label="Τραυματισμοί" value={onboarding.injuries || "-"} />
-          <Info label="Κύκλος" value={onboarding.cycle_history || "-"} />
-          <Info label="Αερόβιες / εβδομάδα" value={onboarding.cardio_sessions_per_week || "-"} />
-          <Info label="Ύπνος" value={onboarding.sleep_schedule || "-"} />
-          <Info label="Προπόνηση τώρα" value={onboarding.current_training_plan || "-"} />
-          <Info label="Διατροφή τώρα" value={onboarding.current_nutrition_plan || "-"} />
-          <Info label="Ιστορικό πλάνων" value={onboarding.previous_plan_history || "-"} />
-        </div>
-      </InfoCard>
-
-      <ListCard title="Πληρωμές">
-        {client.payments?.length ? (
-          client.payments.slice(0, 5).map((payment) => (
-            <div key={payment.id} className="flex flex-col gap-3 p-5 sm:flex-row sm:items-start sm:justify-between">
+      <div className="grid gap-6 lg:grid-cols-5">
+        {/* Left column — 60% */}
+        <div className="space-y-6 lg:col-span-3">
+          <InfoCard title="Στοιχεία Επικοινωνίας">
+            <div className="space-y-3">
+              <Info label="Όνομα" value={client.full_name} />
+              <Info label="Email" value={client.email} />
+              <Info label="Τηλέφωνο" value={client.phone} />
+              <EditField label="Ημερομηνία γέννησης" type="date" value={form.dateOfBirth} onChange={(value) => updateField("dateOfBirth", value)} />
               <div>
-                <div className="font-bold text-slate-950 dark:text-slate-50">{money(payment.amount, payment.currency)}</div>
-                <div className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">{formatDateTime(payment.created_at)}</div>
+                <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Φύλο</Label>
+                <Select
+                  items={[
+                    { value: "male", label: "Άνδρας" },
+                    { value: "female", label: "Γυναίκα" },
+                    { value: "other", label: "Άλλο" },
+                  ]}
+                  value={form.gender}
+                  onValueChange={(value) => updateField("gender", value ?? "")}
+                >
+                  <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold">
+                    <SelectValue placeholder="Επιλογή" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="male">Άνδρας</SelectItem>
+                    <SelectItem value="female">Γυναίκα</SelectItem>
+                    <SelectItem value="other">Άλλο</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <Badge
-                className={`h-auto w-fit rounded-md px-3 py-1 text-sm font-bold ${
-                  payment.status === "completed"
-                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"
-                    : payment.status === "pending"
-                      ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"
-                      : "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                }`}
-              >
-                {payment.status === "completed" ? "Εγκρίθηκε" : payment.status === "pending" ? "Εκκρεμής" : payment.status || "-"}
-              </Badge>
+              <EditField label="Ύψος (cm)" type="number" value={form.heightCm} onChange={(value) => updateField("heightCm", value)} />
+              <EditField label="Βάρος (kg)" type="number" value={form.weightKg} onChange={(value) => updateField("weightKg", value)} />
+              <EditField label="Στόχος" value={form.fitnessGoal} onChange={(value) => updateField("fitnessGoal", value)} />
+              <div>
+                <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Ιατρικές σημειώσεις</Label>
+                <Textarea className="mt-1" value={form.medicalNotes} onChange={(event) => updateField("medicalNotes", event.target.value)} />
+              </div>
+              <EditField
+                label="Επαφή έκτακτης ανάγκης"
+                value={form.emergencyContactName}
+                onChange={(value) => updateField("emergencyContactName", value)}
+              />
+              <EditField
+                label="Τηλέφωνο έκτακτης ανάγκης"
+                value={form.emergencyContactPhone}
+                onChange={(value) => updateField("emergencyContactPhone", value)}
+              />
             </div>
-          ))
-        ) : (
-          <EmptyRow text="Δεν υπάρχουν πληρωμές ακόμα." />
-        )}
-      </ListCard>
+            <div className="mt-4 flex justify-end">
+              <Button type="button" onClick={saveDetails} disabled={saving} className="h-10 px-6 font-bold">
+                {saving ? "Αποθήκευση..." : "Αποθήκευση στοιχείων"}
+              </Button>
+            </div>
+          </InfoCard>
 
-      <InfoCard title="Ιδιωτικές σημειώσεις coach">
-        <p className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">Ορατές μόνο σε coach/admin — ο πελάτης δεν τις βλέπει ποτέ.</p>
-        <Textarea
-          className="min-h-24"
-          value={form.coachNotes}
-          onChange={(event) => updateField("coachNotes", event.target.value)}
-          placeholder="Δεν υπάρχουν σημειώσεις coach."
-        />
-      </InfoCard>
+          <Separator />
+
+          <InfoCard title="Στόχοι & Επίπεδο">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Info label="Στόχος" value={onboarding.goal || "-"} />
+              <Info label="Επάγγελμα / πρόγραμμα" value={onboarding.occupation_schedule || "-"} />
+              <Info label="Πρόβλημα υγείας" value={onboarding.health_problem || "-"} />
+              <Info label="Τραυματισμοί" value={onboarding.injuries || "-"} />
+              <Info label="Κύκλος" value={onboarding.cycle_history || "-"} />
+              <Info label="Αερόβιες / εβδομάδα" value={onboarding.cardio_sessions_per_week || "-"} />
+              <Info label="Ύπνος" value={onboarding.sleep_schedule || "-"} />
+              <Info label="Προπόνηση τώρα" value={onboarding.current_training_plan || "-"} />
+              <Info label="Διατροφή τώρα" value={onboarding.current_nutrition_plan || "-"} />
+              <Info label="Ιστορικό πλάνων" value={onboarding.previous_plan_history || "-"} />
+            </div>
+          </InfoCard>
+
+          <Separator />
+
+          <InfoCard title="Ημέρες Update">
+            <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Ημέρα εβδομαδιαίου update</Label>
+            <Select
+              items={updateDayOptions.map((option) => ({ value: String(option.value), label: option.label }))}
+              value={client.updateSchedule?.day_of_week !== undefined ? String(client.updateSchedule.day_of_week) : undefined}
+              onValueChange={(value) => value && saveUpdateDay(value)}
+            >
+              <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold" disabled={savingUpdateDay}>
+                <SelectValue placeholder="Επιλογή ημέρας" />
+              </SelectTrigger>
+              <SelectContent>
+                {updateDayOptions.map((option) => (
+                  <SelectItem key={option.value} value={String(option.value)}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </InfoCard>
+
+          <Separator />
+
+          <InfoCard title="Social & Discord">
+            {client.socialLinks?.length ? (
+              client.socialLinks.map((item) => <Info key={`${item.platform}-${item.url}`} label={item.platform} value={item.url} />)
+            ) : (
+              <EmptyInline text="Δεν υπάρχουν social links." />
+            )}
+            <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
+              <EditField label="Discord ID" value={form.discordId} onChange={(value) => updateField("discordId", value)} />
+            </div>
+          </InfoCard>
+        </div>
+
+        {/* Right column — 40% */}
+        <div className="space-y-6 lg:col-span-2">
+          <InfoCard title="Συνδρομή">
+            <Badge className={`h-auto w-fit rounded-md px-3 py-1.5 text-sm font-bold ${currentStatus.className}`}>{currentStatus.label}</Badge>
+            <Info label="Έναρξη" value={formatDate(client.subscription?.start_date)} />
+            <Info label="Λήξη" value={formatDate(client.subscription?.end_date)} />
+            <div>
+              <div className="mb-1 flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
+                <span>Ημέρες που απομένουν</span>
+                <span>{daysRemaining(client.subscription?.end_date)}</span>
+              </div>
+              <ProgressBar value={subscriptionProgressPct(client)} color={currentStatus.label === "Ανενεργός" ? "red" : "emerald"} />
+            </div>
+            <Info label="Πακέτο" value={onboarding.selected_package || "-"} />
+            <Info
+              label="Τρόπος πληρωμής"
+              value={latestPayment?.method === "bank_transfer" ? "Τραπεζικό έμβασμα" : latestPayment?.method || "-"}
+            />
+            {pendingPayment && (
+              <Button
+                type="button"
+                onClick={() => onApprovePayment(pendingPayment.id)}
+                disabled={approvingPayment}
+                className="mt-2 h-10 w-full bg-emerald-600 font-bold text-white hover:bg-emerald-700"
+              >
+                {approvingPayment ? "Έγκριση..." : "Έγκριση πληρωμής"}
+              </Button>
+            )}
+          </InfoCard>
+
+          <InfoCard title="Ιδιωτικές Σημειώσεις">
+            <p className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">(Ορατό μόνο σε εσάς)</p>
+            <Textarea
+              className="min-h-24"
+              value={form.coachNotes}
+              onChange={(event) => updateField("coachNotes", event.target.value)}
+              onBlur={saveDetails}
+              placeholder="Δεν υπάρχουν σημειώσεις coach."
+            />
+          </InfoCard>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1397,17 +1489,6 @@ function InfoCard({ title, children }: { title: string; children: ReactNode }) {
     <Card className="p-6">
       <h2 className="text-xl font-bold">{title}</h2>
       <div className="mt-5 space-y-4">{children}</div>
-    </Card>
-  );
-}
-
-function ListCard({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <Card className="overflow-hidden p-0">
-      <CardHeader className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
-        <CardTitle className="text-xl font-bold">{title}</CardTitle>
-      </CardHeader>
-      <div className="divide-y divide-slate-200 dark:divide-slate-800">{children}</div>
     </Card>
   );
 }
