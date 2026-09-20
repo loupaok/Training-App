@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Mail, Dumbbell, Apple, CreditCard, Ban, X, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl, getInitials } from "@/lib/media";
+import { cn } from "@/lib/utils";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CoachShell } from "@/components/shell/coach-shell";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -18,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
-import { AreaChart } from "@tremor/react";
+import { AreaChart, SparkLineChart, ProgressCircle, ProgressBar } from "@tremor/react";
 import {
   Table,
   TableHeader,
@@ -202,6 +203,95 @@ const paymentStatusLabels: Record<string, string> = {
   refunded: "Επιστράφηκε",
 };
 
+function daysSince(value?: string | null): number | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  date.setHours(0, 0, 0, 0);
+  return Math.floor((today.getTime() - date.getTime()) / 86400000);
+}
+
+function daysUntil(value?: string | null): number | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  date.setHours(0, 0, 0, 0);
+  return Math.ceil((date.getTime() - today.getTime()) / 86400000);
+}
+
+function monthsSince(value?: string | null): number {
+  const days = daysSince(value);
+  if (days === null) return 0;
+  return Math.max(0, Math.floor(days / 30));
+}
+
+interface HealthScoreResult {
+  total: number;
+  color: "red" | "amber" | "emerald";
+  updatesScore: number;
+  paymentScore: number;
+  subscriptionScore: number;
+}
+
+// Weighted per the coach's own rules: updates 40%, payment 30%, subscription 30%.
+// Missing data (no updates/payments/subscription yet) scores 0 on that factor —
+// a brand-new client with nothing set up yet is treated as "not yet healthy"
+// rather than assumed healthy by default.
+function computeHealthScore(client: ClientRecord): HealthScoreResult {
+  const lastUpdateDays = daysSince(client.weeklyUpdates?.[0]?.submitted_at);
+  const updatesScore = lastUpdateDays === null ? 0 : lastUpdateDays <= 7 ? 100 : lastUpdateDays <= 14 ? 50 : 0;
+
+  const latestPaymentStatus = client.payments?.[0]?.status;
+  const paymentScore = latestPaymentStatus === "completed" ? 100 : latestPaymentStatus === "pending" ? 50 : 0;
+
+  const subscriptionDaysLeft = daysUntil(client.subscription?.end_date);
+  const subscriptionScore = subscriptionDaysLeft === null || subscriptionDaysLeft < 0 ? 0 : subscriptionDaysLeft <= 7 ? 50 : 100;
+
+  const total = Math.round(updatesScore * 0.4 + paymentScore * 0.3 + subscriptionScore * 0.3);
+  const color = total <= 40 ? "red" : total <= 70 ? "amber" : "emerald";
+
+  return { total, color, updatesScore, paymentScore, subscriptionScore };
+}
+
+interface NextAction {
+  id: string;
+  severity: "amber" | "red";
+  text: string;
+}
+
+function computeNextActions(client: ClientRecord): NextAction[] {
+  const actions: NextAction[] = [];
+
+  const lastUpdateDays = daysSince(client.weeklyUpdates?.[0]?.submitted_at);
+  if (lastUpdateDays === null || lastUpdateDays > 7) {
+    actions.push({ id: "no-update", severity: "amber", text: "Δεν έστειλε update αυτή την εβδομάδα" });
+  }
+
+  const subscriptionDaysLeft = daysUntil(client.subscription?.end_date);
+  if (subscriptionDaysLeft !== null) {
+    if (subscriptionDaysLeft < 0) {
+      actions.push({ id: "sub-expired", severity: "red", text: "Η συνδρομή έχει λήξει" });
+    } else if (subscriptionDaysLeft <= 7) {
+      actions.push({ id: "sub-expiring", severity: "amber", text: `Η συνδρομή λήγει σε ${subscriptionDaysLeft} μέρες` });
+    }
+  }
+
+  const latestPaymentStatus = client.payments?.[0]?.status;
+  if (latestPaymentStatus === "pending" || latestPaymentStatus === "failed") {
+    actions.push({
+      id: "payment-issue",
+      severity: "amber",
+      text: latestPaymentStatus === "pending" ? "Εκκρεμεί πληρωμή" : "Απέτυχε η τελευταία πληρωμή",
+    });
+  }
+
+  return actions;
+}
+
 function statusMeta(client: ClientRecord | null): StatusMetaResult {
   const userStatus = client?.user_status || client?.status;
   const paymentStatus = client?.payments?.[0]?.status;
@@ -237,6 +327,11 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
   const [rejectingPaymentId, setRejectingPaymentId] = useState<number | string | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [quickMessageOpen, setQuickMessageOpen] = useState(false);
+  const [quickMessageText, setQuickMessageText] = useState("");
+  const [sendingQuickMessage, setSendingQuickMessage] = useState(false);
+  const [manualPaymentOpen, setManualPaymentOpen] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
 
   const loadClientDetail = () => {
     setLoading(true);
@@ -384,6 +479,59 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
     }
   };
 
+  const sendQuickMessage = async () => {
+    const text = quickMessageText.trim();
+    if (!text) return;
+    setSendingQuickMessage(true);
+    setError("");
+    try {
+      await api.post(`/clients/${clientId}/messages`, { message: text });
+      setQuickMessageOpen(false);
+      setQuickMessageText("");
+      setActiveTab("messages");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν στάλθηκε το μήνυμα.");
+    } finally {
+      setSendingQuickMessage(false);
+    }
+  };
+
+  const handleQuickNewTrainingPlan = async () => {
+    const confirmed = window.confirm("Να δημιουργηθεί νέο πρόγραμμα προπόνησης; Το τρέχον θα μετακινηθεί στο ιστορικό.");
+    if (!confirmed) return;
+    setActiveTab("training");
+    await createNewTrainingPlan();
+  };
+
+  const handleQuickNewNutritionPlan = async () => {
+    const confirmed = window.confirm("Να δημιουργηθεί νέο πρόγραμμα διατροφής; Το τρέχον θα μετακινηθεί στο ιστορικό.");
+    if (!confirmed) return;
+    setActiveTab("nutrition");
+    await createNewNutritionPlan();
+  };
+
+  const handleRenewSubscription = () => {
+    setActiveTab("payments");
+    setManualPaymentOpen(true);
+  };
+
+  const deactivateClient = async () => {
+    const confirmed = window.confirm(`Θέλεις σίγουρα να απενεργοποιηθεί ο πελάτης ${displayName};`);
+    if (!confirmed) return;
+    setDeactivating(true);
+    setMessage("");
+    setError("");
+    try {
+      await api.put(`/clients/${clientId}`, { isActive: false });
+      setMessage("Ο πελάτης απενεργοποιήθηκε.");
+      loadClientDetail();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν έγινε απενεργοποίηση.");
+    } finally {
+      setDeactivating(false);
+    }
+  };
+
   return (
     <CoachShell title="Καρτέλα Πελάτη" user={user} logout={logout}>
       <div className="mb-6 flex flex-wrap items-center gap-3 text-sm font-bold">
@@ -402,23 +550,55 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
         <div className="space-y-6">
           <ClientHeader client={client} displayName={displayName} currentStatus={currentStatus} onboarding={onboarding} />
 
-          {currentStatus.label !== "Ενεργός" && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-500/20 dark:bg-amber-500/10">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                  <h3 className="text-lg font-bold text-amber-900 dark:text-amber-300">Ο πελάτης δεν έχει ενεργή πληρωμή</h3>
-                  <p className="mt-1 text-sm font-bold text-amber-800 dark:text-amber-400">
-                    Κατάσταση: {currentStatus.label}. Τα προγράμματα μπορεί να υπάρχουν, αλλά ο πελάτης θα τα βλέπει κλειδωμένα μέχρι να εγκριθεί η πληρωμή του.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Badge className={`h-auto w-fit rounded-md px-4 py-2 text-sm font-bold ${currentStatus.className}`}>
-                    {currentStatus.label}
-                  </Badge>
-                </div>
-              </div>
-            </div>
-          )}
+          <HealthScoreCard client={client} />
+
+          <NextActionsPanel client={client} />
+
+          <div className="flex flex-wrap gap-3">
+            <Button type="button" onClick={() => setQuickMessageOpen(true)} className="gap-2 font-bold">
+              <Mail className="h-4 w-4" /> Μήνυμα
+            </Button>
+            <Button type="button" variant="outline" onClick={handleQuickNewTrainingPlan} className="gap-2 font-bold">
+              <Dumbbell className="h-4 w-4" /> Νέο Πλάνο Προπόνησης
+            </Button>
+            <Button type="button" variant="outline" onClick={handleQuickNewNutritionPlan} className="gap-2 font-bold">
+              <Apple className="h-4 w-4" /> Νέο Πλάνο Διατροφής
+            </Button>
+            <Button type="button" variant="outline" onClick={handleRenewSubscription} className="gap-2 font-bold">
+              <CreditCard className="h-4 w-4" /> Ανανέωση Συνδρομής
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={deactivateClient}
+              disabled={deactivating}
+              className="gap-2 font-bold text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10"
+            >
+              <Ban className="h-4 w-4" /> {deactivating ? "Απενεργοποίηση..." : "Απενεργοποίηση"}
+            </Button>
+          </div>
+
+          <Dialog open={quickMessageOpen} onOpenChange={setQuickMessageOpen}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>Μήνυμα προς {displayName}</DialogTitle>
+              </DialogHeader>
+              <Textarea
+                value={quickMessageText}
+                onChange={(event) => setQuickMessageText(event.target.value)}
+                placeholder="Γράψε ένα μήνυμα..."
+                rows={4}
+              />
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setQuickMessageOpen(false)}>
+                  Ακύρωση
+                </Button>
+                <Button type="button" onClick={sendQuickMessage} disabled={sendingQuickMessage || !quickMessageText.trim()}>
+                  {sendingQuickMessage ? "Αποστολή..." : "Αποστολή"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <Card className="p-2">
@@ -452,6 +632,8 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 approvingPayment={approvingPayment}
                 rejectingPaymentId={rejectingPaymentId}
                 onUpdated={loadClientDetail}
+                manualPaymentOpen={manualPaymentOpen}
+                onManualPaymentOpenChange={setManualPaymentOpen}
               />
             </TabsContent>
 
@@ -532,39 +714,146 @@ function ClientHeader({
   currentStatus: StatusMetaResult;
   onboarding: Onboarding;
 }) {
+  const sparklineData = useMemo(
+    () =>
+      [...(client.weeklyUpdates || [])]
+        .filter((update) => update.weight_kg)
+        .slice(0, 8)
+        .reverse()
+        .map((update) => ({ date: formatDate(update.submitted_at), Βάρος: Number(update.weight_kg) })),
+    [client.weeklyUpdates],
+  );
+  const memberDays = daysSince(client.created_at) ?? 0;
+  const memberMonths = monthsSince(client.created_at);
+  const updatesCount = client.weeklyUpdates?.length || 0;
+
   return (
     <Card className="p-6">
-      <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-          <UserAvatar initials={getInitials(displayName)} photoUrl={client.profile_photo} size="h-28 w-28" />
-          <div>
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-3xl font-bold">{displayName}</h2>
-              <Badge className={`h-auto rounded-md px-3 py-1.5 text-sm font-bold ${currentStatus.className}`}>{currentStatus.label}</Badge>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_auto] lg:items-center">
+        <div className="flex items-center gap-4">
+          <UserAvatar initials={getInitials(displayName)} photoUrl={client.profile_photo} size="h-16 w-16" />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-2xl font-bold">{displayName}</h2>
+              <Badge className={`h-auto rounded-md px-2.5 py-1 text-xs font-bold ${currentStatus.className}`}>{currentStatus.label}</Badge>
               {(client.fitness_goal || onboarding.goal) && (
-                <Badge variant="outline" className="h-auto rounded-md px-3 py-1.5 text-sm font-bold">
+                <Badge variant="outline" className="h-auto rounded-md px-2.5 py-1 text-xs font-bold">
                   {client.fitness_goal || onboarding.goal}
                 </Badge>
               )}
             </div>
-            <div className="mt-4 grid gap-2 text-sm font-semibold text-slate-600 dark:text-slate-400">
-              <span>{client.email || "-"}</span>
-              <span>{client.phone || "-"}</span>
-              <span>Μέλος από: {formatDate(client.created_at)}</span>
+            <div className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">
+              {client.email || "-"} · {client.phone || "-"}
+            </div>
+            <div className="mt-1 text-xs font-semibold text-slate-400 dark:text-slate-500">
+              {memberMonths >= 1 ? `Μέλος από ${memberMonths} μήνες` : "Μέλος από <1 μήνα"}
             </div>
           </div>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Metric label="Τρέχον βάρος" value={client.weight_kg ? `${client.weight_kg} kg` : "-"} />
-          <Metric label="Ημέρες συνδρομής" value={daysRemaining(client.subscription?.end_date)} />
-          <Metric label="Επόμενο update" value={client.updateSchedule?.next_due_date ? formatDate(client.updateSchedule.next_due_date) : "-"} />
-          <Metric
-            label="Πληρωμή"
-            value={client.payments?.[0]?.status ? paymentStatusLabels[client.payments[0].status] || client.payments[0].status : "-"}
-          />
+
+        <div className="min-w-0">
+          {sparklineData.length > 1 ? (
+            <SparkLineChart className="h-14 w-full" data={sparklineData} index="date" categories={["Βάρος"]} colors={["blue"]} />
+          ) : (
+            <div className="text-xs font-semibold text-slate-400 dark:text-slate-500">Χωρίς αρκετά δεδομένα για γράφημα.</div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-2 lg:justify-end">
+          <StatChip icon="⚖️" value={client.weight_kg ? `${client.weight_kg}kg` : "-"} />
+          <StatChip icon="📅" value={`${memberDays} μέρες`} />
+          <StatChip icon="📋" value={`${updatesCount}${updatesCount >= 12 ? "+" : ""} updates`} />
         </div>
       </div>
     </Card>
+  );
+}
+
+function StatChip({ icon, value }: { icon: string; value: string }) {
+  return (
+    <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200">
+      <span>{icon}</span>
+      <span>{value}</span>
+    </div>
+  );
+}
+
+function factorColor(value: number): "red" | "amber" | "emerald" {
+  return value <= 40 ? "red" : value <= 70 ? "amber" : "emerald";
+}
+
+function HealthScoreCard({ client }: { client: ClientRecord }) {
+  const score = useMemo(() => computeHealthScore(client), [client]);
+  const colorClass =
+    score.color === "red"
+      ? "text-red-600 dark:text-red-400"
+      : score.color === "amber"
+        ? "text-amber-600 dark:text-amber-400"
+        : "text-emerald-600 dark:text-emerald-400";
+
+  return (
+    <Card className="p-6">
+      <div className="flex flex-col items-center gap-6 sm:flex-row">
+        <ProgressCircle value={score.total} color={score.color} size="lg">
+          <span className={cn("text-2xl font-bold", colorClass)}>{score.total}</span>
+        </ProgressCircle>
+        <div className="w-full flex-1 space-y-3">
+          <div className="text-sm font-bold text-slate-500 dark:text-slate-400">Health Score</div>
+          <HealthFactorBar label="Ενημερώσεις" value={score.updatesScore} />
+          <HealthFactorBar label="Πληρωμές" value={score.paymentScore} />
+          <HealthFactorBar label="Συνδρομή" value={score.subscriptionScore} />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function HealthFactorBar({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between text-xs font-bold text-slate-600 dark:text-slate-300">
+        <span>{label}</span>
+        <span>{value}%</span>
+      </div>
+      <ProgressBar value={value} color={factorColor(value)} />
+    </div>
+  );
+}
+
+function NextActionsPanel({ client }: { client: ClientRecord }) {
+  const actions = useMemo(() => computeNextActions(client), [client]);
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const visible = actions.filter((action) => !dismissed.has(action.id));
+
+  if (!visible.length) return null;
+
+  return (
+    <div className="space-y-2">
+      {visible.map((action) => (
+        <div
+          key={action.id}
+          className={cn(
+            "flex items-center justify-between gap-3 rounded-lg border p-4 text-sm font-bold",
+            action.severity === "red"
+              ? "border-red-200 bg-red-50 text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400"
+              : "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-400",
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            {action.text}
+          </div>
+          <button
+            type="button"
+            onClick={() => setDismissed((current) => new Set(current).add(action.id))}
+            aria-label="Απόρριψη"
+            className="rounded p-1 hover:bg-black/5 dark:hover:bg-white/10"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -795,6 +1084,8 @@ function PaymentsTab({
   approvingPayment,
   rejectingPaymentId,
   onUpdated,
+  manualPaymentOpen,
+  onManualPaymentOpenChange,
 }: {
   client: ClientRecord;
   clientId: string;
@@ -803,9 +1094,10 @@ function PaymentsTab({
   approvingPayment: boolean;
   rejectingPaymentId: number | string | null;
   onUpdated: () => void;
+  manualPaymentOpen: boolean;
+  onManualPaymentOpenChange: (open: boolean) => void;
 }) {
   const payments = client.payments || [];
-  const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ amount: "", method: "cash", status: "completed", referenceNumber: "", notes: "" });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
@@ -816,7 +1108,7 @@ function PaymentsTab({
     setFormError("");
     try {
       await api.post(`/clients/${clientId}/payments`, { ...form, amount: Number(form.amount) });
-      setOpen(false);
+      onManualPaymentOpenChange(false);
       setForm({ amount: "", method: "cash", status: "completed", referenceNumber: "", notes: "" });
       onUpdated();
     } catch (err) {
@@ -842,7 +1134,7 @@ function PaymentsTab({
             <CardTitle className="text-xl font-bold">Ιστορικό Πληρωμών</CardTitle>
             <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">Όλες οι πληρωμές του πελάτη και οι χειροκίνητες ενέργειες έγκρισης.</p>
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={manualPaymentOpen} onOpenChange={onManualPaymentOpenChange}>
             <DialogTrigger render={<Button>Νέα Πληρωμή</Button>} />
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
@@ -1098,15 +1390,6 @@ function ProgressTab({ client }: { client: ClientRecord }) {
 
 function StateBox({ text }: { text: string }) {
   return <div className="rounded-lg border border-slate-200 bg-white p-8 text-center font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">{text}</div>;
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-[150px] rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800">
-      <div className="text-xs font-bold text-slate-500 dark:text-slate-400">{label}</div>
-      <div className="mt-2 text-lg font-bold">{value || "-"}</div>
-    </div>
-  );
 }
 
 function InfoCard({ title, children }: { title: string; children: ReactNode }) {
