@@ -2,10 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { BarChart } from "@tremor/react";
-import { Users, UserCheck, Clock, UserX, Download } from "lucide-react";
+import Link from "next/link";
+import { Apple, ArrowRight, BarChart3, ChevronDown, ChevronUp, ClipboardList, Download, Dumbbell, FilePlus2, Images, Palette, Users, UserCheck, Clock, UserX, type LucideIcon } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Separator } from "@/components/ui/separator";
 import { CoachShell } from "@/components/shell/coach-shell";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { DateRangePicker } from "@/components/shared/date-range-picker";
@@ -23,9 +27,57 @@ interface ClientRow {
   latest_update_weight?: number | string;
 }
 
+interface PageEntry {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  public?: boolean;
+  coachOnly?: boolean;
+}
+
+const pageGroups: Array<{ title: string; pages: PageEntry[] }> = [
+  {
+    title: "Πελάτες",
+    pages: [
+      { href: "/clients", label: "Λίστα Πελατών", icon: Users },
+      { href: "/clients", label: "Καρτέλα Πελάτη", icon: ClipboardList },
+    ],
+  },
+  {
+    title: "Προπόνηση & Διατροφή",
+    pages: [
+      { href: "/exercises", label: "Βιβλιοθήκη Ασκήσεων", icon: Dumbbell },
+      { href: "/coach/foods", label: "Βιβλιοθήκη Τροφίμων", icon: Apple, coachOnly: true },
+      { href: "/coach/templates/training/new", label: "Νέο Πρότυπο Προπόνησης", icon: FilePlus2, coachOnly: true },
+      { href: "/coach/templates/nutrition/new", label: "Νέο Πρότυπο Διατροφής", icon: FilePlus2, coachOnly: true },
+    ],
+  },
+  {
+    title: "Εγγραφές",
+    pages: [
+      { href: "/pricing-plans", label: "Τιμές (Public)", icon: BarChart3, public: true },
+      { href: "/register", label: "Εγγραφή Πελάτη", icon: FilePlus2, public: true },
+      { href: "/coach/pricing", label: "Διαχείριση Τιμών", icon: BarChart3, coachOnly: true },
+      { href: "/coach/questionnaire", label: "Ερωτηματολόγιο", icon: ClipboardList, coachOnly: true },
+    ],
+  },
+  {
+    title: "Ρυθμίσεις",
+    pages: [
+      { href: "/coach/branding", label: "Branding", icon: Palette, coachOnly: true },
+      { href: "/coach/media", label: "Media Library", icon: Images, coachOnly: true },
+    ],
+  },
+  {
+    title: "Analytics",
+    pages: [{ href: "/analytics", label: "Analytics", icon: BarChart3 }],
+  },
+];
+
 function CoachDashboardContent() {
   const { user, logout } = useAuth();
   const [clients, setClients] = useState<ClientRow[]>([]);
+  const [pagesOpen, setPagesOpen] = useState(false);
 
   useEffect(() => {
     api
@@ -149,6 +201,56 @@ function CoachDashboardContent() {
                 </CardContent>
               </Card>
             </div>
+
+            <Card>
+              <Collapsible open={pagesOpen} onOpenChange={setPagesOpen}>
+                <CardHeader className="p-0">
+                  <CollapsibleTrigger
+                    render={
+                      <button type="button" className="flex w-full items-center justify-between gap-4 px-6 py-5 text-left hover:bg-muted/50">
+                        <div>
+                          <CardTitle>Σελίδες</CardTitle>
+                          <CardDescription className="mt-1">Όλες οι διαθέσιμες σελίδες</CardDescription>
+                        </div>
+                        <span className="grid h-8 w-8 place-items-center rounded-md text-muted-foreground">
+                          {pagesOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                        </span>
+                      </button>
+                    }
+                  />
+                </CardHeader>
+                <CollapsibleContent>
+                  <CardContent className="pt-0">
+                    {pageGroups.map((group, groupIndex) => (
+                      <div key={group.title}>
+                        {groupIndex > 0 && <Separator className="my-5" />}
+                        <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">{group.title}</h3>
+                        <div className="space-y-1">
+                          {group.pages.map((page) => {
+                            const Icon = page.icon;
+                            return (
+                              <Button
+                                key={`${group.title}-${page.label}`}
+                                variant="ghost"
+                                className="h-10 w-full justify-start px-3 text-left font-normal hover:bg-muted"
+                                nativeButton={false}
+                                render={<Link href={page.href} />}
+                              >
+                                <Icon className="mr-3 h-4 w-4 shrink-0 text-muted-foreground" />
+                                <span className="flex-1">{page.label}</span>
+                                {page.public && <Badge className="mr-2 bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950 dark:text-emerald-300">Public</Badge>}
+                                {page.coachOnly && <Badge className="mr-2 bg-blue-100 text-blue-700 hover:bg-blue-100 dark:bg-blue-950 dark:text-blue-300">Coach only</Badge>}
+                                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              </Button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </CollapsibleContent>
+              </Collapsible>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
