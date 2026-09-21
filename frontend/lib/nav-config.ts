@@ -75,7 +75,7 @@ export const coachNavSections: CoachNavSection[] = [
       { key: "discord", label: "Discord", icon: MessageCircle },
       { key: "pricing-plans", label: "Πλάνα & Τιμές", path: "/coach/pricing", icon: Tag },
       { key: "questionnaire", label: "Ερωτηματολόγιο", path: "/coach/questionnaire", icon: HelpCircle },
-      { key: "branding", label: "Branding", icon: Palette },
+      { key: "branding", label: "Branding", path: "/coach/branding", icon: Palette },
     ],
   },
   { key: "admin", label: "Admin Panel", path: "/admin", icon: Shield, adminOnly: true, spacerBefore: true },

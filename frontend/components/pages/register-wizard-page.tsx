@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, CheckCircle, Link2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
 import type { AuthUser } from "@/types/auth";
@@ -262,34 +263,52 @@ function RegisterWizardContent() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f8fb] text-slate-950 dark:bg-slate-950 dark:text-slate-50">
-      <main className="min-h-screen px-5 py-8 sm:px-8 lg:px-10 lg:py-12">
-        <div className="mx-auto max-w-4xl">
-          <header className="mb-8 rounded-xl border border-slate-200 bg-white px-6 py-6 shadow-sm sm:px-8 dark:border-slate-800 dark:bg-slate-900">
-            <div className="text-center">
-              <Badge variant="outline" className="mx-auto mb-4 h-auto w-fit gap-1.5 rounded-full px-4 py-1.5 text-sm font-bold">
-                💪 Online Personal Training
-              </Badge>
-              <h1 className="text-2xl font-bold sm:text-3xl">Δημιούργησε τον Λογαριασμό σου</h1>
-              <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
-                4 μικρά βήματα και ξεκινάμε το ταξίδι σου.
-              </p>
-            </div>
-            <Stepper activeIndex={stepIndex} />
-          </header>
+    <div className="min-h-screen bg-background text-slate-950 dark:text-slate-50">
+      <div className="min-h-screen lg:grid lg:grid-cols-[11fr_9fr]">
+        <aside className="hidden min-h-screen flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-primary/80 p-12 text-white lg:flex">
+          <div>
+            <div className="text-2xl font-bold tracking-tight">CoachApp</div>
+            <p className="mt-2 max-w-xs text-sm text-white/70">Η πλατφόρμα για online personal training</p>
+          </div>
+          <div className="my-auto max-w-md">
+            <h1 className="text-4xl font-bold tracking-tight">Ξεκίνα το Ταξίδι σου 🚀</h1>
+            <ul className="mt-8 space-y-4">
+              {[
+                "100% εξατομικευμένο πρόγραμμα",
+                "Εβδομαδιαία παρακολούθηση",
+                "Άμεση επικοινωνία με coach",
+              ].map((item) => (
+                <li key={item} className="flex items-center gap-3 text-sm text-white/90">
+                  <CheckCircle2 className="h-5 w-5 shrink-0 text-white" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <blockquote className="max-w-sm rounded-xl bg-white/10 p-5 text-sm leading-6 text-white/80">
+            <div className="text-base tracking-wide">⭐⭐⭐⭐⭐</div>
+            <p className="mt-3 italic">«Έχασα 12kg σε 4 μήνες! Το καλύτερο επένδυση που έκανα.»</p>
+            <footer className="mt-3 text-xs text-white/60">— Μαρία Κ.</footer>
+          </blockquote>
+        </aside>
 
-          {stepError && (
-            <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
-              {stepError}
-            </div>
-          )}
-          {submitError && (
-            <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
-              {submitError}
-            </div>
-          )}
+        <main className="px-5 py-8 sm:px-8 lg:px-12 lg:py-12">
+          <div className="mx-auto max-w-3xl">
+            <header className="mb-8">
+              <div className="text-center lg:text-left">
+                <Badge variant="outline" className="mb-4 h-auto w-fit gap-1.5 rounded-full px-4 py-1.5 text-sm font-bold lg:hidden">
+                  💪 Online Personal Training
+                </Badge>
+                <h1 className="text-2xl font-bold sm:text-3xl">Δημιούργησε τον Λογαριασμό σου</h1>
+                <p className="mt-2 text-sm text-muted-foreground">4 μικρά βήματα και ξεκινάμε το ταξίδι σου.</p>
+              </div>
+              <Stepper activeIndex={stepIndex} />
+            </header>
 
-          <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 dark:border-slate-800 dark:bg-slate-900">
+            {stepError && <FormError message={stepError} />}
+            {submitError && <FormError message={submitError} />}
+
+            <form onSubmit={submit} className="rounded-xl border bg-white p-6 sm:p-8 dark:bg-slate-900">
             {stepIndex === 0 && (
               <AccountStep account={account} updateAccount={updateAccount} emailStatus={emailStatus} />
             )}
@@ -308,73 +327,66 @@ function RegisterWizardContent() {
               />
             )}
 
-            <div className="mt-8 flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-5 py-4 dark:bg-slate-800">
+            <div className="sticky bottom-0 -mx-6 mt-8 flex items-center justify-between gap-3 border-t bg-white px-6 py-4 dark:bg-slate-900 sm:static sm:mx-0 sm:rounded-xl sm:border sm:bg-muted/50 sm:px-5 dark:sm:bg-slate-800">
               {stepIndex > 0 ? (
-                <Button type="button" variant="outline" className="h-11 px-5 font-bold" onClick={goBack}>
-                  Πίσω
+                <Button type="button" variant="ghost" className="h-11 px-3 font-bold sm:px-5" onClick={goBack}>
+                  ← Πίσω
                 </Button>
               ) : (
                 <span />
               )}
               {stepIndex < steps.length - 1 ? (
-                <Button key="continue" type="button" className="h-12 px-8 font-bold" onClick={goNext}>
+                <Button key="continue" type="button" className="h-12 flex-1 px-8 font-bold sm:flex-none" onClick={goNext}>
                   Συνέχεια →
                 </Button>
               ) : (
-                <Button key="submit" type="submit" disabled={submitting} className="h-12 px-8 font-bold">
+                <Button key="submit" type="submit" disabled={submitting} className="h-12 flex-1 px-8 font-bold sm:flex-none">
                   {submitting ? "Ολοκλήρωση..." : "Ολοκλήρωση Εγγραφής"}
                 </Button>
               )}
             </div>
-          </form>
+            </form>
 
-          <p className="mt-6 text-center text-sm text-slate-600 dark:text-slate-400">
+            <p className="mt-6 text-center text-sm text-slate-600 dark:text-slate-400">
             Έχεις ήδη λογαριασμό;{" "}
             <Link href="/login" className="font-bold text-primary hover:underline">
               Σύνδεση
             </Link>
-          </p>
-        </div>
-      </main>
+            </p>
+          </div>
+        </main>
+      </div>
     </div>
   );
 }
 
 function Stepper({ activeIndex }: { activeIndex: number }) {
-  const progress = ((activeIndex + 1) / steps.length) * 100;
-
   return (
-    <div className="mt-6">
-      <div className="mb-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-        <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }} />
-      </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+    <div className="mt-8 grid grid-cols-4">
         {steps.map((step, index) => {
           const isComplete = index < activeIndex;
           const isActive = index === activeIndex;
           return (
-            <div
-              key={step.key}
-              className={`flex items-center gap-2 rounded-lg border px-2 py-2 text-xs font-bold ${
-                isActive
-                  ? "border-primary bg-primary/5 text-slate-950 dark:text-slate-50"
-                  : isComplete
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-400"
-                    : "border-slate-200 text-slate-400 dark:border-slate-700 dark:text-slate-500"
-              }`}
-            >
-              <span
-                className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] ${
-                  isComplete ? "bg-emerald-500 text-white" : isActive ? "bg-primary text-white" : "bg-slate-100 dark:bg-slate-800"
-                }`}
-              >
-                {isComplete ? <Check className="h-3 w-3" /> : index + 1}
+            <div key={step.key} className="relative flex min-w-0 flex-col items-center text-center">
+              {index < steps.length - 1 && (
+                <span className={`absolute left-1/2 top-4 h-0.5 w-full ${index < activeIndex ? "bg-primary" : "bg-muted"}`} />
+              )}
+              <span className={`relative z-10 grid h-8 w-8 place-items-center rounded-full text-xs ${isActive ? "bg-primary text-white" : isComplete ? "bg-primary/20 text-emerald-600" : "bg-muted text-muted-foreground"}`}>
+                {isComplete ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
               </span>
-              <span className="truncate">{step.title}</span>
+              <span className={`mt-2 hidden text-xs sm:block ${isActive ? "font-semibold text-foreground" : "text-muted-foreground"}`}>{step.title}</span>
             </div>
           );
         })}
-      </div>
+    </div>
+  );
+}
+
+function FormError({ message }: { message: string }) {
+  return (
+    <div className="mb-5 flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-5 py-4 text-sm font-medium text-destructive">
+      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+      {message}
     </div>
   );
 }
@@ -511,14 +523,23 @@ function QuestionnaireStep({
     return <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Φόρτωση ερωτηματολογίου...</p>;
   }
 
+  const answeredCount = questions.filter((question) => !isAnswerEmpty(answers[question.id])).length;
+
   return (
     <Section title="Πες μας λίγα λόγια για σένα">
+      <div className="mb-6">
+        <div className="mb-2 flex items-center justify-between text-sm font-medium">
+          <span>Απάντησες {answeredCount} από {questions.length}</span>
+          <span className="text-muted-foreground">{questions.length ? Math.round((answeredCount / questions.length) * 100) : 0}%</span>
+        </div>
+        <Progress value={questions.length ? (answeredCount / questions.length) * 100 : 0} />
+      </div>
       <div className="space-y-7">
         {questions.map((question) => (
-          <div key={question.id} className="rounded-lg border border-slate-100 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-            <div className="mb-3 text-sm font-bold leading-6 text-slate-700 dark:text-slate-200">
+          <div key={question.id} className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+            <div className="mb-3 font-medium leading-6 text-slate-700 dark:text-slate-200">
               {question.question}
-              {question.isRequired && <span className="ml-1 text-red-500">*</span>}
+              {question.isRequired && <span className="ml-1 text-destructive">*</span>}
             </div>
             <QuestionField question={question} value={answers[question.id]} onChange={(value) => updateAnswer(question.id, value)} />
           </div>
@@ -588,12 +609,13 @@ function QuestionField({
         {question.options.map((option) => (
           <label
             key={option}
-            className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${
+            className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold transition-colors ${
               value === option ? "border-primary bg-primary/5" : "border-slate-200 dark:border-slate-700"
             }`}
           >
             <RadioGroupItem value={option} />
             {option}
+            {value === option && <CheckCircle2 className="ml-auto h-4 w-4 text-primary" />}
           </label>
         ))}
       </RadioGroup>
@@ -608,7 +630,7 @@ function QuestionField({
           return (
             <label
               key={option}
-              className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold ${
+              className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm font-semibold transition-colors ${
                 checked ? "border-primary bg-primary/5" : "border-slate-200 dark:border-slate-700"
               }`}
             >
@@ -669,7 +691,7 @@ function PlanOption({ plan, selected, onSelect }: { plan: PricingPlan; selected:
       )}
       {selected && (
         <div className="absolute right-3 top-3 grid h-6 w-6 place-items-center rounded-full bg-primary text-white">
-          <Check className="h-4 w-4" />
+          <CheckCircle2 className="h-4 w-4" />
         </div>
       )}
       <div className="font-bold text-slate-950 dark:text-slate-50">{plan.name}</div>
@@ -682,7 +704,7 @@ function PlanOption({ plan, selected, onSelect }: { plan: PricingPlan; selected:
           .filter((feature) => feature.included)
           .map((feature, index) => (
             <li key={index} className="flex items-start gap-1.5 text-xs text-slate-600 dark:text-slate-300">
-              <CheckCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
               {feature.text}
             </li>
           ))}
@@ -704,6 +726,17 @@ function PaymentStep({
 }) {
   return (
     <Section title="Τρόπος Πληρωμής">
+      <div className="mb-6 rounded-xl bg-muted p-4">
+        <div className="text-sm font-medium text-muted-foreground">Επιλεγμένο πλάνο</div>
+        {selectedPlan ? (
+          <div className="mt-2 flex items-end justify-between gap-4">
+            <span className="font-semibold">{selectedPlan.name}</span>
+            <span className="text-xl font-bold">€{Number(selectedPlan.price).toFixed(0)}<span className="ml-1 text-sm font-normal text-muted-foreground">/{formatPeriodLabel(selectedPlan.period)}</span></span>
+          </div>
+        ) : (
+          <div className="mt-2 text-sm text-muted-foreground">Δεν έχει επιλεγεί πλάνο.</div>
+        )}
+      </div>
       <RadioGroup value={paymentMethod} onValueChange={(value) => onPaymentMethodChange((value as "bank" | "stripe") ?? "bank")} className="space-y-3">
         <label
           className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm font-bold ${
@@ -725,29 +758,15 @@ function PaymentStep({
       </RadioGroup>
 
       {paymentMethod === "bank" && bankDetails && (
-        <div className="mt-4 space-y-1.5 rounded-lg bg-slate-50 p-4 text-sm font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-          <div>Τράπεζα: {bankDetails.bankName}</div>
-          <div>Δικαιούχος: {bankDetails.beneficiary}</div>
-          <div>IBAN: {bankDetails.iban}</div>
+        <div className="mt-4 space-y-3 rounded-xl border bg-muted/50 p-5 text-sm dark:bg-slate-800">
+          <div><span className="text-muted-foreground">Τράπεζα</span><div className="mt-1 font-semibold">{bankDetails.bankName}</div></div>
+          <div><span className="text-muted-foreground">Δικαιούχος</span><div className="mt-1 font-semibold">{bankDetails.beneficiary}</div></div>
+          <div><span className="text-muted-foreground">IBAN</span><div className="mt-1 break-all font-semibold tracking-wide">{bankDetails.iban}</div></div>
           <div className="pt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
             Θα λάβεις αριθμό αναφοράς πληρωμής μετά την ολοκλήρωση της εγγραφής.
           </div>
         </div>
       )}
-
-      <div className="mt-6 rounded-lg border border-slate-200 p-4 dark:border-slate-700">
-        <div className="text-sm font-bold text-slate-700 dark:text-slate-200">Σύνοψη Παραγγελίας</div>
-        {selectedPlan ? (
-          <div className="mt-2 flex items-center justify-between text-sm font-semibold">
-            <span>{selectedPlan.name}</span>
-            <span>
-              €{Number(selectedPlan.price).toFixed(0)}/{formatPeriodLabel(selectedPlan.period)}
-            </span>
-          </div>
-        ) : (
-          <div className="mt-2 text-sm text-slate-500 dark:text-slate-400">Δεν έχει επιλεγεί πλάνο.</div>
-        )}
-      </div>
     </Section>
   );
 }
