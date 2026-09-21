@@ -1827,7 +1827,7 @@ router.get('/:id/questionnaire-answers', authorizeRole(['coach', 'admin', 'moder
   try {
     await ensureQuestionnaireSchema(connection);
     const [rows] = await connection.query(
-      `SELECT qq.question, qq.type, qq.sort_order, qq.placeholder, qa.answer
+      `SELECT qq.id AS question_id, qq.question, qq.type, qq.options, qq.sort_order, qq.placeholder, qa.answer
        FROM questionnaire_questions qq
        LEFT JOIN questionnaire_answers qa ON qa.question_id = qq.id AND qa.client_id = ?
        WHERE qq.is_active = TRUE
@@ -1837,6 +1837,46 @@ router.get('/:id/questionnaire-answers', authorizeRole(['coach', 'admin', 'moder
 
     res.json(rows);
   } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.put('/:id/questionnaire-answers', authorizeRole(['coach', 'admin', 'moderator']), [
+  body('answers').isArray(),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const connection = await pool.getConnection();
+
+  try {
+    await ensureQuestionnaireSchema(connection);
+    const clientId = req.params.id;
+    const { answers } = req.body;
+
+    await connection.beginTransaction();
+
+    for (const entry of answers || []) {
+      if (!entry || entry.question_id === undefined) continue;
+      const value = Array.isArray(entry.answer) || (entry.answer && typeof entry.answer === 'object')
+        ? JSON.stringify(entry.answer)
+        : (entry.answer ?? '');
+      await connection.query('DELETE FROM questionnaire_answers WHERE client_id = ? AND question_id = ?', [clientId, entry.question_id]);
+      if (String(value).trim() !== '') {
+        await connection.query(
+          'INSERT INTO questionnaire_answers (client_id, question_id, answer) VALUES (?, ?, ?)',
+          [clientId, entry.question_id, String(value)]
+        );
+      }
+    }
+
+    await connection.commit();
+    res.json({ message: 'Οι απαντήσεις αποθηκεύτηκαν.' });
+  } catch (error) {
+    await connection.rollback();
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   } finally {

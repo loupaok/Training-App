@@ -3,10 +3,14 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Clock, Sparkles, Undo2 } from "lucide-react";
+import { AlertTriangle, Clock, Sparkles, Undo2, GripVertical, Link2, Pencil, X } from "lucide-react";
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl, getInitials } from "@/lib/media";
+import { cn } from "@/lib/utils";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CoachShell } from "@/components/shell/coach-shell";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -16,6 +20,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
@@ -178,9 +184,56 @@ interface ClientActivityLogEntry {
 }
 
 interface RegistrationQuestionnaireAnswer {
+  question_id: number;
   question: string;
   answer?: string | null;
   type: string;
+  options?: string | string[] | null;
+  placeholder?: string | null;
+}
+
+type QuestionnaireAnswerValue = string | string[] | Record<string, string>;
+
+function parseQuestionOptions(options?: string | string[] | null): string[] {
+  if (Array.isArray(options)) return options;
+  if (!options) return [];
+  try {
+    const parsed = JSON.parse(options);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseAnswerValue(answer: string | null | undefined, type: string): QuestionnaireAnswerValue {
+  if (!answer) return type === "multi_select" ? [] : "";
+  if (type === "multi_select") {
+    try {
+      const parsed = JSON.parse(answer);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  if (type === "url") {
+    try {
+      const parsed = JSON.parse(answer);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    } catch {
+      // Plain URL answers remain as-is.
+    }
+    return answer;
+  }
+  return answer;
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -970,6 +1023,17 @@ const updateDayOptions = [
   { value: 0, label: "Κυριακή" },
 ];
 
+const OVERVIEW_LAYOUT_STORAGE_KEY = "coach-client-overview-layout-v1";
+
+const DEFAULT_SECTION_ORDER: { id: string; column: "left" | "right" }[] = [
+  { id: "contact", column: "left" },
+  { id: "updateDaysBadge", column: "left" },
+  { id: "questionnaire", column: "left" },
+  { id: "updateDaySelect", column: "left" },
+  { id: "subscription", column: "right" },
+  { id: "notes", column: "right" },
+];
+
 function subscriptionProgressPct(client: ClientRecord): number {
   const start = client.subscription?.start_date ? new Date(client.subscription.start_date).getTime() : null;
   const end = client.subscription?.end_date ? new Date(client.subscription.end_date).getTime() : null;
@@ -1011,6 +1075,67 @@ function OverviewTab({
   const [savingUpdateDay, setSavingUpdateDay] = useState(false);
   const [questionnaireAnswers, setQuestionnaireAnswers] = useState<RegistrationQuestionnaireAnswer[]>([]);
   const [loadingQuestionnaireAnswers, setLoadingQuestionnaireAnswers] = useState(true);
+  const [editingQuestionnaire, setEditingQuestionnaire] = useState(false);
+  const [questionnaireDraft, setQuestionnaireDraft] = useState<Record<number, QuestionnaireAnswerValue>>({});
+  const [savingQuestionnaire, setSavingQuestionnaire] = useState(false);
+  const [questionnaireError, setQuestionnaireError] = useState("");
+  const [sectionOrder, setSectionOrder] = useState<{ id: string; column: "left" | "right" }[]>(DEFAULT_SECTION_ORDER);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(OVERVIEW_LAYOUT_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length === DEFAULT_SECTION_ORDER.length) setSectionOrder(parsed);
+      }
+    } catch {
+      // Ignore malformed/blocked storage — fall back to the default layout.
+    }
+  }, []);
+
+  const persistSectionOrder = (next: { id: string; column: "left" | "right" }[]) => {
+    setSectionOrder(next);
+    try {
+      window.localStorage.setItem(OVERVIEW_LAYOUT_STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      // Ignore storage write failures (private mode, quota, etc.).
+    }
+  };
+
+  const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+
+  const handleSectionDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    if (activeId === overId) return;
+
+    const activeItem = sectionOrder.find((item) => item.id === activeId);
+    if (!activeItem) return;
+
+    const isColumnDrop = overId === "column-left" || overId === "column-right";
+    const targetColumn: "left" | "right" = isColumnDrop ? (overId === "column-left" ? "left" : "right") : sectionOrder.find((item) => item.id === overId)?.column ?? activeItem.column;
+
+    if (targetColumn === activeItem.column && !isColumnDrop) {
+      const columnIds = sectionOrder.filter((item) => item.column === activeItem.column).map((item) => item.id);
+      const oldIndex = columnIds.indexOf(activeId);
+      const newIndex = columnIds.indexOf(overId);
+      if (oldIndex === -1 || newIndex === -1) return;
+      const reorderedColumn = arrayMove(columnIds, oldIndex, newIndex);
+      const otherItems = sectionOrder.filter((item) => item.column !== activeItem.column);
+      const reordered = [...otherItems, ...reorderedColumn.map((id) => ({ id, column: activeItem.column }))];
+      persistSectionOrder(reordered);
+      return;
+    }
+
+    const withoutActive = sectionOrder.filter((item) => item.id !== activeId);
+    const moved = { id: activeId, column: targetColumn };
+    const insertAt = isColumnDrop ? withoutActive.length : withoutActive.findIndex((item) => item.id === overId);
+    const next = [...withoutActive];
+    next.splice(insertAt === -1 ? next.length : insertAt, 0, moved);
+    persistSectionOrder(next);
+  };
 
   useEffect(() => {
     setForm(toDetailsForm(client));
@@ -1071,8 +1196,262 @@ function OverviewTab({
     }
   };
 
+  const startEditingQuestionnaire = () => {
+    const draft: Record<number, QuestionnaireAnswerValue> = {};
+    questionnaireAnswers.forEach((item) => {
+      draft[item.question_id] = parseAnswerValue(item.answer, item.type);
+    });
+    setQuestionnaireDraft(draft);
+    setQuestionnaireError("");
+    setEditingQuestionnaire(true);
+  };
+
+  const updateQuestionnaireDraft = (questionId: number, value: QuestionnaireAnswerValue) => {
+    setQuestionnaireDraft((current) => ({ ...current, [questionId]: value }));
+  };
+
+  const cancelEditingQuestionnaire = () => {
+    setEditingQuestionnaire(false);
+    setQuestionnaireError("");
+  };
+
+  const saveQuestionnaireAnswers = async () => {
+    const invalidUrl = questionnaireAnswers.some((item) => {
+      if (item.type !== "url") return false;
+      const value = questionnaireDraft[item.question_id];
+      if (value === undefined) return false;
+      if (typeof value === "string") return value.trim() !== "" && !isValidHttpUrl(value);
+      if (typeof value === "object" && !Array.isArray(value)) {
+        return Object.values(value).some((entry) => entry.trim() !== "" && !isValidHttpUrl(entry));
+      }
+      return false;
+    });
+    if (invalidUrl) {
+      setQuestionnaireError("Έλεγξε ότι οι σύνδεσμοι που έδωσες είναι έγκυρα URL (π.χ. https://...).");
+      return;
+    }
+
+    setSavingQuestionnaire(true);
+    setQuestionnaireError("");
+    try {
+      const answers = questionnaireAnswers.map((item) => ({
+        question_id: item.question_id,
+        answer: questionnaireDraft[item.question_id] ?? "",
+      }));
+      const updated = await api.put<RegistrationQuestionnaireAnswer[]>(`/clients/${clientId}/questionnaire-answers`, { answers }).then(
+        () => api.get<RegistrationQuestionnaireAnswer[]>(`/clients/${clientId}/questionnaire-answers`),
+      );
+      setQuestionnaireAnswers(updated);
+      setEditingQuestionnaire(false);
+    } catch (err) {
+      setQuestionnaireError(err instanceof Error ? err.message : "Δεν αποθηκεύτηκαν οι απαντήσεις.");
+    } finally {
+      setSavingQuestionnaire(false);
+    }
+  };
+
   const latestPayment = client.payments?.[0];
   const pendingPayment = latestPayment?.status === "pending" ? latestPayment : null;
+
+  const sectionsMap: Record<string, ReactNode> = {
+    contact: (
+      <InfoCard title="Στοιχεία Επικοινωνίας">
+        <div className="space-y-3">
+          <EditField label="Όνομα" value={form.fullName} onChange={(value) => updateField("fullName", value)} disabled={!canEdit} />
+          <EditField label="Email" type="email" value={form.email} onChange={(value) => updateField("email", value)} disabled={!canEdit} />
+          <EditField label="Τηλέφωνο" value={form.phone} onChange={(value) => updateField("phone", value)} disabled={!canEdit} />
+          <EditField label="Ημερομηνία γέννησης" type="date" value={form.dateOfBirth} onChange={(value) => updateField("dateOfBirth", value)} disabled={!canEdit} />
+          <div>
+            <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Φύλο</Label>
+            <Select
+              items={[
+                { value: "male", label: "Άνδρας" },
+                { value: "female", label: "Γυναίκα" },
+                { value: "other", label: "Άλλο" },
+              ]}
+              value={form.gender}
+              onValueChange={(value) => updateField("gender", value ?? "")}
+            >
+              <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold" disabled={!canEdit}>
+                <SelectValue placeholder="Επιλογή" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="male">Άνδρας</SelectItem>
+                <SelectItem value="female">Γυναίκα</SelectItem>
+                <SelectItem value="other">Άλλο</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        {canResetPassword && (
+          <>
+            <Separator className="my-4" />
+            <div>
+              <p className="mb-2 text-sm text-muted-foreground">Διαχείριση πρόσβασης</p>
+              <ResetPasswordDialog onResetPassword={onResetPassword} resettingPassword={resettingPassword} />
+            </div>
+          </>
+        )}
+        <div className="mt-4 flex justify-end">
+          <Button type="button" onClick={saveDetails} disabled={saving || !canEdit} className="h-10 px-6 font-bold">
+            {saving ? "Αποθήκευση..." : "Αποθήκευση στοιχείων"}
+          </Button>
+        </div>
+      </InfoCard>
+    ),
+    updateDaysBadge: (
+      <Card className="border-primary/40 bg-primary/5">
+        <CardHeader>
+          <CardTitle className="text-sm">Ημέρες Αποστολής Update</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {client.updateSchedule?.day_of_week === undefined || client.updateSchedule.day_of_week === null ? (
+            <p className="text-sm text-muted-foreground">Δεν έχουν οριστεί ημέρες</p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {updateDayOptions.map((day) => (
+                <Badge key={day.value} variant={Number(client.updateSchedule?.day_of_week) === day.value ? "default" : "outline"}>
+                  {day.label}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    ),
+    questionnaire: (
+      <Card>
+        <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+          <div>
+            <CardTitle className="text-lg">Στοιχεία Φόρμας Εγγραφής</CardTitle>
+            <p className="text-sm text-muted-foreground">Απαντήσεις κατά την εγγραφή</p>
+          </div>
+          {!loadingQuestionnaireAnswers && questionnaireAnswers.length > 0 && canEdit && (
+            editingQuestionnaire ? (
+              <Button type="button" variant="ghost" size="icon" onClick={cancelEditingQuestionnaire} disabled={savingQuestionnaire} aria-label="Ακύρωση">
+                <X className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button type="button" variant="outline" size="sm" onClick={startEditingQuestionnaire} className="gap-1.5 font-bold">
+                <Pencil className="h-3.5 w-3.5" />
+                Επεξεργασία
+              </Button>
+            )
+          )}
+        </CardHeader>
+        <CardContent>
+          {questionnaireError && (
+            <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400">
+              {questionnaireError}
+            </div>
+          )}
+          {loadingQuestionnaireAnswers ? (
+            <p className="text-sm text-muted-foreground">Φόρτωση απαντήσεων...</p>
+          ) : !questionnaireAnswers.length ? (
+            <p className="italic text-muted-foreground">Δεν υπάρχουν απαντήσεις από τη φόρμα εγγραφής</p>
+          ) : editingQuestionnaire ? (
+            <div className="space-y-5">
+              {questionnaireAnswers.map((item) => (
+                <div key={item.question_id}>
+                  <p className="mb-2 text-sm font-semibold text-muted-foreground">{item.question}</p>
+                  <QuestionnaireAnswerField
+                    type={item.type}
+                    options={parseQuestionOptions(item.options)}
+                    placeholder={item.placeholder || ""}
+                    value={questionnaireDraft[item.question_id]}
+                    onChange={(value) => updateQuestionnaireDraft(item.question_id, value)}
+                  />
+                </div>
+              ))}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={cancelEditingQuestionnaire} disabled={savingQuestionnaire} className="h-10 px-5 font-bold">
+                  Άκυρο
+                </Button>
+                <Button type="button" onClick={saveQuestionnaireAnswers} disabled={savingQuestionnaire} className="h-10 px-6 font-bold">
+                  {savingQuestionnaire ? "Αποθήκευση..." : "Αποθήκευση απαντήσεων"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div>
+              {questionnaireAnswers.map((item, index) => (
+                <div key={item.question_id} className={index > 0 ? "border-t pt-4" : ""}>
+                  {index > 0 && <div className="mb-4" />}
+                  <p className="text-sm text-muted-foreground">{item.question}</p>
+                  <p className="mt-1 text-sm font-medium">{formatQuestionnaireAnswer(item.answer, item.type)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    ),
+    updateDaySelect: (
+      <InfoCard title="Ημέρες Update">
+        <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Ημέρα εβδομαδιαίου update</Label>
+        <Select
+          items={updateDayOptions.map((option) => ({ value: String(option.value), label: option.label }))}
+          value={client.updateSchedule?.day_of_week !== undefined ? String(client.updateSchedule.day_of_week) : undefined}
+          onValueChange={(value) => value && saveUpdateDay(value)}
+        >
+          <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold" disabled={savingUpdateDay || !canEdit}>
+            <SelectValue placeholder="Επιλογή ημέρας" />
+          </SelectTrigger>
+          <SelectContent>
+            {updateDayOptions.map((option) => (
+              <SelectItem key={option.value} value={String(option.value)}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </InfoCard>
+    ),
+    subscription: (
+      <InfoCard title="Συνδρομή">
+        <Badge className={`h-auto w-fit rounded-md px-3 py-1.5 text-sm font-bold ${currentStatus.className}`}>{currentStatus.label}</Badge>
+        <Info label="Έναρξη" value={formatDate(client.subscription?.start_date)} />
+        <Info label="Λήξη" value={formatDate(client.subscription?.end_date)} />
+        <div>
+          <div className="mb-1 flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
+            <span>Ημέρες που απομένουν</span>
+            <span>{daysRemaining(client.subscription?.end_date)}</span>
+          </div>
+          <ProgressBar value={subscriptionProgressPct(client)} color={currentStatus.label === "Ανενεργός" ? "red" : "emerald"} />
+        </div>
+        <Info label="Πακέτο" value={onboarding.selected_package || "-"} />
+        <Info
+          label="Τρόπος πληρωμής"
+          value={latestPayment?.method === "bank_transfer" ? "Τραπεζικό έμβασμα" : latestPayment?.method || "-"}
+        />
+        {pendingPayment && (
+          <Button
+            type="button"
+            onClick={() => onApprovePayment(pendingPayment.id)}
+            disabled={approvingPayment}
+            className="mt-2 h-10 w-full bg-emerald-600 font-bold text-white hover:bg-emerald-700"
+          >
+            {approvingPayment ? "Έγκριση..." : "Έγκριση πληρωμής"}
+          </Button>
+        )}
+      </InfoCard>
+    ),
+    notes: (
+      <InfoCard title="Ιδιωτικές Σημειώσεις">
+        <p className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">(Ορατό μόνο σε εσάς)</p>
+        <Textarea
+          className="min-h-24"
+          value={form.coachNotes}
+          onChange={(event) => updateField("coachNotes", event.target.value)}
+          onBlur={saveDetails}
+          placeholder="Δεν υπάρχουν σημειώσεις coach."
+        />
+      </InfoCard>
+    ),
+  };
+
+  const leftIds = sectionOrder.filter((item) => item.column === "left").map((item) => item.id);
+  const rightIds = sectionOrder.filter((item) => item.column === "right").map((item) => item.id);
 
   return (
     <div className="space-y-6">
@@ -1088,163 +1467,175 @@ function OverviewTab({
         </div>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-5">
-        {/* Left column — 60% */}
-        <div className="space-y-6 lg:col-span-3">
-          <InfoCard title="Στοιχεία Επικοινωνίας">
-            <div className="space-y-3">
-              <EditField label="Όνομα" value={form.fullName} onChange={(value) => updateField("fullName", value)} disabled={!canEdit} />
-              <EditField label="Email" type="email" value={form.email} onChange={(value) => updateField("email", value)} disabled={!canEdit} />
-              <EditField label="Τηλέφωνο" value={form.phone} onChange={(value) => updateField("phone", value)} disabled={!canEdit} />
-              <EditField label="Ημερομηνία γέννησης" type="date" value={form.dateOfBirth} onChange={(value) => updateField("dateOfBirth", value)} disabled={!canEdit} />
-              <div>
-                <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Φύλο</Label>
-                <Select
-                  items={[
-                    { value: "male", label: "Άνδρας" },
-                    { value: "female", label: "Γυναίκα" },
-                    { value: "other", label: "Άλλο" },
-                  ]}
-                  value={form.gender}
-                  onValueChange={(value) => updateField("gender", value ?? "")}
-                >
-                  <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold" disabled={!canEdit}>
-                    <SelectValue placeholder="Επιλογή" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="male">Άνδρας</SelectItem>
-                    <SelectItem value="female">Γυναίκα</SelectItem>
-                    <SelectItem value="other">Άλλο</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            {canResetPassword && (
-              <>
-                <Separator className="my-4" />
-                <div>
-                  <p className="mb-2 text-sm text-muted-foreground">Διαχείριση πρόσβασης</p>
-                  <ResetPasswordDialog onResetPassword={onResetPassword} resettingPassword={resettingPassword} />
-                </div>
-              </>
-            )}
-            <div className="mt-4 flex justify-end">
-              <Button type="button" onClick={saveDetails} disabled={saving || !canEdit} className="h-10 px-6 font-bold">
-                {saving ? "Αποθήκευση..." : "Αποθήκευση στοιχείων"}
-              </Button>
-            </div>
-          </InfoCard>
-
-          <Card className="border-primary/40 bg-primary/5">
-            <CardHeader>
-              <CardTitle className="text-sm">Ημέρες Αποστολής Update</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {client.updateSchedule?.day_of_week === undefined || client.updateSchedule.day_of_week === null ? (
-                <p className="text-sm text-muted-foreground">Δεν έχουν οριστεί ημέρες</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {updateDayOptions.map((day) => (
-                    <Badge key={day.value} variant={Number(client.updateSchedule?.day_of_week) === day.value ? "default" : "outline"}>
-                      {day.label}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Στοιχεία Φόρμας Εγγραφής</CardTitle>
-              <p className="text-sm text-muted-foreground">Απαντήσεις κατά την εγγραφή</p>
-            </CardHeader>
-            <CardContent>
-              {loadingQuestionnaireAnswers ? (
-                <p className="text-sm text-muted-foreground">Φόρτωση απαντήσεων...</p>
-              ) : questionnaireAnswers.length ? (
-                <div>
-                  {questionnaireAnswers.map((item, index) => (
-                    <div key={`${item.question}-${index}`} className={index > 0 ? "border-t pt-4" : ""}>
-                      {index > 0 && <div className="mb-4" />}
-                      <p className="text-sm text-muted-foreground">{item.question}</p>
-                      <p className="mt-1 text-sm font-medium">{formatQuestionnaireAnswer(item.answer, item.type)}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="italic text-muted-foreground">Δεν υπάρχουν απαντήσεις από τη φόρμα εγγραφής</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Separator />
-
-          <InfoCard title="Ημέρες Update">
-            <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Ημέρα εβδομαδιαίου update</Label>
-            <Select
-              items={updateDayOptions.map((option) => ({ value: String(option.value), label: option.label }))}
-              value={client.updateSchedule?.day_of_week !== undefined ? String(client.updateSchedule.day_of_week) : undefined}
-              onValueChange={(value) => value && saveUpdateDay(value)}
-            >
-              <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold" disabled={savingUpdateDay || !canEdit}>
-                <SelectValue placeholder="Επιλογή ημέρας" />
-              </SelectTrigger>
-              <SelectContent>
-                {updateDayOptions.map((option) => (
-                  <SelectItem key={option.value} value={String(option.value)}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </InfoCard>
+      <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleSectionDragEnd}>
+        <div className="grid gap-6 lg:grid-cols-5">
+          <OverviewColumn columnId="column-left" ids={leftIds} className="lg:col-span-3">
+            {leftIds.map((id) => (
+              <DraggableSection key={id} id={id}>
+                {sectionsMap[id]}
+              </DraggableSection>
+            ))}
+          </OverviewColumn>
+          <OverviewColumn columnId="column-right" ids={rightIds} className="lg:col-span-2">
+            {rightIds.map((id) => (
+              <DraggableSection key={id} id={id}>
+                {sectionsMap[id]}
+              </DraggableSection>
+            ))}
+          </OverviewColumn>
         </div>
-
-        {/* Right column — 40% */}
-        <div className="space-y-6 lg:col-span-2">
-          <InfoCard title="Συνδρομή">
-            <Badge className={`h-auto w-fit rounded-md px-3 py-1.5 text-sm font-bold ${currentStatus.className}`}>{currentStatus.label}</Badge>
-            <Info label="Έναρξη" value={formatDate(client.subscription?.start_date)} />
-            <Info label="Λήξη" value={formatDate(client.subscription?.end_date)} />
-            <div>
-              <div className="mb-1 flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
-                <span>Ημέρες που απομένουν</span>
-                <span>{daysRemaining(client.subscription?.end_date)}</span>
-              </div>
-              <ProgressBar value={subscriptionProgressPct(client)} color={currentStatus.label === "Ανενεργός" ? "red" : "emerald"} />
-            </div>
-            <Info label="Πακέτο" value={onboarding.selected_package || "-"} />
-            <Info
-              label="Τρόπος πληρωμής"
-              value={latestPayment?.method === "bank_transfer" ? "Τραπεζικό έμβασμα" : latestPayment?.method || "-"}
-            />
-            {pendingPayment && (
-              <Button
-                type="button"
-                onClick={() => onApprovePayment(pendingPayment.id)}
-                disabled={approvingPayment}
-                className="mt-2 h-10 w-full bg-emerald-600 font-bold text-white hover:bg-emerald-700"
-              >
-                {approvingPayment ? "Έγκριση..." : "Έγκριση πληρωμής"}
-              </Button>
-            )}
-          </InfoCard>
-
-          <InfoCard title="Ιδιωτικές Σημειώσεις">
-            <p className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">(Ορατό μόνο σε εσάς)</p>
-            <Textarea
-              className="min-h-24"
-              value={form.coachNotes}
-              onChange={(event) => updateField("coachNotes", event.target.value)}
-              onBlur={saveDetails}
-              placeholder="Δεν υπάρχουν σημειώσεις coach."
-            />
-          </InfoCard>
-        </div>
-      </div>
+      </DndContext>
     </div>
   );
+}
+
+function OverviewColumn({
+  columnId,
+  ids,
+  className,
+  children,
+}: {
+  columnId: string;
+  ids: string[];
+  className?: string;
+  children: ReactNode;
+}) {
+  const { setNodeRef } = useDroppable({ id: columnId });
+  return (
+    <div ref={setNodeRef} className={cn("space-y-6", className)}>
+      <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+        {children}
+      </SortableContext>
+    </div>
+  );
+}
+
+function DraggableSection({ id, children }: { id: string; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn("group relative", isDragging && "z-10 opacity-60")}
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="absolute -left-2 top-3 z-10 flex h-7 w-7 cursor-grab items-center justify-center rounded-md border border-slate-200 bg-white text-slate-400 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 active:cursor-grabbing dark:border-slate-700 dark:bg-slate-900 dark:text-slate-500"
+        aria-label="Μετακίνηση ενότητας"
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+      {children}
+    </div>
+  );
+}
+
+function QuestionnaireAnswerField({
+  type,
+  options,
+  placeholder,
+  value,
+  onChange,
+}: {
+  type: string;
+  options: string[];
+  placeholder: string;
+  value: QuestionnaireAnswerValue | undefined;
+  onChange: (value: QuestionnaireAnswerValue) => void;
+}) {
+  if (type === "textarea") {
+    return <Textarea value={(value as string) || ""} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="min-h-20" />;
+  }
+  if (type === "number") {
+    return (
+      <Input type="number" value={(value as string) || ""} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-10" />
+    );
+  }
+  if (type === "url") {
+    if (options.length) {
+      const labelValues = typeof value === "object" && !Array.isArray(value) ? value : {};
+      return (
+        <div className="space-y-3">
+          {options.map((label) => (
+            <div key={label}>
+              <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">{label}</Label>
+              <div className="relative mt-1">
+                <Link2 className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+                <Input
+                  type="url"
+                  value={labelValues[label] || ""}
+                  onChange={(event) => onChange({ ...labelValues, [label]: event.target.value })}
+                  placeholder={`${label} URL`}
+                  className="h-10 pl-9"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return (
+      <div className="relative">
+        <Link2 className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+        <Input
+          type="url"
+          value={(value as string) || ""}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          className="h-10 pl-9"
+        />
+      </div>
+    );
+  }
+  if (type === "single_select") {
+    return (
+      <RadioGroup value={(value as string) || ""} onValueChange={(next) => onChange(next ?? "")} className="grid gap-2 sm:grid-cols-2">
+        {options.map((option) => (
+          <label
+            key={option}
+            className={cn(
+              "flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold",
+              value === option ? "border-primary bg-primary/5" : "border-slate-200 dark:border-slate-700",
+            )}
+          >
+            <RadioGroupItem value={option} />
+            {option}
+          </label>
+        ))}
+      </RadioGroup>
+    );
+  }
+  if (type === "multi_select") {
+    const selected = Array.isArray(value) ? value : [];
+    return (
+      <div className="grid gap-2 sm:grid-cols-2">
+        {options.map((option) => {
+          const checked = selected.includes(option);
+          return (
+            <label
+              key={option}
+              className={cn(
+                "flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold",
+                checked ? "border-primary bg-primary/5" : "border-slate-200 dark:border-slate-700",
+              )}
+            >
+              <Checkbox
+                checked={checked}
+                onCheckedChange={(next) => {
+                  const nextSelected = next === true ? [...selected, option] : selected.filter((item) => item !== option);
+                  onChange(nextSelected);
+                }}
+              />
+              {option}
+            </label>
+          );
+        })}
+      </div>
+    );
+  }
+  return <Input value={(value as string) || ""} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-10" />;
 }
 
 function EditField({
