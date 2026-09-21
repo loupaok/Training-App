@@ -84,7 +84,7 @@ function needsOptions(type: QuestionType): boolean {
 }
 
 function needsPlaceholder(type: QuestionType): boolean {
-  return type === "text" || type === "number" || type === "textarea" || type === "url";
+  return type === "text" || type === "number" || type === "textarea";
 }
 
 function CoachQuestionnaireContent() {
