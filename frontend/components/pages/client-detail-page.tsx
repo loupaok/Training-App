@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Clock, Sparkles } from "lucide-react";
+import { AlertTriangle, Clock, Sparkles, Undo2 } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl, getInitials } from "@/lib/media";
@@ -32,6 +32,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AreaChart, SparkLineChart, ProgressBar } from "@tremor/react";
 import {
   Table,
@@ -149,6 +150,8 @@ interface ClientRecord {
   emergency_contact_phone?: string;
   profile_photo?: string | null;
   is_active?: number | boolean;
+  deleted_at?: string | null;
+  deleted_by?: number | string | null;
   user_status?: string;
   status?: string;
   onboarding?: Onboarding;
@@ -294,6 +297,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
   const [togglingActive, setTogglingActive] = useState(false);
   const [resettingPassword, setResettingPassword] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [restoringClient, setRestoringClient] = useState(false);
 
   const loadClientDetail = () => {
     setLoading(true);
@@ -482,6 +486,21 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
     }
   };
 
+  const restoreClient = async () => {
+    setRestoringClient(true);
+    setMessage("");
+    setError("");
+    try {
+      await api.put(`/clients/${clientId}/restore`);
+      setMessage("Ο πελάτης επανήλθε στη λίστα ενεργών.");
+      loadClientDetail();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν έγινε επαναφορά του πελάτη.");
+    } finally {
+      setRestoringClient(false);
+    }
+  };
+
   return (
     <CoachShell title="Καρτέλα Πελάτη" user={user} logout={logout}>
       <div className="mb-6 flex flex-wrap items-center gap-3 text-sm font-bold">
@@ -491,6 +510,29 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
         <span className="text-slate-400 dark:text-slate-500">/</span>
         <span className="text-slate-500 dark:text-slate-400">{displayName}</span>
       </div>
+
+      {!loading && client?.deleted_at && (
+        <Alert variant="destructive" className="mb-4 border-destructive bg-destructive text-white [&_[data-slot=alert-description]]:text-white/90">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Ο πελάτης βρίσκεται στον Κάδο</AlertTitle>
+          <AlertDescription className="flex flex-wrap items-center gap-3">
+            <span>Διαγράφηκε την {formatDateTime(client.deleted_at)}.</span>
+            {(user?.role === "coach" || user?.role === "admin") && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="border-white text-white hover:bg-white hover:text-destructive"
+                onClick={restoreClient}
+                disabled={restoringClient}
+              >
+                <Undo2 className="h-4 w-4" />
+                {restoringClient ? "Επαναφορά..." : "Επαναφορά"}
+              </Button>
+            )}
+          </AlertDescription>
+        </Alert>
+      )}
 
       {loading && <StateBox text="Φόρτωση πελάτη..." />}
       {error && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 p-5 font-bold text-red-700 dark:border-red-500/20 dark:bg-red-500/10 dark:text-red-400">{error}</div>}
@@ -505,10 +547,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
             onboarding={onboarding}
             onSetActive={setClientActive}
             togglingActive={togglingActive}
-            onResetPassword={resetClientPassword}
-            resettingPassword={resettingPassword}
             canManageStatus={user?.role === "coach" || user?.role === "admin"}
-            canResetPassword={user?.role === "admin"}
             canDelete={user?.role === "admin"}
             onDelete={deleteClient}
             deleting={deleting}
@@ -539,6 +578,9 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 canEdit={Boolean(user && ["coach", "admin", "moderator"].includes(user.role))}
                 onApprovePayment={approvePayment}
                 approvingPayment={approvingPayment}
+                onResetPassword={resetClientPassword}
+                resettingPassword={resettingPassword}
+                canResetPassword={user?.role === "admin"}
               />
             </TabsContent>
 
@@ -635,10 +677,7 @@ function ClientHeader({
   onboarding,
   onSetActive,
   togglingActive,
-  onResetPassword,
-  resettingPassword,
   canManageStatus,
-  canResetPassword,
   canDelete,
   onDelete,
   deleting,
@@ -649,23 +688,15 @@ function ClientHeader({
   onboarding: Onboarding;
   onSetActive: (active: boolean) => void;
   togglingActive: boolean;
-  onResetPassword: (newPassword: string) => Promise<void>;
-  resettingPassword: boolean;
   canManageStatus: boolean;
-  canResetPassword: boolean;
   canDelete: boolean;
   onDelete: () => Promise<void>;
   deleting: boolean;
 }) {
   const [deactivateOpen, setDeactivateOpen] = useState(false);
   const [activateOpen, setActivateOpen] = useState(false);
-  const [resetOpen, setResetOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const isActive = Boolean(client.is_active);
-  const passwordsMatch = newPassword === confirmPassword;
-  const validPassword = newPassword.length >= 8 && passwordsMatch;
 
   const sparklineData = useMemo(
     () =>
@@ -719,24 +750,19 @@ function ClientHeader({
         </div>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
+      <div className="mt-3 flex flex-wrap gap-2 border-t pt-3">
         {canManageStatus && isActive && (
-          <Button type="button" variant="ghost" onClick={() => setDeactivateOpen(true)} className="text-destructive hover:text-destructive">
+          <Button type="button" variant="outline" onClick={() => setDeactivateOpen(true)} className="border-destructive text-destructive hover:bg-destructive hover:text-white">
             Απενεργοποίηση
           </Button>
         )}
         {canManageStatus && !isActive && (
-          <Button type="button" variant="ghost" onClick={() => setActivateOpen(true)}>
+          <Button type="button" variant="outline" onClick={() => setActivateOpen(true)} className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white">
             Ενεργοποίηση
           </Button>
         )}
-        {canResetPassword && (
-          <Button type="button" variant="ghost" onClick={() => setResetOpen(true)}>
-            Επαναφορά Κωδικού
-          </Button>
-        )}
         {canDelete && (
-          <Button type="button" variant="ghost" onClick={() => setDeleteOpen(true)} className="text-destructive hover:text-destructive">
+          <Button type="button" variant="outline" onClick={() => setDeleteOpen(true)} className="border-destructive text-destructive hover:bg-destructive hover:text-white">
             Διαγραφή
           </Button>
         )}
@@ -784,40 +810,6 @@ function ClientHeader({
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Επαναφορά Κωδικού</AlertDialogTitle>
-            <AlertDialogDescription>Εισάγετε νέο κωδικό για τον πελάτη.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="new-client-password">Νέος Κωδικός</Label>
-              <Input id="new-client-password" type="password" minLength={8} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="confirm-client-password">Επιβεβαίωση</Label>
-              <Input id="confirm-client-password" type="password" minLength={8} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
-              {confirmPassword && !passwordsMatch && <p className="text-sm text-destructive">Οι κωδικοί δεν ταιριάζουν.</p>}
-            </div>
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Ακύρωση</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={!validPassword || resettingPassword}
-              onClick={async () => {
-                await onResetPassword(newPassword);
-                setNewPassword("");
-                setConfirmPassword("");
-                setResetOpen(false);
-              }}
-            >
-              {resettingPassword ? "Αποθήκευση..." : "Αποθήκευση"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -833,6 +825,59 @@ function ClientHeader({
         </AlertDialogContent>
       </AlertDialog>
     </Card>
+  );
+}
+
+function ResetPasswordDialog({
+  onResetPassword,
+  resettingPassword,
+}: {
+  onResetPassword: (newPassword: string) => Promise<void>;
+  resettingPassword: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const passwordsMatch = newPassword === confirmPassword;
+  const validPassword = newPassword.length >= 8 && passwordsMatch;
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
+        Επαναφορά Κωδικού
+      </Button>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Επαναφορά Κωδικού</AlertDialogTitle>
+          <AlertDialogDescription>Εισάγετε νέο κωδικό για τον πελάτη.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="new-client-password">Νέος Κωδικός</Label>
+            <Input id="new-client-password" type="password" minLength={8} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirm-client-password">Επιβεβαίωση</Label>
+            <Input id="confirm-client-password" type="password" minLength={8} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+            {confirmPassword && !passwordsMatch && <p className="text-sm text-destructive">Οι κωδικοί δεν ταιριάζουν.</p>}
+          </div>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Ακύρωση</AlertDialogCancel>
+          <AlertDialogAction
+            disabled={!validPassword || resettingPassword}
+            onClick={async () => {
+              await onResetPassword(newPassword);
+              setNewPassword("");
+              setConfirmPassword("");
+              setOpen(false);
+            }}
+          >
+            {resettingPassword ? "Αποθήκευση..." : "Αποθήκευση"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -907,6 +952,9 @@ function OverviewTab({
   canEdit,
   onApprovePayment,
   approvingPayment,
+  onResetPassword,
+  resettingPassword,
+  canResetPassword,
 }: {
   client: ClientRecord;
   clientId: string;
@@ -916,6 +964,9 @@ function OverviewTab({
   canEdit: boolean;
   onApprovePayment: (paymentId: number | string) => void;
   approvingPayment: boolean;
+  onResetPassword: (newPassword: string) => Promise<void>;
+  resettingPassword: boolean;
+  canResetPassword: boolean;
 }) {
   const [form, setForm] = useState<ClientDetailsForm>(() => toDetailsForm(client));
   const [saving, setSaving] = useState(false);
@@ -1028,6 +1079,15 @@ function OverviewTab({
                 disabled={!canEdit}
               />
             </div>
+            {canResetPassword && (
+              <>
+                <Separator className="my-4" />
+                <div>
+                  <p className="mb-2 text-sm text-muted-foreground">Διαχείριση πρόσβασης</p>
+                  <ResetPasswordDialog onResetPassword={onResetPassword} resettingPassword={resettingPassword} />
+                </div>
+              </>
+            )}
             <div className="mt-4 flex justify-end">
               <Button type="button" onClick={saveDetails} disabled={saving || !canEdit} className="h-10 px-6 font-bold">
                 {saving ? "Αποθήκευση..." : "Αποθήκευση στοιχείων"}

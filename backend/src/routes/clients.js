@@ -479,6 +479,19 @@ async function ensureClientDetailColumns(connection) {
   }
 }
 
+async function ensureClientSoftDeleteColumns(connection) {
+  for (const statement of [
+    'ALTER TABLE clients ADD COLUMN deleted_at TIMESTAMP NULL DEFAULT NULL',
+    'ALTER TABLE clients ADD COLUMN deleted_by INT NULL DEFAULT NULL',
+  ]) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+  }
+}
+
 async function ensureMessagesSchema(connection) {
   await connection.query(`
     CREATE TABLE IF NOT EXISTS messages (
@@ -1362,12 +1375,13 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
   try {
     const connection = await pool.getConnection();
     await ensureOnboardingSchema(connection);
+    await ensureClientSoftDeleteColumns(connection);
     const search = String(req.query.search || '').trim();
     const searchLimit = search ? ' LIMIT 12' : '';
 
     let rows;
     if (req.user.role === 'admin' || req.user.role === 'moderator' || req.user.role === 'coach') {
-      const filters = ["u.role = 'client'"];
+      const filters = ["u.role = 'client'", 'c.deleted_at IS NULL'];
       const values = [];
 
       if (search) {
@@ -1429,7 +1443,7 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
         values
       );
     } else {
-      const filters = ["u.role = 'client'", "u.is_active = 1"];
+      const filters = ["u.role = 'client'", "u.is_active = 1", 'c.deleted_at IS NULL'];
       const values = [req.user.id];
 
       if (search) {
@@ -1496,6 +1510,31 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/trash', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+
+  try {
+    await ensureClientSoftDeleteColumns(connection);
+    const [rows] = await connection.query(
+      `SELECT u.id, u.email, u.full_name, u.profile_photo,
+              c.deleted_at, c.deleted_by,
+              COALESCE(deleted_by_user.full_name, deleted_by_user.email) AS deleted_by_name
+       FROM clients c
+       INNER JOIN users u ON u.id = c.user_id AND u.role = 'client'
+       LEFT JOIN users deleted_by_user ON deleted_by_user.id = c.deleted_by
+       WHERE c.deleted_at IS NOT NULL
+       ORDER BY c.deleted_at DESC, u.full_name ASC`
+    );
+
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
   }
 });
 
@@ -1787,13 +1826,14 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
     await ensureOnboardingSchema(connection);
     await ensurePaymentProofColumns(connection);
     await ensureClientDetailColumns(connection);
+    await ensureClientSoftDeleteColumns(connection);
 
     const [rows] = await connection.query(
       `SELECT u.id, u.email, u.full_name, u.profile_photo, u.bio, u.is_active,
               u.status AS user_status, u.created_at, u.last_seen_at,
               c.date_of_birth, c.gender, c.phone, c.height_cm, c.weight_kg,
               c.fitness_goal, c.medical_notes, c.coach_notes, c.discord_id,
-              c.emergency_contact_name, c.emergency_contact_phone,
+              c.emergency_contact_name, c.emergency_contact_phone, c.deleted_at, c.deleted_by,
               cc.status AS coaching_status, cc.coach_id
        FROM users u
        LEFT JOIN clients c ON c.user_id = u.id
@@ -2683,16 +2723,102 @@ router.delete('/:id', authorizeRole(['admin']), async (req, res) => {
   const connection = await pool.getConnection();
 
   try {
-    await ensureOnboardingSchema(connection);
+    await ensureClientSoftDeleteColumns(connection);
     const clientId = Number(req.params.id);
-
     const [rows] = await connection.query(
-      'SELECT id FROM users WHERE id = ? AND role = "client"', [clientId]
+      `SELECT u.id, c.deleted_at
+       FROM users u
+       INNER JOIN clients c ON c.user_id = u.id
+       WHERE u.id = ? AND u.role = 'client'`,
+      [clientId]
     );
 
     if (rows.length === 0) {
       connection.release();
       return res.status(404).json({ message: 'Client not found' });
+    }
+
+    if (rows[0].deleted_at) {
+      connection.release();
+      return res.status(400).json({ message: 'Client is already in trash' });
+    }
+
+    await connection.beginTransaction();
+    await connection.query(
+      `UPDATE clients
+       SET deleted_at = NOW(), deleted_by = ?
+       WHERE user_id = ? AND deleted_at IS NULL`,
+      [req.user.id, clientId]
+    );
+    await logClientActivity(connection, {
+      clientId,
+      action: 'Μεταφορά στον Κάδο',
+      performedBy: req.user.id,
+    });
+
+    await connection.commit();
+    connection.release();
+    res.json({ message: 'Client moved to trash' });
+  } catch (error) {
+    await connection.rollback();
+    connection.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.put('/:id/restore', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+
+  try {
+    await ensureClientSoftDeleteColumns(connection);
+    const clientId = Number(req.params.id);
+    const [result] = await connection.query(
+      `UPDATE clients
+       SET deleted_at = NULL, deleted_by = NULL
+       WHERE user_id = ? AND deleted_at IS NOT NULL`,
+      [clientId]
+    );
+
+    if (result.affectedRows === 0) {
+      connection.release();
+      return res.status(404).json({ message: 'Trashed client not found' });
+    }
+
+    await logClientActivity(connection, {
+      clientId,
+      action: 'Επαναφορά από τον Κάδο',
+      performedBy: req.user.id,
+    });
+
+    connection.release();
+    res.json({ message: 'Client restored from trash' });
+  } catch (error) {
+    connection.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.delete('/:id/permanent', authorizeRole(['admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+
+  try {
+    await ensureOnboardingSchema(connection);
+    await ensureClientSoftDeleteColumns(connection);
+    const clientId = Number(req.params.id);
+
+    const [rows] = await connection.query(
+      `SELECT u.id
+       FROM users u
+       INNER JOIN clients c ON c.user_id = u.id
+       WHERE u.id = ? AND u.role = 'client' AND c.deleted_at IS NOT NULL`,
+      [clientId]
+    );
+
+    if (rows.length === 0) {
+      connection.release();
+      return res.status(404).json({ message: 'Trashed client not found' });
     }
 
     const ignoreDelete = async (sql, values) => {

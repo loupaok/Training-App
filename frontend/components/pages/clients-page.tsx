@@ -3,14 +3,17 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Plus, Search, X, Mail, Ban } from "lucide-react";
+import { Plus, Search, X, Mail, Ban, Trash2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CoachShell } from "@/components/shell/coach-shell";
@@ -67,6 +70,15 @@ interface MappedClient {
   tone: string;
 }
 
+interface TrashedClient {
+  id: number | string;
+  full_name?: string;
+  email?: string;
+  deleted_at?: string | null;
+  deleted_by?: number | string | null;
+  deleted_by_name?: string | null;
+}
+
 const emptyClientForm = {
   fullName: "",
   email: "",
@@ -102,6 +114,19 @@ function formatDate(value?: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleDateString("el-GR");
+}
+
+function formatRelativeDate(value?: string | null): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+
+  const minutes = Math.max(0, Math.floor((Date.now() - date.getTime()) / 60000));
+  if (minutes < 1) return "μόλις τώρα";
+  if (minutes < 60) return `πριν από ${minutes} λεπτά`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `πριν από ${hours} ώρες`;
+  return `πριν από ${Math.floor(hours / 24)} ημέρες`;
 }
 
 function mapApiClient(row: ClientApiRow): MappedClient {
@@ -145,9 +170,13 @@ function mapApiClient(row: ClientApiRow): MappedClient {
 function ClientsContent() {
   const { user, logout } = useAuth();
   const [clientRows, setClientRows] = useState<MappedClient[]>([]);
+  const [trashedClients, setTrashedClients] = useState<TrashedClient[]>([]);
   const [loadingClients, setLoadingClients] = useState(false);
+  const [loadingTrash, setLoadingTrash] = useState(false);
   const [clientMessage, setClientMessage] = useState("");
   const [clientError, setClientError] = useState("");
+  const [trashError, setTrashError] = useState("");
+  const [clientListTab, setClientListTab] = useState("active");
   const [showAddClient, setShowAddClient] = useState(false);
   const [clientForm, setClientForm] = useState(emptyClientForm);
   const [search, setSearch] = useState("");
@@ -182,9 +211,36 @@ function ClientsContent() {
     }
   }, []);
 
+  const loadTrash = useCallback(async () => {
+    setLoadingTrash(true);
+    setTrashError("");
+    try {
+      const rows = await api.get<TrashedClient[]>("/clients/trash");
+      setTrashedClients(rows);
+    } catch (error) {
+      setTrashError(error instanceof Error ? error.message : "Δεν φορτώθηκε ο κάδος.");
+      setTrashedClients([]);
+    } finally {
+      setLoadingTrash(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadClients();
-  }, [loadClients]);
+    loadTrash();
+  }, [loadClients, loadTrash]);
+
+  const restoreClient = async (client: TrashedClient) => {
+    await api.put(`/clients/${client.id}/restore`);
+    toast.success("Ο πελάτης επανήλθε στη λίστα ενεργών.");
+    await Promise.all([loadClients(), loadTrash()]);
+  };
+
+  const permanentlyDeleteClient = async (client: TrashedClient) => {
+    await api.delete(`/clients/${client.id}/permanent`);
+    toast.success("Ο πελάτης διαγράφηκε οριστικά.");
+    await Promise.all([loadClients(), loadTrash()]);
+  };
 
   const filteredClients = useMemo(() => {
     const searchTerm = debouncedSearch.trim().toLowerCase();
@@ -345,6 +401,17 @@ function ClientsContent() {
         </Button>
       </div>
 
+      <Tabs value={clientListTab} onValueChange={setClientListTab}>
+        <TabsList>
+          <TabsTrigger value="active">Ενεργοί</TabsTrigger>
+          <TabsTrigger value="trash" className="gap-2">
+            Κάδος
+            <Trash2 className="h-4 w-4" />
+            {trashedClients.length > 0 && <Badge className="ml-1">{trashedClients.length}</Badge>}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="active" className="mt-5">
       {clientError && <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">{clientError}</div>}
       {clientMessage && (
         <div className="mb-5 rounded-lg border border-green-200 bg-green-50 px-5 py-4 text-sm font-bold text-green-700 dark:border-green-900 dark:bg-green-950/50 dark:text-green-200">{clientMessage}</div>
@@ -682,7 +749,153 @@ function ClientsContent() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </TabsContent>
+
+        <TabsContent value="trash" className="mt-5">
+          <TrashClientsTable
+            clients={trashedClients}
+            loading={loadingTrash}
+            error={trashError}
+            onRestore={restoreClient}
+            onPermanentDelete={permanentlyDeleteClient}
+            canPermanentlyDelete={user?.role === "admin"}
+          />
+        </TabsContent>
+      </Tabs>
     </CoachShell>
+  );
+}
+
+function TrashClientsTable({
+  clients,
+  loading,
+  error,
+  onRestore,
+  onPermanentDelete,
+  canPermanentlyDelete,
+}: {
+  clients: TrashedClient[];
+  loading: boolean;
+  error: string;
+  onRestore: (client: TrashedClient) => Promise<void>;
+  onPermanentDelete: (client: TrashedClient) => Promise<void>;
+  canPermanentlyDelete: boolean;
+}) {
+  const [restoreTarget, setRestoreTarget] = useState<TrashedClient | null>(null);
+  const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<TrashedClient | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [permanentlyDeleting, setPermanentlyDeleting] = useState(false);
+
+  const restore = async () => {
+    if (!restoreTarget) return;
+    setRestoring(true);
+    try {
+      await onRestore(restoreTarget);
+      setRestoreTarget(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Δεν έγινε επαναφορά του πελάτη.");
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const permanentlyDelete = async () => {
+    if (!permanentDeleteTarget) return;
+    setPermanentlyDeleting(true);
+    try {
+      await onPermanentDelete(permanentDeleteTarget);
+      setPermanentDeleteTarget(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Δεν έγινε μόνιμη διαγραφή του πελάτη.");
+    } finally {
+      setPermanentlyDeleting(false);
+    }
+  };
+
+  return (
+    <>
+      <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Όνομα</TableHead>
+              <TableHead>Διαγράφηκε</TableHead>
+              <TableHead>Από</TableHead>
+              <TableHead className="text-right">Ενέργειες</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {clients.map((client) => (
+              <TableRow key={client.id}>
+                <TableCell>
+                  <div className="font-medium text-foreground">{client.full_name || client.email || "-"}</div>
+                  <div className="mt-1 text-sm text-muted-foreground">{client.email || "-"}</div>
+                </TableCell>
+                <TableCell>
+                  <div className="text-sm">{formatRelativeDate(client.deleted_at)}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">{formatDate(client.deleted_at || undefined)}</div>
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">{client.deleted_by_name || "-"}</TableCell>
+                <TableCell>
+                  <div className="flex justify-end gap-2">
+                    <Button type="button" variant="outline" size="sm" className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white" onClick={() => setRestoreTarget(client)}>
+                      <Undo2 className="h-4 w-4" />
+                      Επαναφορά
+                    </Button>
+                    {canPermanentlyDelete && (
+                      <Button type="button" variant="outline" size="sm" className="border-destructive text-destructive hover:bg-destructive hover:text-white" onClick={() => setPermanentDeleteTarget(client)}>
+                        <Trash2 className="h-4 w-4" />
+                        Μόνιμη Διαγραφή
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+            {!clients.length && (
+              <TableRow>
+                <TableCell colSpan={4} className="py-16">
+                  <div className="flex flex-col items-center gap-3 text-center text-muted-foreground">
+                    <Trash2 className="h-8 w-8" />
+                    <p>{loading ? "Φόρτωση κάδου..." : error || "Ο κάδος είναι άδειος"}</p>
+                  </div>
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </section>
+
+      <AlertDialog open={Boolean(restoreTarget)} onOpenChange={(open) => !open && setRestoreTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Επαναφορά πελάτη;</AlertDialogTitle>
+            <AlertDialogDescription>Ο πελάτης θα επιστρέψει στη λίστα ενεργών.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Ακύρωση</AlertDialogCancel>
+            <AlertDialogAction disabled={restoring} onClick={restore} className="bg-green-600 text-white hover:bg-green-700">
+              {restoring ? "Επαναφορά..." : "Επαναφορά"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(permanentDeleteTarget)} onOpenChange={(open) => !open && setPermanentDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Μόνιμη διαγραφή;</AlertDialogTitle>
+            <AlertDialogDescription>Αυτή η ενέργεια δεν αναιρείται. Όλα τα δεδομένα θα διαγραφούν οριστικά.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Ακύρωση</AlertDialogCancel>
+            <AlertDialogAction disabled={permanentlyDeleting} onClick={permanentlyDelete} className="bg-destructive text-white hover:bg-destructive/90">
+              {permanentlyDeleting ? "Διαγραφή..." : "Μόνιμη Διαγραφή"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
