@@ -325,68 +325,10 @@ router.get('/', authorizeRole(['client']), async (req, res) => {
   }
 });
 
-router.post('/weekly-update', authorizeRole(['client']), upload.array('photos', 3), [
-  body('weightKg').notEmpty(),
-  body('trainingScore').isInt({ min: 1, max: 5 }),
-  body('nutritionScore').isInt({ min: 1, max: 5 })
-], async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
-
-  const connection = await pool.getConnection();
-
-  try {
-    await ensureClientDashboardSchema(connection);
-    const [scheduleRows] = await connection.query(
-      'SELECT * FROM update_schedule WHERE client_id = ? ORDER BY updated_at DESC LIMIT 1',
-      [req.user.id]
-    );
-    const schedule = scheduleRows[0] || null;
-    const weekStart = getWeekStart();
-
-    if (!isUpdateDay(schedule)) {
-      connection.release();
-      return res.status(403).json({ message: 'Το εβδομαδιαίο update ανοίγει μόνο την ημέρα που έχει επιλεγεί.' });
-    }
-
-    const [existing] = await connection.query(
-      'SELECT id FROM weekly_updates WHERE client_id = ? AND week_start = ?',
-      [req.user.id, weekStart]
-    );
-    if (existing.length) {
-      connection.release();
-      return res.status(400).json({ message: 'Το update αυτής της εβδομάδας έχει ήδη υποβληθεί.' });
-    }
-
-    const [coachRows] = await connection.query(
-      'SELECT coach_id FROM coach_clients WHERE client_id = ? ORDER BY created_at DESC LIMIT 1',
-      [req.user.id]
-    );
-    const coachId = coachRows[0]?.coach_id || null;
-
-    const [result] = await connection.query(
-      `INSERT INTO weekly_updates (client_id, coach_id, weight_kg, training_score, nutrition_score, notes, week_start)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [req.user.id, coachId, req.body.weightKg, req.body.trainingScore, req.body.nutritionScore, req.body.notes || null, weekStart]
-    );
-
-    if (req.files?.length) {
-      const angles = ['front', 'side', 'back'];
-      await connection.query(
-        'INSERT INTO weekly_update_photos (weekly_update_id, client_id, photo_url, angle) VALUES ?',
-        [req.files.map((file, index) => [result.insertId, req.user.id, file.path.replace(/\\/g, '/'), angles[index] || 'other'])]
-      );
-    }
-
-    connection.release();
-    res.status(201).json({ message: 'Το εβδομαδιαίο update υποβλήθηκε.' });
-  } catch (error) {
-    connection.release();
-    console.error(error);
-    res.status(500).json({ message: 'Server error' });
-  }
+// Replaced by the flexible question-based weekly update system —
+// see backend/src/routes/weekly-updates.js (mounted at /api/updates).
+router.post('/weekly-update', authorizeRole(['client']), async (req, res) => {
+  res.status(410).json({ message: 'This endpoint has moved. Use POST /api/updates/submit instead.' });
 });
 
 export default router;

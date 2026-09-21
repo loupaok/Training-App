@@ -24,6 +24,7 @@ import foodRoutes from './routes/foods.js';
 import questionnaireRoutes from './routes/questionnaire.js';
 import registerRoutes from './routes/register.js';
 import brandingRoutes from './routes/branding.js';
+import weeklyUpdateRoutes from './routes/weekly-updates.js';
 import { authenticateToken, isClient, isCoach } from './middleware/auth.js';
 
 dotenv.config();
@@ -94,6 +95,7 @@ app.use('/api/questionnaire', questionnaireRoutes);
 // Fully public — new client signup, email-availability check, bank details.
 app.use('/api', registerRoutes);
 app.use('/api/branding', brandingRoutes);
+app.use('/api/updates', authenticateToken, weeklyUpdateRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
