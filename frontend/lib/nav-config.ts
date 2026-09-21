@@ -21,6 +21,7 @@ import {
   LayoutTemplate,
   Apple,
   Images,
+  HelpCircle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -73,6 +74,7 @@ export const coachNavSections: CoachNavSection[] = [
     children: [
       { key: "discord", label: "Discord", icon: MessageCircle },
       { key: "pricing-plans", label: "Πλάνα & Τιμές", path: "/coach/pricing", icon: Tag },
+      { key: "questionnaire", label: "Ερωτηματολόγιο", path: "/coach/questionnaire", icon: HelpCircle },
       { key: "branding", label: "Branding", icon: Palette },
     ],
   },
