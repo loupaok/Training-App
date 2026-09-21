@@ -1118,25 +1118,6 @@ function OverviewTab({
                   </SelectContent>
                 </Select>
               </div>
-              <EditField label="Ύψος (cm)" type="number" value={form.heightCm} onChange={(value) => updateField("heightCm", value)} disabled={!canEdit} />
-              <EditField label="Βάρος (kg)" type="number" value={form.weightKg} onChange={(value) => updateField("weightKg", value)} disabled={!canEdit} />
-              <EditField label="Στόχος" value={form.fitnessGoal} onChange={(value) => updateField("fitnessGoal", value)} disabled={!canEdit} />
-              <div>
-                <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Ιατρικές σημειώσεις</Label>
-                <Textarea className="mt-1" value={form.medicalNotes} onChange={(event) => updateField("medicalNotes", event.target.value)} disabled={!canEdit} />
-              </div>
-              <EditField
-                label="Επαφή έκτακτης ανάγκης"
-                value={form.emergencyContactName}
-                onChange={(value) => updateField("emergencyContactName", value)}
-                disabled={!canEdit}
-              />
-              <EditField
-                label="Τηλέφωνο έκτακτης ανάγκης"
-                value={form.emergencyContactPhone}
-                onChange={(value) => updateField("emergencyContactPhone", value)}
-                disabled={!canEdit}
-              />
             </div>
             {canResetPassword && (
               <>
@@ -1199,23 +1180,6 @@ function OverviewTab({
 
           <Separator />
 
-          <InfoCard title="Στόχοι & Επίπεδο">
-            <div className="grid gap-4 md:grid-cols-2">
-              <Info label="Στόχος" value={onboarding.goal || "-"} />
-              <Info label="Επάγγελμα / πρόγραμμα" value={onboarding.occupation_schedule || "-"} />
-              <Info label="Πρόβλημα υγείας" value={onboarding.health_problem || "-"} />
-              <Info label="Τραυματισμοί" value={onboarding.injuries || "-"} />
-              <Info label="Κύκλος" value={onboarding.cycle_history || "-"} />
-              <Info label="Αερόβιες / εβδομάδα" value={onboarding.cardio_sessions_per_week || "-"} />
-              <Info label="Ύπνος" value={onboarding.sleep_schedule || "-"} />
-              <Info label="Προπόνηση τώρα" value={onboarding.current_training_plan || "-"} />
-              <Info label="Διατροφή τώρα" value={onboarding.current_nutrition_plan || "-"} />
-              <Info label="Ιστορικό πλάνων" value={onboarding.previous_plan_history || "-"} />
-            </div>
-          </InfoCard>
-
-          <Separator />
-
           <InfoCard title="Ημέρες Update">
             <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Ημέρα εβδομαδιαίου update</Label>
             <Select
@@ -1234,19 +1198,6 @@ function OverviewTab({
                 ))}
               </SelectContent>
             </Select>
-          </InfoCard>
-
-          <Separator />
-
-          <InfoCard title="Social & Discord">
-            {client.socialLinks?.length ? (
-              client.socialLinks.map((item) => <Info key={`${item.platform}-${item.url}`} label={item.platform} value={item.url} />)
-            ) : (
-              <EmptyInline text="Δεν υπάρχουν social links." />
-            )}
-            <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
-              <EditField label="Discord ID" value={form.discordId} onChange={(value) => updateField("discordId", value)} disabled={!canEdit} />
-            </div>
           </InfoCard>
         </div>
 
