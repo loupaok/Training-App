@@ -76,7 +76,7 @@ export default function PricingPlansPage() {
         {/* Hero */}
         <div className="text-center">
           <Badge variant="outline" className="mx-auto mb-5 h-auto w-fit gap-1.5 rounded-full px-4 py-1.5 text-sm font-bold">
-            💪 Online Personal Training
+            Online Personal Training
           </Badge>
           <h1 className="text-5xl font-bold tracking-tight text-slate-950 dark:text-slate-50">Ξεκίνα το Ταξίδι σου</h1>
           <p className="mx-auto mt-4 max-w-2xl text-xl text-muted-foreground">

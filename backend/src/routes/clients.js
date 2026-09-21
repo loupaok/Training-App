@@ -1827,10 +1827,10 @@ router.get('/:id/questionnaire-answers', authorizeRole(['coach', 'admin', 'moder
   try {
     await ensureQuestionnaireSchema(connection);
     const [rows] = await connection.query(
-      `SELECT qq.question, qq.type, qa.answer
-       FROM questionnaire_answers qa
-       INNER JOIN questionnaire_questions qq ON qa.question_id = qq.id
-       WHERE qa.client_id = ?
+      `SELECT qq.question, qq.type, qq.sort_order, qq.placeholder, qa.answer
+       FROM questionnaire_questions qq
+       LEFT JOIN questionnaire_answers qa ON qa.question_id = qq.id AND qa.client_id = ?
+       WHERE qq.is_active = TRUE
        ORDER BY qq.sort_order ASC, qq.id ASC`,
       [req.params.id]
     );

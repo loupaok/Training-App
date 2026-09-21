@@ -21,6 +21,7 @@ import {
   LayoutTemplate,
   Apple,
   Images,
+  LayoutGrid,
   HelpCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -48,6 +49,7 @@ export interface CoachNavSection {
 // none at all). `active` is derived from the route, not hardcoded per page.
 export const coachNavSections: CoachNavSection[] = [
   { key: "dashboard", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
+  { key: "pages", label: "Σελίδες", path: "/coach/pages", icon: LayoutGrid, coachOrAdminOnly: true },
   { key: "clients", label: "Πελάτες", path: "/clients", icon: Users },
   { key: "updates", label: "Updates Πελατών", path: "/updates", icon: RefreshCw },
   { key: "exercises", label: "Βιβλιοθήκη Ασκήσεων", path: "/exercises", icon: Dumbbell },

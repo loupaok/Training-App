@@ -264,14 +264,14 @@ function RegisterWizardContent() {
 
   return (
     <div className="min-h-screen bg-background text-slate-950 dark:text-slate-50">
-      <div className="min-h-screen lg:grid lg:grid-cols-[11fr_9fr]">
-        <aside className="hidden min-h-screen flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-primary/80 p-12 text-white lg:flex">
+      <div className="min-h-screen lg:grid lg:grid-cols-[2fr_3fr]">
+        <aside className="hidden min-h-screen flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-primary/80 p-12 text-white [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white lg:flex">
           <div>
             <div className="text-2xl font-bold tracking-tight">CoachApp</div>
             <p className="mt-2 max-w-xs text-sm text-white/70">Η πλατφόρμα για online personal training</p>
           </div>
           <div className="my-auto max-w-md">
-            <h1 className="text-4xl font-bold tracking-tight">Ξεκίνα το Ταξίδι σου 🚀</h1>
+            <h1 className="text-4xl font-bold tracking-tight">Ξεκίνα το Ταξίδι σου</h1>
             <ul className="mt-8 space-y-4">
               {[
                 "100% εξατομικευμένο πρόγραμμα",
@@ -279,14 +279,13 @@ function RegisterWizardContent() {
                 "Άμεση επικοινωνία με coach",
               ].map((item) => (
                 <li key={item} className="flex items-center gap-3 text-sm text-white/90">
-                  <CheckCircle2 className="h-5 w-5 shrink-0 text-white" />
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-white/80" />
                   {item}
                 </li>
               ))}
             </ul>
           </div>
           <blockquote className="max-w-sm rounded-xl bg-white/10 p-5 text-sm leading-6 text-white/80">
-            <div className="text-base tracking-wide">⭐⭐⭐⭐⭐</div>
             <p className="mt-3 italic">«Έχασα 12kg σε 4 μήνες! Το καλύτερο επένδυση που έκανα.»</p>
             <footer className="mt-3 text-xs text-white/60">— Μαρία Κ.</footer>
           </blockquote>
@@ -297,7 +296,7 @@ function RegisterWizardContent() {
             <header className="mb-8">
               <div className="text-center lg:text-left">
                 <Badge variant="outline" className="mb-4 h-auto w-fit gap-1.5 rounded-full px-4 py-1.5 text-sm font-bold lg:hidden">
-                  💪 Online Personal Training
+                  Online Personal Training
                 </Badge>
                 <h1 className="text-2xl font-bold sm:text-3xl">Δημιούργησε τον Λογαριασμό σου</h1>
                 <p className="mt-2 text-sm text-muted-foreground">4 μικρά βήματα και ξεκινάμε το ταξίδι σου.</p>
@@ -440,7 +439,7 @@ function AccountStep({
             className="h-12"
           />
           {emailStatus === "checking" && <span className="text-xs font-semibold text-slate-400">Έλεγχος...</span>}
-          {emailStatus === "available" && <span className="text-xs font-semibold text-emerald-600">✓ Διαθέσιμο</span>}
+          {emailStatus === "available" && <span className="flex items-center gap-1 text-xs font-semibold text-emerald-600"><CheckCircle2 className="h-4 w-4 shrink-0" />Διαθέσιμο</span>}
           {emailStatus === "taken" && <span className="text-xs font-semibold text-red-600">Το email χρησιμοποιείται ήδη.</span>}
         </label>
         <label className="block space-y-2">
@@ -686,7 +685,7 @@ function PlanOption({ plan, selected, onSelect }: { plan: PricingPlan; selected:
     >
       {plan.isPopular && (
         <Badge className="absolute -top-3 left-4 h-auto rounded-full bg-primary px-3 py-1 text-[11px] font-bold text-white hover:bg-primary">
-          ⭐ Δημοφιλές
+          Δημοφιλές
         </Badge>
       )}
       {selected && (

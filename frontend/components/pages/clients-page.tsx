@@ -603,7 +603,7 @@ function ClientsContent() {
                   </span>
                 </TableCell>
                 <TableCell className="px-5">
-                  <Button variant="ghost" nativeButton={false} render={<Link href={`/clients/${client.id}`} />}>
+                  <Button variant="outline" className="border-primary/40 text-primary hover:bg-primary hover:text-primary-foreground" nativeButton={false} render={<Link href={`/clients/${client.id}`} />}>
                     Επεξεργασία
                   </Button>
                 </TableCell>

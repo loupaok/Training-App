@@ -236,6 +236,20 @@ function formatQuestionnaireAnswer(answer?: string | null, type?: string): strin
     }
   }
 
+  if (type === "url") {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const entries = Object.entries(parsed as Record<string, unknown>)
+          .filter(([, url]) => typeof url === "string" && url.trim())
+          .map(([label, url]) => `${label}: ${String(url).trim()}`);
+        return entries.join(" · ") || "-";
+      }
+    } catch {
+      // Plain URL answers remain readable without transformation.
+    }
+  }
+
   return value;
 }
 
@@ -1139,6 +1153,25 @@ function OverviewTab({
               </Button>
             </div>
           </InfoCard>
+
+          <Card className="border-primary/40 bg-primary/5">
+            <CardHeader>
+              <CardTitle className="text-sm">Ημέρες Αποστολής Update</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {client.updateSchedule?.day_of_week === undefined || client.updateSchedule.day_of_week === null ? (
+                <p className="text-sm text-muted-foreground">Δεν έχουν οριστεί ημέρες</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {updateDayOptions.map((day) => (
+                    <Badge key={day.value} variant={Number(client.updateSchedule?.day_of_week) === day.value ? "default" : "outline"}>
+                      {day.label}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>

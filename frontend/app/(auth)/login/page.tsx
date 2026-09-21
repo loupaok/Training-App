@@ -37,15 +37,15 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[11fr_9fr]">
-      <aside className="hidden min-h-screen flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-primary/80 p-12 text-white lg:flex">
+    <div className="min-h-screen lg:grid lg:grid-cols-[2fr_3fr]">
+      <aside className="hidden min-h-screen flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-primary/80 p-12 text-white [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white lg:flex">
         <div>
           <div className="text-2xl font-bold tracking-tight">CoachApp</div>
           <p className="mt-2 max-w-xs text-sm text-white/70">Η πλατφόρμα για online personal training</p>
         </div>
 
         <div className="my-auto max-w-md">
-          <h1 className="text-4xl font-bold tracking-tight">Καλώς ήρθες πίσω! 👋</h1>
+          <h1 className="text-4xl font-bold tracking-tight">Καλώς ήρθες πίσω!</h1>
           <ul className="mt-8 space-y-4">
             {benefits.map((benefit) => (
               <li key={benefit} className="flex items-center gap-3 text-sm text-white/90">
@@ -57,7 +57,6 @@ export default function LoginPage() {
         </div>
 
         <blockquote className="max-w-sm rounded-xl bg-white/10 p-5 text-sm leading-6 text-white/80">
-          <div className="text-base tracking-wide">⭐⭐⭐⭐⭐</div>
           <p className="mt-3 italic">«Έχασα 12kg σε 4 μήνες! Το καλύτερο επένδυση που έκανα.»</p>
           <footer className="mt-3 text-xs text-white/60">— Μαρία Κ.</footer>
         </blockquote>
@@ -70,12 +69,6 @@ export default function LoginPage() {
               <LockKeyhole className="h-5 w-5" />
             </div>
             <h1 className="text-2xl font-bold tracking-tight">Σύνδεση</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Δεν έχεις λογαριασμό;{" "}
-              <Link href="/pricing-plans" className="font-medium text-primary hover:underline">
-                Ξεκίνα εδώ →
-              </Link>
-            </p>
           </div>
 
           {error && (
@@ -127,15 +120,14 @@ export default function LoginPage() {
             <Button type="submit" size="lg" disabled={loading} className="mt-2 w-full">
               {loading ? "Σύνδεση..." : "Σύνδεση"}
             </Button>
+            <p className="text-center text-sm text-muted-foreground">
+              Δεν έχεις λογαριασμό;{" "}
+              <Link href="/pricing-plans" className="font-medium text-primary hover:underline">
+                Ξεκίνα εδώ →
+              </Link>
+            </p>
           </form>
 
-          <div className="my-8 border-t" />
-          <p className="text-sm text-muted-foreground">
-            Είσαι coach;{" "}
-            <Link href="/coach/dashboard" className="font-medium text-primary hover:underline">
-              Διαχειρίσου από εδώ →
-            </Link>
-          </p>
         </div>
       </main>
     </div>
