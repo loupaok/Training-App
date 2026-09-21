@@ -15,6 +15,11 @@ import { resolveMediaUrl } from "@/lib/media";
 export interface BrandingData {
   appName: string;
   primaryColor: string;
+  fontColor: string;
+  titleColor: string;
+  buttonColor: string;
+  buttonHoverColor: string;
+  buttonTextColor: string;
   logoUrl: string | null;
   faviconUrl: string | null;
 }
@@ -22,6 +27,11 @@ export interface BrandingData {
 const defaults: BrandingData = {
   appName: "CoachApp",
   primaryColor: "#e74c3c",
+  fontColor: "#1a1a2e",
+  titleColor: "#1a1a2e",
+  buttonColor: "#e74c3c",
+  buttonHoverColor: "#c0392b",
+  buttonTextColor: "#ffffff",
   logoUrl: null,
   faviconUrl: null,
 };
@@ -62,8 +72,29 @@ function hexToHsl(hex: string): string {
 
 function applyBranding(branding: BrandingData) {
   document.title = branding.appName;
-  // The app uses --primary as a direct CSS color, so keep the converted HSL value valid in that context.
-  document.documentElement.style.setProperty("--primary", `hsl(${hexToHsl(branding.primaryColor)})`);
+  const root = document.documentElement;
+  const asHslColor = (color: string) => `hsl(${hexToHsl(color)})`;
+
+  root.style.setProperty("--brand-primary", asHslColor(branding.primaryColor));
+  root.style.setProperty("--foreground", asHslColor(branding.fontColor));
+  root.style.setProperty("--title-color", asHslColor(branding.titleColor));
+  root.style.setProperty("--primary", asHslColor(branding.buttonColor));
+  root.style.setProperty("--button-hover", asHslColor(branding.buttonHoverColor));
+  root.style.setProperty("--primary-foreground", asHslColor(branding.buttonTextColor));
+
+  let buttonHoverStyle = document.getElementById("branding-button-hover-style") as HTMLStyleElement | null;
+  if (!buttonHoverStyle) {
+    buttonHoverStyle = document.createElement("style");
+    buttonHoverStyle.id = "branding-button-hover-style";
+    document.head.appendChild(buttonHoverStyle);
+  }
+  buttonHoverStyle.textContent = `
+    .btn-primary:hover,
+    [data-primary-btn]:hover,
+    button[data-slot="button"].bg-primary:hover {
+      background-color: ${branding.buttonHoverColor} !important;
+    }
+  `;
 
   if (!branding.faviconUrl) return;
 

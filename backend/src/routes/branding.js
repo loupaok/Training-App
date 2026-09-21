@@ -26,12 +26,25 @@ export async function ensureBrandingSchema(connection) {
   await connection.query(
     "INSERT IGNORE INTO branding (id, app_name, primary_color) VALUES (1, 'CoachApp', '#e74c3c')"
   );
+  await connection.query(`
+    ALTER TABLE branding
+      ADD COLUMN IF NOT EXISTS font_color VARCHAR(7) DEFAULT '#1a1a2e',
+      ADD COLUMN IF NOT EXISTS title_color VARCHAR(7) DEFAULT '#1a1a2e',
+      ADD COLUMN IF NOT EXISTS button_color VARCHAR(7) DEFAULT '#e74c3c',
+      ADD COLUMN IF NOT EXISTS button_hover_color VARCHAR(7) DEFAULT '#c0392b',
+      ADD COLUMN IF NOT EXISTS button_text_color VARCHAR(7) DEFAULT '#ffffff'
+  `);
 }
 
 function normalizeBranding(row) {
   return {
     appName: row.app_name,
     primaryColor: row.primary_color,
+    fontColor: row.font_color,
+    titleColor: row.title_color,
+    buttonColor: row.button_color,
+    buttonHoverColor: row.button_hover_color,
+    buttonTextColor: row.button_text_color,
     logoUrl: row.logo_url,
     faviconUrl: row.favicon_url,
   };
@@ -103,6 +116,11 @@ router.get('/', async (_req, res) => {
 router.put('/', authenticateToken, authorizeRole(['coach']), [
   body('appName').trim().isLength({ min: 1, max: 100 }),
   body('primaryColor').matches(hexColorPattern),
+  body('fontColor').matches(hexColorPattern),
+  body('titleColor').matches(hexColorPattern),
+  body('buttonColor').matches(hexColorPattern),
+  body('buttonHoverColor').matches(hexColorPattern),
+  body('buttonTextColor').matches(hexColorPattern),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -112,8 +130,19 @@ router.put('/', authenticateToken, authorizeRole(['coach']), [
     connection = await pool.getConnection();
     await ensureBrandingSchema(connection);
     await connection.query(
-      'UPDATE branding SET app_name = ?, primary_color = ? WHERE id = 1',
-      [req.body.appName, req.body.primaryColor]
+      `UPDATE branding
+       SET app_name = ?, primary_color = ?, font_color = ?, title_color = ?,
+           button_color = ?, button_hover_color = ?, button_text_color = ?
+       WHERE id = 1`,
+      [
+        req.body.appName,
+        req.body.primaryColor,
+        req.body.fontColor,
+        req.body.titleColor,
+        req.body.buttonColor,
+        req.body.buttonHoverColor,
+        req.body.buttonTextColor,
+      ]
     );
     res.json(await getBranding(connection));
   } catch (error) {

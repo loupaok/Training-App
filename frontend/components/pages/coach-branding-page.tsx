@@ -11,26 +11,66 @@ import { Separator } from "@/components/ui/separator";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CoachShell } from "@/components/shell/coach-shell";
 import { useAuth } from "@/lib/auth/auth-context";
-import { useBranding } from "@/contexts/BrandingContext";
+import { useBranding, type BrandingData } from "@/contexts/BrandingContext";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl } from "@/lib/media";
 
-interface Branding {
-  appName: string;
-  primaryColor: string;
-  logoUrl: string | null;
-  faviconUrl: string | null;
-}
+type Branding = BrandingData;
 
 const emptyBranding: Branding = {
   appName: "CoachApp",
   primaryColor: "#e74c3c",
+  fontColor: "#1a1a2e",
+  titleColor: "#1a1a2e",
+  buttonColor: "#e74c3c",
+  buttonHoverColor: "#c0392b",
+  buttonTextColor: "#ffffff",
   logoUrl: null,
   faviconUrl: null,
 };
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+function isHexColor(value: string) {
+  return /^#[0-9a-fA-F]{6}$/.test(value);
+}
+
+function ColorField({ id, label, value, fallback, disabled, onChange }: {
+  id: string;
+  label: string;
+  value: string;
+  fallback: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  const valid = isHexColor(value);
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="flex flex-wrap items-center gap-3">
+        <input
+          id={id}
+          type="color"
+          value={valid ? value : fallback}
+          onChange={(event) => onChange(event.target.value)}
+          aria-label={`Επιλογή ${label.toLowerCase()}`}
+          disabled={disabled}
+          className="h-10 w-10 cursor-pointer rounded-full border-0 bg-transparent p-0 disabled:cursor-not-allowed"
+        />
+        <Input
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="w-36 font-mono uppercase"
+          aria-invalid={!valid}
+          disabled={disabled}
+        />
+        <div className="h-10 w-10 rounded-full border" style={{ backgroundColor: valid ? value : "transparent" }} aria-label={`Προεπισκόπηση ${label.toLowerCase()}`} />
+      </div>
+    </div>
+  );
 }
 
 function CoachBrandingContent() {
@@ -56,7 +96,7 @@ function CoachBrandingContent() {
   };
 
   const saveBranding = async () => {
-    if (!/^#[0-9a-fA-F]{6}$/.test(branding.primaryColor)) {
+    if (![branding.primaryColor, branding.fontColor, branding.titleColor, branding.buttonColor, branding.buttonHoverColor, branding.buttonTextColor].every(isHexColor)) {
       toast.error("Το χρώμα πρέπει να είναι σε μορφή #RRGGBB.");
       return;
     }
@@ -66,6 +106,11 @@ function CoachBrandingContent() {
       setBranding(await api.put<Branding>("/branding", {
         appName: branding.appName.trim(),
         primaryColor: branding.primaryColor,
+        fontColor: branding.fontColor,
+        titleColor: branding.titleColor,
+        buttonColor: branding.buttonColor,
+        buttonHoverColor: branding.buttonHoverColor,
+        buttonTextColor: branding.buttonTextColor,
       }));
       await refreshBranding();
       toast.success("Οι αλλαγές αποθηκεύτηκαν.");
@@ -95,7 +140,7 @@ function CoachBrandingContent() {
     }
   };
 
-  const validColor = /^#[0-9a-fA-F]{6}$/.test(branding.primaryColor);
+  const validColor = isHexColor(branding.primaryColor);
 
   return (
     <CoachShell title="Branding" user={user} logout={logout}>
@@ -121,7 +166,7 @@ function CoachBrandingContent() {
                 disabled={loading}
               />
             </div>
-            <div className="space-y-3">
+            <div className="hidden" aria-hidden="true">
               <Label htmlFor="primary-color">Βασικό χρώμα</Label>
               <div className="flex flex-wrap items-center gap-3">
                 <input
@@ -144,6 +189,21 @@ function CoachBrandingContent() {
               </div>
               <p className="text-xs text-muted-foreground">Προεπισκόπηση χρώματος</p>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Χρώματα</CardTitle>
+            <CardDescription>Προσάρμοσε τα χρώματα της εφαρμογής και δες την προεπισκόπηση πριν την αποθήκευση.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-6 md:grid-cols-2">
+            <ColorField id="primary-color" label="Βασικό Χρώμα" value={branding.primaryColor} fallback={emptyBranding.primaryColor} disabled={loading} onChange={(value) => updateBranding("primaryColor", value)} />
+            <ColorField id="font-color" label="Χρώμα Γραμματοσειράς" value={branding.fontColor} fallback={emptyBranding.fontColor} disabled={loading} onChange={(value) => updateBranding("fontColor", value)} />
+            <ColorField id="title-color" label="Χρώμα Τίτλων" value={branding.titleColor} fallback={emptyBranding.titleColor} disabled={loading} onChange={(value) => updateBranding("titleColor", value)} />
+            <ColorField id="button-color" label="Χρώμα Κουμπιών" value={branding.buttonColor} fallback={emptyBranding.buttonColor} disabled={loading} onChange={(value) => updateBranding("buttonColor", value)} />
+            <ColorField id="button-hover-color" label="Hover Κουμπιών" value={branding.buttonHoverColor} fallback={emptyBranding.buttonHoverColor} disabled={loading} onChange={(value) => updateBranding("buttonHoverColor", value)} />
+            <ColorField id="button-text-color" label="Χρώμα Κειμένου Κουμπιών" value={branding.buttonTextColor} fallback={emptyBranding.buttonTextColor} disabled={loading} onChange={(value) => updateBranding("buttonTextColor", value)} />
           </CardContent>
         </Card>
 
@@ -183,7 +243,7 @@ function CoachBrandingContent() {
             <CardDescription>Ένα μικρό δείγμα του header με τις τρέχουσες ρυθμίσεις.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex min-h-16 items-center gap-3 rounded-lg px-4 text-white" style={{ backgroundColor: validColor ? branding.primaryColor : emptyBranding.primaryColor }}>
+            <div className="flex min-h-16 items-center gap-3 rounded-t-lg px-4 text-white" style={{ backgroundColor: validColor ? branding.primaryColor : emptyBranding.primaryColor }}>
               {branding.logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={resolveMediaUrl(branding.logoUrl)} alt="Logo" className="max-h-10 max-w-28 object-contain" />
@@ -194,6 +254,24 @@ function CoachBrandingContent() {
               <Separator orientation="vertical" className="mx-2 h-6 bg-white/30" />
               <span className="text-sm text-white/80">Dashboard</span>
               <span className="text-sm text-white/80">Πελάτες</span>
+            </div>
+            <div className="space-y-3 rounded-b-lg border border-t-0 p-4">
+              <h3 className="text-lg font-semibold" style={{ color: isHexColor(branding.titleColor) ? branding.titleColor : emptyBranding.titleColor }}>Τίτλος Σελίδας</h3>
+              <p className="text-sm" style={{ color: isHexColor(branding.fontColor) ? branding.fontColor : emptyBranding.fontColor }}>Κείμενο παραγράφου με την επιλεγμένη χρωματική ταυτότητα.</p>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  data-primary-btn
+                  className="rounded-md px-4 py-2 text-sm font-medium"
+                  style={{
+                    backgroundColor: isHexColor(branding.buttonColor) ? branding.buttonColor : emptyBranding.buttonColor,
+                    color: isHexColor(branding.buttonTextColor) ? branding.buttonTextColor : emptyBranding.buttonTextColor,
+                  }}
+                >
+                  Κουμπί
+                </button>
+                <span className="text-xs text-muted-foreground">Hover: <span className="inline-block h-3 w-3 rounded-full align-middle" style={{ backgroundColor: isHexColor(branding.buttonHoverColor) ? branding.buttonHoverColor : emptyBranding.buttonHoverColor }} /></span>
+              </div>
             </div>
           </CardContent>
         </Card>
