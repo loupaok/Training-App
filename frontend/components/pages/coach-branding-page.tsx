@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CoachShell } from "@/components/shell/coach-shell";
 import { useAuth } from "@/lib/auth/auth-context";
+import { useBranding } from "@/contexts/BrandingContext";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl } from "@/lib/media";
 
@@ -34,6 +35,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function CoachBrandingContent() {
   const { user, logout } = useAuth();
+  const { refreshBranding } = useBranding();
   const logoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
   const [branding, setBranding] = useState<Branding>(emptyBranding);
@@ -65,6 +67,7 @@ function CoachBrandingContent() {
         appName: branding.appName.trim(),
         primaryColor: branding.primaryColor,
       }));
+      await refreshBranding();
       toast.success("Οι αλλαγές αποθηκεύτηκαν.");
     } catch (error) {
       toast.error(getErrorMessage(error, "Δεν έγινε η αποθήκευση."));
@@ -82,6 +85,7 @@ function CoachBrandingContent() {
       const formData = new FormData();
       formData.append("file", file);
       setBranding(await api.upload<Branding>(`/branding/${kind}`, formData));
+      await refreshBranding();
       toast.success(kind === "logo" ? "Το logo ανέβηκε." : "Το favicon ανέβηκε.");
     } catch (error) {
       toast.error(getErrorMessage(error, "Η μεταφόρτωση απέτυχε."));

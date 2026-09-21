@@ -6,6 +6,8 @@ import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useBranding } from "@/contexts/BrandingContext";
+import { resolveMediaUrl } from "@/lib/media";
 import { SidebarUserMenu } from "@/components/shell/sidebar-user-menu";
 import { clientNavSections, isActivePath } from "@/lib/nav-config";
 import type { AuthUser } from "@/types/auth";
@@ -28,6 +30,7 @@ export function ClientSidebar({
   onToggle,
 }: ClientSidebarProps) {
   const pathname = usePathname();
+  const { branding } = useBranding();
 
   return (
     <aside
@@ -37,7 +40,13 @@ export function ClientSidebar({
       )}
     >
       <div className={cn("flex h-16 items-center border-b border-white/10", collapsed ? "justify-center px-2" : "justify-between px-4")}>
-        {!collapsed && <span className="truncate text-base font-semibold">COACH PANEL</span>}
+        {!collapsed &&
+          (branding.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={resolveMediaUrl(branding.logoUrl)} alt={branding.appName} className="h-8 max-w-32 object-contain" />
+          ) : (
+            <span className="truncate text-base font-semibold">{branding.appName}</span>
+          ))}
         <Button
           variant="ghost"
           size="icon-sm"

@@ -6,6 +6,8 @@ import { usePathname } from "next/navigation";
 import { ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { useBranding } from "@/contexts/BrandingContext";
+import { resolveMediaUrl } from "@/lib/media";
 import { SidebarUserMenu } from "@/components/shell/sidebar-user-menu";
 import { coachNavSections, isActivePath } from "@/lib/nav-config";
 import type { AuthUser } from "@/types/auth";
@@ -19,6 +21,7 @@ interface CoachSidebarProps {
 
 export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebarProps) {
   const pathname = usePathname();
+  const { branding } = useBranding();
   const canSeeCoachSettings = user?.role === "admin" || user?.role === "coach";
   const isAdmin = user?.role === "admin";
   // Each expandable section (Ρυθμίσεις, Πρότυπα Πλάνων, ...) tracks its own open state,
@@ -49,7 +52,13 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
       )}
     >
       <div className={cn("flex h-16 items-center border-b border-white/10", collapsed ? "justify-center px-2" : "justify-between px-4")}>
-        {!collapsed && <span className="truncate text-base font-semibold">COACH PANEL</span>}
+        {!collapsed &&
+          (branding.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={resolveMediaUrl(branding.logoUrl)} alt={branding.appName} className="h-8 max-w-32 object-contain" />
+          ) : (
+            <span className="truncate text-base font-semibold">{branding.appName}</span>
+          ))}
         <Button
           variant="ghost"
           size="icon-sm"
