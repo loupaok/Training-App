@@ -2,6 +2,7 @@ import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
+import { logClientActivity } from '../lib/client-activity-log.js';
 
 const router = express.Router();
 
@@ -88,6 +89,13 @@ router.post('/', authorizeRole(['coach', 'admin']), [
        currency || 'EUR', startDate, endDate || null, notes || null]
     );
 
+    await logClientActivity(connection, {
+      clientId: Number(clientId),
+      action: 'Subscription renewed',
+      performedBy: req.user.id,
+      details: `Plan: ${planName}`,
+    });
+
     connection.release();
     res.status(201).json({ message: 'Subscription created successfully', id: result.insertId });
   } catch (error) {
@@ -152,6 +160,15 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
     await connection.query(
       `UPDATE subscriptions SET ${updates.join(', ')} WHERE id = ?`, values
     );
+
+    if (endDate) {
+      await logClientActivity(connection, {
+        clientId: sub.client_id,
+        action: 'Subscription renewed',
+        performedBy: req.user.id,
+        details: `New end date: ${endDate}`,
+      });
+    }
 
     connection.release();
     res.json({ message: 'Subscription updated successfully' });

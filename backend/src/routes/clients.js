@@ -10,6 +10,7 @@ import { getVapidPublicKey, sendPushToUser, sendPushToUsers } from '../lib/webPu
 import { insertTrainingPlanDays } from './trainingPlans.js';
 import { insertNutritionPlanMeals } from './nutritionPlans.js';
 import { getFullTrainingTemplate, getFullNutritionTemplate } from './templates.js';
+import { ensureClientActivityLogSchema, logClientActivity } from '../lib/client-activity-log.js';
 
 const router = express.Router();
 
@@ -1366,7 +1367,7 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
 
     let rows;
     if (req.user.role === 'admin' || req.user.role === 'moderator' || req.user.role === 'coach') {
-      const filters = ["u.role = 'client'", "u.is_active = 1"];
+      const filters = ["u.role = 'client'"];
       const values = [];
 
       if (search) {
@@ -1394,6 +1395,7 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
                   ELSE 0
                 END AS is_expiring_soon,
                 CASE
+                  WHEN u.is_active = 0 THEN 'inactive'
                   WHEN u.status = 'active' THEN 'active'
                   WHEN u.status = 'expired' THEN 'inactive'
                   WHEN u.status = 'pending_payment' THEN 'pending'
@@ -1705,6 +1707,80 @@ router.delete('/push/subscriptions/:id', async (req, res) => {
   }
 });
 
+async function canAccessClientActivity(connection, user, clientId) {
+  const [clients] = await connection.query(
+    'SELECT id FROM users WHERE id = ? AND role = "client" LIMIT 1',
+    [clientId]
+  );
+  if (!clients.length) return { allowed: false, status: 404, message: 'Client not found' };
+
+  if (user.role === 'coach') {
+    const [access] = await connection.query(
+      'SELECT id FROM coach_clients WHERE coach_id = ? AND client_id = ? LIMIT 1',
+      [user.id, clientId]
+    );
+    if (!access.length) return { allowed: false, status: 403, message: 'Access denied' };
+  }
+
+  return { allowed: true };
+}
+
+router.get('/:id/log', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    await ensureClientActivityLogSchema(connection);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+    const offset = Math.max(0, Number(req.query.offset) || 0);
+    const [rows] = await connection.query(
+      `SELECT id, action, performed_by AS performedBy, performed_by_name AS performedByName,
+              details, created_at AS createdAt
+       FROM client_activity_log
+       WHERE client_id = ?
+       ORDER BY created_at DESC, id DESC
+       LIMIT ? OFFSET ?`,
+      [clientId, limit, offset]
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.post('/:id/log', authorizeRole(['coach', 'admin', 'moderator']), [
+  body('action').trim().isLength({ min: 1, max: 255 }),
+  body('details').optional().isString(),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const connection = await pool.getConnection();
+  try {
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    await logClientActivity(connection, {
+      clientId,
+      action: req.body.action,
+      performedBy: req.user.id,
+      details: req.body.details || null,
+    });
+    res.status(201).json({ message: 'Activity logged' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
 router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
@@ -1796,7 +1872,10 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
 });
 
 // PUT /clients/:id/details — coach edits a client's personal info / coach-only notes
-router.put('/:id/details', authorizeRole(['coach', 'admin']), [
+router.put('/:id/details', authorizeRole(['coach', 'admin', 'moderator']), [
+  body('fullName').optional().notEmpty(),
+  body('email').optional().isEmail(),
+  body('phone').optional({ nullable: true }).isString(),
   body('dateOfBirth').optional({ nullable: true }).isString(),
   body('gender').optional({ nullable: true, checkFalsy: true }).isIn(['male', 'female', 'other']),
   body('heightCm').optional({ nullable: true, checkFalsy: true }).isNumeric(),
@@ -1817,7 +1896,23 @@ router.put('/:id/details', authorizeRole(['coach', 'admin']), [
   try {
     await ensureClientDetailColumns(connection);
 
+    const userUpdates = [];
+    const userValues = [];
+    if (req.body.fullName !== undefined) {
+      userUpdates.push('full_name = ?');
+      userValues.push(req.body.fullName);
+    }
+    if (req.body.email !== undefined) {
+      userUpdates.push('email = ?');
+      userValues.push(req.body.email);
+    }
+    if (userUpdates.length) {
+      userValues.push(req.params.id);
+      await connection.query(`UPDATE users SET ${userUpdates.join(', ')} WHERE id = ? AND role = 'client'`, userValues);
+    }
+
     const fieldMap = {
+      phone: 'phone',
       dateOfBirth: 'date_of_birth',
       gender: 'gender',
       heightCm: 'height_cm',
@@ -1849,6 +1944,12 @@ router.put('/:id/details', authorizeRole(['coach', 'admin']), [
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: 'Client not found' });
     }
+
+    await logClientActivity(connection, {
+      clientId: Number(req.params.id),
+      action: 'Personal information updated',
+      performedBy: req.user.id,
+    });
 
     res.json({ message: 'Client details updated' });
   } catch (error) {
@@ -2051,6 +2152,12 @@ router.post('/:id/assign-training-template', authorizeRole(['coach', 'admin']), 
     );
 
     await insertTrainingPlanDays(connection, result.insertId, template.days || []);
+    await logClientActivity(connection, {
+      clientId: Number(req.params.id),
+      action: 'Training plan assigned',
+      performedBy: req.user.id,
+      details: `Template: ${template.title}`,
+    });
 
     await connection.commit();
     res.status(201).json({ message: 'Template assigned', planId: result.insertId });
@@ -2107,6 +2214,12 @@ router.post('/:id/assign-nutrition-template', authorizeRole(['coach', 'admin']),
     );
 
     await insertNutritionPlanMeals(connection, result.insertId, template.meals || []);
+    await logClientActivity(connection, {
+      clientId: Number(req.params.id),
+      action: 'Nutrition plan assigned',
+      performedBy: req.user.id,
+      details: `Template: ${template.title}`,
+    });
 
     await connection.commit();
     res.status(201).json({ message: 'Template assigned', planId: result.insertId });
@@ -2177,6 +2290,13 @@ router.post('/', authorizeRole(['coach', 'admin']), [
         [req.user.id, userId]
       );
     }
+
+    await logClientActivity(connection, {
+      clientId: userId,
+      action: 'Client created',
+      performedBy: req.user.id,
+      details: `Client: ${fullName}`,
+    });
 
     await connection.commit();
     connection.release();
@@ -2267,6 +2387,12 @@ router.post('/:id/approve-payment', authorizeRole(['coach', 'admin']), async (re
       'UPDATE notifications SET read_at = COALESCE(read_at, NOW()) WHERE client_id = ? AND payment_id = ? AND type IN (?, ?)',
       [clientId, payments[0].id, 'payment_proof_uploaded', 'payment_request_created']
     );
+    await logClientActivity(connection, {
+      clientId,
+      action: 'Payment approved',
+      performedBy: req.user.id,
+      details: `Payment #${payments[0].id} approved`,
+    });
 
     await connection.commit();
     connection.release();
@@ -2361,6 +2487,12 @@ router.post('/:id/reject-payment', authorizeRole(['coach', 'admin']), async (req
       'UPDATE notifications SET read_at = COALESCE(read_at, NOW()) WHERE client_id = ? AND payment_id = ? AND type IN (?, ?)',
       [clientId, paymentId, 'payment_proof_uploaded', 'payment_request_created']
     );
+    await logClientActivity(connection, {
+      clientId,
+      action: 'Payment rejected',
+      performedBy: req.user.id,
+      details: `Payment #${paymentId} rejected`,
+    });
 
     await connection.commit();
     connection.release();
@@ -2374,7 +2506,7 @@ router.post('/:id/reject-payment', authorizeRole(['coach', 'admin']), async (req
   }
 });
 
-router.put('/:id', authorizeRole(['coach', 'admin']), [
+router.put('/:id', authorizeRole(['coach', 'admin', 'moderator']), [
   body('email').optional().isEmail(),
   body('fullName').optional().notEmpty()
 ], async (req, res) => {
@@ -2389,7 +2521,7 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
     await ensureOnboardingSchema(connection);
     // Verify client exists and coach has access
     const [rows] = await connection.query(
-      `SELECT u.id, cc.coach_id
+      `SELECT u.id, u.is_active, cc.coach_id
        FROM users u
        LEFT JOIN coach_clients cc ON cc.client_id = u.id
        WHERE u.id = ? AND u.role = 'client'`,
@@ -2451,6 +2583,24 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
        heightCm || null, weightKg || null, fitnessGoal || null,
        medicalNotes || null, coachNotes || null, emergencyContactName || null, emergencyContactPhone || null]
     );
+
+    const clientId = Number(req.params.id);
+    if (isActive !== undefined && Boolean(rows[0].is_active) !== Boolean(isActive)) {
+      await logClientActivity(connection, {
+        clientId,
+        action: 'Client status changed',
+        performedBy: req.user.id,
+        details: isActive ? 'Status: active' : 'Status: inactive',
+      });
+    }
+
+    if ([fullName, email, bio, phone, gender, dateOfBirth, heightCm, weightKg, fitnessGoal, medicalNotes, coachNotes, emergencyContactName, emergencyContactPhone].some((value) => value !== undefined)) {
+      await logClientActivity(connection, {
+        clientId,
+        action: 'Personal information updated',
+        performedBy: req.user.id,
+      });
+    }
 
     await connection.commit();
     connection.release();
@@ -2554,6 +2704,13 @@ router.delete('/:id', authorizeRole(['admin']), async (req, res) => {
     };
 
     await connection.beginTransaction();
+
+    await logClientActivity(connection, {
+      clientId,
+      action: 'Client deleted',
+      performedBy: req.user.id,
+      details: 'Permanent deletion requested',
+    });
 
     await ignoreDelete('DELETE FROM weekly_update_photos WHERE client_id = ?', [clientId]);
     await ignoreDelete('DELETE FROM progress_photos WHERE client_id = ?', [clientId]);

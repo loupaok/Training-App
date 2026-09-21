@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Sparkles, Ban, Trash2 } from "lucide-react";
+import { Clock, Sparkles } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl, getInitials } from "@/lib/media";
@@ -19,7 +19,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { AreaChart, SparkLineChart, ProgressBar } from "@tremor/react";
 import {
   Table,
@@ -153,6 +165,15 @@ interface StatusMetaResult {
   className: string;
 }
 
+interface ClientActivityLogEntry {
+  id: number | string;
+  action: string;
+  performedBy: number | string;
+  performedByName?: string | null;
+  details?: string | null;
+  createdAt?: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Constants + helpers
 // ---------------------------------------------------------------------------
@@ -164,6 +185,7 @@ const tabs = [
   { id: "nutrition", label: "Πρόγραμμα Διατροφής" },
   { id: "payments", label: "Πληρωμές" },
   { id: "messages", label: "Μηνύματα" },
+  { id: "activity", label: "Ιστορικό" },
 ];
 
 function formatDate(value?: string | null): string {
@@ -178,6 +200,18 @@ function formatDateTime(value?: string | null): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString("el-GR", { dateStyle: "short", timeStyle: "short" });
+}
+
+function relativeTime(value?: string | null): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+  if (seconds < 60) return "Μόλις τώρα";
+  if (seconds < 3600) return `πριν από ${Math.floor(seconds / 60)} λεπτά`;
+  if (seconds < 86400) return `πριν από ${Math.floor(seconds / 3600)} ώρες`;
+  return `πριν από ${Math.floor(seconds / 86400)} ημέρες`;
 }
 
 function money(amount?: number | string | null, currency = "EUR"): string {
@@ -258,7 +292,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [togglingActive, setTogglingActive] = useState(false);
-  const [deactivating, setDeactivating] = useState(false);
+  const [resettingPassword, setResettingPassword] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const loadClientDetail = () => {
@@ -422,18 +456,17 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
     }
   };
 
-  const deactivateClient = async () => {
-    setDeactivating(true);
+  const resetClientPassword = async (newPassword: string) => {
+    setResettingPassword(true);
     setMessage("");
     setError("");
     try {
-      await api.put(`/clients/${clientId}`, { isActive: false });
-      setMessage("Ο πελάτης απενεργοποιήθηκε.");
-      loadClientDetail();
+      await api.put(`/admin/users/${clientId}/reset-password`, { newPassword });
+      setMessage("Ο κωδικός του πελάτη ενημερώθηκε.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Δεν έγινε απενεργοποίηση.");
+      setError(err instanceof Error ? err.message : "Δεν έγινε επαναφορά κωδικού.");
     } finally {
-      setDeactivating(false);
+      setResettingPassword(false);
     }
   };
 
@@ -472,8 +505,11 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
             onboarding={onboarding}
             onSetActive={setClientActive}
             togglingActive={togglingActive}
-            onDeactivate={deactivateClient}
-            deactivating={deactivating}
+            onResetPassword={resetClientPassword}
+            resettingPassword={resettingPassword}
+            canManageStatus={user?.role === "coach" || user?.role === "admin"}
+            canResetPassword={user?.role === "admin"}
+            canDelete={user?.role === "admin"}
             onDelete={deleteClient}
             deleting={deleting}
           />
@@ -500,6 +536,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 onboarding={onboarding}
                 onUpdated={loadClientDetail}
                 currentStatus={currentStatus}
+                canEdit={Boolean(user && ["coach", "admin", "moderator"].includes(user.role))}
                 onApprovePayment={approvePayment}
                 approvingPayment={approvingPayment}
               />
@@ -576,6 +613,10 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
             <TabsContent value="messages" className="mt-6">
               <MessagesTab clientId={clientId} />
             </TabsContent>
+
+            <TabsContent value="activity" className="mt-6">
+              <ActivityLogTab clientId={clientId} active={activeTab === "activity"} />
+            </TabsContent>
           </Tabs>
         </div>
       )}
@@ -594,8 +635,11 @@ function ClientHeader({
   onboarding,
   onSetActive,
   togglingActive,
-  onDeactivate,
-  deactivating,
+  onResetPassword,
+  resettingPassword,
+  canManageStatus,
+  canResetPassword,
+  canDelete,
   onDelete,
   deleting,
 }: {
@@ -605,14 +649,23 @@ function ClientHeader({
   onboarding: Onboarding;
   onSetActive: (active: boolean) => void;
   togglingActive: boolean;
-  onDeactivate: () => Promise<void>;
-  deactivating: boolean;
+  onResetPassword: (newPassword: string) => Promise<void>;
+  resettingPassword: boolean;
+  canManageStatus: boolean;
+  canResetPassword: boolean;
+  canDelete: boolean;
   onDelete: () => Promise<void>;
   deleting: boolean;
 }) {
   const [deactivateOpen, setDeactivateOpen] = useState(false);
+  const [activateOpen, setActivateOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const isActive = Boolean(client.is_active);
+  const passwordsMatch = newPassword === confirmPassword;
+  const validPassword = newPassword.length >= 8 && passwordsMatch;
 
   const sparklineData = useMemo(
     () =>
@@ -667,82 +720,118 @@ function ClientHeader({
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-4 dark:border-slate-800">
-        <Select
-          items={[
-            { value: "active", label: "Ενεργός" },
-            { value: "inactive", label: "Ανενεργός" },
-          ]}
-          value={isActive ? "active" : "inactive"}
-          onValueChange={(value) => value && onSetActive(value === "active")}
-        >
-          <SelectTrigger className="h-9 w-40 text-sm font-semibold" disabled={togglingActive}>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="active">Ενεργός</SelectItem>
-            <SelectItem value="inactive">Ανενεργός</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => setDeactivateOpen(true)}
-          className="gap-2 font-bold text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10"
-        >
-          <Ban className="h-4 w-4" /> Απενεργοποίηση
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => setDeleteOpen(true)}
-          className="gap-2 font-bold text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10"
-        >
-          <Trash2 className="h-4 w-4" /> Διαγραφή
-        </Button>
+        {canManageStatus && isActive && (
+          <Button type="button" variant="ghost" onClick={() => setDeactivateOpen(true)} className="text-destructive hover:text-destructive">
+            Απενεργοποίηση
+          </Button>
+        )}
+        {canManageStatus && !isActive && (
+          <Button type="button" variant="ghost" onClick={() => setActivateOpen(true)}>
+            Ενεργοποίηση
+          </Button>
+        )}
+        {canResetPassword && (
+          <Button type="button" variant="ghost" onClick={() => setResetOpen(true)}>
+            Επαναφορά Κωδικού
+          </Button>
+        )}
+        {canDelete && (
+          <Button type="button" variant="ghost" onClick={() => setDeleteOpen(true)} className="text-destructive hover:text-destructive">
+            Διαγραφή
+          </Button>
+        )}
       </div>
 
-      <Dialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Απενεργοποίηση πελάτη;</DialogTitle>
-            <DialogDescription>Ο πελάτης δεν θα διαγραφεί.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDeactivateOpen(false)}>
-              Ακύρωση
-            </Button>
-            <Button
-              type="button"
-              disabled={deactivating}
+      <AlertDialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Απενεργοποίηση πελάτη;</AlertDialogTitle>
+            <AlertDialogDescription>Ο πελάτης δεν θα διαγραφεί.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Ακύρωση</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={togglingActive}
               onClick={async () => {
-                await onDeactivate();
+                await onSetActive(false);
                 setDeactivateOpen(false);
               }}
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-destructive text-white hover:bg-destructive/90"
             >
-              {deactivating ? "Απενεργοποίηση..." : "Απενεργοποίηση"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              {togglingActive ? "Απενεργοποίηση..." : "Απενεργοποίηση"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Οριστική διαγραφή πελάτη;</DialogTitle>
-            <DialogDescription>Αυτή η ενέργεια δεν αναιρείται.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDeleteOpen(false)}>
-              Ακύρωση
-            </Button>
-            <Button type="button" disabled={deleting} onClick={onDelete} className="bg-red-600 hover:bg-red-700">
+      <AlertDialog open={activateOpen} onOpenChange={setActivateOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ενεργοποίηση πελάτη;</AlertDialogTitle>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Ακύρωση</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={togglingActive}
+              onClick={async () => {
+                await onSetActive(true);
+                setActivateOpen(false);
+              }}
+            >
+              {togglingActive ? "Ενεργοποίηση..." : "Ενεργοποίηση"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={resetOpen} onOpenChange={setResetOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Επαναφορά Κωδικού</AlertDialogTitle>
+            <AlertDialogDescription>Εισάγετε νέο κωδικό για τον πελάτη.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="new-client-password">Νέος Κωδικός</Label>
+              <Input id="new-client-password" type="password" minLength={8} value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirm-client-password">Επιβεβαίωση</Label>
+              <Input id="confirm-client-password" type="password" minLength={8} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+              {confirmPassword && !passwordsMatch && <p className="text-sm text-destructive">Οι κωδικοί δεν ταιριάζουν.</p>}
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Ακύρωση</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={!validPassword || resettingPassword}
+              onClick={async () => {
+                await onResetPassword(newPassword);
+                setNewPassword("");
+                setConfirmPassword("");
+                setResetOpen(false);
+              }}
+            >
+              {resettingPassword ? "Αποθήκευση..." : "Αποθήκευση"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Οριστική διαγραφή πελάτη;</AlertDialogTitle>
+            <AlertDialogDescription>Αυτή η ενέργεια δεν αναιρείται.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Ακύρωση</AlertDialogCancel>
+            <AlertDialogAction disabled={deleting} onClick={onDelete} className="bg-destructive text-white hover:bg-destructive/90">
               {deleting ? "Διαγραφή..." : "Διαγραφή"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }
@@ -757,6 +846,9 @@ function StatChip({ icon, value }: { icon: string; value: string }) {
 }
 
 interface ClientDetailsForm {
+  fullName: string;
+  email: string;
+  phone: string;
   dateOfBirth: string;
   gender: string;
   heightCm: string;
@@ -771,6 +863,9 @@ interface ClientDetailsForm {
 
 function toDetailsForm(client: ClientRecord): ClientDetailsForm {
   return {
+    fullName: client.full_name || "",
+    email: client.email || "",
+    phone: client.phone || "",
     dateOfBirth: client.date_of_birth ? String(client.date_of_birth).slice(0, 10) : "",
     gender: client.gender || "",
     heightCm: client.height_cm !== undefined && client.height_cm !== null ? String(client.height_cm) : "",
@@ -809,6 +904,7 @@ function OverviewTab({
   onboarding,
   onUpdated,
   currentStatus,
+  canEdit,
   onApprovePayment,
   approvingPayment,
 }: {
@@ -817,6 +913,7 @@ function OverviewTab({
   onboarding: Onboarding;
   onUpdated: () => void;
   currentStatus: StatusMetaResult;
+  canEdit: boolean;
   onApprovePayment: (paymentId: number | string) => void;
   approvingPayment: boolean;
 }) {
@@ -886,10 +983,10 @@ function OverviewTab({
         <div className="space-y-6 lg:col-span-3">
           <InfoCard title="Στοιχεία Επικοινωνίας">
             <div className="space-y-3">
-              <Info label="Όνομα" value={client.full_name} />
-              <Info label="Email" value={client.email} />
-              <Info label="Τηλέφωνο" value={client.phone} />
-              <EditField label="Ημερομηνία γέννησης" type="date" value={form.dateOfBirth} onChange={(value) => updateField("dateOfBirth", value)} />
+              <EditField label="Όνομα" value={form.fullName} onChange={(value) => updateField("fullName", value)} disabled={!canEdit} />
+              <EditField label="Email" type="email" value={form.email} onChange={(value) => updateField("email", value)} disabled={!canEdit} />
+              <EditField label="Τηλέφωνο" value={form.phone} onChange={(value) => updateField("phone", value)} disabled={!canEdit} />
+              <EditField label="Ημερομηνία γέννησης" type="date" value={form.dateOfBirth} onChange={(value) => updateField("dateOfBirth", value)} disabled={!canEdit} />
               <div>
                 <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Φύλο</Label>
                 <Select
@@ -901,7 +998,7 @@ function OverviewTab({
                   value={form.gender}
                   onValueChange={(value) => updateField("gender", value ?? "")}
                 >
-                  <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold">
+                  <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold" disabled={!canEdit}>
                     <SelectValue placeholder="Επιλογή" />
                   </SelectTrigger>
                   <SelectContent>
@@ -911,26 +1008,28 @@ function OverviewTab({
                   </SelectContent>
                 </Select>
               </div>
-              <EditField label="Ύψος (cm)" type="number" value={form.heightCm} onChange={(value) => updateField("heightCm", value)} />
-              <EditField label="Βάρος (kg)" type="number" value={form.weightKg} onChange={(value) => updateField("weightKg", value)} />
-              <EditField label="Στόχος" value={form.fitnessGoal} onChange={(value) => updateField("fitnessGoal", value)} />
+              <EditField label="Ύψος (cm)" type="number" value={form.heightCm} onChange={(value) => updateField("heightCm", value)} disabled={!canEdit} />
+              <EditField label="Βάρος (kg)" type="number" value={form.weightKg} onChange={(value) => updateField("weightKg", value)} disabled={!canEdit} />
+              <EditField label="Στόχος" value={form.fitnessGoal} onChange={(value) => updateField("fitnessGoal", value)} disabled={!canEdit} />
               <div>
                 <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Ιατρικές σημειώσεις</Label>
-                <Textarea className="mt-1" value={form.medicalNotes} onChange={(event) => updateField("medicalNotes", event.target.value)} />
+                <Textarea className="mt-1" value={form.medicalNotes} onChange={(event) => updateField("medicalNotes", event.target.value)} disabled={!canEdit} />
               </div>
               <EditField
                 label="Επαφή έκτακτης ανάγκης"
                 value={form.emergencyContactName}
                 onChange={(value) => updateField("emergencyContactName", value)}
+                disabled={!canEdit}
               />
               <EditField
                 label="Τηλέφωνο έκτακτης ανάγκης"
                 value={form.emergencyContactPhone}
                 onChange={(value) => updateField("emergencyContactPhone", value)}
+                disabled={!canEdit}
               />
             </div>
             <div className="mt-4 flex justify-end">
-              <Button type="button" onClick={saveDetails} disabled={saving} className="h-10 px-6 font-bold">
+              <Button type="button" onClick={saveDetails} disabled={saving || !canEdit} className="h-10 px-6 font-bold">
                 {saving ? "Αποθήκευση..." : "Αποθήκευση στοιχείων"}
               </Button>
             </div>
@@ -962,7 +1061,7 @@ function OverviewTab({
               value={client.updateSchedule?.day_of_week !== undefined ? String(client.updateSchedule.day_of_week) : undefined}
               onValueChange={(value) => value && saveUpdateDay(value)}
             >
-              <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold" disabled={savingUpdateDay}>
+              <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold" disabled={savingUpdateDay || !canEdit}>
                 <SelectValue placeholder="Επιλογή ημέρας" />
               </SelectTrigger>
               <SelectContent>
@@ -984,7 +1083,7 @@ function OverviewTab({
               <EmptyInline text="Δεν υπάρχουν social links." />
             )}
             <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
-              <EditField label="Discord ID" value={form.discordId} onChange={(value) => updateField("discordId", value)} />
+              <EditField label="Discord ID" value={form.discordId} onChange={(value) => updateField("discordId", value)} disabled={!canEdit} />
             </div>
           </InfoCard>
         </div>
@@ -1040,16 +1139,18 @@ function EditField({
   value,
   onChange,
   type = "text",
+  disabled = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   type?: string;
+  disabled?: boolean;
 }) {
   return (
     <div>
       <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">{label}</Label>
-      <Input type={type} className="mt-1 h-10 text-sm font-semibold" value={value} onChange={(event) => onChange(event.target.value)} />
+      <Input type={type} className="mt-1 h-10 text-sm font-semibold" value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} />
     </div>
   );
 }
@@ -1442,6 +1543,145 @@ function EmptyInline({ text }: { text: string }) {
 // ---------------------------------------------------------------------------
 // Messages tab
 // ---------------------------------------------------------------------------
+
+function activityDotClass(entry: ClientActivityLogEntry): string {
+  const action = entry.action.toLowerCase();
+  const details = entry.details?.toLowerCase() || "";
+
+  if (action.includes("created")) return "bg-blue-500";
+  if (action.includes("status")) return details.includes("inactive") ? "bg-red-500" : "bg-emerald-500";
+  if (action.includes("payment")) return "bg-emerald-500";
+  if (action.includes("plan") || action.includes("training") || action.includes("nutrition")) return "bg-violet-500";
+  if (action.includes("password")) return "bg-orange-500";
+  if (action.includes("deleted")) return "bg-red-500";
+  if (action.includes("subscription")) return "bg-teal-500";
+  if (action.includes("personal") || action.includes("profile")) return "bg-slate-400";
+  return "bg-slate-400";
+}
+
+function activityLabel(entry: ClientActivityLogEntry): string {
+  const action = entry.action.toLowerCase();
+  const details = entry.details?.toLowerCase() || "";
+
+  if (action.includes("created")) return "Δημιουργία πελάτη";
+  if (action.includes("status")) return `Αλλαγή κατάστασης${details.includes("inactive") ? " → Ανενεργός" : details.includes("active") ? " → Ενεργός" : ""}`;
+  if (action.includes("payment") && action.includes("approved")) return "Έγκριση πληρωμής";
+  if (action.includes("payment") && action.includes("rejected")) return "Απόρριψη πληρωμής";
+  if (action.includes("training")) return "Ανάθεση προγράμματος προπόνησης";
+  if (action.includes("nutrition")) return "Ανάθεση προγράμματος διατροφής";
+  if (action.includes("password")) return "Επαναφορά κωδικού";
+  if (action.includes("deleted")) return "Διαγραφή πελάτη";
+  if (action.includes("subscription")) return "Ανανέωση συνδρομής";
+  if (action.includes("personal") || action.includes("profile")) return "Ενημέρωση προσωπικών στοιχείων";
+  return entry.action;
+}
+
+function ActivityLogSkeleton() {
+  return (
+    <div className="space-y-6 py-2">
+      {Array.from({ length: 3 }, (_, index) => (
+        <div key={index} className="flex gap-4">
+          <Skeleton className="mt-1 h-3 w-3 shrink-0 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-2/5" />
+            <Skeleton className="h-3 w-1/3" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ActivityLogTab({ clientId, active }: { clientId: string; active: boolean }) {
+  const [entries, setEntries] = useState<ClientActivityLogEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadedClientId, setLoadedClientId] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!active || loadedClientId === clientId) return;
+
+    setLoading(true);
+    setError("");
+    api
+      .get<ClientActivityLogEntry[]>(`/clients/${clientId}/log?limit=20&offset=0`)
+      .then((rows) => {
+        setEntries(rows);
+        setHasMore(rows.length === 20);
+        setLoadedClientId(clientId);
+      })
+      .catch((requestError) => {
+        setEntries([]);
+        setHasMore(false);
+        setLoadedClientId(clientId);
+        setError(requestError instanceof Error ? requestError.message : "Δεν φορτώθηκε το ιστορικό.");
+      })
+      .finally(() => setLoading(false));
+  }, [active, clientId, loadedClientId]);
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    setError("");
+    try {
+      const rows = await api.get<ClientActivityLogEntry[]>(`/clients/${clientId}/log?limit=20&offset=${entries.length}`);
+      setEntries((current) => [...current, ...rows]);
+      setHasMore(rows.length === 20);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Δεν φορτώθηκε επιπλέον ιστορικό.");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  return (
+    <Card className="p-6">
+      <CardHeader className="p-0">
+        <CardTitle className="text-lg font-semibold">Ιστορικό Δραστηριότητας</CardTitle>
+      </CardHeader>
+
+      <CardContent className="p-0 pt-6">
+        {loading ? (
+          <ActivityLogSkeleton />
+        ) : !entries.length ? (
+          <div className="flex min-h-48 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+            <Clock className="h-8 w-8" />
+            <p className="text-sm">{error || "Δεν υπάρχει ιστορικό ακόμα"}</p>
+          </div>
+        ) : (
+          <>
+            <ScrollArea className="max-h-[34rem] pr-4">
+              <div className="relative ml-2 border-l border-border pl-6">
+                {entries.map((entry) => (
+                  <div key={entry.id} className="relative pb-7 last:pb-1">
+                    <span className={`absolute -left-[1.84rem] top-1.5 h-3 w-3 rounded-full ring-4 ring-background ${activityDotClass(entry)}`} />
+                    <p className="text-sm font-medium text-foreground">{activityLabel(entry)}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Από: {entry.performedByName || "-"}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {relativeTime(entry.createdAt)} · {formatDateTime(entry.createdAt)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+
+            {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
+
+            {hasMore && (
+              <div className="mt-6 flex justify-center">
+                <Button type="button" variant="outline" onClick={loadMore} disabled={loadingMore}>
+                  {loadingMore ? "Φόρτωση..." : "Φόρτωση περισσότερων"}
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 interface MessageRow {
   id: number | string;

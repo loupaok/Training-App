@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Plus, Pencil, Eye, Trash2, Search, X, Mail, Ban } from "lucide-react";
+import { Plus, Search, X, Mail, Ban } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -60,6 +60,7 @@ interface MappedClient {
   lastUpdateAtRaw: string;
   onlineStatus: string;
   isOnline: boolean;
+  isActive: boolean;
   createdAt: string;
   profilePhoto: string | null;
   initials: string;
@@ -133,6 +134,7 @@ function mapApiClient(row: ClientApiRow): MappedClient {
     lastUpdateAtRaw: row.latest_update_at || "1970-01-01",
     onlineStatus: row.is_online ? "Online" : "Offline",
     isOnline: Boolean(row.is_online),
+    isActive: row.is_active !== 0,
     createdAt: row.created_at || new Date().toISOString(),
     profilePhoto: row.profile_photo || null,
     initials: getInitials(row.full_name || row.email),
@@ -155,7 +157,6 @@ function ClientsContent() {
   const [sortBy, setSortBy] = useState("newest");
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
-  const [deletingClientId, setDeletingClientId] = useState<number | string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number | string>>(new Set());
   const [bulkMessageOpen, setBulkMessageOpen] = useState(false);
   const [bulkMessageText, setBulkMessageText] = useState("");
@@ -270,27 +271,6 @@ function ClientsContent() {
       loadClients();
     } catch (error) {
       setClientError(error instanceof Error ? error.message : "Δεν έγινε προσθήκη πελάτη.");
-    }
-  };
-
-  const handleDeleteClient = async (client: MappedClient) => {
-    const confirmed = window.confirm(
-      `Θέλεις σίγουρα να διαγραφεί οριστικά ο πελάτης ${client.name}; Θα διαγραφούν και όλα τα δεδομένα του από τη βάση.`,
-    );
-    if (!confirmed) return;
-
-    setDeletingClientId(client.id);
-    setClientError("");
-    setClientMessage("");
-
-    try {
-      await api.delete(`/clients/${client.id}`);
-      setClientRows((rows) => rows.filter((row) => row.id !== client.id));
-      setClientMessage("Ο πελάτης διαγράφηκε οριστικά από τη βάση.");
-    } catch (error) {
-      setClientError(error instanceof Error ? error.message : "Δεν διαγράφηκε ο πελάτης.");
-    } finally {
-      setDeletingClientId(null);
     }
   };
 
@@ -556,38 +536,9 @@ function ClientsContent() {
                   </span>
                 </TableCell>
                 <TableCell className="px-5">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Προβολή πελάτη"
-                      aria-label="Προβολή πελάτη"
-                      nativeButton={false}
-                      render={<Link href={`/clients/${client.id}`} />}
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Επεξεργασία πελάτη"
-                      aria-label="Επεξεργασία πελάτη"
-                      nativeButton={false}
-                      render={<Link href={`/clients/${client.id}`} />}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      title="Οριστική διαγραφή πελάτη"
-                      aria-label="Οριστική διαγραφή πελάτη"
-                      disabled={deletingClientId === client.id}
-                      onClick={() => handleDeleteClient(client)}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
+                  <Button variant="ghost" nativeButton={false} render={<Link href={`/clients/${client.id}`} />}>
+                    Επεξεργασία
+                  </Button>
                 </TableCell>
               </TableRow>
             ))}

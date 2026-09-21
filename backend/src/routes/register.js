@@ -7,6 +7,7 @@ import { getDefaultCoachId, notifyCoaches, ensureNotificationsSchema } from './c
 import { ensureQuestionnaireSchema } from './questionnaire.js';
 import { ensurePricingPlansSchema } from './pricingPlans.js';
 import { sendMail } from '../lib/mailer.js';
+import { logClientActivity } from '../lib/client-activity-log.js';
 
 // New public registration flow — replaces POST /auth/register as the primary
 // signup path (collects account details + questionnaire + plan + payment in
@@ -224,6 +225,14 @@ router.post('/register', [
         paymentMethod === 'stripe' ? 'Stripe integration pending.' : 'Αναμένεται τραπεζικό έμβασμα.',
       ]
     );
+
+    await logClientActivity(connection, {
+      clientId: userId,
+      action: 'Client created',
+      performedBy: coachId || userId,
+      performedByName: coachId ? null : fullName,
+      details: `Registered for plan: ${plan.name}`,
+    });
 
     await notifyCoaches(connection, {
       clientId: userId,

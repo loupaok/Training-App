@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authenticateToken, authorizeRole } from '../middleware/auth.js';
+import { logClientActivity } from '../lib/client-activity-log.js';
 
 const router = express.Router();
 const ALLOWED_ROLES = ['admin', 'moderator', 'coach', 'client'];
@@ -26,7 +27,7 @@ router.get('/users', authenticateToken, authorizeRole(['admin']), async (req, re
     const connection = await pool.getConnection();
     await ensureRoleEnum(connection);
 
-    const conditions = [];
+    const conditions = ["role IN ('coach', 'admin')"];
     const values = [];
     if (req.query.role && ALLOWED_ROLES.includes(req.query.role)) {
       conditions.push('role = ?');
@@ -170,16 +171,35 @@ router.put('/users/:userId/reset-password', authenticateToken, authorizeRole(['a
   const connection = await pool.getConnection();
 
   try {
+    const [targetUsers] = await connection.query(
+      'SELECT id, role FROM users WHERE id = ? LIMIT 1',
+      [req.params.userId]
+    );
+    if (!targetUsers.length) {
+      connection.release();
+      return res.status(404).json({ message: 'User not found' });
+    }
+
     const hashedPassword = await bcrypt.hash(req.body.newPassword, 10);
     const [result] = await connection.query('UPDATE users SET password = ? WHERE id = ?', [
       hashedPassword,
       req.params.userId
     ]);
-    connection.release();
 
     if (result.affectedRows === 0) {
+      connection.release();
       return res.status(404).json({ message: 'User not found' });
     }
+
+    if (targetUsers[0].role === 'client') {
+      await logClientActivity(connection, {
+        clientId: Number(req.params.userId),
+        action: 'Password reset',
+        performedBy: req.user.id,
+      });
+    }
+
+    connection.release();
 
     res.json({ message: 'Password reset successfully' });
   } catch (error) {
