@@ -72,7 +72,7 @@ export const coachNavSections: CoachNavSection[] = [
     coachOrAdminOnly: true,
     children: [
       { key: "discord", label: "Discord", icon: MessageCircle },
-      { key: "pricing-plans", label: "Πλάνα & Τιμές", path: "/pricing-plans", icon: Tag },
+      { key: "pricing-plans", label: "Πλάνα & Τιμές", path: "/coach/pricing", icon: Tag },
       { key: "branding", label: "Branding", icon: Palette },
     ],
   },
