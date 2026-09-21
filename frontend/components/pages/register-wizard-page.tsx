@@ -87,9 +87,12 @@ const genderOptions = [
   { value: "other", label: "Άλλο" },
 ];
 
-function isAnswerEmpty(value: string | string[] | undefined): boolean {
+type AnswerValue = string | string[] | Record<string, string>;
+
+function isAnswerEmpty(value: AnswerValue | undefined): boolean {
   if (value === undefined) return true;
   if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.values(value).every((entry) => !entry.trim());
   return value.trim() === "";
 }
 
@@ -128,7 +131,7 @@ function RegisterWizardContent() {
   const [emailStatus, setEmailStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
 
   const [questions, setQuestions] = useState<QuestionnaireQuestion[]>([]);
-  const [answers, setAnswers] = useState<Record<number, string | string[]>>({});
+  const [answers, setAnswers] = useState<Record<number, AnswerValue>>({});
 
   const [plans, setPlans] = useState<PricingPlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<number | string | null>(null);
@@ -177,7 +180,7 @@ function RegisterWizardContent() {
   }, [account.email]);
 
   const updateAccount = (name: keyof AccountForm, value: string) => setAccount((current) => ({ ...current, [name]: value }));
-  const updateAnswer = (id: number, value: string | string[]) => setAnswers((current) => ({ ...current, [id]: value }));
+  const updateAnswer = (id: number, value: AnswerValue) => setAnswers((current) => ({ ...current, [id]: value }));
 
   const selectedPlan = plans.find((plan) => String(plan.id) === String(selectedPlanId)) || null;
 
@@ -193,9 +196,14 @@ function RegisterWizardContent() {
       const missing = questions.some((question) => question.isRequired && isAnswerEmpty(answers[question.id]));
       if (missing) return "Συμπλήρωσε τις υποχρεωτικές ερωτήσεις πριν συνεχίσεις.";
       const invalidUrl = questions.some((question) => {
-        if (question.type !== "url" || isAnswerEmpty(answers[question.id])) return false;
+        if (question.type !== "url") return false;
         const value = answers[question.id];
-        return typeof value === "string" && !isValidUrl(value);
+        if (value === undefined) return false;
+        if (typeof value === "string") return value.trim() !== "" && !isValidUrl(value);
+        if (typeof value === "object" && !Array.isArray(value)) {
+          return Object.values(value).some((entry) => entry.trim() !== "" && !isValidUrl(entry));
+        }
+        return false;
       });
       if (invalidUrl) return "Έλεγξε ότι ο σύνδεσμος που έδωσες είναι έγκυρο URL (π.χ. https://...).";
       return "";
@@ -241,7 +249,11 @@ function RegisterWizardContent() {
       password: account.password,
       dateOfBirth: account.dateOfBirth || undefined,
       gender: account.gender || undefined,
-      answers: questions.map((question) => ({ question_id: question.id, answer: answers[question.id] ?? "" })),
+      answers: questions.map((question) => {
+        const value = answers[question.id] ?? "";
+        const serialized = typeof value === "object" && !Array.isArray(value) ? JSON.stringify(value) : value;
+        return { question_id: question.id, answer: serialized };
+      }),
       plan_id: Number(selectedPlanId),
       payment_method: paymentMethod,
     };
@@ -515,8 +527,8 @@ function QuestionnaireStep({
   updateAnswer,
 }: {
   questions: QuestionnaireQuestion[];
-  answers: Record<number, string | string[]>;
-  updateAnswer: (id: number, value: string | string[]) => void;
+  answers: Record<number, AnswerValue>;
+  updateAnswer: (id: number, value: AnswerValue) => void;
 }) {
   if (!questions.length) {
     return <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Φόρτωση ερωτηματολογίου...</p>;
@@ -554,8 +566,8 @@ function QuestionField({
   onChange,
 }: {
   question: QuestionnaireQuestion;
-  value: string | string[] | undefined;
-  onChange: (value: string | string[]) => void;
+  value: AnswerValue | undefined;
+  onChange: (value: AnswerValue) => void;
 }) {
   if (question.type === "textarea") {
     return (
@@ -589,6 +601,28 @@ function QuestionField({
     );
   }
   if (question.type === "url") {
+    if (question.options.length) {
+      const labelValues = typeof value === "object" && !Array.isArray(value) ? value : {};
+      return (
+        <div className="space-y-4">
+          {question.options.map((label) => (
+            <label key={label} className="block space-y-2">
+              <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{label}</span>
+              <div className="relative">
+                <Link2 className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+                <Input
+                  type="url"
+                  value={labelValues[label] || ""}
+                  onChange={(event) => onChange({ ...labelValues, [label]: event.target.value })}
+                  placeholder={`${label} URL`}
+                  className="h-12 pl-9"
+                />
+              </div>
+            </label>
+          ))}
+        </div>
+      );
+    }
     return (
       <div className="relative">
         <Link2 className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />

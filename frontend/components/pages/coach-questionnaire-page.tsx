@@ -80,7 +80,7 @@ function typeLabel(type: QuestionType): string {
 }
 
 function needsOptions(type: QuestionType): boolean {
-  return type === "single_select" || type === "multi_select";
+  return type === "single_select" || type === "multi_select" || type === "url";
 }
 
 function needsPlaceholder(type: QuestionType): boolean {
@@ -338,7 +338,15 @@ function CoachQuestionnaireContent() {
 
                 {needsOptions(form.type) && (
                   <div>
-                    <div className="mb-2 text-sm font-bold text-slate-700 dark:text-slate-200">Επιλογές</div>
+                    <div className="mb-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+                      {form.type === "url" ? "Επιλογές URL" : "Επιλογές"}
+                    </div>
+                    {form.type === "url" && (
+                      <p className="mb-2 text-xs font-semibold text-slate-400">
+                        Πρόσθεσε ετικέτες (π.χ. Instagram, TikTok) για να εμφανιστεί ένα ξεχωριστό πεδίο URL για καθεμία. Χωρίς
+                        ετικέτες, εμφανίζεται ένα απλό πεδίο URL.
+                      </p>
+                    )}
                     <div className="space-y-2">
                       {form.options.map((option, index) => (
                         <div key={index} className="flex items-center gap-2">
@@ -348,7 +356,7 @@ function CoachQuestionnaireContent() {
                             variant="ghost"
                             size="icon"
                             onClick={() => removeOption(index)}
-                            disabled={form.options.length <= 1}
+                            disabled={form.type !== "url" && form.options.length <= 1}
                             className="h-9 w-9 shrink-0 text-slate-400 hover:text-red-600 dark:text-slate-500"
                           >
                             <X className="h-4 w-4" />
@@ -362,7 +370,7 @@ function CoachQuestionnaireContent() {
                       onClick={addOption}
                       className="mt-3 h-10 px-4 text-sm font-bold text-slate-700 hover:border-red-200 hover:text-red-600 dark:text-slate-200"
                     >
-                      + Προσθήκη επιλογής
+                      {form.type === "url" ? "+ Προσθήκη Επιλογής" : "+ Προσθήκη επιλογής"}
                     </Button>
                   </div>
                 )}
@@ -468,6 +476,10 @@ function QuestionnairePreviewInput({ question }: { question: Question }) {
     return <Input disabled placeholder={question.placeholder} className="h-11" />;
   }
   if (question.type === "url") {
+    const labels = question.options.filter((option) => option.trim());
+    if (labels.length) {
+      return <UrlOptionsPreview labels={labels} />;
+    }
     return <UrlPreviewInput placeholder={question.placeholder} />;
   }
   if (question.type === "single_select") {
@@ -502,6 +514,19 @@ function UrlPreviewInput({ placeholder, className }: { placeholder: string; clas
     <div className="relative">
       <Link2 className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
       <Input disabled type="url" placeholder={placeholder} className={cn("h-11 pl-9", className)} />
+    </div>
+  );
+}
+
+function UrlOptionsPreview({ labels, className }: { labels: string[]; className?: string }) {
+  return (
+    <div className="space-y-3">
+      {labels.map((label, index) => (
+        <div key={index}>
+          <div className="mb-1.5 text-xs font-bold text-slate-500 dark:text-slate-400">{label}</div>
+          <UrlPreviewInput placeholder={`${label} URL`} className={className} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -568,7 +593,12 @@ function QuestionPreview({ question }: { question: Question }) {
       )}
       {question.type === "number" && <Input disabled type="number" placeholder={question.placeholder} className="h-11 bg-white dark:bg-slate-900" />}
       {question.type === "text" && <Input disabled placeholder={question.placeholder} className="h-11 bg-white dark:bg-slate-900" />}
-      {question.type === "url" && <UrlPreviewInput placeholder={question.placeholder} className="bg-white dark:bg-slate-900" />}
+      {question.type === "url" &&
+        (question.options.filter((option) => option.trim()).length ? (
+          <UrlOptionsPreview labels={question.options.filter((option) => option.trim())} className="bg-white dark:bg-slate-900" />
+        ) : (
+          <UrlPreviewInput placeholder={question.placeholder} className="bg-white dark:bg-slate-900" />
+        ))}
       {(question.type === "single_select" || question.type === "multi_select") && (
         <div className="grid gap-2 sm:grid-cols-2">
           {question.options
