@@ -5,7 +5,7 @@ import { authenticateToken, authorizeRole } from '../middleware/auth.js';
 
 const router = express.Router();
 
-const QUESTION_TYPES = ['single_select', 'multi_select', 'text', 'number', 'textarea'];
+const QUESTION_TYPES = ['single_select', 'multi_select', 'text', 'number', 'textarea', 'url'];
 
 const seedQuestions = [
   {
@@ -95,7 +95,7 @@ export async function ensureQuestionnaireSchema(connection) {
     CREATE TABLE IF NOT EXISTS questionnaire_questions (
       id INT AUTO_INCREMENT PRIMARY KEY,
       question TEXT NOT NULL,
-      type ENUM('single_select', 'multi_select', 'text', 'number', 'textarea') NOT NULL,
+      type ENUM('single_select', 'multi_select', 'text', 'number', 'textarea', 'url') NOT NULL,
       options JSON,
       is_required TINYINT(1) NOT NULL DEFAULT 1,
       placeholder VARCHAR(255),
@@ -120,6 +120,17 @@ export async function ensureQuestionnaireSchema(connection) {
       INDEX idx_question_id (question_id)
     )
   `);
+
+  const [[typeColumn]] = await connection.query(
+    `SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'questionnaire_questions' AND COLUMN_NAME = 'type'`
+  );
+  if (typeColumn && !typeColumn.COLUMN_TYPE.includes("'url'")) {
+    await connection.query(`
+      ALTER TABLE questionnaire_questions
+      MODIFY COLUMN type ENUM('single_select', 'multi_select', 'text', 'number', 'textarea', 'url') NOT NULL
+    `);
+  }
 
   const [rows] = await connection.query('SELECT COUNT(*) AS total FROM questionnaire_questions');
   if (Number(rows[0]?.total || 0) === 0) {

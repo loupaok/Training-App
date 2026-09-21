@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Check, CheckCircle } from "lucide-react";
+import { Check, CheckCircle, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,7 +19,7 @@ import type { AuthUser } from "@/types/auth";
 interface QuestionnaireQuestion {
   id: number;
   question: string;
-  type: "single_select" | "multi_select" | "text" | "number" | "textarea";
+  type: "single_select" | "multi_select" | "text" | "number" | "textarea" | "url";
   options: string[];
   isRequired: boolean;
   placeholder: string;
@@ -90,6 +90,15 @@ function isAnswerEmpty(value: string | string[] | undefined): boolean {
   if (value === undefined) return true;
   if (Array.isArray(value)) return value.length === 0;
   return value.trim() === "";
+}
+
+function isValidUrl(value: string): boolean {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function formatPeriodLabel(period: string): string {
@@ -182,6 +191,12 @@ function RegisterWizardContent() {
     if (stepIndex === 1) {
       const missing = questions.some((question) => question.isRequired && isAnswerEmpty(answers[question.id]));
       if (missing) return "Συμπλήρωσε τις υποχρεωτικές ερωτήσεις πριν συνεχίσεις.";
+      const invalidUrl = questions.some((question) => {
+        if (question.type !== "url" || isAnswerEmpty(answers[question.id])) return false;
+        const value = answers[question.id];
+        return typeof value === "string" && !isValidUrl(value);
+      });
+      if (invalidUrl) return "Έλεγξε ότι ο σύνδεσμος που έδωσες είναι έγκυρο URL (π.χ. https://...).";
       return "";
     }
     if (stepIndex === 2) {
@@ -551,6 +566,20 @@ function QuestionField({
         placeholder={question.placeholder}
         className="h-12"
       />
+    );
+  }
+  if (question.type === "url") {
+    return (
+      <div className="relative">
+        <Link2 className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+        <Input
+          type="url"
+          value={(value as string) || ""}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={question.placeholder}
+          className="h-12 pl-9"
+        />
+      </div>
     );
   }
   if (question.type === "single_select") {

@@ -156,7 +156,7 @@ function CoachPricingContent() {
             className="h-11 px-5 font-bold text-slate-700 dark:text-slate-200"
             onClick={() => window.open("/pricing-plans", "_blank", "noopener,noreferrer")}
           >
-            👁️ Δείτε τη σελίδα πελατών
+            Δείτε τη σελίδα πελατών
           </Button>
         </div>
       </div>

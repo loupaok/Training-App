@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { GripVertical, Plus, X } from "lucide-react";
+import { GripVertical, Plus, X, Link2 } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -42,7 +42,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
-type QuestionType = "single_select" | "multi_select" | "text" | "number" | "textarea";
+type QuestionType = "single_select" | "multi_select" | "text" | "number" | "textarea" | "url";
 
 interface Question {
   id: number;
@@ -72,6 +72,7 @@ const typeOptions: { value: QuestionType; label: string }[] = [
   { value: "text", label: "Σύντομο κείμενο" },
   { value: "number", label: "Αριθμός" },
   { value: "textarea", label: "Μεγάλο κείμενο" },
+  { value: "url", label: "Σύνδεσμος URL" },
 ];
 
 function typeLabel(type: QuestionType): string {
@@ -83,7 +84,7 @@ function needsOptions(type: QuestionType): boolean {
 }
 
 function needsPlaceholder(type: QuestionType): boolean {
-  return type === "text" || type === "number" || type === "textarea";
+  return type === "text" || type === "number" || type === "textarea" || type === "url";
 }
 
 function CoachQuestionnaireContent() {
@@ -235,7 +236,7 @@ function CoachQuestionnaireContent() {
             onClick={() => setPreviewOpen(true)}
             className="h-11 px-5 font-bold text-slate-700 dark:text-slate-200"
           >
-            👁️ Προεπισκόπηση
+            Προεπισκόπηση
           </Button>
           <Button onClick={newQuestion} className="h-11 gap-1.5 px-5 font-bold">
             <Plus className="h-4 w-4" />
@@ -466,6 +467,9 @@ function QuestionnairePreviewInput({ question }: { question: Question }) {
   if (question.type === "text") {
     return <Input disabled placeholder={question.placeholder} className="h-11" />;
   }
+  if (question.type === "url") {
+    return <UrlPreviewInput placeholder={question.placeholder} />;
+  }
   if (question.type === "single_select") {
     return (
       <RadioGroup disabled className="gap-2 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
@@ -491,6 +495,15 @@ function QuestionnairePreviewInput({ question }: { question: Question }) {
     );
   }
   return null;
+}
+
+function UrlPreviewInput({ placeholder, className }: { placeholder: string; className?: string }) {
+  return (
+    <div className="relative">
+      <Link2 className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+      <Input disabled type="url" placeholder={placeholder} className={cn("h-11 pl-9", className)} />
+    </div>
+  );
 }
 
 function SortableQuestionRow({
@@ -555,6 +568,7 @@ function QuestionPreview({ question }: { question: Question }) {
       )}
       {question.type === "number" && <Input disabled type="number" placeholder={question.placeholder} className="h-11 bg-white dark:bg-slate-900" />}
       {question.type === "text" && <Input disabled placeholder={question.placeholder} className="h-11 bg-white dark:bg-slate-900" />}
+      {question.type === "url" && <UrlPreviewInput placeholder={question.placeholder} className="bg-white dark:bg-slate-900" />}
       {(question.type === "single_select" || question.type === "multi_select") && (
         <div className="grid gap-2 sm:grid-cols-2">
           {question.options
