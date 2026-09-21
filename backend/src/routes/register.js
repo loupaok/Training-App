@@ -259,6 +259,14 @@ router.post('/register', [
       message: 'Η εγγραφή ολοκληρώθηκε.',
       accessToken,
       refreshToken,
+      user: {
+        id: userId,
+        email,
+        fullName,
+        role: 'client',
+        status: 'pending_payment',
+        onboardingCompleted: true,
+      },
       redirectTo: '/register/success',
     });
   } catch (error) {
