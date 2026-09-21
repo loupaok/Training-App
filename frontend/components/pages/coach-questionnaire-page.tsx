@@ -13,6 +13,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Separator } from "@/components/ui/separator";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
@@ -25,6 +29,15 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
@@ -78,6 +91,7 @@ function CoachQuestionnaireContent() {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form, setForm] = useState<Question>(emptyQuestion);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -214,10 +228,20 @@ function CoachQuestionnaireContent() {
             Οι ερωτήσεις που απαντούν οι νέοι πελάτες κατά την εγγραφή τους.
           </p>
         </div>
-        <Button onClick={newQuestion} className="h-11 gap-1.5 px-5 font-bold">
-          <Plus className="h-4 w-4" />
-          Νέα Ερώτηση
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setPreviewOpen(true)}
+            className="h-11 px-5 font-bold text-slate-700 dark:text-slate-200"
+          >
+            👁️ Προεπισκόπηση
+          </Button>
+          <Button onClick={newQuestion} className="h-11 gap-1.5 px-5 font-bold">
+            <Plus className="h-4 w-4" />
+            Νέα Ερώτηση
+          </Button>
+        </div>
       </div>
 
       {message && (
@@ -375,8 +399,98 @@ function CoachQuestionnaireContent() {
           </div>
         </div>
       </section>
+
+      <QuestionnairePreviewDialog open={previewOpen} onOpenChange={setPreviewOpen} questions={questions} />
     </CoachShell>
   );
+}
+
+function QuestionnairePreviewDialog({
+  open,
+  onOpenChange,
+  questions,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  questions: Question[];
+}) {
+  const activeQuestions = questions.filter((item) => item.isActive).sort((a, b) => a.sortOrder - b.sortOrder);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Προεπισκόπηση Ερωτηματολογίου</DialogTitle>
+          <DialogDescription>Έτσι το βλέπουν οι νέοι πελάτες</DialogDescription>
+        </DialogHeader>
+
+        <ScrollArea className="max-h-[60vh] pr-4">
+          <div className="space-y-6">
+            {activeQuestions.map((item, index) => (
+              <div key={item.id}>
+                {index > 0 && <Separator className="mb-6" />}
+                <div className="mb-3 flex items-start justify-between gap-3">
+                  <div className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                    {index + 1}. {item.question}
+                    {item.isRequired && <span className="ml-1 text-red-500">*</span>}
+                  </div>
+                  {!item.isRequired && (
+                    <Badge variant="outline" className="h-auto shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold">
+                      Προαιρετικό
+                    </Badge>
+                  )}
+                </div>
+                <QuestionnairePreviewInput question={item} />
+              </div>
+            ))}
+            {!activeQuestions.length && <p className="text-sm font-semibold text-slate-400">Δεν υπάρχουν ενεργές ερωτήσεις.</p>}
+          </div>
+        </ScrollArea>
+
+        <DialogFooter className="items-center sm:justify-between">
+          <p className="text-xs font-semibold text-slate-400">Αυτή η προεπισκόπηση δείχνει μόνο τις ενεργές ερωτήσεις.</p>
+          <DialogClose render={<Button variant="outline">Κλείσιμο</Button>} />
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function QuestionnairePreviewInput({ question }: { question: Question }) {
+  if (question.type === "textarea") {
+    return <Textarea disabled placeholder={question.placeholder} className="min-h-20" />;
+  }
+  if (question.type === "number") {
+    return <Input disabled type="number" placeholder={question.placeholder} className="h-11" />;
+  }
+  if (question.type === "text") {
+    return <Input disabled placeholder={question.placeholder} className="h-11" />;
+  }
+  if (question.type === "single_select") {
+    return (
+      <RadioGroup disabled className="gap-2 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+        {question.options.map((option, index) => (
+          <label key={index} className="flex items-center gap-3 text-sm font-semibold text-slate-600 dark:text-slate-300">
+            <RadioGroupItem value={option} />
+            {option}
+          </label>
+        ))}
+      </RadioGroup>
+    );
+  }
+  if (question.type === "multi_select") {
+    return (
+      <div className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+        {question.options.map((option, index) => (
+          <label key={index} className="flex items-center gap-3 text-sm font-semibold text-slate-600 dark:text-slate-300">
+            <Checkbox disabled />
+            {option}
+          </label>
+        ))}
+      </div>
+    );
+  }
+  return null;
 }
 
 function SortableQuestionRow({
