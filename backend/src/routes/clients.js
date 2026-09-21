@@ -11,6 +11,7 @@ import { insertTrainingPlanDays } from './trainingPlans.js';
 import { insertNutritionPlanMeals } from './nutritionPlans.js';
 import { getFullTrainingTemplate, getFullNutritionTemplate } from './templates.js';
 import { ensureClientActivityLogSchema, logClientActivity } from '../lib/client-activity-log.js';
+import { ensureQuestionnaireSchema } from './questionnaire.js';
 
 const router = express.Router();
 
@@ -1812,6 +1813,29 @@ router.post('/:id/log', authorizeRole(['coach', 'admin', 'moderator']), [
       details: req.body.details || null,
     });
     res.status(201).json({ message: 'Activity logged' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.get('/:id/questionnaire-answers', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  const connection = await pool.getConnection();
+
+  try {
+    await ensureQuestionnaireSchema(connection);
+    const [rows] = await connection.query(
+      `SELECT qq.question, qq.type, qa.answer
+       FROM questionnaire_answers qa
+       INNER JOIN questionnaire_questions qq ON qa.question_id = qq.id
+       WHERE qa.client_id = ?
+       ORDER BY qq.sort_order ASC, qq.id ASC`,
+      [req.params.id]
+    );
+
+    res.json(rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });

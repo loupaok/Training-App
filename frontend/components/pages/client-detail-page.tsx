@@ -177,6 +177,12 @@ interface ClientActivityLogEntry {
   createdAt?: string | null;
 }
 
+interface RegistrationQuestionnaireAnswer {
+  question: string;
+  answer?: string | null;
+  type: string;
+}
+
 // ---------------------------------------------------------------------------
 // Constants + helpers
 // ---------------------------------------------------------------------------
@@ -215,6 +221,22 @@ function relativeTime(value?: string | null): string {
   if (seconds < 3600) return `πριν από ${Math.floor(seconds / 60)} λεπτά`;
   if (seconds < 86400) return `πριν από ${Math.floor(seconds / 3600)} ώρες`;
   return `πριν από ${Math.floor(seconds / 86400)} ημέρες`;
+}
+
+function formatQuestionnaireAnswer(answer?: string | null, type?: string): string {
+  const value = answer?.trim();
+  if (!value) return "-";
+
+  if (type === "multi_select") {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.filter(Boolean).join(", ") || "-";
+    } catch {
+      // Older answers may be stored as plain text instead of JSON.
+    }
+  }
+
+  return value;
 }
 
 function money(amount?: number | string | null, currency = "EUR"): string {
@@ -973,10 +995,33 @@ function OverviewTab({
   const [saveMessage, setSaveMessage] = useState("");
   const [saveError, setSaveError] = useState("");
   const [savingUpdateDay, setSavingUpdateDay] = useState(false);
+  const [questionnaireAnswers, setQuestionnaireAnswers] = useState<RegistrationQuestionnaireAnswer[]>([]);
+  const [loadingQuestionnaireAnswers, setLoadingQuestionnaireAnswers] = useState(true);
 
   useEffect(() => {
     setForm(toDetailsForm(client));
   }, [client]);
+
+  useEffect(() => {
+    let active = true;
+    setLoadingQuestionnaireAnswers(true);
+
+    api
+      .get<RegistrationQuestionnaireAnswer[]>(`/clients/${clientId}/questionnaire-answers`)
+      .then((answers) => {
+        if (active) setQuestionnaireAnswers(answers);
+      })
+      .catch(() => {
+        if (active) setQuestionnaireAnswers([]);
+      })
+      .finally(() => {
+        if (active) setLoadingQuestionnaireAnswers(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [clientId]);
 
   const updateField = <K extends keyof ClientDetailsForm>(field: K, value: ClientDetailsForm[K]) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -1094,6 +1139,30 @@ function OverviewTab({
               </Button>
             </div>
           </InfoCard>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Στοιχεία Φόρμας Εγγραφής</CardTitle>
+              <p className="text-sm text-muted-foreground">Απαντήσεις κατά την εγγραφή</p>
+            </CardHeader>
+            <CardContent>
+              {loadingQuestionnaireAnswers ? (
+                <p className="text-sm text-muted-foreground">Φόρτωση απαντήσεων...</p>
+              ) : questionnaireAnswers.length ? (
+                <div>
+                  {questionnaireAnswers.map((item, index) => (
+                    <div key={`${item.question}-${index}`} className={index > 0 ? "border-t pt-4" : ""}>
+                      {index > 0 && <div className="mb-4" />}
+                      <p className="text-sm text-muted-foreground">{item.question}</p>
+                      <p className="mt-1 text-sm font-medium">{formatQuestionnaireAnswer(item.answer, item.type)}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="italic text-muted-foreground">Δεν υπάρχουν απαντήσεις από τη φόρμα εγγραφής</p>
+              )}
+            </CardContent>
+          </Card>
 
           <Separator />
 
