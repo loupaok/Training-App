@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { useBranding } from "@/contexts/BrandingContext";
 import { resolveMediaUrl } from "@/lib/media";
+import { api } from "@/lib/api/client";
 import { SidebarUserMenu } from "@/components/shell/sidebar-user-menu";
 import { coachNavSections, isActivePath } from "@/lib/nav-config";
 import type { AuthUser } from "@/types/auth";
@@ -43,6 +45,14 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
       return next;
     });
   };
+
+  const [unreadUpdates, setUnreadUpdates] = useState(0);
+  useEffect(() => {
+    api
+      .get<{ totalUnread: number }>("/updates/stats")
+      .then((data) => setUnreadUpdates(data.totalUnread))
+      .catch(() => {});
+  }, []);
 
   return (
     <aside
@@ -136,7 +146,12 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
                 )}
               >
                 {Icon && <Icon className="size-4 shrink-0" />}
-                {!collapsed && <span className="truncate">{section.label}</span>}
+                {!collapsed && <span className="flex-1 truncate">{section.label}</span>}
+                {!collapsed && section.key === "updates" && unreadUpdates > 0 && (
+                  <Badge className="h-5 min-w-5 shrink-0 justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white hover:bg-red-600">
+                    {unreadUpdates}
+                  </Badge>
+                )}
               </Link>
             );
           })}

@@ -1,7 +1,6 @@
 import {
   LayoutDashboard,
   Users,
-  RefreshCw,
   Dumbbell,
   BarChart3,
   Bell,
@@ -23,6 +22,7 @@ import {
   Images,
   LayoutGrid,
   HelpCircle,
+  ClipboardList,
   type LucideIcon,
 } from "lucide-react";
 
@@ -51,7 +51,7 @@ export const coachNavSections: CoachNavSection[] = [
   { key: "dashboard", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
   { key: "pages", label: "Σελίδες", path: "/coach/pages", icon: LayoutGrid, coachOrAdminOnly: true },
   { key: "clients", label: "Πελάτες", path: "/clients", icon: Users },
-  { key: "updates", label: "Updates Πελατών", path: "/updates", icon: RefreshCw },
+  { key: "updates", label: "Updates", path: "/coach/updates", icon: ClipboardList },
   { key: "exercises", label: "Βιβλιοθήκη Ασκήσεων", path: "/exercises", icon: Dumbbell },
   {
     key: "templates",
