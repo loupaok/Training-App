@@ -53,7 +53,7 @@ npm install
 npm run db:init              
 npm run db:exercises         
 node create-first-admin.js   
-npm run dev                  # http://localhost:5000
+npm run dev                   # http://localhost:5000
 
 # 3. Frontend (separate terminal)
 cd frontend
