@@ -1843,6 +1843,24 @@ function PaymentsTab({
     ? subscriptionStatusMeta(client.subscription.status, client.subscription.end_date)
     : null;
 
+  const openPaymentDialog = (nextOpen: boolean) => {
+    if (nextOpen) {
+      const todayValue = dateInputValue(new Date());
+      const currentEndDate = client.subscription?.end_date;
+      const currentEnd = currentEndDate ? new Date(`${currentEndDate}T00:00:00`) : null;
+      const isActiveSubscription = client.subscription?.status === "active" || client.subscription?.status === "expiring_soon";
+      const continuesSubscription = isActiveSubscription && currentEnd && !Number.isNaN(currentEnd.getTime()) && currentEnd.getTime() >= new Date(`${todayValue}T00:00:00`).getTime();
+      const startDate = continuesSubscription ? currentEndDate! : todayValue;
+      const selectedPlan = plans.find((plan) => String(plan.id) === form.planId);
+      setForm((current) => ({
+        ...current,
+        startDate,
+        endDate: selectedPlan ? endDateForPlan(startDate, selectedPlan.period) : defaultPaymentEndDate(startDate),
+      }));
+    }
+    setOpen(nextOpen);
+  };
+
   return (
     <TooltipProvider>
       <div className="space-y-6">
@@ -1875,7 +1893,7 @@ function PaymentsTab({
             <CardTitle className="text-xl font-bold">Ιστορικό Πληρωμών</CardTitle>
             <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">Όλες οι πληρωμές του πελάτη και οι χειροκίνητες ενέργειες έγκρισης.</p>
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={openPaymentDialog}>
             <DialogTrigger render={<Button>Νέα Πληρωμή</Button>} />
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
@@ -1887,6 +1905,9 @@ function PaymentsTab({
                   <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
                     {formError}
                   </div>
+                )}
+                {client.subscription?.end_date && (client.subscription.status === "active" || client.subscription.status === "expiring_soon") && (
+                  <p className="text-sm text-muted-foreground">Τρέχουσα λήξη: {shortDate(client.subscription.end_date)}</p>
                 )}
                 <EditField label="Ποσό * (EUR)" type="number" value={form.amount} onChange={(value) => setForm((f) => ({ ...f, amount: value }))} />
                 <div>
@@ -2421,7 +2442,7 @@ function ActivityLogTab({ clientId, active }: { clientId: string; active: boolea
           </div>
         ) : (
           <>
-            <ScrollArea className="max-h-[34rem] pr-4">
+            <ScrollArea className="h-[34rem] pr-4">
               <div className="relative ml-2 border-l border-border pl-6">
                 {entries.map((entry) => (
                   <div key={entry.id} className="relative pb-7 last:pb-1">
@@ -2434,17 +2455,17 @@ function ActivityLogTab({ clientId, active }: { clientId: string; active: boolea
                   </div>
                 ))}
               </div>
+
+              {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
+
+              {hasMore && (
+                <div className="mt-6 flex justify-center pb-2">
+                  <Button type="button" variant="outline" onClick={loadMore} disabled={loadingMore}>
+                    {loadingMore ? "Φόρτωση..." : "Δείτε περισσότερα"}
+                  </Button>
+                </div>
+              )}
             </ScrollArea>
-
-            {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
-
-            {hasMore && (
-              <div className="mt-6 flex justify-center">
-                <Button type="button" variant="outline" onClick={loadMore} disabled={loadingMore}>
-                  {loadingMore ? "Φόρτωση..." : "Φόρτωση περισσότερων"}
-                </Button>
-              </div>
-            )}
           </>
         )}
       </CardContent>

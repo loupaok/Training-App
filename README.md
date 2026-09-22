@@ -138,3 +138,14 @@ push feature no-ops cleanly and the app works the same otherwise.
 - **Login "succeeds" but bounces back to `/login`** — the account's `role` column doesn't match what
   you expect (e.g. it got changed to something unexpected via the Admin Panel). Check `SELECT role
   FROM users WHERE email = '...'` and fix it directly, or reassign the role from the Admin Panel.
+
+
+
+
+
+
+Στο Επισκοπηση να κρατησουμε και να διαγραψουμε αυτα που ειπες, Το συνδρομη να το κανουμε ακομα ποιο μοντερνο με components απο shadcn.io.
+
+Ημέρες Αποστολής Update το αφηνουμε Ως εχει αλλα να το συγχρονησουμε με τη μερα που θα επιλεξει απο το ερωτηματολογιο. Το οποιο πρεπει να επιλεξει μονο μια ημερα. Δες πως θα το κανεις.
+
+Συνδρομή → ΚΡΑΤΑ ✅ Πολύ σημαντικό - status, ημερομηνίες, πληρωμή, approve button Ημέρες Αποστολής Update → ΚΡΑΤΑ ✅ Χρήσιμο να βλέπεις ποια μέρα στέλνει ο πελάτης Ημέρες Update (duplicate?) → ΦΥΓΕ ❌ Αν είναι το ίδιο με το παραπάνω είναι περιττό
