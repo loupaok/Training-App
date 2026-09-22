@@ -1884,6 +1884,93 @@ router.put('/:id/questionnaire-answers', authorizeRole(['coach', 'admin', 'moder
   }
 });
 
+router.get('/:id/weekly-updates', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    const { ensureWeeklyUpdateSchema } = await import('./weekly-updates.js');
+    await ensureWeeklyUpdateSchema(connection);
+
+    const [answerRows] = await connection.query(
+      `SELECT wu.id, wu.submitted_at, wu.week_start, wu.is_read,
+              wua.answer, wuq.question, wuq.type, wuq.sort_order
+       FROM weekly_updates wu
+       LEFT JOIN weekly_update_answers wua ON wua.update_id = wu.id
+       LEFT JOIN update_questions wuq ON wuq.id = wua.question_id
+       WHERE wu.client_id = ?
+       ORDER BY wu.submitted_at DESC, wuq.sort_order ASC`,
+      [clientId]
+    );
+
+    const updatesById = new Map();
+    for (const row of answerRows) {
+      if (!updatesById.has(row.id)) {
+        updatesById.set(row.id, {
+          id: row.id,
+          submittedAt: row.submitted_at,
+          weekStart: row.week_start,
+          isRead: Boolean(row.is_read),
+          weight: null,
+          trainingRating: null,
+          nutritionRating: null,
+          generalRating: null,
+          notes: null,
+          photos: [],
+        });
+      }
+
+      if (!row.question || row.answer === null || row.answer === undefined || row.answer === '') continue;
+
+      const update = updatesById.get(row.id);
+      const question = String(row.question)
+        .toLocaleLowerCase('el-GR')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      const value = Number(String(row.answer).replace(',', '.'));
+
+      if (row.type === 'number' && question.includes('βαροσ') && Number.isFinite(value)) {
+        update.weight = value;
+      } else if (row.type === 'rating' && question.includes('προπον') && Number.isFinite(value)) {
+        update.trainingRating = value;
+      } else if (row.type === 'rating' && question.includes('διατροφ') && Number.isFinite(value)) {
+        update.nutritionRating = value;
+      } else if (row.type === 'rating' && question.includes('εβδομαδ') && Number.isFinite(value)) {
+        update.generalRating = value;
+      } else if (row.type === 'textarea' && !update.notes) {
+        update.notes = row.answer;
+      }
+    }
+
+    const updates = [...updatesById.values()];
+    if (updates.length) {
+      const [fileRows] = await connection.query(
+        `SELECT update_id, file_url
+         FROM weekly_update_files
+         WHERE update_id IN (?) AND file_type = 'photo'
+         ORDER BY created_at DESC`,
+        [updates.map((update) => update.id)]
+      );
+      const photosByUpdateId = new Map();
+      for (const file of fileRows) {
+        const photos = photosByUpdateId.get(file.update_id) || [];
+        photos.push(file.file_url);
+        photosByUpdateId.set(file.update_id, photos);
+      }
+      for (const update of updates) update.photos = photosByUpdateId.get(update.id) || [];
+    }
+
+    res.json(updates);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
 router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
@@ -1938,7 +2025,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
       [req.params.id]
     );
     const [weeklyRows] = await connection.query(
-      'SELECT id, weight_kg, training_score, nutrition_score, notes, submitted_at, week_start FROM weekly_updates WHERE client_id = ? ORDER BY submitted_at DESC LIMIT 12',
+      'SELECT id, submitted_at, week_start FROM weekly_updates WHERE client_id = ? ORDER BY submitted_at DESC LIMIT 12',
       [req.params.id]
     );
 

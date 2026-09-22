@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Clock, Sparkles, Undo2, GripVertical, Link2, Pencil, X } from "lucide-react";
+import { AlertTriangle, Clock, Sparkles, Star, Undo2, GripVertical, Link2, Pencil, X } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -94,6 +94,19 @@ interface WeeklyUpdate {
   training_score?: number | string;
   nutrition_score?: number | string;
   notes?: string;
+}
+
+interface ProgressWeeklyUpdate {
+  id: number | string;
+  submittedAt?: string;
+  weekStart?: string;
+  isRead?: boolean;
+  weight: number | null;
+  trainingRating: number | null;
+  nutritionRating: number | null;
+  generalRating: number | null;
+  notes: string | null;
+  photos: string[];
 }
 
 interface ProgressPhoto {
@@ -1860,13 +1873,13 @@ function PaymentStatus({ status }: { status?: string }) {
 // Progress tab
 // ---------------------------------------------------------------------------
 
-function exportWeeklyUpdatesCsv(updates: WeeklyUpdate[], clientName: string) {
-  const header = ["Ημερομηνία", "Βάρος (kg)", "Training rating", "Nutrition rating", "Notes"];
+function exportWeeklyUpdatesCsv(updates: ProgressWeeklyUpdate[], clientName: string) {
+  const header = ["Ημερομηνία", "Βάρος (kg)", "Προπόνηση", "Διατροφή", "Σημειώσεις"];
   const rows = updates.map((update) => [
-    formatDateTime(update.submitted_at),
-    update.weight_kg ?? "",
-    update.training_score ?? "",
-    update.nutrition_score ?? "",
+    formatDateTime(update.submittedAt),
+    update.weight ?? "",
+    update.trainingRating ?? "",
+    update.nutritionRating ?? "",
     (update.notes || "").replace(/"/g, '""'),
   ]);
   const csv = [header, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(",")).join("\n");
@@ -1883,23 +1896,56 @@ function slugifyName(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "client";
 }
 
+function RatingStars({ value }: { value: number | null }) {
+  if (value === null) return <span className="text-slate-500 dark:text-slate-400">-</span>;
+
+  return (
+    <span className="flex items-center gap-0.5" aria-label={`${value} στα 5`}>
+      {Array.from({ length: 5 }, (_, index) => (
+        <Star
+          key={index}
+          className={cn("h-3.5 w-3.5", index < Math.round(value) ? "fill-amber-400 text-amber-400" : "text-slate-300 dark:text-slate-600")}
+        />
+      ))}
+    </span>
+  );
+}
+
 function ProgressTab({ client }: { client: ClientRecord }) {
-  const weeklyUpdates = client.weeklyUpdates || [];
+  const [weeklyUpdates, setWeeklyUpdates] = useState<ProgressWeeklyUpdate[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!client.id) return;
+    let cancelled = false;
+    setIsLoading(true);
+    api
+      .get<ProgressWeeklyUpdate[]>(`/clients/${client.id}/weekly-updates`)
+      .then((updates) => {
+        if (!cancelled) setWeeklyUpdates(updates);
+      })
+      .catch(() => {
+        if (!cancelled) setWeeklyUpdates([]);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client.id]);
+
   const chartData = [...weeklyUpdates]
-    .filter((update) => update.weight_kg)
+    .filter((update) => update.weight !== null)
     .reverse()
-    .map((update) => ({ date: formatDate(update.submitted_at), Βάρος: Number(update.weight_kg) }));
+    .map((update) => ({ date: formatDate(update.submittedAt), Βάρος: update.weight as number }));
 
-  const recentPhotos = (client.progressUpdates || [])
-    .flatMap((update) => update.photos || [])
-    .slice(0, 3);
-
-  // weeklyUpdates arrives newest-first, so index 0 is the most recent weight
-  // entry and the last entry in the filtered list is the oldest one available
-  // (bounded by whatever the backend already returns — no new fetch here).
-  const weightEntries = weeklyUpdates.filter((update) => update.weight_kg);
-  const currentWeight = weightEntries.length ? Number(weightEntries[0].weight_kg) : null;
-  const initialWeight = weightEntries.length ? Number(weightEntries[weightEntries.length - 1].weight_kg) : null;
+  const recentPhotos = weeklyUpdates.flatMap((update) => update.photos).slice(0, 3);
+  const weightEntries = weeklyUpdates.filter((update) => update.weight !== null);
+  const currentWeight = weightEntries.length ? weightEntries[0].weight : null;
+  const initialWeight = weightEntries.length ? weightEntries[weightEntries.length - 1].weight : null;
   const weightChange = currentWeight !== null && initialWeight !== null ? currentWeight - initialWeight : null;
 
   return (
@@ -1926,13 +1972,15 @@ function ProgressTab({ client }: { client: ClientRecord }) {
         {recentPhotos.length ? (
           <div className="grid grid-cols-3 gap-3">
             {recentPhotos.map((photo) => (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={photo.id}
-                src={resolveMediaUrl(photo.photo_url)}
-                alt=""
-                className="aspect-square w-full rounded-lg object-cover"
-              />
+              <button
+                key={photo}
+                type="button"
+                className="overflow-hidden rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                onClick={() => setSelectedPhoto(photo)}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={resolveMediaUrl(photo)} alt="Φωτογραφία προόδου" className="aspect-square w-full object-cover" />
+              </button>
             ))}
           </div>
         ) : (
@@ -1946,7 +1994,7 @@ function ProgressTab({ client }: { client: ClientRecord }) {
           <Button
             type="button"
             variant="outline"
-            disabled={!weeklyUpdates.length}
+            disabled={isLoading || !weeklyUpdates.length}
             onClick={() => exportWeeklyUpdatesCsv(weeklyUpdates, client.full_name || client.email || "client")}
           >
             Export CSV
@@ -1957,31 +2005,53 @@ function ProgressTab({ client }: { client: ClientRecord }) {
             <TableRow>
               <TableHead className="px-5 py-4">Ημερομηνία</TableHead>
               <TableHead className="px-5 py-4">Βάρος</TableHead>
-              <TableHead className="px-5 py-4">Training rating</TableHead>
-              <TableHead className="px-5 py-4">Nutrition rating</TableHead>
-              <TableHead className="px-5 py-4">Notes</TableHead>
+              <TableHead className="px-5 py-4">Προπόνηση</TableHead>
+              <TableHead className="px-5 py-4">Διατροφή</TableHead>
+              <TableHead className="px-5 py-4">Σημειώσεις</TableHead>
+              <TableHead className="px-5 py-4">Φωτογραφίες</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="divide-y divide-slate-100 dark:divide-slate-800">
             {weeklyUpdates.map((update) => (
               <TableRow key={update.id}>
-                <TableCell className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{formatDateTime(update.submitted_at)}</TableCell>
-                <TableCell className="px-5 py-4 font-bold text-slate-950 dark:text-slate-50">{update.weight_kg ? `${update.weight_kg} kg` : "-"}</TableCell>
-                <TableCell className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{update.training_score ?? "-"}</TableCell>
-                <TableCell className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{update.nutrition_score ?? "-"}</TableCell>
-                <TableCell className="px-5 py-4 font-semibold text-slate-500 dark:text-slate-400">{update.notes || "-"}</TableCell>
+                <TableCell className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{formatDateTime(update.submittedAt)}</TableCell>
+                <TableCell className="px-5 py-4 font-bold text-slate-950 dark:text-slate-50">{update.weight !== null ? `${update.weight} kg` : "-"}</TableCell>
+                <TableCell className="px-5 py-4"><RatingStars value={update.trainingRating} /></TableCell>
+                <TableCell className="px-5 py-4"><RatingStars value={update.nutritionRating} /></TableCell>
+                <TableCell className="max-w-xs px-5 py-4 font-semibold text-slate-500 dark:text-slate-400">{update.notes || "-"}</TableCell>
+                <TableCell className="px-5 py-4">
+                  <div className="flex gap-1">
+                    {update.photos.map((photo) => (
+                      <button key={photo} type="button" className="overflow-hidden rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" onClick={() => setSelectedPhoto(photo)}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={resolveMediaUrl(photo)} alt="Φωτογραφία προόδου" className="h-8 w-8 object-cover" />
+                      </button>
+                    ))}
+                    {!update.photos.length && <span className="text-slate-500 dark:text-slate-400">-</span>}
+                  </div>
+                </TableCell>
               </TableRow>
             ))}
             {!weeklyUpdates.length && (
               <TableRow>
-                <TableCell colSpan={5} className="px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
-                  Δεν υπάρχουν εβδομαδιαία updates ακόμα.
+                <TableCell colSpan={6} className="px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
+                  {isLoading ? "Φόρτωση εβδομαδιαίων updates..." : "Δεν υπάρχουν εβδομαδιαία updates ακόμα."}
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
       </Card>
+
+      <Dialog open={Boolean(selectedPhoto)} onOpenChange={(open) => !open && setSelectedPhoto(null)}>
+        <DialogContent className="max-w-3xl p-2">
+          <DialogTitle className="sr-only">Φωτογραφία προόδου</DialogTitle>
+          {selectedPhoto && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={resolveMediaUrl(selectedPhoto)} alt="Φωτογραφία προόδου" className="max-h-[80vh] w-full rounded object-contain" />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
