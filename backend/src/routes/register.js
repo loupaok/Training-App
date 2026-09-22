@@ -330,7 +330,7 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     setAuthCookies(res, accessToken, refreshToken);
 
     try {
-      sendMail({ to: email, ...registrationEmail(firstName) }).catch((error) => console.error('Email failed', error));
+      sendMail({ to: email, ...registrationEmail(firstName, plan.name) }).catch((error) => console.error('Email failed', error));
     } catch (error) {
       console.error('Email failed', error);
     }

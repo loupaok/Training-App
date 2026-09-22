@@ -44,12 +44,13 @@ export function updateReminderEmail(clientName, submitUrl) {
   };
 }
 
-export function registrationEmail(clientName) {
+export function registrationEmail(clientName, planName) {
   return {
     subject: 'Καλώς ήρθες! Η εγγραφή σου ολοκληρώθηκε',
     html: wrapEmail(
       `<p>Γεια σου ${clientName},</p>
-       <p>Η εγγραφή σου ολοκληρώθηκε με επιτυχία. Ο coach σου θα επικοινωνήσει μαζί σου εντός 24 ωρών για να επιβεβαιώσει την πληρωμή και να ενεργοποιήσει τον λογαριασμό σου.</p>`
+       <p>Η εγγραφή σου ολοκληρώθηκε με επιτυχία. Ο coach σου θα επικοινωνήσει μαζί σου εντός 24 ωρών για να επιβεβαιώσει την πληρωμή και να ενεργοποιήσει τον λογαριασμό σου.</p>
+       <p>Επιλεγμένο πλάνο: <strong>${planName}</strong></p>`
     )
   };
 }
