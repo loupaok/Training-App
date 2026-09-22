@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Clock, Sparkles, Star, Undo2, GripVertical, Link2, Pencil, X } from "lucide-react";
+import { AlertTriangle, Clock, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, X } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -40,6 +40,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AreaChart, SparkLineChart, ProgressBar } from "@tremor/react";
 import {
   Table,
@@ -86,6 +87,8 @@ interface Payment {
   reference_number?: string;
   proof_url?: string;
   status?: string;
+  notes?: string | null;
+  paid_at?: string | null;
 }
 
 interface PricingPlanOption {
@@ -151,9 +154,12 @@ interface Onboarding {
 
 interface Subscription {
   plan_name?: string;
+  price?: number | string | null;
+  currency?: string;
   status?: string;
   start_date?: string;
   end_date?: string;
+  daysRemaining?: number | null;
 }
 
 interface UpdateSchedule {
@@ -1065,13 +1071,19 @@ function subscriptionElapsedPct(client: ClientRecord): number {
   return Math.min(100, Math.max(0, Math.round(pct)));
 }
 
-function subscriptionStatusMeta(status?: string): { label: string; className: string } {
+function subscriptionStatusMeta(status?: string, endDate?: string | null): { label: string; className: string } {
   const statusMap: Record<string, { label: string; className: string }> = {
     active: { label: "Ενεργός", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300" },
     expiring_soon: { label: "Λήγει σύντομα", className: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300" },
     expired: { label: "Έληξε", className: "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300" },
     pending_payment: { label: "Εκκρεμής έγκριση", className: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300" },
   };
+
+  if (endDate) {
+    const days = Math.ceil((new Date(`${endDate}T00:00:00`).getTime() - Date.now()) / 86400000);
+    if (days < 0) return statusMap.expired;
+    if (days <= 7) return statusMap.expiring_soon;
+  }
 
   return statusMap[status || ""] || statusMap.pending_payment;
 }
@@ -1121,6 +1133,18 @@ function shortDate(value?: string | null): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleDateString("el-GR", { day: "numeric", month: "short" });
+}
+
+function formatGreekPaymentDate(value?: string | null): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleString("el-GR", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function euroAmount(value?: number | string | null): string {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? `€${amount.toFixed(2)}` : "-";
 }
 
 function OverviewTab({
@@ -1430,7 +1454,7 @@ function OverviewTab({
         <CardHeader className="space-y-3 pb-4">
           <CardTitle className="text-lg">Συνδρομή</CardTitle>
           {(() => {
-            const status = subscriptionStatusMeta(client.subscription?.status);
+            const status = subscriptionStatusMeta(client.subscription?.status, client.subscription?.end_date);
             return <Badge className={`h-auto w-full justify-center rounded-md px-3 py-2 text-sm font-bold ${status.className}`}>{status.label}</Badge>;
           })()}
         </CardHeader>
@@ -1485,7 +1509,6 @@ function OverviewTab({
         </CardHeader>
         <CardContent className="space-y-3 text-center">
           <p className="text-sm text-muted-foreground">Δεν υπάρχει ενεργή συνδρομή</p>
-          <Link href="/coach/pricing" className="text-sm font-medium text-primary hover:underline">+ Προσθήκη συνδρομής</Link>
         </CardContent>
       </Card>
     ),
@@ -1733,13 +1756,30 @@ function PaymentsTab({
   rejectingPaymentId: number | string | null;
   onUpdated: () => void;
 }) {
-  const payments = client.payments || [];
+  const [payments, setPayments] = useState<Payment[]>(client.payments || []);
   const [open, setOpen] = useState(false);
   const today = dateInputValue(new Date());
   const [plans, setPlans] = useState<PricingPlanOption[]>([]);
   const [form, setForm] = useState({ amount: "", method: "cash", planId: "", startDate: today, endDate: defaultPaymentEndDate(today), notes: "" });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+  const [paymentToDelete, setPaymentToDelete] = useState<Payment | null>(null);
+  const [deletingPayment, setDeletingPayment] = useState(false);
+
+  const loadPayments = async () => {
+    const rows = await api.get<Payment[]>(`/clients/${clientId}/payments`);
+    setPayments(rows);
+  };
+
+  useEffect(() => {
+    setPayments(client.payments || []);
+  }, [client.payments]);
+
+  useEffect(() => {
+    loadPayments().catch(() => {
+      // The detail response remains a usable fallback while the payment list loads.
+    });
+  }, [clientId]);
 
   useEffect(() => {
     let active = true;
@@ -1786,15 +1826,48 @@ function PaymentsTab({
     }
   };
 
+  const deletePayment = async () => {
+    if (!paymentToDelete) return;
+    setDeletingPayment(true);
+    try {
+      await api.delete(`/clients/${clientId}/payments/${paymentToDelete.id}`);
+      setPaymentToDelete(null);
+      await loadPayments();
+      onUpdated();
+    } finally {
+      setDeletingPayment(false);
+    }
+  };
+
+  const subscriptionMeta = client.subscription
+    ? subscriptionStatusMeta(client.subscription.status, client.subscription.end_date)
+    : null;
+
   return (
-    <div className="space-y-6">
-      <Card className="p-6">
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Info label="Κατάσταση πληρωμής" value={client.payments?.[0]?.status ? paymentStatusLabels[client.payments[0].status] || client.payments[0].status : "-"} />
-          <Info label="Συνδρομή" value={client.subscription?.plan_name || "-"} />
-          <Info label="Ημέρες που απομένουν" value={daysRemaining(client.subscription?.end_date)} />
-        </div>
-      </Card>
+    <TooltipProvider>
+      <div className="space-y-6">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card>
+          <CardContent className="p-5">
+            <p className="text-sm text-muted-foreground">Κατάσταση</p>
+            {subscriptionMeta ? <Badge className={`mt-2 h-auto rounded-md px-3 py-1.5 text-sm font-bold ${subscriptionMeta.className}`}>{subscriptionMeta.label}</Badge> : <p className="mt-2 text-lg font-semibold">-</p>}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-5">
+            <p className="text-sm text-muted-foreground">Πλάνο</p>
+            <p className="mt-2 text-lg font-semibold">{client.subscription?.plan_name || "-"}</p>
+            <p className="text-sm text-muted-foreground">{client.subscription?.price !== undefined && client.subscription?.price !== null ? `${euroAmount(client.subscription.price)}/μήνα` : ""}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-5">
+            <p className="text-sm text-muted-foreground">Λήγει σε</p>
+            <p className="mt-2 text-lg font-semibold">{daysRemaining(client.subscription?.end_date)}</p>
+            <p className="text-sm text-muted-foreground">{shortDate(client.subscription?.end_date)}</p>
+          </CardContent>
+        </Card>
+      </div>
 
       <Card className="overflow-hidden p-0">
         <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-800">
@@ -1894,23 +1967,33 @@ function PaymentsTab({
             <TableHead className="px-5 py-4">Ποσό</TableHead>
             <TableHead className="px-5 py-4">Τρόπος</TableHead>
             <TableHead className="px-5 py-4">Status</TableHead>
+            <TableHead className="px-5 py-4">Σημειώσεις</TableHead>
             <TableHead className="px-5 py-4">Ενέργειες</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody className="divide-y divide-slate-100 dark:divide-slate-800">
           {payments.map((payment) => (
             <TableRow key={payment.id} className="align-top">
-              <TableCell className="whitespace-normal px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{formatDateTime(payment.created_at)}</TableCell>
-              <TableCell className="whitespace-normal px-5 py-4 font-bold text-slate-950 dark:text-slate-50">{money(payment.amount, payment.currency)}</TableCell>
+              <TableCell className="whitespace-normal px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{formatGreekPaymentDate(payment.paid_at || payment.created_at)}</TableCell>
+              <TableCell className="whitespace-normal px-5 py-4 font-bold text-slate-950 dark:text-slate-50">{euroAmount(payment.amount)}</TableCell>
               <TableCell className="whitespace-normal px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">
                 {paymentMethodLabel(payment.method)}
               </TableCell>
               <TableCell className="whitespace-normal px-5 py-4">
                 <PaymentStatus status={payment.status} />
               </TableCell>
+              <TableCell className="max-w-44 whitespace-normal px-5 py-4">
+                {payment.notes ? (
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="block cursor-default truncate text-sm text-muted-foreground" />}>{payment.notes}</TooltipTrigger>
+                    <TooltipContent>{payment.notes}</TooltipContent>
+                  </Tooltip>
+                ) : <span className="text-muted-foreground">-</span>}
+              </TableCell>
               <TableCell className="whitespace-normal px-5 py-4">
-                {payment.status === "pending" ? (
-                  <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  {payment.status === "pending" && (
+                    <>
                     <Button
                       type="button"
                       onClick={() => onApprovePayment(payment.id)}
@@ -1928,16 +2011,18 @@ function PaymentsTab({
                     >
                       {rejectingPaymentId === payment.id ? "Απόρριψη..." : "Απόρριψη"}
                     </Button>
-                  </div>
-                ) : (
-                  <span className="font-semibold text-slate-400 dark:text-slate-500">-</span>
-                )}
+                    </>
+                  )}
+                  <Button type="button" variant="ghost" size="icon" onClick={() => setPaymentToDelete(payment)} className="text-destructive hover:bg-destructive/10 hover:text-destructive" aria-label="Διαγραφή πληρωμής">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))}
           {!payments.length && (
             <TableRow>
-              <TableCell colSpan={5} className="whitespace-normal px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
+              <TableCell colSpan={6} className="whitespace-normal px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
                 Δεν υπάρχουν πληρωμές ακόμα.
               </TableCell>
             </TableRow>
@@ -1945,7 +2030,24 @@ function PaymentsTab({
         </TableBody>
       </Table>
       </Card>
-    </div>
+      <AlertDialog open={Boolean(paymentToDelete)} onOpenChange={(open) => !open && setPaymentToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Διαγραφή πληρωμής;</AlertDialogTitle>
+            <AlertDialogDescription>
+              {`Διαγραφή πληρωμής ${euroAmount(paymentToDelete?.amount)}; Αυτή η ενέργεια δεν αναιρείται.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingPayment}>Ακύρωση</AlertDialogCancel>
+            <AlertDialogAction onClick={deletePayment} disabled={deletingPayment} className="bg-destructive text-white hover:bg-destructive/90">
+              {deletingPayment ? "Διαγραφή..." : "Διαγραφή"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      </div>
+    </TooltipProvider>
   );
 }
 

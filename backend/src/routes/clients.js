@@ -1971,6 +1971,29 @@ router.get('/:id/weekly-updates', authorizeRole(['coach', 'admin', 'moderator'])
   }
 });
 
+router.get('/:id/payments', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    const [payments] = await connection.query(
+      `SELECT id, subscription_id, amount, currency, method, status, notes, paid_at, created_at
+       FROM payments
+       WHERE client_id = ?
+       ORDER BY created_at DESC`,
+      [clientId]
+    );
+    res.json(payments);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
 router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
@@ -2009,7 +2032,12 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
       [req.params.id]
     );
     const [subscriptionRows] = await connection.query(
-      'SELECT * FROM subscriptions WHERE client_id = ? ORDER BY created_at DESC LIMIT 1',
+      `SELECT id, plan_name, price, currency, start_date, end_date, status,
+              DATEDIFF(end_date, CURDATE()) AS days_remaining
+       FROM subscriptions
+       WHERE client_id = ?
+       ORDER BY created_at DESC
+       LIMIT 1`,
       [req.params.id]
     );
     const [scheduleRows] = await connection.query(
@@ -2021,7 +2049,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
       [req.params.id]
     );
     const [paymentRows] = await connection.query(
-      'SELECT id, subscription_id, amount, currency, method, status, reference_number, proof_url, proof_uploaded_at, paid_at, created_at FROM payments WHERE client_id = ? ORDER BY created_at DESC',
+      'SELECT id, subscription_id, amount, currency, method, status, notes, reference_number, proof_url, proof_uploaded_at, paid_at, created_at FROM payments WHERE client_id = ? ORDER BY created_at DESC',
       [req.params.id]
     );
     const [weeklyRows] = await connection.query(
@@ -2050,7 +2078,9 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
       ...rows[0],
       onboarding: onboardingRows[0] || null,
       socialLinks: socialRows,
-      subscription: subscriptionRows[0] || null,
+      subscription: subscriptionRows[0]
+        ? { ...subscriptionRows[0], daysRemaining: subscriptionRows[0].days_remaining }
+        : null,
       payments: paymentRows,
       updateSchedule: scheduleRows[0] || null,
       progressUpdates: progressRows,
@@ -2246,6 +2276,40 @@ router.post('/:id/payments', authorizeRole(['coach', 'admin']), [
 
     await connection.commit();
     res.status(201).json({ message: 'Payment and subscription recorded', id: paymentResult.insertId, subscriptionId });
+  } catch (error) {
+    await connection.rollback();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.delete('/:id/payments/:paymentId', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const clientId = Number(req.params.id);
+    const paymentId = Number(req.params.paymentId);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    const [payments] = await connection.query(
+      'SELECT id, amount FROM payments WHERE id = ? AND client_id = ? LIMIT 1',
+      [paymentId, clientId]
+    );
+    if (!payments.length) return res.status(404).json({ message: 'Payment not found' });
+
+    await connection.beginTransaction();
+    await connection.query('DELETE FROM payments WHERE id = ? AND client_id = ?', [paymentId, clientId]);
+    await logClientActivity(connection, {
+      clientId,
+      action: `Διαγραφή πληρωμής €${Number(payments[0].amount).toFixed(2)}`,
+      performedBy: req.user.id,
+      details: { paymentId },
+    });
+    await connection.commit();
+
+    res.json({ message: 'Payment deleted' });
   } catch (error) {
     await connection.rollback();
     console.error(error);
