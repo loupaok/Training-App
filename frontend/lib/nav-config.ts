@@ -22,7 +22,6 @@ import {
   LayoutGrid,
   HelpCircle,
   ClipboardList,
-  Mail,
   Clock,
   type LucideIcon,
 } from "lucide-react";
@@ -79,8 +78,7 @@ export const coachNavSections: CoachNavSection[] = [
       { key: "pricing-plans", label: "Πλάνα & Τιμές", path: "/coach/pricing", icon: Tag },
       { key: "questionnaire", label: "Ερωτηματολόγιο", path: "/coach/questionnaire", icon: HelpCircle },
       { key: "branding", label: "Branding", path: "/coach/branding", icon: Palette },
-      { key: "emails", label: "Emails & Templates", path: "/coach/settings/emails", icon: Mail },
-      { key: "automations", label: "Αυτοματισμοί", path: "/coach/settings/automations", icon: Clock },
+      { key: "automations", label: "Emails & Αυτοματισμοί", path: "/coach/automations", icon: Clock },
     ],
   },
   {
