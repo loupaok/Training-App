@@ -1,5 +1,8 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { ensureAuthSchema, generateAccessToken, generateRefreshToken, setAuthCookies } from './auth.js';
@@ -8,6 +11,35 @@ import { ensureQuestionnaireSchema } from './questionnaire.js';
 import { ensurePricingPlansSchema } from './pricingPlans.js';
 import { sendMail } from '../lib/mailer.js';
 import { logClientActivity } from '../lib/client-activity-log.js';
+
+// Registration-time intake photos/PDF. The user doesn't exist yet when the
+// upload arrives, so files are buffered in memory and only written to
+// uploads/media/progress/{userId}/ once the transaction below has actually
+// created that user — never to a path keyed on a not-yet-real id.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const isPhoto = file.fieldname === 'photos' && /^image\/(jpeg|png|webp)$/.test(file.mimetype);
+    const isPdf = file.fieldname === 'pdf' && file.mimetype === 'application/pdf';
+    (isPhoto || isPdf) ? cb(null, true) : cb(new Error('Only JPG/PNG/WEBP photos or a PDF are allowed'));
+  },
+});
+
+async function ensureClientIntakeFilesSchema(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS client_intake_files (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      client_id INT NOT NULL,
+      file_url VARCHAR(255) NOT NULL,
+      file_type ENUM('photo', 'pdf') NOT NULL,
+      original_name VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_client_id (client_id)
+    )
+  `);
+}
 
 // New public registration flow — replaces POST /auth/register as the primary
 // signup path (collects account details + questionnaire + plan + payment in
@@ -61,7 +93,7 @@ router.get('/bank-details', (req, res) => {
   });
 });
 
-router.post('/register', [
+router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name: 'pdf', maxCount: 1 }]), [
   body('firstName').notEmpty(),
   body('lastName').notEmpty(),
   body('email').isEmail(),
@@ -69,7 +101,6 @@ router.post('/register', [
   body('password').isLength({ min: 6 }),
   body('dateOfBirth').optional({ nullable: true, checkFalsy: true }).isString(),
   body('gender').optional({ nullable: true, checkFalsy: true }).isIn(['male', 'female', 'other']),
-  body('answers').isArray(),
   body('plan_id').isInt(),
   body('payment_method').isIn(['bank', 'stripe']),
 ], async (req, res) => {
@@ -86,10 +117,22 @@ router.post('/register', [
     password,
     dateOfBirth,
     gender,
-    answers,
     plan_id: planId,
     payment_method: paymentMethod,
   } = req.body;
+
+  // The wizard sends plain JSON when Step 3 (photos/PDF) was skipped, and
+  // multipart/form-data — with `answers` as a JSON string alongside the
+  // files — only when there's actually something to upload.
+  let answers = [];
+  try {
+    answers = typeof req.body.answers === 'string' ? JSON.parse(req.body.answers) : (req.body.answers || []);
+  } catch {
+    return res.status(400).json({ message: 'Μη έγκυρες απαντήσεις.' });
+  }
+  if (!Array.isArray(answers)) {
+    return res.status(400).json({ message: 'Μη έγκυρες απαντήσεις.' });
+  }
 
   const connection = await pool.getConnection();
 
@@ -98,6 +141,7 @@ router.post('/register', [
     await ensureQuestionnaireSchema(connection);
     await ensurePricingPlansSchema(connection);
     await ensureNotificationsSchema(connection);
+    await ensureClientIntakeFilesSchema(connection);
 
     const [existing] = await connection.query('SELECT id FROM users WHERE email = ?', [email]);
     if (existing.length > 0) {
@@ -252,6 +296,34 @@ router.post('/register', [
     );
 
     await connection.commit();
+
+    const uploadedPhotos = req.files?.photos || [];
+    const uploadedPdf = req.files?.pdf || [];
+    if (uploadedPhotos.length || uploadedPdf.length) {
+      const dir = path.join('uploads', 'media', 'progress', String(userId));
+      fs.mkdirSync(dir, { recursive: true });
+      const fileRows = [];
+      for (const file of [...uploadedPhotos, ...uploadedPdf]) {
+        const ext = path.extname(file.originalname);
+        const filename = `${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
+        fs.writeFileSync(path.join(dir, filename), file.buffer);
+        fileRows.push([
+          userId,
+          path.join(dir, filename).replace(/\\/g, '/'),
+          file.fieldname === 'pdf' ? 'pdf' : 'photo',
+          file.originalname,
+        ]);
+      }
+      try {
+        await connection.query(
+          'INSERT INTO client_intake_files (client_id, file_url, file_type, original_name) VALUES ?',
+          [fileRows]
+        );
+      } catch (fileError) {
+        console.error('Failed to record intake files (files were saved to disk):', fileError);
+      }
+    }
+
     connection.release();
 
     setAuthCookies(res, accessToken, refreshToken);

@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, CheckCircle2, Link2 } from "lucide-react";
+import { AlertCircle, CheckCircle2, Link2, Info, ImagePlus, FileText, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
 import type { AuthUser } from "@/types/auth";
@@ -76,9 +77,14 @@ type RegisterResponse = {
 const steps = [
   { key: "account", title: "Λογαριασμός" },
   { key: "questionnaire", title: "Ερωτηματολόγιο" },
+  { key: "files", title: "Φωτογραφίες & Αρχεία" },
   { key: "plan", title: "Πλάνο" },
   { key: "payment", title: "Πληρωμή" },
 ] as const;
+
+const MAX_INTAKE_PHOTOS = 4;
+const MAX_PHOTO_SIZE_MB = 5;
+const MAX_PDF_SIZE_MB = 10;
 
 const countryCodes = ["+30", "+357", "+44", "+49", "+1"];
 const genderOptions = [
@@ -139,6 +145,10 @@ function RegisterWizardContent() {
   const [paymentMethod, setPaymentMethod] = useState<"bank" | "stripe">("bank");
   const [bankDetails, setBankDetails] = useState<BankDetails | null>(null);
 
+  const [intakePhotos, setIntakePhotos] = useState<File[]>([]);
+  const [intakePdf, setIntakePdf] = useState<File | null>(null);
+  const [filesError, setFilesError] = useState("");
+
   const [stepError, setStepError] = useState("");
   const [submitError, setSubmitError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -182,6 +192,38 @@ function RegisterWizardContent() {
   const updateAccount = (name: keyof AccountForm, value: string) => setAccount((current) => ({ ...current, [name]: value }));
   const updateAnswer = (id: number, value: AnswerValue) => setAnswers((current) => ({ ...current, [id]: value }));
 
+  const addIntakePhotos = (files: FileList | File[]) => {
+    setFilesError("");
+    const incoming = Array.from(files);
+    const oversized = incoming.find((file) => file.size > MAX_PHOTO_SIZE_MB * 1024 * 1024);
+    if (oversized) {
+      setFilesError(`Η φωτογραφία "${oversized.name}" ξεπερνά τα ${MAX_PHOTO_SIZE_MB}MB.`);
+      return;
+    }
+    setIntakePhotos((current) => {
+      const combined = [...current, ...incoming];
+      if (combined.length > MAX_INTAKE_PHOTOS) {
+        setFilesError(`Μπορείς να ανεβάσεις μέχρι ${MAX_INTAKE_PHOTOS} φωτογραφίες.`);
+        return combined.slice(0, MAX_INTAKE_PHOTOS);
+      }
+      return combined;
+    });
+  };
+
+  const removeIntakePhoto = (index: number) => {
+    setFilesError("");
+    setIntakePhotos((current) => current.filter((_, i) => i !== index));
+  };
+
+  const setIntakePdfFile = (file: File | null) => {
+    setFilesError("");
+    if (file && file.size > MAX_PDF_SIZE_MB * 1024 * 1024) {
+      setFilesError(`Το PDF ξεπερνά τα ${MAX_PDF_SIZE_MB}MB.`);
+      return;
+    }
+    setIntakePdf(file);
+  };
+
   const selectedPlan = plans.find((plan) => String(plan.id) === String(selectedPlanId)) || null;
 
   const validateStep = (): string => {
@@ -208,7 +250,7 @@ function RegisterWizardContent() {
       if (invalidUrl) return "Έλεγξε ότι ο σύνδεσμος που έδωσες είναι έγκυρο URL (π.χ. https://...).";
       return "";
     }
-    if (stepIndex === 2) {
+    if (stepIndex === 3) {
       if (!selectedPlanId) return "Επέλεξε ένα πλάνο συνδρομής.";
       return "";
     }
@@ -241,7 +283,13 @@ function RegisterWizardContent() {
     setSubmitting(true);
     setSubmitError("");
 
-    const payload = {
+    const answersPayload = questions.map((question) => {
+      const value = answers[question.id] ?? "";
+      const serialized = typeof value === "object" && !Array.isArray(value) ? JSON.stringify(value) : value;
+      return { question_id: question.id, answer: serialized };
+    });
+
+    const fields = {
       firstName: account.firstName,
       lastName: account.lastName,
       email: account.email,
@@ -249,17 +297,24 @@ function RegisterWizardContent() {
       password: account.password,
       dateOfBirth: account.dateOfBirth || undefined,
       gender: account.gender || undefined,
-      answers: questions.map((question) => {
-        const value = answers[question.id] ?? "";
-        const serialized = typeof value === "object" && !Array.isArray(value) ? JSON.stringify(value) : value;
-        return { question_id: question.id, answer: serialized };
-      }),
       plan_id: Number(selectedPlanId),
       payment_method: paymentMethod,
     };
 
     try {
-      const result = await api.post<RegisterResponse>("/register", payload);
+      let result: RegisterResponse;
+      if (intakePhotos.length || intakePdf) {
+        const formData = new FormData();
+        Object.entries(fields).forEach(([key, value]) => {
+          if (value !== undefined) formData.append(key, String(value));
+        });
+        formData.append("answers", JSON.stringify(answersPayload));
+        intakePhotos.forEach((file) => formData.append("photos", file));
+        if (intakePdf) formData.append("pdf", intakePdf);
+        result = await api.upload<RegisterResponse>("/register", formData);
+      } else {
+        result = await api.post<RegisterResponse>("/register", { ...fields, answers: answersPayload });
+      }
 
       window.localStorage.setItem("token", result.accessToken);
       window.localStorage.setItem("refreshToken", result.refreshToken);
@@ -311,7 +366,7 @@ function RegisterWizardContent() {
                   Online Personal Training
                 </Badge>
                 <h1 className="text-2xl font-bold sm:text-3xl">Δημιούργησε τον Λογαριασμό σου</h1>
-                <p className="mt-2 text-sm text-muted-foreground">4 μικρά βήματα και ξεκινάμε το ταξίδι σου.</p>
+                <p className="mt-2 text-sm text-muted-foreground">5 μικρά βήματα και ξεκινάμε το ταξίδι σου.</p>
               </div>
               <Stepper activeIndex={stepIndex} />
             </header>
@@ -327,9 +382,19 @@ function RegisterWizardContent() {
               <QuestionnaireStep questions={questions} answers={answers} updateAnswer={updateAnswer} />
             )}
             {stepIndex === 2 && (
-              <PlanStep plans={plans} selectedPlanId={selectedPlanId} onSelect={setSelectedPlanId} />
+              <FilesStep
+                photos={intakePhotos}
+                pdf={intakePdf}
+                error={filesError}
+                onAddPhotos={addIntakePhotos}
+                onRemovePhoto={removeIntakePhoto}
+                onSetPdf={setIntakePdfFile}
+              />
             )}
             {stepIndex === 3 && (
+              <PlanStep plans={plans} selectedPlanId={selectedPlanId} onSelect={setSelectedPlanId} />
+            )}
+            {stepIndex === 4 && (
               <PaymentStep
                 paymentMethod={paymentMethod}
                 onPaymentMethodChange={setPaymentMethod}
@@ -346,15 +411,22 @@ function RegisterWizardContent() {
               ) : (
                 <span />
               )}
-              {stepIndex < steps.length - 1 ? (
-                <Button key="continue" type="button" className="h-12 flex-1 px-8 font-bold sm:flex-none" onClick={goNext}>
-                  Συνέχεια →
-                </Button>
-              ) : (
-                <Button key="submit" type="submit" disabled={submitting} className="h-12 flex-1 px-8 font-bold sm:flex-none">
-                  {submitting ? "Ολοκλήρωση..." : "Ολοκλήρωση Εγγραφής"}
-                </Button>
-              )}
+              <div className="flex items-center gap-3">
+                {stepIndex === 2 && (
+                  <Button type="button" variant="ghost" className="h-11 px-3 font-bold sm:px-5" onClick={goNext}>
+                    Παράλειψη →
+                  </Button>
+                )}
+                {stepIndex < steps.length - 1 ? (
+                  <Button key="continue" type="button" className="h-12 flex-1 px-8 font-bold sm:flex-none" onClick={goNext}>
+                    Συνέχεια →
+                  </Button>
+                ) : (
+                  <Button key="submit" type="submit" disabled={submitting} className="h-12 flex-1 px-8 font-bold sm:flex-none">
+                    {submitting ? "Ολοκλήρωση..." : "Ολοκλήρωση Εγγραφής"}
+                  </Button>
+                )}
+              </div>
             </div>
             </form>
 
@@ -373,7 +445,7 @@ function RegisterWizardContent() {
 
 function Stepper({ activeIndex }: { activeIndex: number }) {
   return (
-    <div className="mt-8 grid grid-cols-4">
+    <div className="mt-8 grid grid-cols-5">
         {steps.map((step, index) => {
           const isComplete = index < activeIndex;
           const isActive = index === activeIndex;
@@ -682,6 +754,146 @@ function QuestionField({
     );
   }
   return null;
+}
+
+function FilesStep({
+  photos,
+  pdf,
+  error,
+  onAddPhotos,
+  onRemovePhoto,
+  onSetPdf,
+}: {
+  photos: File[];
+  pdf: File | null;
+  error: string;
+  onAddPhotos: (files: FileList | File[]) => void;
+  onRemovePhoto: (index: number) => void;
+  onSetPdf: (file: File | null) => void;
+}) {
+  const [dragActive, setDragActive] = useState(false);
+
+  return (
+    <Section title="Αρχικές Φωτογραφίες & Αρχεία">
+      <p className="mb-6 text-sm text-muted-foreground">Βοηθά τον coach να παρακολουθεί την πρόοδό σου</p>
+
+      <Alert className="mb-6 border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/40">
+        <Info className="h-4 w-4 text-blue-700 dark:text-blue-300" />
+        <AlertDescription className="text-blue-800 dark:text-blue-200">
+          Αυτό το βήμα είναι προαιρετικό. Μπορείς να προσθέσεις φωτογραφίες αργότερα.
+        </AlertDescription>
+      </Alert>
+
+      {error && (
+        <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm font-semibold text-destructive">
+          {error}
+        </div>
+      )}
+
+      <div className="mb-8">
+        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">📷 Φωτογραφίες Προόδου</span>
+        <p className="mb-3 text-xs text-muted-foreground">Μέχρι {MAX_INTAKE_PHOTOS} φωτογραφίες</p>
+
+        {photos.length < MAX_INTAKE_PHOTOS && (
+          <label
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragActive(true);
+            }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragActive(false);
+              if (event.dataTransfer.files?.length) onAddPhotos(event.dataTransfer.files);
+            }}
+            className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
+              dragActive ? "border-primary bg-primary/5" : "border-slate-300 dark:border-slate-700"
+            }`}
+          >
+            <ImagePlus className="h-8 w-8 text-slate-400" />
+            <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+              Σύρε φωτογραφίες εδώ ή κάνε κλικ για επιλογή
+            </span>
+            <span className="text-xs text-muted-foreground">JPG, PNG, WEBP · Max {MAX_PHOTO_SIZE_MB}MB</span>
+            <input
+              type="file"
+              accept=".jpg,.jpeg,.png,.webp"
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                if (event.target.files?.length) onAddPhotos(event.target.files);
+                event.target.value = "";
+              }}
+            />
+          </label>
+        )}
+
+        {photos.length > 0 && (
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {photos.map((file, index) => (
+              <PhotoThumb key={`${file.name}-${index}`} file={file} onRemove={() => onRemovePhoto(index)} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">📄 Ιατρικά Έγγραφα</span>
+        <p className="mb-3 text-xs text-muted-foreground">(Προαιρετικό)</p>
+
+        {pdf ? (
+          <div className="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3 dark:border-slate-700">
+            <span className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+              <FileText className="h-4 w-4 text-slate-400" />
+              {pdf.name}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => onSetPdf(null)}
+              className="h-8 w-8 text-slate-400 hover:text-red-600"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-bold text-slate-700 hover:border-primary dark:border-slate-700 dark:text-slate-200">
+            <FileText className="h-4 w-4" />
+            Επιλογή PDF
+            <input type="file" accept=".pdf" className="hidden" onChange={(event) => onSetPdf(event.target.files?.[0] || null)} />
+          </label>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+function PhotoThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(file);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file]);
+
+  return (
+    <div className="group relative aspect-square overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
+      {url && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt={file.name} className="h-full w-full object-cover" />
+      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label="Αφαίρεση φωτογραφίας"
+        className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity group-hover:opacity-100"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
 }
 
 function PlanStep({
