@@ -18,7 +18,7 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 
 type TemplateKey = "update_reminder" | "registration" | "subscription_expiry" | "update_notification";
-type EmailTemplate = { templateKey: TemplateKey; templateName: string; description: string; subject: string; body: string };
+type EmailTemplate = { key: TemplateKey; name: string; subject: string; body: string; variables: string[] };
 
 const templatePresentation = {
   update_reminder: { Icon: Bell, iconClass: "text-blue-600", variables: ["{{clientName}}", "{{submitUrl}}"] },
@@ -48,14 +48,14 @@ function EmailsContent() {
   }, []);
 
   const updateTemplate = (templateKey: TemplateKey, changes: Partial<EmailTemplate>) => {
-    setTemplates((current) => current.map((template) => template.templateKey === templateKey ? { ...template, ...changes } : template));
+    setTemplates((current) => current.map((template) => template.key === templateKey ? { ...template, ...changes } : template));
   };
 
   const saveTemplate = async (template: EmailTemplate) => {
-    setSaving(template.templateKey);
+    setSaving(template.key);
     try {
-      const saved = await api.put<EmailTemplate>(`/settings/email-templates/${template.templateKey}`, { subject: template.subject, body: template.body });
-      updateTemplate(template.templateKey, saved);
+      const saved = await api.put<EmailTemplate>(`/settings/email-templates/${template.key}`, { subject: template.subject, body: template.body });
+      updateTemplate(template.key, saved);
       toast.success("Template αποθηκεύτηκε");
     } catch (requestError) {
       toast.error(getErrorMessage(requestError));
@@ -65,14 +65,14 @@ function EmailsContent() {
   };
 
   const sendTest = async (template: EmailTemplate) => {
-    const testEmail = testEmails[template.templateKey]?.trim();
+    const testEmail = testEmails[template.key]?.trim();
     if (!testEmail) {
       toast.error("Συμπλήρωσε email για το test.");
       return;
     }
-    setTesting(template.templateKey);
+    setTesting(template.key);
     try {
-      await api.post("/settings/email-templates/test", { templateKey: template.templateKey, testEmail });
+      await api.post("/settings/email-templates/test", { templateKey: template.key, testEmail });
       toast.success("Test email εστάλη!");
     } catch (requestError) {
       toast.error(getErrorMessage(requestError));
@@ -111,16 +111,15 @@ function EmailsContent() {
 
         <div className="space-y-4">
           {templates.map((template) => {
-            const presentation = templatePresentation[template.templateKey];
+            const presentation = templatePresentation[template.key];
             const TemplateIcon = presentation.Icon;
             return (
-              <Collapsible key={template.templateKey}>
+              <Collapsible key={template.key}>
                 <Card>
                   <CollapsibleTrigger className="flex w-full items-center gap-3 px-6 text-left">
                     <TemplateIcon className={`size-5 ${presentation.iconClass}`} />
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium">{template.templateName}</p>
-                      <p className="mt-1 truncate text-sm text-muted-foreground">{template.description}</p>
+                      <p className="font-medium">{template.name}</p>
                     </div>
                     <Badge variant="secondary">Αυτόματο</Badge>
                     <ChevronDown className="size-4 text-muted-foreground transition-transform [[data-state=open]_&]:rotate-180" />
@@ -128,11 +127,11 @@ function EmailsContent() {
                   <CollapsibleContent>
                     <CardContent className="pt-6">
                       <Separator />
-                      <div className="space-y-2 pt-3"><Label htmlFor={`${template.templateKey}-subject`}>Θέμα</Label><Input id={`${template.templateKey}-subject`} value={template.subject} onChange={(event) => updateTemplate(template.templateKey, { subject: event.target.value })} /></div>
-                      <div className="space-y-2"><Label htmlFor={`${template.templateKey}-body`}>Περιεχόμενο</Label><Textarea id={`${template.templateKey}-body`} rows={8} className="font-mono text-sm" value={template.body} onChange={(event) => updateTemplate(template.templateKey, { body: event.target.value })} /></div>
-                      <div className="space-y-2"><Label>Διαθέσιμες μεταβλητές</Label><div className="flex flex-wrap gap-2">{presentation.variables.map((variable) => <Button key={variable} type="button" variant="outline" size="xs" onClick={() => copyVariable(variable)}>{variable}</Button>)}</div></div>
-                      <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row"><Input type="email" placeholder="test@email.com" value={testEmails[template.templateKey] || ""} onChange={(event) => setTestEmails((current) => ({ ...current, [template.templateKey]: event.target.value }))} /><Button type="button" variant="outline" onClick={() => sendTest(template)} disabled={testing === template.templateKey}>{testing === template.templateKey ? "Αποστολή..." : "Αποστολή test"}</Button></div>
-                      <div><Button type="button" onClick={() => saveTemplate(template)} disabled={saving === template.templateKey}>{saving === template.templateKey ? "Αποθήκευση..." : "Αποθήκευση"}</Button></div>
+                      <div className="space-y-2 pt-3"><Label htmlFor={`${template.key}-subject`}>Θέμα</Label><Input id={`${template.key}-subject`} value={template.subject} onChange={(event) => updateTemplate(template.key, { subject: event.target.value })} /></div>
+                      <div className="space-y-2"><Label htmlFor={`${template.key}-body`}>Περιεχόμενο</Label><Textarea id={`${template.key}-body`} rows={8} className="font-mono text-sm" value={template.body} onChange={(event) => updateTemplate(template.key, { body: event.target.value })} /></div>
+                      <div className="space-y-2"><Label>Διαθέσιμες μεταβλητές</Label><div className="flex flex-wrap gap-2">{(template.variables.length ? template.variables : presentation.variables).map((variable) => <Button key={variable} type="button" variant="outline" size="xs" onClick={() => copyVariable(variable)}>{variable}</Button>)}</div></div>
+                      <div className="flex flex-col gap-2 border-t pt-4 sm:flex-row"><Input type="email" placeholder="test@email.com" value={testEmails[template.key] || ""} onChange={(event) => setTestEmails((current) => ({ ...current, [template.key]: event.target.value }))} /><Button type="button" variant="outline" onClick={() => sendTest(template)} disabled={testing === template.key}>{testing === template.key ? "Αποστολή..." : "Αποστολή test"}</Button></div>
+                      <div><Button type="button" onClick={() => saveTemplate(template)} disabled={saving === template.key}>{saving === template.key ? "Αποθήκευση..." : "Αποθήκευση"}</Button></div>
                     </CardContent>
                   </CollapsibleContent>
                 </Card>
