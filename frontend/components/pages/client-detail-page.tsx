@@ -39,6 +39,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Progress } from "@/components/ui/progress";
 import { AreaChart, SparkLineChart, ProgressBar } from "@tremor/react";
 import {
   Table,
@@ -85,6 +86,14 @@ interface Payment {
   reference_number?: string;
   proof_url?: string;
   status?: string;
+}
+
+interface PricingPlanOption {
+  id: number | string;
+  name: string;
+  price: number | string;
+  period?: string;
+  isActive?: boolean;
 }
 
 interface WeeklyUpdate {
@@ -141,6 +150,7 @@ interface Onboarding {
 }
 
 interface Subscription {
+  plan_name?: string;
   status?: string;
   start_date?: string;
   end_date?: string;
@@ -340,6 +350,7 @@ function daysRemaining(endDate?: string | null): string {
 const paymentStatusLabels: Record<string, string> = {
   completed: "Πληρωμένο",
   pending: "Εκκρεμεί",
+  confirmed: "Εγκρίθηκε",
   failed: "Απέτυχε",
   refunded: "Επιστράφηκε",
 };
@@ -1040,20 +1051,76 @@ const OVERVIEW_LAYOUT_STORAGE_KEY = "coach-client-overview-layout-v1";
 
 const DEFAULT_SECTION_ORDER: { id: string; column: "left" | "right" }[] = [
   { id: "contact", column: "left" },
-  { id: "updateDaysBadge", column: "left" },
   { id: "questionnaire", column: "left" },
-  { id: "updateDaySelect", column: "left" },
   { id: "subscription", column: "right" },
   { id: "notes", column: "right" },
 ];
 
-function subscriptionProgressPct(client: ClientRecord): number {
+function subscriptionElapsedPct(client: ClientRecord): number {
   const start = client.subscription?.start_date ? new Date(client.subscription.start_date).getTime() : null;
   const end = client.subscription?.end_date ? new Date(client.subscription.end_date).getTime() : null;
   if (!start || !end || end <= start) return 0;
   const now = Date.now();
-  const pct = ((end - now) / (end - start)) * 100;
+  const pct = ((now - start) / (end - start)) * 100;
   return Math.min(100, Math.max(0, Math.round(pct)));
+}
+
+function subscriptionStatusMeta(status?: string): { label: string; className: string } {
+  const statusMap: Record<string, { label: string; className: string }> = {
+    active: { label: "Ενεργός", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300" },
+    expiring_soon: { label: "Λήγει σύντομα", className: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300" },
+    expired: { label: "Έληξε", className: "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-300" },
+    pending_payment: { label: "Εκκρεμής έγκριση", className: "bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300" },
+  };
+
+  return statusMap[status || ""] || statusMap.pending_payment;
+}
+
+function paymentMethodLabel(method?: string): string {
+  const labels: Record<string, string> = {
+    card: "Κάρτα",
+    bank: "Τραπεζικό Έμβασμα",
+    bank_transfer: "Τραπεζικό Έμβασμα",
+    stripe: "Stripe",
+    cash: "Μετρητά",
+  };
+  return method ? labels[method] || method : "-";
+}
+
+function dateInputValue(date: Date): string {
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function planDurationMonths(period?: string): number {
+  const value = (period || "").toLocaleLowerCase("el-GR");
+  if (value.includes("12") || value.includes("έτος") || value.includes("year")) return 12;
+  if (value.includes("6") || value.includes("εξάμη")) return 6;
+  if (value.includes("3") || value.includes("τρίμη") || value.includes("quarter")) return 3;
+  if (value.includes("4")) return 4;
+  if (value.includes("2")) return 2;
+  return 1;
+}
+
+function endDateForPlan(startDate: string, period?: string): string {
+  const start = new Date(`${startDate}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return startDate;
+  start.setMonth(start.getMonth() + planDurationMonths(period));
+  return dateInputValue(start);
+}
+
+function defaultPaymentEndDate(startDate: string): string {
+  const start = new Date(`${startDate}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return startDate;
+  start.setDate(start.getDate() + 30);
+  return dateInputValue(start);
+}
+
+function shortDate(value?: string | null): string {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleDateString("el-GR", { day: "numeric", month: "short" });
 }
 
 function OverviewTab({
@@ -1296,15 +1363,6 @@ function OverviewTab({
             </Select>
           </div>
         </div>
-        {canResetPassword && (
-          <>
-            <Separator className="my-4" />
-            <div>
-              <p className="mb-2 text-sm text-muted-foreground">Διαχείριση πρόσβασης</p>
-              <ResetPasswordDialog onResetPassword={onResetPassword} resettingPassword={resettingPassword} />
-            </div>
-          </>
-        )}
         <div className="mt-4 flex justify-end">
           <Button type="button" onClick={saveDetails} disabled={saving || !canEdit} className="h-10 px-6 font-bold">
             {saving ? "Αποθήκευση..." : "Αποθήκευση στοιχείων"}
@@ -1312,45 +1370,13 @@ function OverviewTab({
         </div>
       </InfoCard>
     ),
-    updateDaysBadge: (
-      <Card className="border-primary/40 bg-primary/5">
-        <CardHeader>
-          <CardTitle className="text-sm">Ημέρες Αποστολής Update</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {client.updateSchedule?.day_of_week === undefined || client.updateSchedule.day_of_week === null ? (
-            <p className="text-sm text-muted-foreground">Δεν έχουν οριστεί ημέρες</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {updateDayOptions.map((day) => (
-                <Badge key={day.value} variant={Number(client.updateSchedule?.day_of_week) === day.value ? "default" : "outline"}>
-                  {day.label}
-                </Badge>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    ),
     questionnaire: (
       <Card>
-        <CardHeader className="flex-row items-start justify-between gap-3 space-y-0">
+        <CardHeader>
           <div>
             <CardTitle className="text-lg">Στοιχεία Φόρμας Εγγραφής</CardTitle>
             <p className="text-sm text-muted-foreground">Απαντήσεις κατά την εγγραφή</p>
           </div>
-          {!loadingQuestionnaireAnswers && questionnaireAnswers.length > 0 && canEdit && (
-            editingQuestionnaire ? (
-              <Button type="button" variant="ghost" size="icon" onClick={cancelEditingQuestionnaire} disabled={savingQuestionnaire} aria-label="Ακύρωση">
-                <X className="h-4 w-4" />
-              </Button>
-            ) : (
-              <Button type="button" variant="outline" size="sm" onClick={startEditingQuestionnaire} className="gap-1.5 font-bold">
-                <Pencil className="h-3.5 w-3.5" />
-                Επεξεργασία
-              </Button>
-            )
-          )}
         </CardHeader>
         <CardContent>
           {questionnaireError && (
@@ -1399,55 +1425,69 @@ function OverviewTab({
         </CardContent>
       </Card>
     ),
-    updateDaySelect: (
-      <InfoCard title="Ημέρες Update">
-        <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Ημέρα εβδομαδιαίου update</Label>
-        <Select
-          items={updateDayOptions.map((option) => ({ value: String(option.value), label: option.label }))}
-          value={client.updateSchedule?.day_of_week !== undefined ? String(client.updateSchedule.day_of_week) : undefined}
-          onValueChange={(value) => value && saveUpdateDay(value)}
-        >
-          <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold" disabled={savingUpdateDay || !canEdit}>
-            <SelectValue placeholder="Επιλογή ημέρας" />
-          </SelectTrigger>
-          <SelectContent>
-            {updateDayOptions.map((option) => (
-              <SelectItem key={option.value} value={String(option.value)}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </InfoCard>
-    ),
-    subscription: (
-      <InfoCard title="Συνδρομή">
-        <Badge className={`h-auto w-fit rounded-md px-3 py-1.5 text-sm font-bold ${currentStatus.className}`}>{currentStatus.label}</Badge>
-        <Info label="Έναρξη" value={formatDate(client.subscription?.start_date)} />
-        <Info label="Λήξη" value={formatDate(client.subscription?.end_date)} />
-        <div>
-          <div className="mb-1 flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400">
-            <span>Ημέρες που απομένουν</span>
-            <span>{daysRemaining(client.subscription?.end_date)}</span>
+    subscription: client.subscription ? (
+      <Card className="overflow-hidden">
+        <CardHeader className="space-y-3 pb-4">
+          <CardTitle className="text-lg">Συνδρομή</CardTitle>
+          {(() => {
+            const status = subscriptionStatusMeta(client.subscription?.status);
+            return <Badge className={`h-auto w-full justify-center rounded-md px-3 py-2 text-sm font-bold ${status.className}`}>{status.label}</Badge>;
+          })()}
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {client.subscription.start_date && client.subscription.end_date && (() => {
+            const start = new Date(client.subscription!.start_date!).getTime();
+            const end = new Date(client.subscription!.end_date!).getTime();
+            const totalDays = Math.max(1, Math.ceil((end - start) / 86400000));
+            const remainingDays = Math.max(0, Math.ceil((end - Date.now()) / 86400000));
+            const remainingRatio = remainingDays / totalDays;
+            const progressColor = remainingRatio > 0.5 ? "bg-emerald-500" : remainingRatio >= 0.2 ? "bg-amber-500" : "bg-red-500";
+
+            return (
+              <div>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-bold">{remainingDays}</span>
+                  <span className="text-sm text-muted-foreground">μέρες απομένουν</span>
+                </div>
+                <Progress value={subscriptionElapsedPct(client)} indicatorClassName={progressColor} className="mt-3" />
+                <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+                  <span>{shortDate(client.subscription.start_date)}</span>
+                  <span>{shortDate(client.subscription.end_date)}</span>
+                </div>
+              </div>
+            );
+          })()}
+
+          <Separator />
+
+          <div className="grid grid-cols-2 divide-x rounded-lg border">
+            <div className="p-3">
+              <p className="text-xs text-muted-foreground">Πακέτο</p>
+              <p className="mt-1 text-sm font-semibold">{onboarding.selected_package || "-"}</p>
+            </div>
+            <div className="p-3">
+              <p className="text-xs text-muted-foreground">Τρόπος πληρωμής</p>
+              <p className="mt-1 text-sm font-semibold">{paymentMethodLabel(latestPayment?.method)}</p>
+            </div>
           </div>
-          <ProgressBar value={subscriptionProgressPct(client)} color={currentStatus.label === "Ανενεργός" ? "red" : "emerald"} />
-        </div>
-        <Info label="Πακέτο" value={onboarding.selected_package || "-"} />
-        <Info
-          label="Τρόπος πληρωμής"
-          value={latestPayment?.method === "bank_transfer" ? "Τραπεζικό έμβασμα" : latestPayment?.method || "-"}
-        />
-        {pendingPayment && (
-          <Button
-            type="button"
-            onClick={() => onApprovePayment(pendingPayment.id)}
-            disabled={approvingPayment}
-            className="mt-2 h-10 w-full bg-emerald-600 font-bold text-white hover:bg-emerald-700"
-          >
-            {approvingPayment ? "Έγκριση..." : "Έγκριση πληρωμής"}
-          </Button>
-        )}
-      </InfoCard>
+
+          {pendingPayment && (
+            <Button type="button" onClick={() => onApprovePayment(pendingPayment.id)} disabled={approvingPayment} className="h-10 w-full bg-emerald-600 font-bold text-white hover:bg-emerald-700">
+              {approvingPayment ? "Έγκριση..." : "Έγκριση πληρωμής"}
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+    ) : (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Συνδρομή</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-center">
+          <p className="text-sm text-muted-foreground">Δεν υπάρχει ενεργή συνδρομή</p>
+          <Link href="/coach/pricing" className="text-sm font-medium text-primary hover:underline">+ Προσθήκη συνδρομής</Link>
+        </CardContent>
+      </Card>
     ),
     notes: (
       <InfoCard title="Ιδιωτικές Σημειώσεις">
@@ -1695,18 +1735,49 @@ function PaymentsTab({
 }) {
   const payments = client.payments || [];
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ amount: "", method: "cash", status: "completed", referenceNumber: "", notes: "" });
+  const today = dateInputValue(new Date());
+  const [plans, setPlans] = useState<PricingPlanOption[]>([]);
+  const [form, setForm] = useState({ amount: "", method: "cash", planId: "", startDate: today, endDate: defaultPaymentEndDate(today), notes: "" });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    api
+      .get<PricingPlanOption[]>("/pricing-plans?active=true")
+      .then((rows) => {
+        if (!active) return;
+        const activePlans = rows.filter((plan) => plan.isActive !== false);
+        setPlans(activePlans);
+        if (activePlans[0]) {
+          setForm((current) => current.planId ? current : {
+            ...current,
+            planId: String(activePlans[0].id),
+            amount: String(activePlans[0].price),
+            endDate: endDateForPlan(current.startDate, activePlans[0].period),
+          });
+        }
+      })
+      .catch(() => {
+        if (active) setPlans([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const submitManualPayment = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
     setFormError("");
     try {
-      await api.post(`/clients/${clientId}/payments`, { ...form, amount: Number(form.amount) });
+      await api.post(`/clients/${clientId}/payments`, {
+        ...form,
+        amount: Number(form.amount),
+        planId: form.planId ? Number(form.planId) : undefined,
+      });
       setOpen(false);
-      setForm({ amount: "", method: "cash", status: "completed", referenceNumber: "", notes: "" });
+      setForm({ amount: "", method: "cash", planId: "", startDate: today, endDate: defaultPaymentEndDate(today), notes: "" });
       onUpdated();
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Δεν καταχωρήθηκε η πληρωμή.");
@@ -1720,7 +1791,7 @@ function PaymentsTab({
       <Card className="p-6">
         <div className="grid gap-4 sm:grid-cols-3">
           <Info label="Κατάσταση πληρωμής" value={client.payments?.[0]?.status ? paymentStatusLabels[client.payments[0].status] || client.payments[0].status : "-"} />
-          <Info label="Συνδρομή" value={`${formatDate(client.subscription?.start_date)} — ${formatDate(client.subscription?.end_date)}`} />
+          <Info label="Συνδρομή" value={client.subscription?.plan_name || "-"} />
           <Info label="Ημέρες που απομένουν" value={daysRemaining(client.subscription?.end_date)} />
         </div>
       </Card>
@@ -1744,7 +1815,7 @@ function PaymentsTab({
                     {formError}
                   </div>
                 )}
-                <EditField label="Ποσό (EUR)" type="number" value={form.amount} onChange={(value) => setForm((f) => ({ ...f, amount: value }))} />
+                <EditField label="Ποσό * (EUR)" type="number" value={form.amount} onChange={(value) => setForm((f) => ({ ...f, amount: value }))} />
                 <div>
                   <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Τρόπος πληρωμής</Label>
                   <Select
@@ -1752,9 +1823,7 @@ function PaymentsTab({
                       { value: "cash", label: "Μετρητά" },
                       { value: "bank_transfer", label: "Τραπεζικό έμβασμα" },
                       { value: "card", label: "Κάρτα" },
-                      { value: "paypal", label: "PayPal" },
                       { value: "stripe", label: "Stripe" },
-                      { value: "other", label: "Άλλο" },
                     ]}
                     value={form.method}
                     onValueChange={(value) => value && setForm((f) => ({ ...f, method: value }))}
@@ -1766,13 +1835,48 @@ function PaymentsTab({
                       <SelectItem value="cash">Μετρητά</SelectItem>
                       <SelectItem value="bank_transfer">Τραπεζικό έμβασμα</SelectItem>
                       <SelectItem value="card">Κάρτα</SelectItem>
-                      <SelectItem value="paypal">PayPal</SelectItem>
                       <SelectItem value="stripe">Stripe</SelectItem>
-                      <SelectItem value="other">Άλλο</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                <EditField label="Reference" value={form.referenceNumber} onChange={(value) => setForm((f) => ({ ...f, referenceNumber: value }))} />
+                <div>
+                  <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Πλάνο</Label>
+                  <Select
+                    items={plans.map((plan) => ({ value: String(plan.id), label: `${plan.name} - ${money(plan.price)}` }))}
+                    value={form.planId}
+                    onValueChange={(value) => {
+                      const plan = plans.find((item) => String(item.id) === value);
+                      setForm((current) => ({
+                        ...current,
+                        planId: value || "",
+                        amount: plan ? String(plan.price) : current.amount,
+                        endDate: plan ? endDateForPlan(current.startDate, plan.period) : current.endDate,
+                      }));
+                    }}
+                  >
+                    <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold"><SelectValue placeholder="Επιλογή πλάνου" /></SelectTrigger>
+                    <SelectContent>
+                      {plans.map((plan) => <SelectItem key={plan.id} value={String(plan.id)}>{plan.name} - {money(plan.price)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <EditField
+                    label="Ημερομηνία έναρξης *"
+                    type="date"
+                    value={form.startDate}
+                    onChange={(value) => setForm((current) => ({
+                      ...current,
+                      startDate: value,
+                      endDate: endDateForPlan(value, plans.find((plan) => String(plan.id) === current.planId)?.period),
+                    }))}
+                  />
+                  <EditField label="Ημερομηνία λήξης *" type="date" value={form.endDate} onChange={(value) => setForm((current) => ({ ...current, endDate: value }))} />
+                </div>
+                <div>
+                  <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Σημειώσεις</Label>
+                  <Textarea className="mt-1 min-h-20" value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} />
+                </div>
                 <DialogFooter>
                   <Button type="submit" disabled={saving}>
                     {saving ? "Αποθήκευση..." : "Καταχώρηση"}
@@ -1789,8 +1893,6 @@ function PaymentsTab({
             <TableHead className="px-5 py-4">Ημερομηνία</TableHead>
             <TableHead className="px-5 py-4">Ποσό</TableHead>
             <TableHead className="px-5 py-4">Τρόπος</TableHead>
-            <TableHead className="px-5 py-4">Reference</TableHead>
-            <TableHead className="px-5 py-4">Αποδεικτικό</TableHead>
             <TableHead className="px-5 py-4">Status</TableHead>
             <TableHead className="px-5 py-4">Ενέργειες</TableHead>
           </TableRow>
@@ -1801,17 +1903,7 @@ function PaymentsTab({
               <TableCell className="whitespace-normal px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{formatDateTime(payment.created_at)}</TableCell>
               <TableCell className="whitespace-normal px-5 py-4 font-bold text-slate-950 dark:text-slate-50">{money(payment.amount, payment.currency)}</TableCell>
               <TableCell className="whitespace-normal px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">
-                {payment.method === "bank_transfer" ? "Τραπεζικό έμβασμα" : payment.method || "-"}
-              </TableCell>
-              <TableCell className="whitespace-normal px-5 py-4 font-semibold text-slate-500 dark:text-slate-400">{payment.reference_number || "-"}</TableCell>
-              <TableCell className="whitespace-normal px-5 py-4">
-                {payment.proof_url ? (
-                  <a href={resolveMediaUrl(payment.proof_url)} target="_blank" rel="noreferrer" className="font-bold text-blue-600 hover:text-blue-700">
-                    Προβολή
-                  </a>
-                ) : (
-                  <span className="font-semibold text-slate-400 dark:text-slate-500">-</span>
-                )}
+                {paymentMethodLabel(payment.method)}
               </TableCell>
               <TableCell className="whitespace-normal px-5 py-4">
                 <PaymentStatus status={payment.status} />
@@ -1845,7 +1937,7 @@ function PaymentsTab({
           ))}
           {!payments.length && (
             <TableRow>
-              <TableCell colSpan={7} className="whitespace-normal px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
+              <TableCell colSpan={5} className="whitespace-normal px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
                 Δεν υπάρχουν πληρωμές ακόμα.
               </TableCell>
             </TableRow>
@@ -1860,8 +1952,9 @@ function PaymentsTab({
 function PaymentStatus({ status }: { status?: string }) {
   const meta: Record<string, [string, string]> = {
     completed: ["Εγκρίθηκε", "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"],
-    pending: ["Εκκρεμής", "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"],
-    failed: ["Απορρίφθηκε", "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400"],
+    confirmed: ["Εγκρίθηκε", "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"],
+    pending: ["Εκκρεμεί", "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"],
+    failed: ["Απέτυχε", "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400"],
     refunded: ["Επιστροφή", "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"],
   };
   const [label, className] = meta[status || ""] || [status || "-", "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"];

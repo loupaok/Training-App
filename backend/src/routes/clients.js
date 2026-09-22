@@ -2154,9 +2154,10 @@ router.put('/:id/details', authorizeRole(['coach', 'admin', 'moderator']), [
 // POST /clients/:id/payments — record a manual payment (Coach/Admin only)
 router.post('/:id/payments', authorizeRole(['coach', 'admin']), [
   body('amount').isFloat({ gt: 0 }).withMessage('Amount must be greater than 0'),
-  body('method').isIn(['cash', 'bank_transfer', 'card', 'paypal', 'stripe', 'other']),
-  body('status').optional().isIn(['pending', 'completed', 'failed', 'refunded']),
-  body('referenceNumber').optional({ nullable: true }).isString(),
+  body('method').isIn(['cash', 'bank_transfer', 'card', 'stripe']),
+  body('planId').optional({ nullable: true }).isInt({ gt: 0 }),
+  body('startDate').isISO8601().withMessage('Valid start date required'),
+  body('endDate').isISO8601().withMessage('Valid end date required'),
   body('notes').optional({ nullable: true }).isString()
 ], async (req, res) => {
   const errors = validationResult(req);
@@ -2166,24 +2167,87 @@ router.post('/:id/payments', authorizeRole(['coach', 'admin']), [
 
   const connection = await pool.getConnection();
   try {
-    const { amount, method, status = 'completed', referenceNumber, notes } = req.body;
-    const [result] = await connection.query(
-      `INSERT INTO payments (client_id, coach_id, amount, currency, method, status, reference_number, notes, paid_at)
-       VALUES (?, ?, ?, 'EUR', ?, ?, ?, ?, ?)`,
-      [
-        req.params.id,
-        req.user.id,
-        amount,
-        method,
-        status,
-        referenceNumber || null,
-        notes || null,
-        status === 'completed' ? new Date() : null
-      ]
+    const clientId = Number(req.params.id);
+    const { amount, method, planId, startDate, endDate, notes } = req.body;
+    const start = new Date(`${startDate}T00:00:00`);
+    const end = new Date(`${endDate}T00:00:00`);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+      return res.status(400).json({ message: 'End date must be on or after start date' });
+    }
+
+    await ensurePricingPlansSchema(connection);
+    let plan = null;
+    if (planId) {
+      const [plans] = await connection.query(
+        'SELECT id, name, price, currency, period FROM pricing_plans WHERE id = ? AND is_active = 1 LIMIT 1',
+        [planId]
+      );
+      if (!plans.length) return res.status(400).json({ message: 'Selected plan is not available' });
+      plan = plans[0];
+    }
+
+    await connection.beginTransaction();
+
+    const [clientRows] = await connection.query(
+      'SELECT id FROM users WHERE id = ? AND role = "client" LIMIT 1',
+      [clientId]
+    );
+    if (!clientRows.length) {
+      await connection.rollback();
+      return res.status(404).json({ message: 'Client not found' });
+    }
+
+    const planMonths = plan ? monthsFromPeriod(plan.period) : 1;
+    const planType = planMonths === 1 ? 'monthly' : planMonths === 3 ? 'quarterly' : planMonths === 6 ? 'semi_annual' : planMonths === 12 ? 'annual' : 'custom';
+    const planName = plan?.name || 'Χειροκίνητη συνδρομή';
+    const planPrice = plan ? Number(plan.price) : Number(amount);
+    const currency = plan?.currency || 'EUR';
+    const [existingSubscriptions] = await connection.query(
+      'SELECT id FROM subscriptions WHERE client_id = ? ORDER BY created_at DESC LIMIT 1',
+      [clientId]
     );
 
-    res.status(201).json({ message: 'Payment recorded', id: result.insertId });
+    let subscriptionId;
+    if (existingSubscriptions.length) {
+      subscriptionId = existingSubscriptions[0].id;
+      await connection.query(
+        `UPDATE subscriptions
+         SET coach_id = ?, plan_name = ?, plan_type = ?, price = ?, currency = ?,
+             start_date = ?, end_date = ?, status = 'active', notes = ?
+         WHERE id = ?`,
+        [req.user.id, planName, planType, planPrice, currency, startDate, endDate, notes || null, subscriptionId]
+      );
+    } else {
+      const [subscriptionResult] = await connection.query(
+        `INSERT INTO subscriptions
+           (client_id, coach_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+        [clientId, req.user.id, planName, planType, planPrice, currency, startDate, endDate, notes || null]
+      );
+      subscriptionId = subscriptionResult.insertId;
+    }
+
+    const [paymentResult] = await connection.query(
+      `INSERT INTO payments (client_id, coach_id, subscription_id, amount, currency, method, status, notes, paid_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'completed', ?, NOW())`,
+      [clientId, req.user.id, subscriptionId, amount, currency, method, notes || null]
+    );
+
+    await connection.query(
+      'UPDATE users SET status = "active", approved_at = COALESCE(approved_at, NOW()), approved_by = COALESCE(approved_by, ?) WHERE id = ? AND role = "client"',
+      [req.user.id, clientId]
+    );
+    await logClientActivity(connection, {
+      clientId,
+      action: `Χειροκίνητη πληρωμή €${Number(amount).toFixed(2)} - Συνδρομή ενεργοποιήθηκε`,
+      performedBy: req.user.id,
+      details: { paymentId: paymentResult.insertId, subscriptionId, planName },
+    });
+
+    await connection.commit();
+    res.status(201).json({ message: 'Payment and subscription recorded', id: paymentResult.insertId, subscriptionId });
   } catch (error) {
+    await connection.rollback();
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   } finally {
