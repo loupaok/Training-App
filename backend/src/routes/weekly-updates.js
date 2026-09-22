@@ -7,6 +7,7 @@ import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
 import { notifyCoaches } from './clients.js';
 import { sendMail } from '../lib/mailer.js';
+import { updateNotificationEmail } from '../lib/email-templates.js';
 
 const router = express.Router();
 
@@ -262,22 +263,23 @@ function nextDateForWeekday(day) {
 // Matches the same question-stem heuristic used by the coach updates page
 // (frontend/components/pages/coach-updates-page.tsx) so the email summary
 // and the dashboard cards agree on which rating is which.
-function buildQuickStatsSummary(answers, questions) {
+function extractUpdateStats(answers, questions) {
   const questionById = new Map(questions.map((question) => [question.id, question]));
-  const parts = [];
+  let weight = null;
+  let trainingScore = null;
+  let nutritionScore = null;
   for (const entry of answers) {
     const question = questionById.get(Number(entry.question_id));
     if (!question || !entry.answer) continue;
-    if (question.type === 'number') {
-      parts.push(`⚖️ ${entry.answer}kg`);
+    if (question.type === 'number' && weight === null) {
+      weight = entry.answer;
     } else if (question.type === 'rating') {
       const text = question.question || '';
-      if (text.includes('προπον')) parts.push(`🏋️⭐${entry.answer}/5`);
-      else if (text.includes('διατροφ')) parts.push(`🥗⭐${entry.answer}/5`);
-      else parts.push(`⭐ ${entry.answer}/5`);
+      if (text.includes('προπον')) trainingScore = entry.answer;
+      else if (text.includes('διατροφ')) nutritionScore = entry.answer;
     }
   }
-  return parts.join(' · ');
+  return { weight, trainingScore, nutritionScore };
 }
 
 // ---------------------------------------------------------------------------
@@ -553,18 +555,16 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
       const [coachRows] = await notifyConn.query("SELECT email FROM users WHERE role IN ('admin', 'coach') AND is_active = 1");
       notifyConn.release();
 
-      const submittedAt = new Date().toLocaleDateString('el-GR', { day: 'numeric', month: 'short', year: 'numeric' });
-      const quickStats = buildQuickStatsSummary(answers, activeQuestions);
+      const { weight, trainingScore, nutritionScore } = extractUpdateStats(answers, activeQuestions);
       const updatesLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/coach/updates?id=${updateId}`;
 
       coachRows.forEach((coach) => {
-        sendMail(
-          coach.email,
-          `Νέο update από ${clientName}`,
-          `<p>Ο πελάτης <strong>${clientName}</strong> υπέβαλε νέο εβδομαδιαίο update στις ${submittedAt}.</p>` +
-            (quickStats ? `<p>${quickStats}</p>` : '') +
-            `<p><a href="${updatesLink}">Δείτε το update →</a></p>`
-        ).catch((error) => console.error('Failed to send update notification email:', error));
+        try {
+          const template = updateNotificationEmail(clientName, weight, trainingScore, nutritionScore, updatesLink);
+          sendMail({ to: coach.email, ...template }).catch((error) => console.error('Email failed', error));
+        } catch (error) {
+          console.error('Email failed', error);
+        }
       });
     } catch (notifyError) {
       console.error('Failed to notify coaches of new update:', notifyError);

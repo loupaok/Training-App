@@ -10,6 +10,7 @@ import { getDefaultCoachId, notifyCoaches, ensureNotificationsSchema } from './c
 import { ensureQuestionnaireSchema } from './questionnaire.js';
 import { ensurePricingPlansSchema } from './pricingPlans.js';
 import { sendMail } from '../lib/mailer.js';
+import { registrationEmail } from '../lib/email-templates.js';
 import { logClientActivity } from '../lib/client-activity-log.js';
 
 // Registration-time intake photos/PDF. The user doesn't exist yet when the
@@ -328,11 +329,11 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
 
     setAuthCookies(res, accessToken, refreshToken);
 
-    sendMail(
-      email,
-      'Καλωσόρισες!',
-      `<p>Γεια σου ${firstName},</p><p>Η εγγραφή σου στο πλάνο <strong>${plan.name}</strong> ολοκληρώθηκε. Ο coach θα επικοινωνήσει μαζί σου εντός 24 ωρών για να επιβεβαιώσει την πληρωμή και να ενεργοποιήσει τον λογαριασμό σου.</p>`
-    ).catch((error) => console.error('Failed to send registration confirmation email:', error));
+    try {
+      sendMail({ to: email, ...registrationEmail(firstName) }).catch((error) => console.error('Email failed', error));
+    } catch (error) {
+      console.error('Email failed', error);
+    }
 
     res.status(201).json({
       success: true,

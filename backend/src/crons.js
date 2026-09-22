@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import fs from 'fs';
 import { pool } from './index.js';
 import { sendMail } from './lib/mailer.js';
+import { updateReminderEmail, subscriptionExpiryEmail } from './lib/email-templates.js';
 
 // ─── CRON 1 ──────────────────────────────────────────────────────────────────
 // Daily 00:05 — update subscription statuses
@@ -189,23 +190,51 @@ cron.schedule('0 9 * * *', async () => {
       // build never included one, so the reminder links to the real client
       // dashboard instead of a route that would 404.
       const dashboardUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-dashboard`;
-      await sendMail(
-        client.email,
-        'Είναι η ώρα του update σου! 💪',
-        `<p>Γεια ${name},</p>
-         <p>Σήμερα είναι η μέρα του εβδομαδιαίου update σου.</p>
-         <p>Μπες στην εφαρμογή και στείλε το update σου!</p>
-         <p><a href="${dashboardUrl}">Στείλε Update →</a></p>
-         <p>Ο coach σου σε περιμένει! 💪</p>`
-      );
-      console.log(`[CRON] Reminder sent to ${name} (${client.email})`);
+      try {
+        await sendMail({ to: client.email, ...updateReminderEmail(name, dashboardUrl) });
+        console.log(`Reminder sent to ${name}`);
+      } catch (e) {
+        console.error('Email failed', e);
+      }
     }
 
     connection.release();
-    console.log(`[CRON] Weekly update reminders — sent: ${dueClients.length}`);
-  } catch (err) {
-    console.error('[CRON] Weekly update reminders failed:', err.message);
+    console.log('Update reminders sent');
+  } catch (e) {
+    console.error('Cron error:', e);
   }
-});
+}, { timezone: 'Europe/Athens' });
+
+// ─── CRON 5 ──────────────────────────────────────────────────────────────────
+// Daily 08:00 — email clients whose subscription expires in exactly 7 days
+// (separate from CRON 3's existing 09:00 expiry notifications, left untouched).
+cron.schedule('0 8 * * *', async () => {
+  console.log('[CRON] Running subscription expiry reminders...');
+  try {
+    const connection = await pool.getConnection();
+
+    const [expiringSubs] = await connection.query(
+      `SELECT uc.email AS client_email, uc.full_name AS client_name
+       FROM subscriptions s
+       JOIN users uc ON uc.id = s.client_id
+       WHERE s.end_date = DATE_ADD(CURDATE(), INTERVAL 7 DAY)
+         AND s.status IN ('active', 'expiring_soon')`
+    );
+
+    for (const sub of expiringSubs) {
+      const name = sub.client_name || sub.client_email;
+      try {
+        await sendMail({ to: sub.client_email, ...subscriptionExpiryEmail(name, 7) });
+      } catch (e) {
+        console.error('Email failed', e);
+      }
+    }
+
+    connection.release();
+    console.log('Subscription expiry reminders sent');
+  } catch (e) {
+    console.error('Cron error:', e);
+  }
+}, { timezone: 'Europe/Athens' });
 
 console.log('✓ Cron jobs registered');
