@@ -16,6 +16,7 @@ import mediaRoutes from './routes/media.js';
 import mediaExerciseRoutes from './routes/mediaExercises.js';
 import mediaFoodRoutes from './routes/mediaFoods.js';
 import clientDashboardRoutes from './routes/clientDashboard.js';
+import clientAppRoutes from './routes/client.js';
 import pricingPlanRoutes from './routes/pricingPlans.js';
 import manualNotificationRoutes from './routes/manualNotifications.js';
 import changelogRoutes from './routes/changelog.js';
@@ -84,6 +85,7 @@ app.use('/api/media', authenticateToken, mediaExerciseRoutes);
 app.use('/api/media', authenticateToken, mediaFoodRoutes);
 app.use('/api/media', authenticateToken, mediaRoutes);
 app.use('/api/client-dashboard', authenticateToken, isClient, clientDashboardRoutes);
+app.use('/api/client', authenticateToken, clientAppRoutes);
 // No blanket auth here — GET / is public (pricing page), everything else is
 // gated per-route inside pricingPlans.js with authenticateToken + authorizeRole.
 app.use('/api/pricing-plans', pricingPlanRoutes);

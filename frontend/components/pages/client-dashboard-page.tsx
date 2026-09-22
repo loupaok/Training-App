@@ -1,443 +1,249 @@
-"use client";
+"use client"
 
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import Link from "next/link";
-import { LineChart } from "@tremor/react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ProtectedRoute } from "@/components/auth/protected-route";
-import { ClientShell } from "@/components/shell/client-shell";
-import WorkoutProgramView, { type TrainingProgram } from "@/components/shared/workout-program-view";
-import { useAuth } from "@/lib/auth/auth-context";
-import { api } from "@/lib/api/client";
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react"
+import {
+  CalendarDays,
+  CheckCircle2,
+  Dumbbell,
+  FileText,
+  Salad,
+  Send,
+  Upload,
+} from "lucide-react"
+import { AreaChart } from "@tremor/react"
+import { ProtectedRoute } from "@/components/auth/protected-route"
+import { ClientShell } from "@/components/shell/client-shell"
+import { StarRating } from "@/components/shared/star-rating"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Progress } from "@/components/ui/progress"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
+import { api } from "@/lib/api/client"
+import { useAuth } from "@/lib/auth/auth-context"
+import { resolveMediaUrl } from "@/lib/media"
 
-const mealLabels: Record<string, string> = {
-  breakfast: "Πρωινό",
-  lunch: "Μεσημεριανό",
-  snack: "Σνακ",
-  dinner: "Βραδινό",
-  other: "Άλλο",
-};
-
-interface NutritionFood {
-  id: number | string;
-  food_name?: string;
-  quantity?: string;
-  calories?: number | string;
+type Question = {
+  id: number
+  question: string
+  type: string
+  isRequired: boolean
+  options?: string[]
+  placeholder?: string | null
 }
 
-interface NutritionMeal {
-  id: number | string;
-  title?: string;
-  meal_type?: string;
-  notes?: string;
-  foods: NutritionFood[];
+type Update = {
+  id: number
+  submittedAt: string
+  weekStart: string
+  answers: Array<{ question: string; type: string; answer: string | null }>
+  photos: string[]
 }
 
-interface NutritionPlan {
-  title?: string;
-  daily_calories?: number | string;
-  protein_g?: number | string;
-  carbs_g?: number | string;
-  fat_g?: number | string;
-  notes?: string;
-  meals?: NutritionMeal[];
+type DashboardData = {
+  client: {
+    firstName: string
+    currentWeight: number | null
+    subscriptionStatus: string | null
+    daysRemaining: number | null
+    planName: string | null
+  }
+  todayIsUpdateDay: boolean
+  alreadySubmittedThisWeek: boolean
+  nextUpdateDate: string | null
+  streak: number
+  updatesCount: number
+  lastUpdate: { submittedAt: string; averageRating: number | null } | null
 }
 
-interface ProgressRow {
-  weight_kg?: number | string;
-  submitted_at?: string;
-  [key: string]: unknown;
+type TrainingPlan = {
+  id: number
+  title: string
+  days: Array<{ name: string; exercises: Array<{ name: string; sets?: number; reps?: string; imageUrl?: string | null }> }>
+} | null
+
+type NutritionPlan = {
+  id: number
+  title: string
+  meals: Array<{ name: string; foods: Array<{ name: string; amount?: string; imageUrl?: string | null }> }>
+} | null
+
+type Payment = { id: number; amount: number; method: string; status: string; paidAt: string; notes?: string | null }
+type PaymentData = { subscription: { planName?: string | null; price?: number | null; endDate?: string | null; daysRemaining?: number | null; status?: string | null } | null; payments: Payment[] }
+
+const dateFormat = new Intl.DateTimeFormat("el-GR", { day: "numeric", month: "short", year: "numeric" })
+const paymentMethod: Record<string, string> = { card: "Κάρτα", bank: "Τραπεζικό Έμβασμα", stripe: "Stripe", cash: "Μετρητά" }
+
+function formatDate(date: string | null | undefined) {
+  return date ? dateFormat.format(new Date(date)) : "-"
 }
 
-interface WeeklyUpdateInfo {
-  available?: boolean;
-  alreadySubmitted?: boolean;
-  weekStart?: string;
-  schedule?: unknown;
-}
-
-interface DashboardData {
-  paymentApproved?: boolean;
-  training?: TrainingProgram | null;
-  nutrition?: NutritionPlan | null;
-  progress?: ProgressRow[];
-  weeklyUpdate?: WeeklyUpdateInfo;
-  unreadNotifications?: number;
-  [key: string]: unknown;
-}
-
-interface WeeklyForm {
-  weightKg: string;
-  trainingScore: string;
-  nutritionScore: string;
-  notes: string;
-  photos: File[];
-}
-
-const initialWeeklyForm: WeeklyForm = {
-  weightKg: "",
-  trainingScore: "5",
-  nutritionScore: "5",
-  notes: "",
-  photos: [],
-};
-
-function getErrorMessage(err: unknown, fallback: string): string {
-  return err instanceof Error && err.message ? err.message : fallback;
-}
-
-function Alert({ children, tone }: { children: ReactNode; tone: "red" | "green" }) {
-  const className =
-    tone === "red"
-      ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
-      : "border-green-200 bg-green-50 text-green-700 dark:border-green-900 dark:bg-green-950/40 dark:text-green-200";
-  return <div className={`mb-5 rounded-lg border px-5 py-4 text-sm font-bold ${className}`}>{children}</div>;
-}
-
-function StatusCard({ title, value }: { title: string; value: string }) {
-  return (
-    <Card className="min-h-[128px] p-5 shadow-sm">
-      <div className="text-sm font-bold text-slate-500 dark:text-slate-400">{title}</div>
-      <div className="mt-4 text-xl font-bold leading-7">{value}</div>
-    </Card>
-  );
-}
-
-function WeeklyUpdateCard({ data, onOpen }: { data?: WeeklyUpdateInfo; onOpen: () => void }) {
-  const disabled = !data?.available;
-  const statusLabel = data?.available ? "Ανοιχτό σήμερα" : data?.alreadySubmitted ? "Υποβλήθηκε" : "Κλειστό";
-  return (
-    <Card className="min-h-[128px] p-5 shadow-sm">
-      <div className="text-sm font-bold text-slate-500 dark:text-slate-400">Εβδομαδιαίο Update</div>
-      <div className="mt-3 text-xl font-bold">{statusLabel}</div>
-      <Button disabled={disabled} onClick={onOpen} className="mt-4 h-11 w-full font-bold">
-        Συμπλήρωση
-      </Button>
-    </Card>
-  );
-}
-
-function EmptyState({ text }: { text: string }) {
-  return (
-    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-950">
-      {text}
-    </div>
-  );
-}
-
-function Macro({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="rounded-md bg-slate-50 p-3 text-center dark:bg-slate-950">
-      <div className="text-xs font-bold text-slate-500">{label}</div>
-      <div className="mt-1 font-bold">{value}</div>
-    </div>
-  );
-}
-
-function NutritionView({ nutrition }: { nutrition?: NutritionPlan | null }) {
+function PlanCard({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-xl font-bold">Πρόγραμμα Διατροφής</CardTitle>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-lg">{icon}{title}</CardTitle>
       </CardHeader>
-      <CardContent>
-        {nutrition ? (
-          <div>
-            <div className="grid grid-cols-4 gap-3">
-              <Macro label="Θερμίδες" value={nutrition.daily_calories || "-"} />
-              <Macro label="Πρωτεΐνη" value={`${nutrition.protein_g || "-"}g`} />
-              <Macro label="Υδατ/κες" value={`${nutrition.carbs_g || "-"}g`} />
-              <Macro label="Λίπη" value={`${nutrition.fat_g || "-"}g`} />
-            </div>
-            {nutrition.notes && (
-              <div className="mt-4 rounded-md bg-slate-50 p-4 text-sm font-semibold text-slate-600 dark:bg-slate-950 dark:text-slate-300">
-                {nutrition.notes}
-              </div>
-            )}
-            <div className="mt-5 space-y-3">
-              {(nutrition.meals || []).map((meal) => (
-                <div key={meal.id} className="rounded-lg border border-slate-200 p-4 dark:border-slate-700">
-                  <h3 className="font-bold">{meal.title || mealLabels[meal.meal_type || "other"] || "Γεύμα"}</h3>
-                  {meal.notes && <div className="mt-1 text-sm font-semibold text-slate-500">{meal.notes}</div>}
-                  <div className="mt-3 space-y-2">
-                    {meal.foods.map((food) => (
-                      <div
-                        key={food.id}
-                        className="flex items-center justify-between rounded-md bg-slate-50 p-3 text-sm dark:bg-slate-950"
-                      >
-                        <span className="font-bold">
-                          {food.food_name} · {food.quantity || "-"}
-                        </span>
-                        <span className="text-slate-500">{food.calories || "-"} kcal</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <EmptyState text="Ο coach δεν έχει δημιουργήσει ακόμα πρόγραμμα διατροφής." />
-        )}
-      </CardContent>
+      <CardContent>{children}</CardContent>
     </Card>
-  );
-}
-
-function WeightChart({ rows }: { rows: ProgressRow[] }) {
-  const data = rows.map((row) => ({
-    date: row.submitted_at ? new Date(String(row.submitted_at)).toLocaleDateString("el-GR") : "",
-    "Βάρος (kg)": Number(row.weight_kg) || 0,
-  }));
-
-  return (
-    <LineChart
-      className="h-72"
-      data={data}
-      index="date"
-      categories={["Βάρος (kg)"]}
-      colors={["blue"]}
-      showLegend={false}
-      showAnimation
-    />
-  );
-}
-
-function ScoreField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div>
-      <Label>{label}</Label>
-      <Select value={value} onValueChange={(next) => onChange(String(next))}>
-        <SelectTrigger className="mt-2 w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {[1, 2, 3, 4, 5].map((score) => (
-            <SelectItem key={score} value={String(score)}>
-              {score}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
+  )
 }
 
 function ClientDashboardContent() {
-  const { user, logout } = useAuth();
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [weeklyOpen, setWeeklyOpen] = useState(false);
-  const [weeklyForm, setWeeklyForm] = useState<WeeklyForm>(initialWeeklyForm);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
+  const { user, logout } = useAuth()
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null)
+  const [questions, setQuestions] = useState<Question[]>([])
+  const [updates, setUpdates] = useState<Update[]>([])
+  const [trainingPlan, setTrainingPlan] = useState<TrainingPlan>(null)
+  const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan>(null)
+  const [paymentData, setPaymentData] = useState<PaymentData | null>(null)
+  const [answers, setAnswers] = useState<Record<number, string | string[]>>({})
+  const [files, setFiles] = useState<Array<{ file: File; questionId: number }>>([])
+  const [activeTab, setActiveTab] = useState("overview")
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+  const [error, setError] = useState("")
 
   const loadDashboard = async () => {
-    setLoading(true);
-    setError("");
+    setLoading(true)
     try {
-      const result = await api.get<DashboardData>("/client-dashboard");
-      setData(result);
-    } catch (err) {
-      setError(getErrorMessage(err, "Δεν φορτώθηκε η σελίδα σου."));
+      const [dashboardResponse, updatesResponse, questionsResponse, trainingResponse, nutritionResponse, paymentsResponse] = await Promise.all([
+        api.get<DashboardData>("/client/dashboard"),
+        api.get<Update[]>("/client/updates"),
+        api.get<Question[]>("/updates/questions"),
+        api.get<TrainingPlan>("/client/training-plan"),
+        api.get<NutritionPlan>("/client/nutrition-plan"),
+        api.get<PaymentData>("/client/payments"),
+      ])
+      setDashboard(dashboardResponse)
+      setUpdates(updatesResponse)
+      setQuestions(questionsResponse)
+      setTrainingPlan(trainingResponse)
+      setNutritionPlan(nutritionResponse)
+      setPaymentData(paymentsResponse)
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Δεν ήταν δυνατή η φόρτωση του dashboard.")
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
+  useEffect(() => { void loadDashboard() }, [])
 
-  const weights = useMemo(() => {
-    return (data?.progress || []).filter((item) => item.weight_kg).slice().reverse();
-  }, [data]);
+  const chartData = useMemo(() => updates
+    .map((update) => {
+      const weight = update.answers.find((answer) => answer.type === "number" && answer.question.toLocaleLowerCase("el-GR").normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes("\u03b2\u03b1\u03c1\u03bf\u03c3"))?.answer
+      return weight ? { date: formatDate(update.submittedAt), weight: Number(weight) } : null
+    })
+    .filter((entry): entry is { date: string; weight: number } => entry !== null)
+    .reverse(), [updates])
 
-  const paymentApproved = Boolean(data?.paymentApproved);
-  const lastWeight = weights.at(-1);
+  const renderQuestion = (question: Question) => {
+    const value = answers[question.id] ?? (question.type === "multi_select" ? [] : "")
+    const setValue = (next: string | string[]) => setAnswers((current) => ({ ...current, [question.id]: next }))
+    const required = question.isRequired ? <span className="text-destructive"> *</span> : null
 
-  const submitWeeklyUpdate = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setError("");
-    setMessage("");
+    if (question.type === "rating") {
+      return <div key={question.id} className="space-y-2"><Label>{question.question}{required}</Label><StarRating value={Number(value) || 0} onChange={(rating) => setValue(String(rating))} /></div>
+    }
+    if (question.type === "textarea") {
+      return <div key={question.id} className="space-y-2"><Label>{question.question}{required}</Label><Textarea value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} /></div>
+    }
+    if (question.type === "photos" || question.type === "pdf") {
+      return <div key={question.id} className="space-y-2"><Label>{question.question}{required}</Label><Input type="file" multiple={question.type === "photos"} accept={question.type === "photos" ? "image/jpeg,image/png,image/webp" : "application/pdf"} onChange={(event) => setFiles((current) => [...current, ...Array.from(event.target.files ?? []).map((file) => ({ file, questionId: question.id }))].slice(0, 5))} /><p className="text-xs text-muted-foreground">Έως 5 αρχεία, 5MB το καθένα.</p></div>
+    }
+    if (question.type === "select" || question.type === "single_select") {
+      return <fieldset key={question.id} className="space-y-2"><legend className="text-sm font-medium">{question.question}{required}</legend><div className="grid gap-2 sm:grid-cols-2">{(question.options ?? []).map((option) => <button type="button" key={option} onClick={() => setValue(option)} className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${value === option ? "border-primary bg-primary/5" : "hover:bg-muted"}`}>{option}</button>)}</div></fieldset>
+    }
+    if (question.type === "multi_select") {
+      const selected = Array.isArray(value) ? value : []
+      return <fieldset key={question.id} className="space-y-2"><legend className="text-sm font-medium">{question.question}{required}</legend><div className="grid gap-2 sm:grid-cols-2">{(question.options ?? []).map((option) => <label key={option} className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm"><input type="checkbox" checked={selected.includes(option)} onChange={() => setValue(selected.includes(option) ? selected.filter((item) => item !== option) : [...selected, option])} />{option}</label>)}</div></fieldset>
+    }
+    return <div key={question.id} className="space-y-2"><Label>{question.question}{required}</Label><Input type={question.type === "number" ? "number" : question.type === "url" ? "url" : "text"} value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} /></div>
+  }
 
-    const formData = new FormData();
-    formData.append("weightKg", weeklyForm.weightKg);
-    formData.append("trainingScore", weeklyForm.trainingScore);
-    formData.append("nutritionScore", weeklyForm.nutritionScore);
-    formData.append("notes", weeklyForm.notes);
-    weeklyForm.photos.slice(0, 3).forEach((file) => formData.append("photos", file));
-
+  const submitUpdate = async (event: FormEvent) => {
+    event.preventDefault()
+    setError("")
+    const unansweredRequired = questions.some((question) => question.isRequired && (!answers[question.id] || (Array.isArray(answers[question.id]) && answers[question.id].length === 0)))
+    if (unansweredRequired) { setError("Συμπλήρωσε όλα τα υποχρεωτικά πεδία."); return }
+    setSubmitting(true)
     try {
-      await api.upload("/client-dashboard/weekly-update", formData);
-      setMessage("Το εβδομαδιαίο update υποβλήθηκε.");
-      setWeeklyOpen(false);
-      setWeeklyForm(initialWeeklyForm);
-      loadDashboard();
-    } catch (err) {
-      setError(getErrorMessage(err, "Δεν υποβλήθηκε το update."));
+      const formData = new FormData()
+      formData.append("answers", JSON.stringify(Object.entries(answers).map(([questionId, answer]) => ({ questionId: Number(questionId), answer }))))
+      files.forEach(({ file }) => formData.append("files", file))
+      formData.append("fileQuestionIds", JSON.stringify(files.map(({ questionId }) => questionId)))
+      await api.upload("/client/updates/submit", formData)
+      setSubmitted(true)
+      setAnswers({})
+      setFiles([])
+      await loadDashboard()
+      window.setTimeout(() => setActiveTab("overview"), 1800)
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Δεν ήταν δυνατή η υποβολή του update.")
+    } finally {
+      setSubmitting(false)
     }
-  };
+  }
+
+  if (loading) return <ClientShell user={user} logout={logout} paymentApproved={false}><div className="p-6 text-muted-foreground">Φόρτωση dashboard...</div></ClientShell>
+  if (error && !dashboard) return <ClientShell user={user} logout={logout} paymentApproved={false}><div className="p-6"><Alert variant="destructive"><AlertTitle>Σφάλμα φόρτωσης</AlertTitle><AlertDescription>{error}</AlertDescription></Alert></div></ClientShell>
+
+  const subscriptionActive = dashboard?.client.subscriptionStatus === "active"
+  const upcomingDate = formatDate(dashboard?.nextUpdateDate)
 
   return (
-    <ClientShell
-      title="Η Προπόνησή μου"
-      user={user}
-      logout={logout}
-      paymentApproved={paymentApproved}
-      unreadNotifications={data?.unreadNotifications || 0}
-      active="dashboard"
-    >
-      {error && <Alert tone="red">{error}</Alert>}
-      {message && <Alert tone="green">{message}</Alert>}
-      {loading && (
-        <div className="rounded-lg border border-slate-200 bg-white p-8 text-center font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-900">
-          Φόρτωση...
+    <ClientShell user={user} logout={logout} paymentApproved={subscriptionActive} active="dashboard">
+      <main className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
+        <div>
+          <h1 className="text-2xl font-bold">Γεια σου, {dashboard?.client.firstName || ""}!</h1>
+          <p className="text-sm text-muted-foreground">Η προσωπική σου προπόνηση, διατροφή και πρόοδος σε ένα μέρος.</p>
         </div>
-      )}
+        {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <ScrollArea className="w-full whitespace-nowrap"><TabsList className="h-auto"><TabsTrigger value="overview">Αρχική</TabsTrigger><TabsTrigger value="training">Προπόνηση</TabsTrigger><TabsTrigger value="nutrition">Διατροφή</TabsTrigger><TabsTrigger value="progress">Πρόοδος</TabsTrigger><TabsTrigger value="payments">Πληρωμές</TabsTrigger><TabsTrigger value="update">Update</TabsTrigger></TabsList></ScrollArea>
 
-      {!loading && data && (
-        <div className="space-y-6">
-          {!paymentApproved && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-900 dark:bg-amber-950/30">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-amber-900 dark:text-amber-200">
-                    Η πληρωμή σου είναι σε εκκρεμότητα
-                  </h2>
-                  <p className="mt-1 text-sm font-bold text-amber-800 dark:text-amber-300">
-                    Μέχρι να εγκριθεί, τα προγράμματα και το progress παραμένουν κλειδωμένα.
-                  </p>
-                </div>
-                <Button
-                  nativeButton={false}
-                  render={<Link href="/client-billing">Πληρωμές και Συνδρομή</Link>}
-                  className="h-11 bg-red-600 px-5 font-bold text-white hover:bg-red-700"
-                />
-              </div>
+          <TabsContent value="overview" className="space-y-6">
+            {dashboard?.todayIsUpdateDay && !dashboard.alreadySubmittedThisWeek && <Alert><CalendarDays className="h-4 w-4" /><AlertTitle>Σήμερα είναι ημέρα update</AlertTitle><AlertDescription className="flex flex-wrap items-center gap-3">Συμπλήρωσε το εβδομαδιαίο σου update για να ενημερωθεί ο coach σου.<Button size="sm" onClick={() => setActiveTab("update")}>Συμπλήρωση update</Button></AlertDescription></Alert>}
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <PlanCard title="Τρέχον βάρος" icon={<Dumbbell className="h-5 w-5 text-primary" />}><p className="text-3xl font-bold">{dashboard?.client.currentWeight ?? "-"}{dashboard?.client.currentWeight ? " kg" : ""}</p></PlanCard>
+              <PlanCard title="Ημέρες συνδρομής" icon={<CalendarDays className="h-5 w-5 text-primary" />}><p className="text-3xl font-bold">{dashboard?.client.daysRemaining ?? "-"}</p><p className="text-xs text-muted-foreground">{dashboard?.client.planName ?? "Χωρίς ενεργό πλάνο"}</p></PlanCard>
+              <PlanCard title="Σερί updates" icon={<CheckCircle2 className="h-5 w-5 text-primary" />}><p className="text-3xl font-bold">{dashboard?.streak ?? 0}</p><p className="text-xs text-muted-foreground">συνεχόμενες εβδομάδες</p></PlanCard>
+              <PlanCard title="Τελευταίο update" icon={<Send className="h-5 w-5 text-primary" />}><p className="text-sm font-medium">{formatDate(dashboard?.lastUpdate?.submittedAt)}</p>{dashboard?.lastUpdate?.averageRating && <StarRating value={dashboard.lastUpdate.averageRating} readOnly />}</PlanCard>
             </div>
-          )}
-
-          <div
-            className={
-              paymentApproved
-                ? "space-y-6"
-                : "pointer-events-none select-none space-y-6 opacity-40 blur-[2px]"
-            }
-          >
-            <section className="grid gap-5 lg:grid-cols-4">
-              <StatusCard title="Πρόγραμμα Προπόνησης" value={data.training?.title || "Δεν έχει ανατεθεί ακόμα"} />
-              <StatusCard title="Πρόγραμμα Διατροφής" value={data.nutrition?.title || "Δεν έχει ανατεθεί ακόμα"} />
-              <StatusCard title="Τελευταίο Βάρος" value={lastWeight?.weight_kg ? `${lastWeight.weight_kg} kg` : "-"} />
-              <WeeklyUpdateCard data={data.weeklyUpdate} onOpen={() => setWeeklyOpen(true)} />
-            </section>
-
-            <WorkoutProgramView training={data.training} />
-
-            <section className="grid gap-6 xl:grid-cols-2">
-              <NutritionView nutrition={data.nutrition} />
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-xl font-bold">Πρόοδος</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {weights.length ? (
-                    <WeightChart rows={weights} />
-                  ) : (
-                    <EmptyState text="Δεν υπάρχουν ακόμα αρκετά δεδομένα προόδου." />
-                  )}
-                </CardContent>
-              </Card>
-            </section>
-          </div>
-        </div>
-      )}
-
-      <Dialog open={weeklyOpen} onOpenChange={setWeeklyOpen}>
-        <DialogContent className="max-w-2xl">
-          <form onSubmit={submitWeeklyUpdate}>
-            <DialogHeader>
-              <DialogTitle>Εβδομαδιαίο update</DialogTitle>
-            </DialogHeader>
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <div>
-                <Label>Τρέχον βάρος</Label>
-                <Input
-                  className="mt-2"
-                  value={weeklyForm.weightKg}
-                  onChange={(event) =>
-                    setWeeklyForm((current) => ({ ...current, weightKg: event.target.value }))
-                  }
-                  required
-                />
-              </div>
-              <ScoreField
-                label="Πώς πήγαν οι προπονήσεις;"
-                value={weeklyForm.trainingScore}
-                onChange={(value) => setWeeklyForm((current) => ({ ...current, trainingScore: value }))}
-              />
-              <ScoreField
-                label="Πώς ήταν η διατροφή;"
-                value={weeklyForm.nutritionScore}
-                onChange={(value) => setWeeklyForm((current) => ({ ...current, nutritionScore: value }))}
-              />
-              <div>
-                <Label>Φωτογραφίες προόδου (max 3)</Label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={(event) =>
-                    setWeeklyForm((current) => ({
-                      ...current,
-                      photos: Array.from(event.target.files || []).slice(0, 3),
-                    }))
-                  }
-                  className="mt-2 block w-full rounded-md border border-slate-200 p-3 text-sm dark:border-slate-700 dark:bg-slate-950"
-                />
-              </div>
-              <div className="md:col-span-2">
-                <Label>Σημειώσεις / ερωτήσεις προς τον coach</Label>
-                <Textarea
-                  className="mt-2 min-h-32"
-                  value={weeklyForm.notes}
-                  onChange={(event) =>
-                    setWeeklyForm((current) => ({ ...current, notes: event.target.value }))
-                  }
-                />
-              </div>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <PlanCard title="Πρόγραμμα Προπόνησης" icon={<Dumbbell className="h-5 w-5 text-primary" />}>{trainingPlan ? <><p className="font-medium">{trainingPlan.title}</p><p className="mt-1 text-sm text-muted-foreground">{trainingPlan.days.length} ημέρες προπόνησης</p><Button className="mt-4" variant="outline" size="sm" onClick={() => setActiveTab("training")}>Δες το πρόγραμμα</Button></> : <p className="text-sm text-muted-foreground">Δεν έχει ανατεθεί πρόγραμμα προπόνησης ακόμα.</p>}</PlanCard>
+              <PlanCard title="Πλάνο Διατροφής" icon={<Salad className="h-5 w-5 text-primary" />}>{nutritionPlan ? <><p className="font-medium">{nutritionPlan.title}</p><p className="mt-1 text-sm text-muted-foreground">{nutritionPlan.meals.length} γεύματα</p><Button className="mt-4" variant="outline" size="sm" onClick={() => setActiveTab("nutrition")}>Δες τη διατροφή</Button></> : <p className="text-sm text-muted-foreground">Δεν έχει ανατεθεί διατροφικό πλάνο ακόμα.</p>}</PlanCard>
             </div>
-            <DialogFooter className="mt-6">
-              <Button type="button" variant="outline" onClick={() => setWeeklyOpen(false)}>
-                Άκυρο
-              </Button>
-              <Button type="submit">Υποβολή</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+          </TabsContent>
+
+          <TabsContent value="training"><PlanCard title="Πρόγραμμα Προπόνησης" icon={<Dumbbell className="h-5 w-5 text-primary" />}>{trainingPlan ? <div className="space-y-6"><p className="text-muted-foreground">{trainingPlan.title}</p>{trainingPlan.days.map((day) => <section key={day.name} className="border-t pt-4"><h2 className="font-semibold">{day.name}</h2><div className="mt-3 grid gap-3 sm:grid-cols-2">{day.exercises.map((exercise, index) => <div key={`${exercise.name}-${index}`} className="flex items-center gap-3 rounded-md border p-3">{exercise.imageUrl && <img className="h-12 w-12 rounded object-cover" src={resolveMediaUrl(exercise.imageUrl)} alt="" />}<div><p className="font-medium">{exercise.name}</p><p className="text-xs text-muted-foreground">{exercise.sets ? `${exercise.sets} σετ` : ""}{exercise.reps ? ` · ${exercise.reps}` : ""}</p></div></div>)}</div></section>)}</div> : <p className="text-muted-foreground">Δεν υπάρχει διαθέσιμο πρόγραμμα προπόνησης.</p>}</PlanCard></TabsContent>
+
+          <TabsContent value="nutrition"><PlanCard title="Πλάνο Διατροφής" icon={<Salad className="h-5 w-5 text-primary" />}>{nutritionPlan ? <div className="space-y-6"><p className="text-muted-foreground">{nutritionPlan.title}</p>{nutritionPlan.meals.map((meal) => <section key={meal.name} className="border-t pt-4"><h2 className="font-semibold">{meal.name}</h2><div className="mt-3 grid gap-3 sm:grid-cols-2">{meal.foods.map((food, index) => <div key={`${food.name}-${index}`} className="flex items-center gap-3 rounded-md border p-3">{food.imageUrl && <img className="h-12 w-12 rounded object-cover" src={resolveMediaUrl(food.imageUrl)} alt="" />}<div><p className="font-medium">{food.name}</p>{food.amount && <p className="text-xs text-muted-foreground">{food.amount}</p>}</div></div>)}</div></section>)}</div> : <p className="text-muted-foreground">Δεν υπάρχει διαθέσιμο πλάνο διατροφής.</p>}</PlanCard></TabsContent>
+
+          <TabsContent value="progress" className="space-y-6">
+            <PlanCard title="Πρόοδος βάρους" icon={<Dumbbell className="h-5 w-5 text-primary" />}>{chartData.length > 1 ? <AreaChart className="h-64" data={chartData} index="date" categories={["weight"]} colors={["blue"]} valueFormatter={(value) => `${value} kg`} /> : <p className="text-sm text-muted-foreground">Χρειάζονται τουλάχιστον δύο ενημερώσεις με βάρος για το γράφημα.</p>}</PlanCard>
+            <PlanCard title="Φωτογραφίες προόδου" icon={<Upload className="h-5 w-5 text-primary" />}>{updates.flatMap((update) => update.photos).length ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{updates.flatMap((update) => update.photos).slice(0, 8).map((photo, index) => <a key={`${photo}-${index}`} href={resolveMediaUrl(photo)} target="_blank" rel="noreferrer"><img className="aspect-square w-full rounded-md object-cover" src={resolveMediaUrl(photo)} alt="Φωτογραφία προόδου" /></a>)}</div> : <p className="text-sm text-muted-foreground">Δεν υπάρχουν φωτογραφίες προόδου ακόμα.</p>}</PlanCard>
+            <PlanCard title="Ιστορικό updates" icon={<FileText className="h-5 w-5 text-primary" />}>{updates.length ? <div className="space-y-3">{updates.map((update) => <div key={update.id} className="flex flex-wrap items-center justify-between gap-3 border-b pb-3 last:border-0"><div><p className="font-medium">{formatDate(update.submittedAt)}</p><p className="text-xs text-muted-foreground">{update.answers.length} απαντήσεις · {update.photos.length} φωτογραφίες</p></div></div>)}</div> : <p className="text-sm text-muted-foreground">Δεν έχεις υποβάλει update ακόμα.</p>}</PlanCard>
+          </TabsContent>
+
+          <TabsContent value="payments"><div className="grid gap-6 lg:grid-cols-3"><PlanCard title="Συνδρομή" icon={<CalendarDays className="h-5 w-5 text-primary" />}><Badge>{paymentData?.subscription?.status === "active" ? "Ενεργή" : "-"}</Badge><p className="mt-3 font-medium">{paymentData?.subscription?.planName ?? "Δεν υπάρχει ενεργή συνδρομή"}</p><p className="text-sm text-muted-foreground">{paymentData?.subscription?.daysRemaining != null ? `${paymentData.subscription.daysRemaining} ημέρες απομένουν` : ""}</p></PlanCard><PlanCard title="Πληρωμές" icon={<FileText className="h-5 w-5 text-primary" />}><p className="text-3xl font-bold">{paymentData?.payments.length ?? 0}</p><p className="text-sm text-muted-foreground">καταγεγραμμένες πληρωμές</p></PlanCard><PlanCard title="Επόμενη λήξη" icon={<CalendarDays className="h-5 w-5 text-primary" />}><p className="text-lg font-semibold">{formatDate(paymentData?.subscription?.endDate)}</p></PlanCard></div><PlanCard title="Ιστορικό πληρωμών" icon={<FileText className="h-5 w-5 text-primary" />}>{paymentData?.payments.length ? <div className="space-y-3">{paymentData.payments.map((payment) => <div key={payment.id} className="flex items-center justify-between border-b pb-3 last:border-0"><div><p className="font-medium">€{Number(payment.amount).toFixed(2)}</p><p className="text-xs text-muted-foreground">{formatDate(payment.paidAt)} · {paymentMethod[payment.method] ?? payment.method}</p></div><Badge variant={payment.status === "confirmed" ? "default" : "secondary"}>{payment.status === "confirmed" ? "Εγκρίθηκε" : "Εκκρεμεί"}</Badge></div>)}</div> : <p className="text-sm text-muted-foreground">Δεν υπάρχουν πληρωμές ακόμα.</p>}</PlanCard></TabsContent>
+
+          <TabsContent value="update">
+            {submitted ? <Card><CardContent className="flex min-h-72 flex-col items-center justify-center text-center"><CheckCircle2 className="h-14 w-14 text-green-600" /><h2 className="mt-4 text-xl font-semibold">Το update υποβλήθηκε!</h2><p className="mt-2 text-sm text-muted-foreground">Ο coach σου ενημερώθηκε.</p></CardContent></Card> : dashboard?.alreadySubmittedThisWeek ? <Card><CardContent className="flex min-h-72 flex-col items-center justify-center text-center"><CheckCircle2 className="h-14 w-14 text-green-600" /><h2 className="mt-4 text-xl font-semibold">Έχεις ήδη υποβάλει το update σου</h2><p className="mt-2 text-sm text-muted-foreground">Το επόμενο update είναι στις {upcomingDate}.</p></CardContent></Card> : !dashboard?.todayIsUpdateDay ? <Card><CardContent className="flex min-h-72 flex-col items-center justify-center text-center"><CalendarDays className="h-14 w-14 text-primary" /><h2 className="mt-4 text-xl font-semibold">Το επόμενο update είναι στις {upcomingDate}</h2><p className="mt-2 text-sm text-muted-foreground">Επιστρέψε εκείνη την ημέρα για να συμπληρώσεις το εβδομαδιαίο σου update.</p><p className="mt-5 text-xs text-muted-foreground">Έχεις υποβάλει {dashboard?.updatesCount ?? 0} updates συνολικά.</p></CardContent></Card> : <Card><CardHeader><CardTitle>Εβδομαδιαίο Update</CardTitle><CardDescription>Συμπλήρωσε την εβδομαδιαία σου αναφορά. Τα στοιχεία θα σταλούν απευθείας στον coach σου.</CardDescription></CardHeader><CardContent><form className="space-y-6" onSubmit={submitUpdate}>{questions.map(renderQuestion)}<div className="border-t pt-5"><Button type="submit" size="lg" disabled={submitting}><Send className="mr-2 h-4 w-4" />{submitting ? "Υποβολή..." : "Υποβολή Update"}</Button></div></form></CardContent></Card>}
+          </TabsContent>
+        </Tabs>
+      </main>
     </ClientShell>
-  );
+  )
 }
 
 export default function ClientDashboardPage() {
-  return (
-    <ProtectedRoute allow="client-active">
-      <ClientDashboardContent />
-    </ProtectedRoute>
-  );
+  return <ProtectedRoute allow="client-active"><ClientDashboardContent /></ProtectedRoute>
 }
