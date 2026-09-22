@@ -109,7 +109,9 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
                   </button>
                   {!collapsed && isOpen && (
                     <div className="ml-4 mt-1 flex flex-col gap-1 border-l border-white/10 pl-3">
-                      {section.children.map((child) =>
+                      {section.children
+                        .filter((child) => !child.adminOnly || isAdmin)
+                        .map((child) =>
                         child.path ? (
                           <Link
                             key={child.key}

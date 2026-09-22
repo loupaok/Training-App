@@ -14,7 +14,6 @@ import {
   TrendingUp,
   CreditCard,
   User,
-  Megaphone,
   ScrollText,
   MessageCircleMore,
   LayoutTemplate,
@@ -23,6 +22,8 @@ import {
   LayoutGrid,
   HelpCircle,
   ClipboardList,
+  Mail,
+  Clock,
   type LucideIcon,
 } from "lucide-react";
 
@@ -31,6 +32,7 @@ export interface CoachNavChild {
   label: string;
   path?: string;
   icon?: LucideIcon;
+  adminOnly?: boolean;
 }
 
 export interface CoachNavSection {
@@ -49,7 +51,6 @@ export interface CoachNavSection {
 // none at all). `active` is derived from the route, not hardcoded per page.
 export const coachNavSections: CoachNavSection[] = [
   { key: "dashboard", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
-  { key: "pages", label: "Σελίδες", path: "/coach/pages", icon: LayoutGrid, coachOrAdminOnly: true },
   { key: "clients", label: "Πελάτες", path: "/clients", icon: Users },
   { key: "updates", label: "Updates", path: "/coach/updates", icon: ClipboardList },
   { key: "exercises", label: "Βιβλιοθήκη Ασκήσεων", path: "/exercises", icon: Dumbbell },
@@ -78,15 +79,21 @@ export const coachNavSections: CoachNavSection[] = [
       { key: "pricing-plans", label: "Πλάνα & Τιμές", path: "/coach/pricing", icon: Tag },
       { key: "questionnaire", label: "Ερωτηματολόγιο", path: "/coach/questionnaire", icon: HelpCircle },
       { key: "branding", label: "Branding", path: "/coach/branding", icon: Palette },
+      { key: "emails", label: "Emails & Templates", path: "/coach/settings/emails", icon: Mail },
+      { key: "automations", label: "Αυτοματισμοί", path: "/coach/settings/automations", icon: Clock },
     ],
   },
-  { key: "admin", label: "Admin Panel", path: "/admin", icon: Shield, adminOnly: true, spacerBefore: true },
   {
-    key: "manual-notifications",
-    label: "Manual Notifications",
-    path: "/manual-notifications",
-    icon: Megaphone,
-    adminOnly: true,
+    key: "management",
+    label: "Διαχείριση",
+    icon: Shield,
+    coachOrAdminOnly: true,
+    spacerBefore: true,
+    children: [
+      { key: "admin-panel", label: "Admin Panel", path: "/admin", adminOnly: true },
+      { key: "manual-notifications", label: "Ειδοποιήσεις Manual", path: "/manual-notifications", adminOnly: true },
+      { key: "pages", label: "Σελίδες", path: "/coach/pages" },
+    ],
   },
 ];
 
