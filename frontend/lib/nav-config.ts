@@ -23,6 +23,7 @@ import {
   HelpCircle,
   ClipboardList,
   Clock,
+  Menu,
   type LucideIcon,
 } from "lucide-react";
 
@@ -79,6 +80,7 @@ export const coachNavSections: CoachNavSection[] = [
       { key: "questionnaire", label: "Ερωτηματολόγιο", path: "/coach/questionnaire", icon: HelpCircle },
       { key: "branding", label: "Branding", path: "/coach/branding", icon: Palette },
       { key: "automations", label: "Emails & Αυτοματισμοί", path: "/coach/automations", icon: Clock },
+      { key: "menu", label: "Μενού", path: "/coach/menu", icon: Menu },
     ],
   },
   {

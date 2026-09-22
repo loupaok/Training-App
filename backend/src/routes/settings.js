@@ -43,6 +43,21 @@ const emailTemplateSeeds = [
   ],
 ];
 
+const defaultMenuItems = [
+  'dashboard',
+  'clients',
+  'updates',
+  'exercises',
+  'templates',
+  'foods',
+  'exercise-media',
+  'analytics',
+  'changelog',
+  'notifications',
+  'settings',
+  'management',
+];
+
 export async function ensureSettingsSchema(connection) {
   await connection.query(`
     CREATE TABLE IF NOT EXISTS cron_settings (
@@ -67,6 +82,16 @@ export async function ensureSettingsSchema(connection) {
       body TEXT NOT NULL,
       variables JSON,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS menu_settings (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL UNIQUE,
+      menu_config JSON NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `);
 
@@ -131,7 +156,70 @@ function renderTestTemplate(value) {
   return String(value || '').replace(/\{\{([^}]+)\}\}/g, (_, key) => variables[key.trim()] || `{{${key}}}`);
 }
 
+function normalizeMenuItems(items) {
+  if (!Array.isArray(items)) return null;
+  const uniqueItems = [...new Set(items)];
+  if (
+    uniqueItems.length !== defaultMenuItems.length
+    || uniqueItems.some((item) => typeof item !== 'string' || !defaultMenuItems.includes(item))
+  ) {
+    return null;
+  }
+  return uniqueItems;
+}
+
+function parseMenuItems(value) {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return normalizeMenuItems(parsed) || defaultMenuItems;
+  } catch {
+    return defaultMenuItems;
+  }
+}
+
 router.use(authenticateToken, authorizeRole(['coach']));
+
+router.get('/menu', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureSettingsSchema(connection);
+    const [rows] = await connection.query(
+      'SELECT menu_config FROM menu_settings WHERE user_id = ? LIMIT 1',
+      [req.user.id]
+    );
+    res.json({ items: rows.length ? parseMenuItems(rows[0].menu_config) : defaultMenuItems });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.put('/menu', [body('items').isArray()], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const items = normalizeMenuItems(req.body.items);
+  if (!items) return res.status(400).json({ message: 'Invalid menu items' });
+
+  const connection = await pool.getConnection();
+  try {
+    await ensureSettingsSchema(connection);
+    await connection.query(
+      `INSERT INTO menu_settings (user_id, menu_config)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE menu_config = VALUES(menu_config)`,
+      [req.user.id, JSON.stringify(items)]
+    );
+    res.json({ items });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
 
 router.get('/crons', async (_req, res) => {
   const connection = await pool.getConnection();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
@@ -11,7 +11,7 @@ import { useBranding } from "@/contexts/BrandingContext";
 import { resolveMediaUrl } from "@/lib/media";
 import { api } from "@/lib/api/client";
 import { SidebarUserMenu } from "@/components/shell/sidebar-user-menu";
-import { coachNavSections, isActivePath } from "@/lib/nav-config";
+import { coachNavSections, isActivePath, type CoachNavSection } from "@/lib/nav-config";
 import type { AuthUser } from "@/types/auth";
 
 interface CoachSidebarProps {
@@ -21,11 +21,22 @@ interface CoachSidebarProps {
   onToggle: () => void;
 }
 
+type MenuSettingsResponse = { items: string[] };
+
+function orderSections(items: string[]): CoachNavSection[] {
+  const sectionsByKey = new Map(coachNavSections.map((section) => [section.key, section]));
+  const ordered = items.map((key) => sectionsByKey.get(key)).filter((section): section is CoachNavSection => Boolean(section));
+  const included = new Set(ordered.map((section) => section.key));
+  return [...ordered, ...coachNavSections.filter((section) => !included.has(section.key))];
+}
+
 export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebarProps) {
   const pathname = usePathname();
   const { branding } = useBranding();
   const canSeeCoachSettings = user?.role === "admin" || user?.role === "coach";
   const isAdmin = user?.role === "admin";
+  const [menuItems, setMenuItems] = useState(() => coachNavSections.map((section) => section.key));
+  const orderedSections = useMemo(() => orderSections(menuItems), [menuItems]);
   // Each expandable section (Ρυθμίσεις, Πρότυπα Πλάνων, ...) tracks its own open state,
   // starting open if the current route is one of its children.
   const [openSections, setOpenSections] = useState<Set<string>>(() => {
@@ -54,6 +65,18 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const loadMenuOrder = () => {
+      api.get<MenuSettingsResponse>("/settings/menu")
+        .then((data) => setMenuItems(data.items))
+        .catch(() => setMenuItems(coachNavSections.map((section) => section.key)));
+    };
+
+    loadMenuOrder();
+    window.addEventListener("coach-menu-updated", loadMenuOrder);
+    return () => window.removeEventListener("coach-menu-updated", loadMenuOrder);
+  }, [user?.id]);
+
   return (
     <aside
       className={cn(
@@ -81,7 +104,7 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
       </div>
 
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
-        {coachNavSections
+        {orderedSections
           .filter((section) => (!section.coachOrAdminOnly || canSeeCoachSettings) && (!section.adminOnly || isAdmin))
           .map((section) => {
             const active = isActivePath(pathname, section.path);
@@ -91,7 +114,7 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
               if (!canSeeCoachSettings) return null;
               const isOpen = openSections.has(section.key);
               return (
-                <div key={section.key} className={section.spacerBefore ? "mt-4" : ""}>
+                <div key={section.key}>
                   <button
                     type="button"
                     onClick={() => toggleSection(section.key)}
@@ -142,7 +165,6 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
                 title={collapsed ? section.label : undefined}
                 className={cn(
                   "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  section.spacerBefore && "mt-4",
                   collapsed && "justify-center px-0",
                   active ? "bg-red-600 text-white" : "text-slate-100 hover:bg-white/10",
                 )}
