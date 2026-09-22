@@ -1430,7 +1430,7 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
            SELECT p2.id FROM payments p2 WHERE p2.client_id = u.id ORDER BY p2.created_at DESC LIMIT 1
          )
          LEFT JOIN (
-           SELECT w1.client_id, w1.weight_kg, w1.submitted_at
+           SELECT w1.client_id, NULL AS weight_kg, w1.submitted_at
            FROM weekly_updates w1
            INNER JOIN (
              SELECT client_id, MAX(submitted_at) AS submitted_at
@@ -1491,7 +1491,7 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
            SELECT p2.id FROM payments p2 WHERE p2.client_id = u.id ORDER BY p2.created_at DESC LIMIT 1
          )
          LEFT JOIN (
-           SELECT w1.client_id, w1.weight_kg, w1.submitted_at
+           SELECT w1.client_id, NULL AS weight_kg, w1.submitted_at
            FROM weekly_updates w1
            INNER JOIN (
              SELECT client_id, MAX(submitted_at) AS submitted_at

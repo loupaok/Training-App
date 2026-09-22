@@ -132,6 +132,18 @@ export async function ensureQuestionnaireSchema(connection) {
     `);
   }
 
+  for (const statement of [
+    'ALTER TABLE questionnaire_questions ADD COLUMN allow_photos BOOLEAN DEFAULT FALSE',
+    'ALTER TABLE questionnaire_questions ADD COLUMN max_photos INT DEFAULT 4',
+    'ALTER TABLE questionnaire_questions ADD COLUMN allow_pdf BOOLEAN DEFAULT FALSE',
+  ]) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+  }
+
   const [rows] = await connection.query('SELECT COUNT(*) AS total FROM questionnaire_questions');
   if (Number(rows[0]?.total || 0) === 0) {
     await connection.query(
@@ -166,6 +178,9 @@ function normalizeQuestion(row) {
     options,
     isRequired: Boolean(row.is_required),
     placeholder: row.placeholder || '',
+    allowPhotos: Boolean(row.allow_photos),
+    maxPhotos: row.max_photos,
+    allowPdf: Boolean(row.allow_pdf),
     sortOrder: row.sort_order,
     isActive: Boolean(row.is_active),
   };
@@ -235,14 +250,17 @@ router.post('/questions', authenticateToken, authorizeRole(['coach']), [
 
     const [result] = await connection.query(
       `INSERT INTO questionnaire_questions
-        (question, type, options, is_required, placeholder, sort_order, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        (question, type, options, is_required, placeholder, allow_photos, max_photos, allow_pdf, sort_order, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         req.body.question,
         req.body.type,
         req.body.options ? JSON.stringify(req.body.options) : null,
         req.body.isRequired === false ? 0 : 1,
         req.body.placeholder || null,
+        req.body.allowPhotos === true ? 1 : 0,
+        req.body.maxPhotos || 4,
+        req.body.allowPdf === true ? 1 : 0,
         req.body.sortOrder || 0,
         req.body.isActive === false ? 0 : 1,
       ]
@@ -270,7 +288,7 @@ router.put('/questions/:id', authenticateToken, authorizeRole(['coach']), [
 
     await connection.query(
       `UPDATE questionnaire_questions
-       SET question = ?, type = ?, options = ?, is_required = ?, placeholder = ?, sort_order = ?, is_active = ?
+       SET question = ?, type = ?, options = ?, is_required = ?, placeholder = ?, allow_photos = ?, max_photos = ?, allow_pdf = ?, sort_order = ?, is_active = ?
        WHERE id = ?`,
       [
         req.body.question,
@@ -278,6 +296,9 @@ router.put('/questions/:id', authenticateToken, authorizeRole(['coach']), [
         req.body.options ? JSON.stringify(req.body.options) : null,
         req.body.isRequired === false ? 0 : 1,
         req.body.placeholder || null,
+        req.body.allowPhotos === true ? 1 : 0,
+        req.body.maxPhotos || 4,
+        req.body.allowPdf === true ? 1 : 0,
         req.body.sortOrder || 0,
         req.body.isActive === false ? 0 : 1,
         req.params.id,

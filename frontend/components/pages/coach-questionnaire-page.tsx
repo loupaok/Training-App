@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { GripVertical, Plus, X, Link2 } from "lucide-react";
+import { GripVertical, Plus, X, Link2, Star } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -17,6 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
@@ -42,7 +43,16 @@ import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
-type QuestionType = "single_select" | "multi_select" | "text" | "number" | "textarea" | "url";
+type QuestionType =
+  | "single_select"
+  | "multi_select"
+  | "text"
+  | "number"
+  | "textarea"
+  | "url"
+  | "rating"
+  | "photos"
+  | "pdf";
 
 interface Question {
   id: number;
@@ -51,8 +61,24 @@ interface Question {
   options: string[];
   isRequired: boolean;
   placeholder: string;
+  allowPhotos: boolean;
+  maxPhotos: number;
+  allowPdf: boolean;
   sortOrder: number;
   isActive: boolean;
+}
+
+interface TypeOption {
+  value: QuestionType;
+  label: string;
+}
+
+interface QuestionEndpoints {
+  manage: string;
+  create: string;
+  update: (id: number) => string;
+  remove: (id: number) => string;
+  reorder: string;
 }
 
 const emptyQuestion: Question = {
@@ -62,11 +88,14 @@ const emptyQuestion: Question = {
   options: ["Επιλογή 1"],
   isRequired: true,
   placeholder: "",
+  allowPhotos: false,
+  maxPhotos: 4,
+  allowPdf: false,
   sortOrder: 0,
   isActive: true,
 };
 
-const typeOptions: { value: QuestionType; label: string }[] = [
+const registrationTypeOptions: TypeOption[] = [
   { value: "single_select", label: "Μονή επιλογή" },
   { value: "multi_select", label: "Πολλαπλή επιλογή" },
   { value: "text", label: "Σύντομο κείμενο" },
@@ -75,7 +104,30 @@ const typeOptions: { value: QuestionType; label: string }[] = [
   { value: "url", label: "Σύνδεσμος URL" },
 ];
 
-function typeLabel(type: QuestionType): string {
+const updateTypeOptions: TypeOption[] = [
+  ...registrationTypeOptions,
+  { value: "rating", label: "Αξιολόγηση (⭐ 1-5)" },
+  { value: "photos", label: "Φωτογραφίες" },
+  { value: "pdf", label: "PDF" },
+];
+
+const registrationEndpoints: QuestionEndpoints = {
+  manage: "/questionnaire/manage",
+  create: "/questionnaire/questions",
+  update: (id) => `/questionnaire/questions/${id}`,
+  remove: (id) => `/questionnaire/questions/${id}`,
+  reorder: "/questionnaire/questions/reorder",
+};
+
+const updateEndpoints: QuestionEndpoints = {
+  manage: "/updates/questions/manage",
+  create: "/updates/questions",
+  update: (id) => `/updates/questions/${id}`,
+  remove: (id) => `/updates/questions/${id}`,
+  reorder: "/updates/questions/reorder",
+};
+
+function typeLabel(type: QuestionType, typeOptions: TypeOption[]): string {
   return typeOptions.find((option) => option.value === type)?.label || type;
 }
 
@@ -89,6 +141,54 @@ function needsPlaceholder(type: QuestionType): boolean {
 
 function CoachQuestionnaireContent() {
   const { user, logout } = useAuth();
+
+  if (!["coach", "admin"].includes(user?.role || "")) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-slate-50 font-bold text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+        Δεν έχεις πρόσβαση σε αυτή τη σελίδα.
+      </div>
+    );
+  }
+
+  return (
+    <CoachShell title="Ερωτηματολόγιο" user={user} logout={logout}>
+      <Tabs defaultValue="registration">
+        <TabsList className="mb-6">
+          <TabsTrigger value="registration">Ερωτηματολόγιο Εγγραφής</TabsTrigger>
+          <TabsTrigger value="update">Ερωτηματολόγιο Update</TabsTrigger>
+        </TabsList>
+        <TabsContent value="registration">
+          <QuestionSetEditor
+            title="Ερωτηματολόγιο Εγγραφής"
+            subtitle="Οι ερωτήσεις που απαντούν οι νέοι πελάτες κατά την εγγραφή τους."
+            typeOptions={registrationTypeOptions}
+            endpoints={registrationEndpoints}
+          />
+        </TabsContent>
+        <TabsContent value="update">
+          <QuestionSetEditor
+            title="Ερωτηματολόγιο Update"
+            subtitle="Οι ερωτήσεις που απαντούν οι πελάτες στο εβδομαδιαίο update τους."
+            typeOptions={updateTypeOptions}
+            endpoints={updateEndpoints}
+          />
+        </TabsContent>
+      </Tabs>
+    </CoachShell>
+  );
+}
+
+function QuestionSetEditor({
+  title,
+  subtitle,
+  typeOptions,
+  endpoints,
+}: {
+  title: string;
+  subtitle: string;
+  typeOptions: TypeOption[];
+  endpoints: QuestionEndpoints;
+}) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [form, setForm] = useState<Question>(emptyQuestion);
@@ -112,7 +212,7 @@ function CoachQuestionnaireContent() {
 
   const loadQuestions = async () => {
     try {
-      const rows = await api.get<Question[]>("/questionnaire/manage");
+      const rows = await api.get<Question[]>(endpoints.manage);
       setQuestions(rows);
       if (rows.length && selectedId === null) {
         setSelectedId(rows[0].id);
@@ -135,6 +235,9 @@ function CoachQuestionnaireContent() {
     options: needsOptions(source.type) ? source.options.filter((option) => option.trim()) : null,
     isRequired: source.isRequired,
     placeholder: source.placeholder,
+    allowPhotos: source.allowPhotos,
+    maxPhotos: source.maxPhotos,
+    allowPdf: source.allowPdf,
     sortOrder: source.sortOrder,
     isActive: source.isActive,
   });
@@ -145,8 +248,8 @@ function CoachQuestionnaireContent() {
     setMessage("");
     try {
       const saved = form.id
-        ? await api.put<Question>(`/questionnaire/questions/${form.id}`, buildPayload(form))
-        : await api.post<Question>("/questionnaire/questions", buildPayload(form));
+        ? await api.put<Question>(endpoints.update(form.id), buildPayload(form))
+        : await api.post<Question>(endpoints.create, buildPayload(form));
       setMessage("Η ερώτηση αποθηκεύτηκε.");
       await loadQuestions();
       setSelectedId(saved.id);
@@ -161,7 +264,7 @@ function CoachQuestionnaireContent() {
     if (!form.id) return;
     setSaving(true);
     try {
-      await api.delete(`/questionnaire/questions/${form.id}`);
+      await api.delete(endpoints.remove(form.id));
       setMessage("Η ερώτηση διαγράφηκε.");
       setSelectedId(null);
       setForm(emptyQuestion);
@@ -182,7 +285,7 @@ function CoachQuestionnaireContent() {
     setQuestions((current) => current.map((item) => (item.id === targetQuestion.id ? { ...item, isActive: nextActive } : item)));
     if (selectedId === targetQuestion.id) update("isActive", nextActive);
     try {
-      await api.put(`/questionnaire/questions/${targetQuestion.id}`, buildPayload({ ...targetQuestion, isActive: nextActive }));
+      await api.put(endpoints.update(targetQuestion.id), buildPayload({ ...targetQuestion, isActive: nextActive }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Δεν ενημερώθηκε η κατάσταση.");
       await loadQuestions();
@@ -200,34 +303,24 @@ function CoachQuestionnaireContent() {
     const reordered = arrayMove(questions, oldIndex, newIndex);
     setQuestions(reordered);
     try {
-      await api.put("/questionnaire/questions/reorder", { ids: reordered.map((item) => item.id) });
+      await api.put(endpoints.reorder, { ids: reordered.map((item) => item.id) });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Δεν αποθηκεύτηκε η σειρά.");
       await loadQuestions();
     }
   };
 
-  if (!["coach", "admin"].includes(user?.role || "")) {
-    return (
-      <div className="grid min-h-screen place-items-center bg-slate-50 font-bold text-slate-500 dark:bg-slate-950 dark:text-slate-400">
-        Δεν έχεις πρόσβαση σε αυτή τη σελίδα.
-      </div>
-    );
-  }
-
   return (
-    <CoachShell title="Ερωτηματολόγιο" user={user} logout={logout}>
+    <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-3xl font-bold">Ερωτηματολόγιο Εγγραφής</h2>
+            <h2 className="text-3xl font-bold">{title}</h2>
             <Badge variant="outline" className="h-auto rounded-full px-3 py-1 text-xs font-bold">
               {activeCount} ενεργές ερωτήσεις
             </Badge>
           </div>
-          <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
-            Οι ερωτήσεις που απαντούν οι νέοι πελάτες κατά την εγγραφή τους.
-          </p>
+          <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">{subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -269,6 +362,7 @@ function CoachQuestionnaireContent() {
                       <SortableQuestionRow
                         key={item.id}
                         questionItem={item}
+                        typeOptions={typeOptions}
                         selected={selectedId === item.id}
                         onSelect={() => setSelectedId(item.id)}
                         onToggleActive={(next) => toggleActive(item, next)}
@@ -335,6 +429,31 @@ function CoachQuestionnaireContent() {
                     </SelectContent>
                   </Select>
                 </Label>
+
+                <div className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+                  <div className="text-sm font-bold text-slate-700 dark:text-slate-200">Επιτρέπει ανέβασμα αρχείων;</div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">📷 Φωτογραφίες</span>
+                    <Switch checked={form.allowPhotos} onCheckedChange={(checked) => update("allowPhotos", checked === true)} />
+                  </div>
+                  {form.allowPhotos && (
+                    <div className="flex items-center justify-between gap-3 pl-6">
+                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Μέγιστος αριθμός</span>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={4}
+                        value={form.maxPhotos}
+                        onChange={(event) => update("maxPhotos", Math.min(4, Math.max(1, Number(event.target.value) || 1)))}
+                        className="h-9 w-20"
+                      />
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">📄 PDF</span>
+                    <Switch checked={form.allowPdf} onCheckedChange={(checked) => update("allowPdf", checked === true)} />
+                  </div>
+                </div>
 
                 {needsOptions(form.type) && (
                   <div>
@@ -410,7 +529,7 @@ function CoachQuestionnaireContent() {
       </section>
 
       <QuestionnairePreviewDialog open={previewOpen} onOpenChange={setPreviewOpen} questions={questions} />
-    </CoachShell>
+    </div>
   );
 }
 
@@ -430,7 +549,7 @@ function QuestionnairePreviewDialog({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Προεπισκόπηση Ερωτηματολογίου</DialogTitle>
-          <DialogDescription>Έτσι το βλέπουν οι νέοι πελάτες</DialogDescription>
+          <DialogDescription>Έτσι το βλέπουν οι πελάτες</DialogDescription>
         </DialogHeader>
 
         <ScrollArea className="max-h-[60vh] pr-4">
@@ -475,6 +594,15 @@ function QuestionnairePreviewInput({ question }: { question: Question }) {
   if (question.type === "text") {
     return <Input disabled placeholder={question.placeholder} className="h-11" />;
   }
+  if (question.type === "rating") {
+    return <StarRatingPreview />;
+  }
+  if (question.type === "photos") {
+    return <UploadZonePreview label="📷 Ανέβασε φωτογραφίες" hint={`(max ${question.maxPhotos})`} />;
+  }
+  if (question.type === "pdf") {
+    return <UploadZonePreview label="📄 Ανέβασε PDF" />;
+  }
   if (question.type === "url") {
     const labels = question.options.filter((option) => option.trim());
     if (labels.length) {
@@ -509,6 +637,25 @@ function QuestionnairePreviewInput({ question }: { question: Question }) {
   return null;
 }
 
+function StarRatingPreview() {
+  return (
+    <div className="flex gap-1.5">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <Star key={n} className="h-6 w-6 text-slate-300 dark:text-slate-600" />
+      ))}
+    </div>
+  );
+}
+
+function UploadZonePreview({ label, hint }: { label: string; hint?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 p-6 text-center text-sm font-semibold text-slate-400 dark:border-slate-700 dark:text-slate-500">
+      <span>{label}</span>
+      {hint && <span className="text-xs">{hint}</span>}
+    </div>
+  );
+}
+
 function UrlPreviewInput({ placeholder, className }: { placeholder: string; className?: string }) {
   return (
     <div className="relative">
@@ -533,11 +680,13 @@ function UrlOptionsPreview({ labels, className }: { labels: string[]; className?
 
 function SortableQuestionRow({
   questionItem,
+  typeOptions,
   selected,
   onSelect,
   onToggleActive,
 }: {
   questionItem: Question;
+  typeOptions: TypeOption[];
   selected: boolean;
   onSelect: () => void;
   onToggleActive: (next: boolean) => void;
@@ -570,7 +719,7 @@ function SortableQuestionRow({
         </span>
       </button>
       <Badge variant="outline" className="h-auto shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold">
-        {typeLabel(questionItem.type)}
+        {typeLabel(questionItem.type, typeOptions)}
       </Badge>
       <Switch checked={questionItem.isActive} onCheckedChange={(checked) => onToggleActive(checked === true)} className="shrink-0" />
     </div>
@@ -593,6 +742,9 @@ function QuestionPreview({ question }: { question: Question }) {
       )}
       {question.type === "number" && <Input disabled type="number" placeholder={question.placeholder} className="h-11 bg-white dark:bg-slate-900" />}
       {question.type === "text" && <Input disabled placeholder={question.placeholder} className="h-11 bg-white dark:bg-slate-900" />}
+      {question.type === "rating" && <StarRatingPreview />}
+      {question.type === "photos" && <UploadZonePreview label="📷 Ανέβασε φωτογραφίες" hint={`(max ${question.maxPhotos})`} />}
+      {question.type === "pdf" && <UploadZonePreview label="📄 Ανέβασε PDF" />}
       {question.type === "url" &&
         (question.options.filter((option) => option.trim()).length ? (
           <UrlOptionsPreview labels={question.options.filter((option) => option.trim())} className="bg-white dark:bg-slate-900" />

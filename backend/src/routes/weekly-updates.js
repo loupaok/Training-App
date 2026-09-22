@@ -2,12 +2,15 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
 import { notifyCoaches } from './clients.js';
 import { sendMail } from '../lib/mailer.js';
 
 const router = express.Router();
+
+const UPDATE_QUESTION_TYPES = ['single_select', 'multi_select', 'text', 'number', 'textarea', 'url', 'rating', 'photos', 'pdf'];
 
 const seedUpdateQuestions = [
   {
@@ -267,6 +270,132 @@ router.get('/questions', async (req, res) => {
     const [rows] = await connection.query('SELECT * FROM update_questions WHERE is_active = 1 ORDER BY sort_order ASC, id ASC');
     connection.release();
     res.json(rows.map(normalizeQuestion));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Coach only — every question, active + inactive, for the admin builder.
+router.get('/questions/manage', authorizeRole(['coach', 'admin']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureWeeklyUpdateSchema(connection);
+    const [rows] = await connection.query('SELECT * FROM update_questions ORDER BY sort_order ASC, id ASC');
+    connection.release();
+    res.json(rows.map(normalizeQuestion));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.put('/questions/reorder', authorizeRole(['coach', 'admin']), [
+  body('ids').isArray({ min: 1 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  try {
+    const connection = await pool.getConnection();
+    await ensureWeeklyUpdateSchema(connection);
+    const { ids } = req.body;
+    for (let index = 0; index < ids.length; index += 1) {
+      await connection.query('UPDATE update_questions SET sort_order = ? WHERE id = ?', [index, ids[index]]);
+    }
+    connection.release();
+    res.json({ message: 'Questions reordered' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/questions', authorizeRole(['coach', 'admin']), [
+  body('question').notEmpty(),
+  body('type').isIn(UPDATE_QUESTION_TYPES),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  try {
+    const connection = await pool.getConnection();
+    await ensureWeeklyUpdateSchema(connection);
+
+    const [result] = await connection.query(
+      `INSERT INTO update_questions
+        (question, type, options, is_required, placeholder, allow_photos, max_photos, allow_pdf, sort_order, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        req.body.question,
+        req.body.type,
+        req.body.options ? JSON.stringify(req.body.options) : null,
+        req.body.isRequired === false ? 0 : 1,
+        req.body.placeholder || null,
+        req.body.allowPhotos === true ? 1 : 0,
+        req.body.maxPhotos || 4,
+        req.body.allowPdf === true ? 1 : 0,
+        req.body.sortOrder || 0,
+        req.body.isActive === false ? 0 : 1,
+      ]
+    );
+
+    const [rows] = await connection.query('SELECT * FROM update_questions WHERE id = ?', [result.insertId]);
+    connection.release();
+    res.status(201).json(normalizeQuestion(rows[0]));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.put('/questions/:id', authorizeRole(['coach', 'admin']), [
+  body('question').notEmpty(),
+  body('type').isIn(UPDATE_QUESTION_TYPES),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  try {
+    const connection = await pool.getConnection();
+    await ensureWeeklyUpdateSchema(connection);
+
+    await connection.query(
+      `UPDATE update_questions
+       SET question = ?, type = ?, options = ?, is_required = ?, placeholder = ?, allow_photos = ?, max_photos = ?, allow_pdf = ?, sort_order = ?, is_active = ?
+       WHERE id = ?`,
+      [
+        req.body.question,
+        req.body.type,
+        req.body.options ? JSON.stringify(req.body.options) : null,
+        req.body.isRequired === false ? 0 : 1,
+        req.body.placeholder || null,
+        req.body.allowPhotos === true ? 1 : 0,
+        req.body.maxPhotos || 4,
+        req.body.allowPdf === true ? 1 : 0,
+        req.body.sortOrder || 0,
+        req.body.isActive === false ? 0 : 1,
+        req.params.id,
+      ]
+    );
+
+    const [rows] = await connection.query('SELECT * FROM update_questions WHERE id = ?', [req.params.id]);
+    connection.release();
+    if (!rows.length) return res.status(404).json({ message: 'Question not found' });
+    res.json(normalizeQuestion(rows[0]));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.delete('/questions/:id', authorizeRole(['coach', 'admin']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureWeeklyUpdateSchema(connection);
+    await connection.query('DELETE FROM update_questions WHERE id = ?', [req.params.id]);
+    connection.release();
+    res.json({ message: 'Question deleted' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
