@@ -25,6 +25,7 @@ import questionnaireRoutes from './routes/questionnaire.js';
 import registerRoutes from './routes/register.js';
 import brandingRoutes from './routes/branding.js';
 import weeklyUpdateRoutes from './routes/weekly-updates.js';
+import settingsRoutes from './routes/settings.js';
 import { authenticateToken, isClient, isCoach } from './middleware/auth.js';
 
 dotenv.config();
@@ -96,6 +97,7 @@ app.use('/api/questionnaire', questionnaireRoutes);
 app.use('/api', registerRoutes);
 app.use('/api/branding', brandingRoutes);
 app.use('/api/updates', authenticateToken, weeklyUpdateRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

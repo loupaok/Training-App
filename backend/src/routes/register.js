@@ -9,7 +9,7 @@ import { ensureAuthSchema, generateAccessToken, generateRefreshToken, setAuthCoo
 import { getDefaultCoachId, notifyCoaches, ensureNotificationsSchema } from './clients.js';
 import { ensureQuestionnaireSchema } from './questionnaire.js';
 import { ensurePricingPlansSchema } from './pricingPlans.js';
-import { sendMail } from '../lib/mailer.js';
+import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { registrationEmail } from '../lib/email-templates.js';
 import { logClientActivity } from '../lib/client-activity-log.js';
 
@@ -330,7 +330,13 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     setAuthCookies(res, accessToken, refreshToken);
 
     try {
-      sendMail({ to: email, ...registrationEmail(firstName, plan.name) }).catch((error) => console.error('Email failed', error));
+      getEmailTemplate('registration', {
+        clientName: firstName,
+        planName: plan.name,
+      }).then((template) => sendMail({
+        to: email,
+        ...(template || registrationEmail(firstName, plan.name)),
+      })).catch((error) => console.error('Email failed', error));
     } catch (error) {
       console.error('Email failed', error);
     }

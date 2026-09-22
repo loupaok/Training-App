@@ -1,17 +1,19 @@
 import cron from 'node-cron';
 import fs from 'fs';
 import { pool } from './index.js';
-import { sendMail } from './lib/mailer.js';
+import { getEmailTemplate, sendMail } from './lib/mailer.js';
 import { updateReminderEmail, subscriptionExpiryEmail } from './lib/email-templates.js';
+import { ensureSettingsSchema } from './routes/settings.js';
 
 // ─── CRON 1 ──────────────────────────────────────────────────────────────────
 // Daily 00:05 — update subscription statuses
 // active → expiring_soon (≤7 days left)
 // active/expiring_soon → expired (end_date passed)
-cron.schedule('5 0 * * *', async () => {
+async function runSubscriptionStatus() {
   console.log('[CRON] Running subscription status update...');
+  let connection;
   try {
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
 
     // Mark expired
     const [expired] = await connection.query(
@@ -29,12 +31,16 @@ cron.schedule('5 0 * * *', async () => {
          AND status = 'active'`
     );
 
-    connection.release();
+    await connection.query(
+      `UPDATE cron_settings SET last_run = NOW() WHERE job_key = 'subscription_status'`
+    );
     console.log(`[CRON] Subscriptions — expired: ${expired.affectedRows}, expiring_soon: ${expiring.affectedRows}`);
   } catch (err) {
     console.error('[CRON] Subscription status update failed:', err.message);
+  } finally {
+    connection?.release();
   }
-});
+}
 
 // ─── CRON 2 ──────────────────────────────────────────────────────────────────
 // Daily 01:00 — keep only the 3 most recent progress updates worth of photos per client
@@ -165,10 +171,11 @@ function getCurrentWeekStart() {
   return `${year}-${month}-${dayOfMonth}`;
 }
 
-cron.schedule('0 9 * * *', async () => {
+async function runUpdateReminder() {
   console.log('[CRON] Running weekly update reminders...');
+  let connection;
   try {
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
     const todayDayOfWeek = new Date().getDay();
     const weekStart = getCurrentWeekStart();
 
@@ -191,27 +198,39 @@ cron.schedule('0 9 * * *', async () => {
       // dashboard instead of a route that would 404.
       const dashboardUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-dashboard`;
       try {
-        await sendMail({ to: client.email, ...updateReminderEmail(name, dashboardUrl) });
+        const template = await getEmailTemplate('update_reminder', {
+          clientName: name,
+          submitUrl: dashboardUrl,
+        }, connection);
+        await sendMail({
+          to: client.email,
+          ...(template || updateReminderEmail(name, dashboardUrl)),
+        });
         console.log(`Reminder sent to ${name}`);
       } catch (e) {
         console.error('Email failed', e);
       }
     }
 
-    connection.release();
+    await connection.query(
+      `UPDATE cron_settings SET last_run = NOW() WHERE job_key = 'update_reminder'`
+    );
     console.log('Update reminders sent');
   } catch (e) {
     console.error('Cron error:', e);
+  } finally {
+    connection?.release();
   }
-}, { timezone: 'Europe/Athens' });
+}
 
 // ─── CRON 5 ──────────────────────────────────────────────────────────────────
 // Daily 08:00 — email clients whose subscription expires in exactly 7 days
 // (separate from CRON 3's existing 09:00 expiry notifications, left untouched).
-cron.schedule('0 8 * * *', async () => {
+async function runSubscriptionExpiry() {
   console.log('[CRON] Running subscription expiry reminders...');
+  let connection;
   try {
-    const connection = await pool.getConnection();
+    connection = await pool.getConnection();
 
     const [expiringSubs] = await connection.query(
       `SELECT uc.email AS client_email, uc.full_name AS client_name
@@ -224,17 +243,83 @@ cron.schedule('0 8 * * *', async () => {
     for (const sub of expiringSubs) {
       const name = sub.client_name || sub.client_email;
       try {
-        await sendMail({ to: sub.client_email, ...subscriptionExpiryEmail(name, 7) });
+        const renewUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-billing`;
+        const template = await getEmailTemplate('subscription_expiry', {
+          clientName: name,
+          daysLeft: 7,
+          renewUrl,
+        }, connection);
+        await sendMail({
+          to: sub.client_email,
+          ...(template || subscriptionExpiryEmail(name, 7)),
+        });
       } catch (e) {
         console.error('Email failed', e);
       }
     }
 
-    connection.release();
+    await connection.query(
+      `UPDATE cron_settings SET last_run = NOW() WHERE job_key = 'subscription_expiry'`
+    );
     console.log('Subscription expiry reminders sent');
   } catch (e) {
     console.error('Cron error:', e);
+  } finally {
+    connection?.release();
   }
-}, { timezone: 'Europe/Athens' });
+}
 
-console.log('✓ Cron jobs registered');
+const cronJobs = new Map();
+const managedCronJobs = new Map([
+  ['update_reminder', runUpdateReminder],
+  ['subscription_expiry', runSubscriptionExpiry],
+  ['subscription_status', runSubscriptionStatus],
+]);
+
+export async function rescheduleJob(jobKey, hour, minute, isActive, conn) {
+  void conn;
+
+  const existingJob = cronJobs.get(jobKey);
+  if (existingJob) {
+    existingJob.stop();
+    cronJobs.delete(jobKey);
+  }
+
+  const runner = managedCronJobs.get(jobKey);
+  if (!runner || !isActive) return;
+
+  const schedule = `${Number(minute)} ${Number(hour)} * * *`;
+  const task = cron.schedule(schedule, () => {
+    void runner();
+  }, { timezone: 'Europe/Athens' });
+  cronJobs.set(jobKey, task);
+}
+
+async function loadCronSchedules() {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await ensureSettingsSchema(connection);
+    const [schedules] = await connection.query(
+      `SELECT job_key, hour, minute, is_active FROM cron_settings`
+    );
+
+    for (const schedule of schedules) {
+      await rescheduleJob(
+        schedule.job_key,
+        schedule.hour,
+        schedule.minute,
+        Boolean(schedule.is_active),
+        connection
+      );
+    }
+    console.log(`[CRON] Loaded ${schedules.length} managed schedules from database`);
+  } catch (error) {
+    console.error('[CRON] Failed to load managed schedules:', error.message);
+  } finally {
+    connection?.release();
+  }
+}
+
+void loadCronSchedules();
+console.log('Cron jobs registered');

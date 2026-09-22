@@ -6,7 +6,7 @@ import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
 import { notifyCoaches } from './clients.js';
-import { sendMail } from '../lib/mailer.js';
+import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { updateNotificationEmail } from '../lib/email-templates.js';
 
 const router = express.Router();
@@ -558,9 +558,18 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
       const { weight, trainingScore, nutritionScore } = extractUpdateStats(answers, activeQuestions);
       const updatesLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/coach/updates?id=${updateId}`;
 
+      const databaseTemplate = await getEmailTemplate('update_notification', {
+        clientName,
+        weight,
+        trainingScore,
+        nutritionScore,
+        updateUrl: updatesLink,
+      });
+
       coachRows.forEach((coach) => {
         try {
-          const template = updateNotificationEmail(clientName, weight, trainingScore, nutritionScore, updatesLink);
+          const template = databaseTemplate
+            || updateNotificationEmail(clientName, weight, trainingScore, nutritionScore, updatesLink);
           sendMail({ to: coach.email, ...template }).catch((error) => console.error('Email failed', error));
         } catch (error) {
           console.error('Email failed', error);
