@@ -150,4 +150,62 @@ cron.schedule('0 9 * * *', async () => {
   }
 });
 
+// ─── CRON 4 ──────────────────────────────────────────────────────────────────
+// Daily 09:00 — remind clients whose weekly-update day is today and who
+// haven't submitted a weekly update yet this week.
+function getCurrentWeekStart() {
+  const current = new Date();
+  const day = current.getDay();
+  const diff = current.getDate() - day + (day === 0 ? -6 : 1);
+  current.setDate(diff);
+  const year = current.getFullYear();
+  const month = String(current.getMonth() + 1).padStart(2, '0');
+  const dayOfMonth = String(current.getDate()).padStart(2, '0');
+  return `${year}-${month}-${dayOfMonth}`;
+}
+
+cron.schedule('0 9 * * *', async () => {
+  console.log('[CRON] Running weekly update reminders...');
+  try {
+    const connection = await pool.getConnection();
+    const todayDayOfWeek = new Date().getDay();
+    const weekStart = getCurrentWeekStart();
+
+    const [dueClients] = await connection.query(
+      `SELECT u.id, u.email, u.full_name
+       FROM users u
+       JOIN update_schedule us ON us.client_id = u.id
+       WHERE u.role = 'client' AND u.is_active = 1
+         AND us.day_of_week = ?
+         AND NOT EXISTS (
+           SELECT 1 FROM weekly_updates wu WHERE wu.client_id = u.id AND wu.week_start = ?
+         )`,
+      [todayDayOfWeek, weekStart]
+    );
+
+    for (const client of dueClients) {
+      const name = client.full_name || client.email;
+      // /client/update (a dedicated submission page) doesn't exist yet — this
+      // build never included one, so the reminder links to the real client
+      // dashboard instead of a route that would 404.
+      const dashboardUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-dashboard`;
+      await sendMail(
+        client.email,
+        'Είναι η ώρα του update σου! 💪',
+        `<p>Γεια ${name},</p>
+         <p>Σήμερα είναι η μέρα του εβδομαδιαίου update σου.</p>
+         <p>Μπες στην εφαρμογή και στείλε το update σου!</p>
+         <p><a href="${dashboardUrl}">Στείλε Update →</a></p>
+         <p>Ο coach σου σε περιμένει! 💪</p>`
+      );
+      console.log(`[CRON] Reminder sent to ${name} (${client.email})`);
+    }
+
+    connection.release();
+    console.log(`[CRON] Weekly update reminders — sent: ${dueClients.length}`);
+  } catch (err) {
+    console.error('[CRON] Weekly update reminders failed:', err.message);
+  }
+});
+
 console.log('✓ Cron jobs registered');

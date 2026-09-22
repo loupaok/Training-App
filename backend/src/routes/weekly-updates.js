@@ -259,6 +259,27 @@ function nextDateForWeekday(day) {
   return toLocalDateString(next);
 }
 
+// Matches the same question-stem heuristic used by the coach updates page
+// (frontend/components/pages/coach-updates-page.tsx) so the email summary
+// and the dashboard cards agree on which rating is which.
+function buildQuickStatsSummary(answers, questions) {
+  const questionById = new Map(questions.map((question) => [question.id, question]));
+  const parts = [];
+  for (const entry of answers) {
+    const question = questionById.get(Number(entry.question_id));
+    if (!question || !entry.answer) continue;
+    if (question.type === 'number') {
+      parts.push(`⚖️ ${entry.answer}kg`);
+    } else if (question.type === 'rating') {
+      const text = question.question || '';
+      if (text.includes('προπον')) parts.push(`🏋️⭐${entry.answer}/5`);
+      else if (text.includes('διατροφ')) parts.push(`🥗⭐${entry.answer}/5`);
+      else parts.push(`⭐ ${entry.answer}/5`);
+    }
+  }
+  return parts.join(' · ');
+}
+
 // ---------------------------------------------------------------------------
 // Client endpoints
 // ---------------------------------------------------------------------------
@@ -531,11 +552,18 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
       });
       const [coachRows] = await notifyConn.query("SELECT email FROM users WHERE role IN ('admin', 'coach') AND is_active = 1");
       notifyConn.release();
+
+      const submittedAt = new Date().toLocaleDateString('el-GR', { day: 'numeric', month: 'short', year: 'numeric' });
+      const quickStats = buildQuickStatsSummary(answers, activeQuestions);
+      const updatesLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/coach/updates?id=${updateId}`;
+
       coachRows.forEach((coach) => {
         sendMail(
           coach.email,
           `Νέο update από ${clientName}`,
-          `<p>Ο πελάτης <strong>${clientName}</strong> υπέβαλε νέο εβδομαδιαίο update.</p>`
+          `<p>Ο πελάτης <strong>${clientName}</strong> υπέβαλε νέο εβδομαδιαίο update στις ${submittedAt}.</p>` +
+            (quickStats ? `<p>${quickStats}</p>` : '') +
+            `<p><a href="${updatesLink}">Δείτε το update →</a></p>`
         ).catch((error) => console.error('Failed to send update notification email:', error));
       });
     } catch (notifyError) {
