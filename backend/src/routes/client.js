@@ -142,7 +142,17 @@ async function getPlans(connection, clientId) {
   if (nutrition) {
     const [meals] = await connection.query('SELECT * FROM nutrition_plan_meals WHERE nutrition_plan_id = ? ORDER BY day_of_week, sort_order', [nutrition.id]);
     const mealIds = meals.map((meal) => meal.id);
-    const [foods] = mealIds.length ? await connection.query('SELECT * FROM nutrition_plan_foods WHERE meal_id IN (?) ORDER BY sort_order', [mealIds]) : [[]];
+    const [foods] = mealIds.length ? await connection.query(
+      `SELECT npf.*, f.image_url AS food_image
+       FROM nutrition_plan_foods npf
+       LEFT JOIN foods f ON (
+         LOWER(TRIM(npf.food_name)) = LOWER(TRIM(f.name_gr))
+         OR LOWER(TRIM(npf.food_name)) = LOWER(TRIM(f.name_en))
+       )
+       WHERE npf.meal_id IN (?)
+       ORDER BY npf.sort_order`,
+      [mealIds]
+    ) : [[]];
     nutrition.meals = meals.map((meal) => ({ ...meal, name: meal.name || `Meal ${meal.sort_order + 1}`, foods: foods.filter((food) => food.meal_id === meal.id).map((food) => ({ ...food, name: food.food_name || food.name, amount: food.quantity || food.amount })) }));
   }
   return { training, nutrition };

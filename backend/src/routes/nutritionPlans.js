@@ -76,6 +76,7 @@ export async function ensureNutritionPlanBuilderSchema(connection) {
     CREATE TABLE IF NOT EXISTS nutrition_plan_foods (
       id INT AUTO_INCREMENT PRIMARY KEY,
       meal_id INT NOT NULL,
+      food_id INT NULL,
       food_name VARCHAR(255) NOT NULL,
       quantity VARCHAR(100),
       calories INT,
@@ -89,6 +90,8 @@ export async function ensureNutritionPlanBuilderSchema(connection) {
       INDEX idx_meal_id (meal_id)
     )
   `);
+
+  await connection.query('ALTER TABLE nutrition_plan_foods ADD COLUMN IF NOT EXISTS food_id INT NULL AFTER meal_id');
 }
 
 async function getFullNutritionPlan(connection, clientId) {
@@ -160,9 +163,9 @@ export async function insertNutritionPlanMeals(connection, planId, meals) {
       if (!foodName) continue;
       await connection.query(
         `INSERT INTO nutrition_plan_foods
-          (meal_id, food_name, quantity, calories, protein_g, carbs_g, fat_g, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [mealResult.insertId, foodName, food.quantity || null, food.calories || null, food.proteinG || food.protein_g || null, food.carbsG || food.carbs_g || null, food.fatG || food.fat_g || null, foodIndex]
+          (meal_id, food_id, food_name, quantity, calories, protein_g, carbs_g, fat_g, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [mealResult.insertId, food.foodId || food.food_id || null, foodName, food.quantity || null, food.calories || null, food.proteinG || food.protein_g || null, food.carbsG || food.carbs_g || null, food.fatG || food.fat_g || null, foodIndex]
       );
     }
   }

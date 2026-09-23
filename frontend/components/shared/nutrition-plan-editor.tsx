@@ -341,10 +341,15 @@ export function NutritionPlanEditor({
   // ---- NEW (approved): quantity edits on a library-linked row rescale macros from per-100g values ----
   const updateFoodQuantity = (mealIndex: number, foodIndex: number, value: string) => {
     const food = plan.meals[mealIndex]?.foods[foodIndex];
-    const libraryFood = food?.foodId != null ? foods.find((item) => String(item.id) === String(food.foodId)) : null;
+    const normalizedName = String(food?.foodName || "").trim().toLocaleLowerCase("el-GR");
+    const libraryFood = food?.foodId != null
+      ? foods.find((item) => String(item.id) === String(food.foodId))
+      : foods.find((item) => [item.nameGr, item.nameEn]
+        .filter(Boolean)
+        .some((name) => String(name).trim().toLocaleLowerCase("el-GR") === normalizedName));
 
     if (libraryFood) {
-      updateFood(mealIndex, foodIndex, { quantity: value, ...scaleFoodMacros(libraryFood, Number(value) || 0) });
+      updateFood(mealIndex, foodIndex, { foodId: libraryFood.id, quantity: value, ...scaleFoodMacros(libraryFood, Number(value) || 0) });
       return;
     }
     updateFood(mealIndex, foodIndex, { quantity: value });
@@ -575,12 +580,19 @@ export function NutritionPlanEditor({
                                 </div>
                               </TableCell>
                               <TableCell className="align-top">
-                                <Input
-                                  value={food.quantity}
-                                  onChange={(event) => updateFoodQuantity(mealIndex, foodIndex, event.target.value)}
-                                  placeholder={food.foodId != null ? "π.χ. 150" : "π.χ. 1 φλιτζάνι"}
-                                  className="h-9 text-sm"
-                                />
+                                <div className="flex items-center gap-1">
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    step="0.1"
+                                    inputMode="decimal"
+                                    value={food.quantity}
+                                    onChange={(event) => updateFoodQuantity(mealIndex, foodIndex, event.target.value)}
+                                    placeholder="π.χ. 150"
+                                    className="h-9 min-w-0 text-sm"
+                                  />
+                                  <span className="text-sm font-medium text-muted-foreground">g</span>
+                                </div>
                               </TableCell>
                               <TableCell className="align-top">
                                 <Input

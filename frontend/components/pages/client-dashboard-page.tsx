@@ -208,7 +208,7 @@ function ClientDashboardContent() {
             </div>
             <div className="grid gap-6 lg:grid-cols-2">
               <PlanCard title="Πρόγραμμα Προπόνησης" icon={<Dumbbell className="h-5 w-5 text-primary" />}>{trainingPlan ? <><p className="font-medium">{trainingPlan.title}</p><p className="mt-1 text-sm text-muted-foreground">{trainingPlan.days.length} ημέρες προπόνησης</p><Button className="mt-4" variant="outline" size="sm" onClick={() => setActiveTab("training")}>Δες το πρόγραμμα</Button></> : <p className="text-sm text-muted-foreground">Δεν έχει ανατεθεί πρόγραμμα προπόνησης ακόμα.</p>}</PlanCard>
-              <PlanCard title="Πλάνο Διατροφής" icon={<Salad className="h-5 w-5 text-primary" />}>{nutritionPlan ? <><p className="font-medium">{nutritionPlan.title}</p><p className="mt-1 text-sm text-muted-foreground">{nutritionPlan.meals.length} γεύματα</p><Button asChild className="mt-4" variant="outline" size="sm"><Link href="/client-nutrition">Δες τη διατροφή</Link></Button></> : <p className="text-sm text-muted-foreground">Δεν έχει ανατεθεί διατροφικό πλάνο ακόμα.</p>}</PlanCard>
+              <PlanCard title="Πλάνο Διατροφής" icon={<Salad className="h-5 w-5 text-primary" />}>{nutritionPlan ? <><p className="font-medium">{nutritionPlan.title}</p><p className="mt-1 text-sm text-muted-foreground">{nutritionPlan.meals.length} γεύματα</p><Button asChild nativeButton={false} className="mt-4" variant="outline" size="sm"><Link href="/client-nutrition">Δες τη διατροφή</Link></Button></> : <p className="text-sm text-muted-foreground">Δεν έχει ανατεθεί διατροφικό πλάνο ακόμα.</p>}</PlanCard>
             </div>
           </TabsContent>
 
