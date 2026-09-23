@@ -44,6 +44,7 @@ async function ensureWorkoutSchema(connection) {
       total_sets_completed INT DEFAULT 0,
       total_volume_kg DECIMAL(10,2) DEFAULT 0,
       notes TEXT NULL,
+      workout_feeling VARCHAR(20) NULL,
       FOREIGN KEY (client_id) REFERENCES users(id),
       INDEX idx_workout_client_completed (client_id, completed_at),
       INDEX idx_workout_plan_day (training_plan_id, day_number)
@@ -59,11 +60,14 @@ async function ensureWorkoutSchema(connection) {
       target_reps INT NULL,
       reps_completed INT NULL,
       weight_kg DECIMAL(6,2) DEFAULT 0,
+      set_type VARCHAR(20) NOT NULL DEFAULT 'normal',
       completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (workout_log_id) REFERENCES workout_logs(id) ON DELETE CASCADE,
       UNIQUE KEY unique_workout_exercise_set (workout_log_id, exercise_name, set_number)
     )
   `);
+  await connection.query("ALTER TABLE workout_logs ADD COLUMN IF NOT EXISTS workout_feeling VARCHAR(20) NULL");
+  await connection.query("ALTER TABLE workout_set_logs ADD COLUMN IF NOT EXISTS set_type VARCHAR(20) NOT NULL DEFAULT 'normal'");
 }
 
 const today = (value = new Date()) => {
@@ -233,16 +237,20 @@ router.post('/workout/log-set', async (req, res) => {
     const weightKg = Math.max(0, Number(req.body.weightKg) || 0);
     const exerciseName = String(req.body.exerciseName || '').trim().slice(0, 255);
     const exerciseId = Number(req.body.exerciseId) || null;
+    const setType = String(req.body.setType || 'normal').trim().toLowerCase();
+    if (!['normal', 'warmup', 'drop', 'failure'].includes(setType)) {
+      return res.status(400).json({ message: 'Invalid set type.' });
+    }
     if (!Number.isInteger(workoutLogId) || !Number.isInteger(setNumber) || setNumber < 1 || !exerciseName) {
       return res.status(400).json({ message: 'Invalid set details.' });
     }
     const [logs] = await connection.query('SELECT id FROM workout_logs WHERE id = ? AND client_id = ? AND completed_at IS NULL', [workoutLogId, req.user.id]);
     if (!logs.length) return res.status(404).json({ message: 'Active workout not found.' });
     await connection.query(
-      `INSERT INTO workout_set_logs (workout_log_id, exercise_name, exercise_id, set_number, target_reps, reps_completed, weight_kg)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE target_reps = VALUES(target_reps), reps_completed = VALUES(reps_completed), weight_kg = VALUES(weight_kg), completed_at = CURRENT_TIMESTAMP`,
-      [workoutLogId, exerciseName, exerciseId, setNumber, targetReps, repsCompleted, weightKg]
+      `INSERT INTO workout_set_logs (workout_log_id, exercise_name, exercise_id, set_number, target_reps, reps_completed, weight_kg, set_type)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE target_reps = VALUES(target_reps), reps_completed = VALUES(reps_completed), weight_kg = VALUES(weight_kg), set_type = VALUES(set_type), completed_at = CURRENT_TIMESTAMP`,
+      [workoutLogId, exerciseName, exerciseId, setNumber, targetReps, repsCompleted, weightKg, setType]
     );
     res.json({ success: true });
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
@@ -257,10 +265,14 @@ router.post('/workout/complete', async (req, res) => {
     const totalSetsCompleted = Math.max(0, Number(req.body.totalSetsCompleted) || 0);
     const totalVolumeKg = Math.max(0, Number(req.body.totalVolumeKg) || 0);
     const notes = String(req.body.notes || '').trim() || null;
+    const workoutFeeling = String(req.body.workoutFeeling || '').trim().toLowerCase() || null;
+    if (workoutFeeling && !['easy', 'good', 'hard', 'pr'].includes(workoutFeeling)) {
+      return res.status(400).json({ message: 'Invalid workout feeling.' });
+    }
     const [result] = await connection.query(
-      `UPDATE workout_logs SET completed_at = NOW(), duration_seconds = ?, total_sets_completed = ?, total_volume_kg = ?, notes = ?
+      `UPDATE workout_logs SET completed_at = NOW(), duration_seconds = ?, total_sets_completed = ?, total_volume_kg = ?, notes = ?, workout_feeling = ?
        WHERE id = ? AND client_id = ? AND completed_at IS NULL`,
-      [durationSeconds, totalSetsCompleted, totalVolumeKg, notes, workoutLogId, req.user.id]
+      [durationSeconds, totalSetsCompleted, totalVolumeKg, notes, workoutFeeling, workoutLogId, req.user.id]
     );
     if (!result.affectedRows) return res.status(404).json({ message: 'Active workout not found.' });
     res.json({ success: true, summary: { durationSeconds, totalSetsCompleted, totalVolumeKg } });
