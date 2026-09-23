@@ -1,14 +1,18 @@
 "use client"
 
+import { isValidElement, type ReactNode } from "react"
 import { Collapsible as CollapsiblePrimitive } from "@base-ui/react/collapsible"
 
 function Collapsible({ ...props }: CollapsiblePrimitive.Root.Props) {
   return <CollapsiblePrimitive.Root data-slot="collapsible" {...props} />
 }
 
-function CollapsibleTrigger({ ...props }: CollapsiblePrimitive.Trigger.Props) {
+function CollapsibleTrigger({ asChild, children, ...props }: CollapsiblePrimitive.Trigger.Props & { asChild?: boolean; children?: ReactNode }) {
+  if (asChild && isValidElement(children)) {
+    return <CollapsiblePrimitive.Trigger data-slot="collapsible-trigger" {...props} render={children} />
+  }
   return (
-    <CollapsiblePrimitive.Trigger data-slot="collapsible-trigger" {...props} />
+    <CollapsiblePrimitive.Trigger data-slot="collapsible-trigger" {...props}>{children}</CollapsiblePrimitive.Trigger>
   )
 }
 

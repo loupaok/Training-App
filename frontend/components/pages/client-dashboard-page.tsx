@@ -41,7 +41,8 @@ type Update = {
   id: number
   submittedAt: string
   weekStart: string
-  answers: Array<{ question: string; type: string; answer: string | null }>
+  answers?: Array<{ question: string; type: string; answer: string | null }>
+  weight?: number | null
   photos: string[]
 }
 
@@ -138,7 +139,7 @@ function ClientDashboardContent() {
 
   const chartData = useMemo(() => updates
     .map((update) => {
-      const weight = update.answers.find((answer) => answer.type === "number" && answer.question.toLocaleLowerCase("el-GR").normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes("\u03b2\u03b1\u03c1\u03bf\u03c3"))?.answer
+      const weight = update.weight ?? update.answers?.find((answer) => answer.type === "number" && answer.question.toLocaleLowerCase("el-GR").normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes("\u03b2\u03b1\u03c1\u03bf\u03c3"))?.answer
       return weight ? { date: formatDate(update.submittedAt), weight: Number(weight) } : null
     })
     .filter((entry): entry is { date: string; weight: number } => entry !== null)
@@ -230,7 +231,7 @@ function ClientDashboardContent() {
           <TabsContent value="progress" className="space-y-6">
             <PlanCard title="Πρόοδος βάρους" icon={<Dumbbell className="h-5 w-5 text-primary" />}>{chartData.length > 1 ? <AreaChart className="h-64" data={chartData} index="date" categories={["weight"]} colors={["blue"]} valueFormatter={(value) => `${value} kg`} /> : <p className="text-sm text-muted-foreground">Χρειάζονται τουλάχιστον δύο ενημερώσεις με βάρος για το γράφημα.</p>}</PlanCard>
             <PlanCard title="Φωτογραφίες προόδου" icon={<Upload className="h-5 w-5 text-primary" />}>{updates.flatMap((update) => update.photos).length ? <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{updates.flatMap((update) => update.photos).slice(0, 8).map((photo, index) => <a key={`${photo}-${index}`} href={resolveMediaUrl(photo)} target="_blank" rel="noreferrer"><img className="aspect-square w-full rounded-md object-cover" src={resolveMediaUrl(photo)} alt="Φωτογραφία προόδου" /></a>)}</div> : <p className="text-sm text-muted-foreground">Δεν υπάρχουν φωτογραφίες προόδου ακόμα.</p>}</PlanCard>
-            <PlanCard title="Ιστορικό updates" icon={<FileText className="h-5 w-5 text-primary" />}>{updates.length ? <div className="space-y-3">{updates.map((update) => <div key={update.id} className="flex flex-wrap items-center justify-between gap-3 border-b pb-3 last:border-0"><div><p className="font-medium">{formatDate(update.submittedAt)}</p><p className="text-xs text-muted-foreground">{update.answers.length} απαντήσεις · {update.photos.length} φωτογραφίες</p></div></div>)}</div> : <p className="text-sm text-muted-foreground">Δεν έχεις υποβάλει update ακόμα.</p>}</PlanCard>
+            <PlanCard title="Ιστορικό updates" icon={<FileText className="h-5 w-5 text-primary" />}>{updates.length ? <div className="space-y-3">{updates.map((update) => <div key={update.id} className="flex flex-wrap items-center justify-between gap-3 border-b pb-3 last:border-0"><div><p className="font-medium">{formatDate(update.submittedAt)}</p><p className="text-xs text-muted-foreground">{update.answers?.length || 0} απαντήσεις · {update.photos?.length || 0} φωτογραφίες</p></div></div>)}</div> : <p className="text-sm text-muted-foreground">Δεν έχεις υποβάλει update ακόμα.</p>}</PlanCard>
           </TabsContent>
 
           <TabsContent value="payments"><div className="grid gap-6 lg:grid-cols-3"><PlanCard title="Συνδρομή" icon={<CalendarDays className="h-5 w-5 text-primary" />}><Badge>{paymentData?.subscription?.status === "active" ? "Ενεργή" : "-"}</Badge><p className="mt-3 font-medium">{paymentData?.subscription?.planName ?? "Δεν υπάρχει ενεργή συνδρομή"}</p><p className="text-sm text-muted-foreground">{paymentData?.subscription?.daysRemaining != null ? `${paymentData.subscription.daysRemaining} ημέρες απομένουν` : ""}</p></PlanCard><PlanCard title="Πληρωμές" icon={<FileText className="h-5 w-5 text-primary" />}><p className="text-3xl font-bold">{paymentData?.payments.length ?? 0}</p><p className="text-sm text-muted-foreground">καταγεγραμμένες πληρωμές</p></PlanCard><PlanCard title="Επόμενη λήξη" icon={<CalendarDays className="h-5 w-5 text-primary" />}><p className="text-lg font-semibold">{formatDate(paymentData?.subscription?.endDate)}</p></PlanCard></div><PlanCard title="Ιστορικό πληρωμών" icon={<FileText className="h-5 w-5 text-primary" />}>{paymentData?.payments.length ? <div className="space-y-3">{paymentData.payments.map((payment) => <div key={payment.id} className="flex items-center justify-between border-b pb-3 last:border-0"><div><p className="font-medium">€{Number(payment.amount).toFixed(2)}</p><p className="text-xs text-muted-foreground">{formatDate(payment.paidAt)} · {paymentMethod[payment.method] ?? payment.method}</p></div><Badge variant={payment.status === "confirmed" ? "default" : "secondary"}>{payment.status === "confirmed" ? "Εγκρίθηκε" : "Εκκρεμεί"}</Badge></div>)}</div> : <p className="text-sm text-muted-foreground">Δεν υπάρχουν πληρωμές ακόμα.</p>}</PlanCard></TabsContent>

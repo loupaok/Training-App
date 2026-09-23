@@ -149,9 +149,9 @@ async function getPlans(connection, clientId) {
 }
 
 function streakFor(updates) {
-  const weeks = new Set(updates.map((update) => update.weekStart));
+  const weeks = new Set(updates.map((update) => today(new Date(update.weekStart))));
   let streak = 0;
-  let cursor = new Date(`${updates[0]?.weekStart || currentWeekStart()}T00:00:00`);
+  let cursor = updates[0]?.weekStart ? new Date(updates[0].weekStart) : new Date(`${currentWeekStart()}T00:00:00`);
   while (weeks.has(today(cursor))) { streak += 1; cursor.setDate(cursor.getDate() - 7); }
   return streak;
 }
@@ -159,17 +159,32 @@ function streakFor(updates) {
 router.get('/dashboard', async (req, res) => {
   const connection = await pool.getConnection();
   try {
-    await ensureWeeklyUpdateSchema(connection);
+    try {
+      await ensureWeeklyUpdateSchema(connection);
+    } catch (schemaError) {
+      console.error('Client dashboard weekly-update schema check failed:', schemaError);
+    }
     const clientId = req.user.id;
     const [users] = await connection.query('SELECT full_name FROM users WHERE id = ?', [clientId]);
     const [schedules] = await connection.query('SELECT day_of_week, next_due_date FROM update_schedule WHERE client_id = ? ORDER BY updated_at DESC LIMIT 1', [clientId]);
     const [subscriptions] = await connection.query("SELECT plan_name, status, DATEDIFF(end_date, CURDATE()) AS days_remaining FROM subscriptions WHERE client_id = ? ORDER BY created_at DESC LIMIT 1", [clientId]);
-    const updates = await getUpdates(connection, clientId, 52);
-    const { training, nutrition } = await getPlans(connection, clientId);
+    let updates = [];
+    try {
+      updates = await getUpdates(connection, clientId, 52);
+    } catch (updatesError) {
+      console.error('Client dashboard update lookup failed:', updatesError);
+    }
+    let training = null;
+    let nutrition = null;
+    try {
+      ({ training, nutrition } = await getPlans(connection, clientId));
+    } catch (planError) {
+      console.error('Client dashboard plan lookup failed:', planError);
+    }
     const schedule = schedules[0] || null;
     const subscription = subscriptions[0] || null;
     const todayIsUpdateDay = schedule ? Number(schedule.day_of_week) === new Date().getDay() : false;
-    const alreadySubmittedThisWeek = updates.some((update) => update.weekStart === currentWeekStart());
+    const alreadySubmittedThisWeek = updates.some((update) => today(new Date(update.weekStart)) === currentWeekStart());
     const lastUpdate = updates[0] || null;
     const ratings = [lastUpdate?.trainingRating, lastUpdate?.nutritionRating, lastUpdate?.generalRating].filter(Number.isFinite);
     const averageRating = ratings.length ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length : null;

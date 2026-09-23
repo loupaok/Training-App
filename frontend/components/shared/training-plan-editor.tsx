@@ -27,7 +27,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { resolveMediaUrl } from "@/lib/media";
@@ -265,7 +264,6 @@ export function TrainingPlanEditor({
   const visibleDays = (plan.days || []).slice(0, plan.dayCount || plan.days?.length || 1);
   const selectedDay = visibleDays[activeDayIndex] || visibleDays[0];
   const muscleGroups = [...new Set((selectedDay?.exercises || []).map((exercise) => exercise.muscleGroup).filter(Boolean))];
-  const isRestDay = (selectedDay?.exercises?.length ?? 0) === 0;
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -309,12 +307,6 @@ export function TrainingPlanEditor({
   const removeExercise = (dayIndex: number, exerciseIndex: number) => {
     const day = plan.days[dayIndex];
     updateDay(dayIndex, { exercises: day.exercises.filter((_, index) => index !== exerciseIndex) });
-  };
-
-  // ---- NEW #1 (approved): rest-day toggle reuses updateDay, no new state shape ----
-  const toggleRestDay = (checked: boolean) => {
-    if (checked) updateDay(activeDayIndex, { exercises: [] });
-    // turning it back off just leaves the (empty) day visible to add exercises to
   };
 
   // ---- NEW #2 (approved): library click = addExercise + updateExercise in one step ----
@@ -491,11 +483,7 @@ export function TrainingPlanEditor({
                         <h2 className="font-semibold">{getDayTitle(selectedDay, activeDayIndex)}</h2>
                         <p className="text-xs text-muted-foreground">Ημέρα {activeDayIndex + 1} · {selectedDay.exercises.length} ασκήσεις</p>
                       </div>
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <Switch checked={isRestDay} onCheckedChange={toggleRestDay} />
-                          <Label className="text-sm font-bold">Ημέρα ξεκούρασης</Label>
-                        </div>
+                      <div className="flex flex-wrap items-center justify-end gap-3">
                         <Button
                           type="button"
                           variant="outline"
@@ -523,8 +511,7 @@ export function TrainingPlanEditor({
                     </div>
 
                     <div className="flex-1 overflow-y-auto px-4 pb-4">
-                      {!isRestDay && (
-                        <SortableContext
+                      <SortableContext
                           items={selectedDay.exercises.map((_, index) => `ex-${index}`)}
                           strategy={verticalListSortingStrategy}
                         >
@@ -546,13 +533,6 @@ export function TrainingPlanEditor({
                             )}
                           </DayDropZone>
                         </SortableContext>
-                      )}
-
-                      {isRestDay && (
-                        <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm font-bold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
-                          Ημέρα ξεκούρασης — χωρίς ασκήσεις.
-                        </div>
-                      )}
                     </div>
                   </ResizablePanel>
 

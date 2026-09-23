@@ -239,8 +239,10 @@ function scaleFoodMacros(food: LibraryFood, grams: number) {
 // Presentation-only lookup — no new FoodEntry field. Rows added via the
 // library already carry foodId; freeform rows just render no image.
 function findLibraryFoodImage(entry: FoodEntry, foods: LibraryFood[]): string | undefined {
-  if (entry.foodId == null) return undefined;
-  return foods.find((item) => String(item.id) === String(entry.foodId))?.imageUrl;
+  const normalizedName = entry.foodName.trim().toLocaleLowerCase("el-GR");
+  return foods.find((item) => String(item.id) === String(entry.foodId)
+    || item.nameGr.trim().toLocaleLowerCase("el-GR") === normalizedName
+    || item.nameEn?.trim().toLocaleLowerCase("el-GR") === normalizedName)?.imageUrl;
 }
 
 // ---------------------------------------------------------------------------
@@ -269,6 +271,26 @@ export function NutritionPlanEditor({
   title?: string;
   subtitle?: string;
 }) {
+  const mealCollapseStorageKey = `nutrition-plan-meal-collapse:${plan.templateId ?? plan.templateTitle ?? plan.title ?? title}`;
+  const [openMeals, setOpenMeals] = useState<Record<number, boolean>>({});
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(mealCollapseStorageKey);
+      setOpenMeals(saved ? JSON.parse(saved) : {});
+    } catch {
+      setOpenMeals({});
+    }
+  }, [mealCollapseStorageKey]);
+
+  const setMealOpen = (mealIndex: number, open: boolean) => {
+    setOpenMeals((current) => {
+      const next = { ...current, [mealIndex]: open };
+      window.localStorage.setItem(mealCollapseStorageKey, JSON.stringify(next));
+      return next;
+    });
+  };
+
   // ---- existing functions, UNCHANGED ----
   const updateMeal = (mealIndex: number, patch: Partial<MealEntry>) => {
     setPlan((current) => ({
@@ -474,15 +496,20 @@ export function NutritionPlanEditor({
           const MealIcon = MEAL_ICONS[meal.mealType] || Utensils;
           return (
             <MealDropZone key={mealIndex} mealIndex={mealIndex}>
+            <Collapsible open={openMeals[mealIndex] ?? true} onOpenChange={(open) => setMealOpen(mealIndex, open)}>
             <Card>
               <CardHeader>
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400">
-                      <MealIcon className="h-5 w-5" />
-                    </span>
-                    <CardTitle>{meal.title || "Γεύμα"}</CardTitle>
-                  </div>
+                  <CollapsibleTrigger
+                    render={
+                      <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left">
+                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400">
+                          <MealIcon className="h-5 w-5" />
+                        </span>
+                        <CardTitle className="flex items-center gap-2"><ChevronDown className="h-4 w-4 shrink-0 transition-transform data-panel-open:rotate-180" />Γεύμα {mealIndex + 1}</CardTitle>
+                      </button>
+                    }
+                  />
                   <Button
                     type="button"
                     variant="ghost"
@@ -494,12 +521,12 @@ export function NutritionPlanEditor({
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  <Field compact label="Γεύμα" value={meal.title} onChange={(value) => updateMeal(mealIndex, { title: value })} />
-                  <SelectField label="Τύπος" value={meal.mealType} onChange={(value) => updateMeal(mealIndex, { mealType: value })} options={MEAL_TYPE_OPTIONS} />
+                <div className="mt-3 max-w-xs">
+                  <SelectField label="Τύπος γεύματος" value={meal.mealType} onChange={(value) => updateMeal(mealIndex, { mealType: value })} options={MEAL_TYPE_OPTIONS} />
                 </div>
               </CardHeader>
 
+              <CollapsibleContent>
               <CardContent>
                 <Field compact label="Οδηγίες γεύματος" value={meal.notes} onChange={(value) => updateMeal(mealIndex, { notes: value })} />
 
@@ -531,16 +558,14 @@ export function NutritionPlanEditor({
                             <TableRow key={foodIndex}>
                               <TableCell className="align-top">
                                 <div className="flex items-start gap-2">
-                                  {food.foodId != null && (
-                                    <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
-                                      {findLibraryFoodImage(food, foods) ? (
-                                        // eslint-disable-next-line @next/next/no-img-element
-                                        <img src={resolveMediaUrl(findLibraryFoodImage(food, foods))} alt="" className="h-full w-full object-cover" />
-                                      ) : (
-                                        <ImageOff className="h-4 w-4 text-slate-300 dark:text-slate-600" />
-                                      )}
-                                    </span>
-                                  )}
+                                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
+                                    {findLibraryFoodImage(food, foods) ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={resolveMediaUrl(findLibraryFoodImage(food, foods))} alt="" className="h-full w-full object-cover" />
+                                    ) : (
+                                      <ImageOff className="h-4 w-4 text-slate-300 dark:text-slate-600" />
+                                    )}
+                                  </span>
                                   <FoodPicker
                                     foods={foods}
                                     food={food}
@@ -618,7 +643,9 @@ export function NutritionPlanEditor({
                   </CollapsibleContent>
                 </Collapsible>
               </CardContent>
+              </CollapsibleContent>
             </Card>
+            </Collapsible>
             </MealDropZone>
           );
         })}
@@ -635,7 +662,12 @@ export function NutritionPlanEditor({
         <ResizableHandle withHandle />
 
         {/* RIGHT 30% — food library, new */}
-        <ResizablePanel defaultSize="30" minSize="22" className="flex flex-col overflow-hidden border-l border-slate-200 dark:border-slate-800">
+        <ResizablePanel
+          defaultSize="30"
+          minSize="22"
+          className="flex flex-col border-l border-slate-200 dark:border-slate-800"
+          style={{ position: "sticky", top: "4rem", alignSelf: "flex-start", height: "calc(100vh - 4rem)", overflow: "hidden" }}
+        >
           <div className="space-y-3 border-b border-slate-200 p-3 dark:border-slate-800">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -667,7 +699,7 @@ export function NutritionPlanEditor({
           <div
             ref={libraryScrollRef}
             onScroll={handleLibraryScroll}
-            className="max-h-[32rem] flex-1 overflow-y-auto"
+            className="min-h-0 flex-1 overflow-y-auto"
           >
             {visibleLibraryFoods.map((food) => (
               <LibraryFoodRow key={food.id} food={food} meals={plan.meals} onAddToMeal={(mealIndex) => addFoodFromLibrary(mealIndex, food)} />
