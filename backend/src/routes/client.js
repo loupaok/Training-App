@@ -30,6 +30,42 @@ const upload = multer({
   },
 });
 
+async function ensureWorkoutSchema(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS workout_logs (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      client_id INT NOT NULL,
+      training_plan_id INT NOT NULL,
+      day_number INT NOT NULL,
+      day_name VARCHAR(150),
+      started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      completed_at TIMESTAMP NULL,
+      duration_seconds INT DEFAULT 0,
+      total_sets_completed INT DEFAULT 0,
+      total_volume_kg DECIMAL(10,2) DEFAULT 0,
+      notes TEXT NULL,
+      FOREIGN KEY (client_id) REFERENCES users(id),
+      INDEX idx_workout_client_completed (client_id, completed_at),
+      INDEX idx_workout_plan_day (training_plan_id, day_number)
+    )
+  `);
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS workout_set_logs (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      workout_log_id INT NOT NULL,
+      exercise_name VARCHAR(255),
+      exercise_id INT NULL,
+      set_number INT NOT NULL,
+      target_reps INT NULL,
+      reps_completed INT NULL,
+      weight_kg DECIMAL(6,2) DEFAULT 0,
+      completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (workout_log_id) REFERENCES workout_logs(id) ON DELETE CASCADE,
+      UNIQUE KEY unique_workout_exercise_set (workout_log_id, exercise_name, set_number)
+    )
+  `);
+}
+
 const today = (value = new Date()) => {
   const offset = value.getTimezoneOffset() * 60000;
   return new Date(value.getTime() - offset).toISOString().slice(0, 10);
@@ -90,8 +126,14 @@ async function getPlans(connection, clientId) {
   if (training) {
     const [days] = await connection.query('SELECT * FROM training_plan_days WHERE training_plan_id = ? ORDER BY day_of_week, sort_order', [training.id]);
     const dayIds = days.map((day) => day.id);
-    const [exercises] = dayIds.length ? await connection.query('SELECT * FROM training_plan_exercises WHERE day_id IN (?) ORDER BY sort_order', [dayIds]) : [[]];
-    training.days = days.map((day) => ({ ...day, name: day.name || `Day ${day.day_of_week}`, exercises: exercises.filter((exercise) => exercise.day_id === day.id).map((exercise) => ({ ...exercise, name: exercise.exercise_name || exercise.name })) }));
+    const [exercises] = dayIds.length ? await connection.query(
+      `SELECT tpe.*, e.muscle_group, e.equipment, e.image_url, e.video_url
+       FROM training_plan_exercises tpe
+       LEFT JOIN exercises e ON e.id = tpe.exercise_id
+       WHERE tpe.day_id IN (?) ORDER BY tpe.sort_order`,
+      [dayIds]
+    ) : [[]];
+    training.days = days.map((day) => ({ ...day, name: day.title || `Day ${day.day_of_week}`, exercises: exercises.filter((exercise) => exercise.day_id === day.id).map((exercise) => ({ ...exercise, name: exercise.exercise_name || exercise.name })) }));
   }
   if (nutrition) {
     const [meals] = await connection.query('SELECT * FROM nutrition_plan_meals WHERE nutrition_plan_id = ? ORDER BY day_of_week, sort_order', [nutrition.id]);
@@ -158,6 +200,106 @@ router.get('/training-plan', async (req, res) => {
   const connection = await pool.getConnection();
   try { res.json((await getPlans(connection, req.user.id)).training); }
   catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
+});
+
+router.post('/workout/start', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureWorkoutSchema(connection);
+    const trainingPlanId = Number(req.body.trainingPlanId);
+    const dayNumber = Number(req.body.dayNumber);
+    const dayName = String(req.body.dayName || '').trim().slice(0, 150);
+    if (!Number.isInteger(trainingPlanId) || !Number.isInteger(dayNumber) || dayNumber < 1) {
+      return res.status(400).json({ message: 'Invalid workout details.' });
+    }
+    const [plans] = await connection.query("SELECT id FROM training_plans WHERE id = ? AND client_id = ? AND status = 'active'", [trainingPlanId, req.user.id]);
+    if (!plans.length) return res.status(404).json({ message: 'Training plan not found.' });
+    const [result] = await connection.query(
+      'INSERT INTO workout_logs (client_id, training_plan_id, day_number, day_name, started_at) VALUES (?, ?, ?, ?, NOW())',
+      [req.user.id, trainingPlanId, dayNumber, dayName || null]
+    );
+    res.status(201).json({ workoutLogId: result.insertId });
+  } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
+});
+
+router.post('/workout/log-set', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureWorkoutSchema(connection);
+    const workoutLogId = Number(req.body.workoutLogId);
+    const setNumber = Number(req.body.setNumber);
+    const targetReps = Number(req.body.targetReps) || null;
+    const repsCompleted = Number(req.body.repsCompleted) || null;
+    const weightKg = Math.max(0, Number(req.body.weightKg) || 0);
+    const exerciseName = String(req.body.exerciseName || '').trim().slice(0, 255);
+    const exerciseId = Number(req.body.exerciseId) || null;
+    if (!Number.isInteger(workoutLogId) || !Number.isInteger(setNumber) || setNumber < 1 || !exerciseName) {
+      return res.status(400).json({ message: 'Invalid set details.' });
+    }
+    const [logs] = await connection.query('SELECT id FROM workout_logs WHERE id = ? AND client_id = ? AND completed_at IS NULL', [workoutLogId, req.user.id]);
+    if (!logs.length) return res.status(404).json({ message: 'Active workout not found.' });
+    await connection.query(
+      `INSERT INTO workout_set_logs (workout_log_id, exercise_name, exercise_id, set_number, target_reps, reps_completed, weight_kg)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE target_reps = VALUES(target_reps), reps_completed = VALUES(reps_completed), weight_kg = VALUES(weight_kg), completed_at = CURRENT_TIMESTAMP`,
+      [workoutLogId, exerciseName, exerciseId, setNumber, targetReps, repsCompleted, weightKg]
+    );
+    res.json({ success: true });
+  } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
+});
+
+router.post('/workout/complete', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureWorkoutSchema(connection);
+    const workoutLogId = Number(req.body.workoutLogId);
+    const durationSeconds = Math.max(0, Number(req.body.durationSeconds) || 0);
+    const totalSetsCompleted = Math.max(0, Number(req.body.totalSetsCompleted) || 0);
+    const totalVolumeKg = Math.max(0, Number(req.body.totalVolumeKg) || 0);
+    const notes = String(req.body.notes || '').trim() || null;
+    const [result] = await connection.query(
+      `UPDATE workout_logs SET completed_at = NOW(), duration_seconds = ?, total_sets_completed = ?, total_volume_kg = ?, notes = ?
+       WHERE id = ? AND client_id = ? AND completed_at IS NULL`,
+      [durationSeconds, totalSetsCompleted, totalVolumeKg, notes, workoutLogId, req.user.id]
+    );
+    if (!result.affectedRows) return res.status(404).json({ message: 'Active workout not found.' });
+    res.json({ success: true, summary: { durationSeconds, totalSetsCompleted, totalVolumeKg } });
+  } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
+});
+
+router.post('/workout/cancel', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureWorkoutSchema(connection);
+    const [result] = await connection.query('DELETE FROM workout_logs WHERE id = ? AND client_id = ? AND completed_at IS NULL', [Number(req.body.workoutLogId), req.user.id]);
+    res.json({ success: true, discarded: Boolean(result.affectedRows) });
+  } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
+});
+
+router.get('/workout/history', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureWorkoutSchema(connection);
+    const [logs] = await connection.query('SELECT * FROM workout_logs WHERE client_id = ? AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 10', [req.user.id]);
+    if (!logs.length) return res.json([]);
+    const ids = logs.map((log) => log.id);
+    const [sets] = await connection.query('SELECT * FROM workout_set_logs WHERE workout_log_id IN (?) ORDER BY set_number', [ids]);
+    res.json(logs.map((log) => ({ ...log, setLogs: sets.filter((set) => set.workout_log_id === log.id) })));
+  } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
+});
+
+router.get('/workout/last/:planId/:dayNumber', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureWorkoutSchema(connection);
+    const [logs] = await connection.query(
+      'SELECT id, completed_at FROM workout_logs WHERE client_id = ? AND training_plan_id = ? AND day_number = ? AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 1',
+      [req.user.id, Number(req.params.planId), Number(req.params.dayNumber)]
+    );
+    if (!logs.length) return res.json({ sets: [] });
+    const [sets] = await connection.query('SELECT exercise_name AS exerciseName, exercise_id AS exerciseId, set_number AS setNumber, weight_kg AS weightKg, reps_completed AS repsCompleted FROM workout_set_logs WHERE workout_log_id = ? ORDER BY set_number', [logs[0].id]);
+    res.json({ completedAt: logs[0].completed_at, sets });
+  } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
 });
 
 router.get('/nutrition-plan', async (req, res) => {
