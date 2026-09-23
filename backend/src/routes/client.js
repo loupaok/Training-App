@@ -127,7 +127,7 @@ async function getPlans(connection, clientId) {
     const [days] = await connection.query('SELECT * FROM training_plan_days WHERE training_plan_id = ? ORDER BY day_of_week, sort_order', [training.id]);
     const dayIds = days.map((day) => day.id);
     const [exercises] = dayIds.length ? await connection.query(
-      `SELECT tpe.*, e.muscle_group, e.equipment, e.image_url, e.video_url
+      `SELECT tpe.*, e.muscle_group, e.equipment, e.image_url, e.video_url, e.instructions
        FROM training_plan_exercises tpe
        LEFT JOIN exercises e ON e.id = tpe.exercise_id
        WHERE tpe.day_id IN (?) ORDER BY tpe.sort_order`,
@@ -285,6 +285,34 @@ router.get('/workout/history', async (req, res) => {
     const ids = logs.map((log) => log.id);
     const [sets] = await connection.query('SELECT * FROM workout_set_logs WHERE workout_log_id IN (?) ORDER BY set_number', [ids]);
     res.json(logs.map((log) => ({ ...log, setLogs: sets.filter((set) => set.workout_log_id === log.id) })));
+  } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
+});
+
+router.get('/workout/exercise-history', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureWorkoutSchema(connection);
+    const exerciseName = String(req.query.exerciseName || '').trim();
+    const limit = Math.min(10, Math.max(1, Number(req.query.limit) || 5));
+    if (!exerciseName) return res.status(400).json({ message: 'exerciseName is required.' });
+    const [sessions] = await connection.query(
+      `SELECT id, completed_at FROM workout_logs
+       WHERE client_id = ? AND completed_at IS NOT NULL
+         AND id IN (SELECT workout_log_id FROM workout_set_logs WHERE exercise_name = ?)
+       ORDER BY completed_at DESC LIMIT ?`,
+      [req.user.id, exerciseName, limit]
+    );
+    if (!sessions.length) return res.json([]);
+    const sessionIds = sessions.map((session) => session.id);
+    const [sets] = await connection.query(
+      `SELECT workout_log_id, set_number AS setNumber, weight_kg AS weightKg, reps_completed AS repsCompleted
+       FROM workout_set_logs WHERE workout_log_id IN (?) AND exercise_name = ? ORDER BY set_number`,
+      [sessionIds, exerciseName]
+    );
+    res.json(sessions.map((session) => ({
+      completedAt: session.completed_at,
+      sets: sets.filter((set) => set.workout_log_id === session.id),
+    })));
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
 });
 

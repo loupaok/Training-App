@@ -10,9 +10,10 @@ function formatSeconds(seconds: number) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
 }
 
-export function RestTimer({ seconds, totalSeconds, onChange, onComplete }: {
+export function RestTimer({ seconds, totalSeconds, exerciseName, onChange, onComplete }: {
   seconds: number
   totalSeconds: number
+  exerciseName?: string
   onChange: (seconds: number) => void
   onComplete: () => void
 }) {
@@ -32,7 +33,7 @@ export function RestTimer({ seconds, totalSeconds, onChange, onComplete }: {
   return (
     <Card className="fixed bottom-4 right-4 z-[60] w-[min(calc(100vw-2rem),22rem)] shadow-xl">
       <CardContent className="space-y-4 p-4">
-        <div className="flex items-center justify-between"><span className="flex items-center gap-2 font-semibold"><Clock3 className="h-5 w-5 text-primary" />Ξεκούραση</span><span className="text-2xl font-bold tabular-nums">{formatSeconds(seconds)}</span></div>
+        <div className="flex items-center justify-between"><span className="flex items-center gap-2 font-semibold"><Clock3 className="h-5 w-5 text-primary" />Ξεκούραση{exerciseName ? ` - ${exerciseName}` : ""}</span><span className="text-2xl font-bold tabular-nums">{formatSeconds(seconds)}</span></div>
         <Progress value={progress} className={progressClass} />
         <div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => onChange(Math.max(0, seconds - 30))}>- 30&quot;</Button><Button type="button" variant="outline" size="sm" onClick={() => onChange(seconds + 30)}>+ 30&quot;</Button><Button type="button" className="ml-auto" size="sm" onClick={onComplete}>Παράλειψη</Button></div>
       </CardContent>
