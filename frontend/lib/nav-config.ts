@@ -109,7 +109,7 @@ export interface ClientNavSection {
 export const clientNavSections: ClientNavSection[] = [
   { label: "Αρχική", path: "/client-dashboard", key: "dashboard", icon: Home },
   { label: "Πρόγραμμα", path: "/client-program", locked: true, key: "training", icon: Dumbbell },
-  { label: "Διατροφή", locked: true, key: "nutrition", icon: Salad },
+  { label: "Διατροφή", path: "/client-nutrition", key: "nutrition", icon: Salad },
   { label: "Progress", locked: true, key: "progress", icon: TrendingUp },
   { label: "Πληρωμές και Συνδρομή", path: "/client-billing", key: "billing", icon: CreditCard },
   { label: "Προφίλ", path: "/client-profile", key: "profile", icon: User },
