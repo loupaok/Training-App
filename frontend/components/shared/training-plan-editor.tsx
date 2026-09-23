@@ -101,6 +101,20 @@ export interface TrainingPlanState {
   templateId?: number | string | null;
   templateTitle?: string | null;
 }
+const defaultDayNames = new Set(["Κυριακή", "Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο"]);
+
+function getDayTitle(day: TrainingDayEntry, index: number): string {
+  const customName = day.title;
+  if (customName?.trim() && !defaultDayNames.has(customName.trim()) && !/^(ημέρα|day|μέρα)\s*\d+$/i.test(customName.trim())) return customName.trim();
+
+  const muscleGroups = day.exercises
+    .map((exercise) => exercise.muscleGroup || "")
+    .filter(Boolean)
+    .map((muscleGroup) => muscleGroup.split("/")[0].split(",")[0].trim());
+  const unique = [...new Set(muscleGroups)];
+
+  return unique.length ? unique.slice(0, 3).join(" & ") : `Ημέρα ${index + 1}`;
+}
 
 export interface RawTrainingExercise {
   exercise_id?: string | number;
@@ -456,7 +470,7 @@ export function TrainingPlanEditor({
           <TabsList className="w-full justify-start overflow-x-auto">
             {visibleDays.map((day, index) => (
               <TabsTrigger key={`${day.dayOfWeek}-${index}`} value={String(index)}>
-                Ημέρα {index + 1}
+                {getDayTitle(day, index)}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -473,6 +487,10 @@ export function TrainingPlanEditor({
                   {/* LEFT 70% — day builder */}
                   <ResizablePanel defaultSize="70" minSize="50" className="flex flex-col overflow-hidden">
                     <div className="flex flex-col gap-4 p-4">
+                      <div>
+                        <h2 className="font-semibold">{getDayTitle(selectedDay, activeDayIndex)}</h2>
+                        <p className="text-xs text-muted-foreground">Ημέρα {activeDayIndex + 1} · {selectedDay.exercises.length} ασκήσεις</p>
+                      </div>
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
                           <Switch checked={isRestDay} onCheckedChange={toggleRestDay} />

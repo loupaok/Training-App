@@ -33,6 +33,20 @@ type WorkoutLog = { id: number; training_plan_id: number; day_number: number; co
 type LastSet = { exerciseName: string; setNumber: number; weightKg: number; repsCompleted: number }
 type HistorySession = { completedAt: string; sets: Array<{ setNumber: number; weightKg: number; repsCompleted: number }> }
 type SetState = { weight: number; reps: number; completed: boolean }
+const defaultDayNames = new Set(["Κυριακή", "Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο"])
+
+function getDayTitle(day: TrainingDay, index: number): string {
+  const customName = day.name || day.title
+  if (customName?.trim() && !defaultDayNames.has(customName.trim()) && !/^(ημέρα|day|μέρα)\s*\d+$/i.test(customName.trim())) return customName.trim()
+
+  const muscleGroups = day.exercises
+    .map((exercise) => exercise.muscle_group || "")
+    .filter(Boolean)
+    .map((muscleGroup) => muscleGroup.split("/")[0].split(",")[0].trim())
+  const unique = [...new Set(muscleGroups)]
+
+  return unique.length ? unique.slice(0, 3).join(" & ") : `Ημέρα ${index + 1}`
+}
 type Dashboard = { client?: { subscriptionStatus?: string | null }; unreadNotifications?: number }
 type WorkoutSettings = { weightUnit: "kg" | "lbs"; defaultRest: number; autoRest: boolean; soundEnabled: boolean }
 
@@ -128,7 +142,8 @@ function ClientProgramContent() {
     return () => window.clearInterval(timer)
   }, [phase])
 
-  const days = plan?.days || []
+  const rawDays = plan?.days || []
+  const days = rawDays.map((currentDay, index) => ({ ...currentDay, title: getDayTitle(currentDay, index), name: getDayTitle(currentDay, index) }))
   const day = days[dayIndex]
   const visibleSetCount = useCallback((exercise: Exercise) => baseSetCount(exercise) + (extraSets[exerciseKey(exercise)] || 0), [extraSets])
   const allSets = useMemo(() => day?.exercises.flatMap((exercise) => Array.from({ length: visibleSetCount(exercise) }, (_, index) => ({ exercise, setNumber: index + 1 }))) || [], [day, visibleSetCount])
