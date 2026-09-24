@@ -35,7 +35,7 @@ export function getAuthRedirect(user: AuthUser | null | undefined): string {
   if (!user) return "/login";
   if (user.redirectTo) return user.redirectTo;
   if (user.role === "coach" || user.role === "admin" || user.role === "moderator") return "/coach/dashboard";
-  if (user.role === "client" && !user.onboardingCompleted) return "/client-onboarding";
+  if (user.role === "client" && !user.onboardingCompleted) return "/register";
   if (user.role === "client" && user.status === "active") return "/client/dashboard";
   if (user.role === "client" && user.status === "expired") return "/client/expired";
   if (user.role === "client") return "/client/pending";
@@ -68,7 +68,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let ignore = false;
-    setRefreshingProfile(true);
 
     const loadMe = async (allowRefresh = true): Promise<{ user: AuthUser }> => {
       const headers: Record<string, string> = {};
@@ -127,7 +126,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       ignore = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = async (email: string, password: string): Promise<AuthResult> => {

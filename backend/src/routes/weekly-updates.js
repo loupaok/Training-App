@@ -12,6 +12,11 @@ import { updateNotificationEmail } from '../lib/email-templates.js';
 const router = express.Router();
 
 const UPDATE_QUESTION_TYPES = ['single_select', 'multi_select', 'text', 'number', 'textarea', 'url', 'rating', 'photos', 'pdf'];
+// A "standard field" is a question the app relies on for a specific meaning
+// (e.g. reading the client's weekly weight) — at most one question can hold
+// a given key, so consumers can look it up reliably instead of guessing by
+// question type or matching text.
+const UPDATE_QUESTION_STANDARD_KEYS = ['weight_kg'];
 
 const seedUpdateQuestions = [
   {
@@ -103,6 +108,12 @@ export async function ensureWeeklyUpdateSchema(connection) {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  try {
+    await connection.query('ALTER TABLE update_questions ADD COLUMN standard_key VARCHAR(30) NULL');
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
 
   await connection.query(`
     CREATE TABLE IF NOT EXISTS weekly_updates (
@@ -228,6 +239,7 @@ function normalizeQuestion(row) {
     allowPdf: Boolean(row.allow_pdf),
     sortOrder: row.sort_order,
     isActive: Boolean(row.is_active),
+    standardKey: row.standard_key || null,
   };
 }
 
@@ -271,7 +283,7 @@ function extractUpdateStats(answers, questions) {
   for (const entry of answers) {
     const question = questionById.get(Number(entry.question_id));
     if (!question || !entry.answer) continue;
-    if (question.type === 'number' && weight === null) {
+    if (question.standard_key === 'weight_kg' && weight === null) {
       weight = entry.answer;
     } else if (question.type === 'rating') {
       const text = question.question || '';
@@ -337,6 +349,7 @@ router.put('/questions/reorder', authorizeRole(['coach', 'admin']), [
 router.post('/questions', authorizeRole(['coach', 'admin']), [
   body('question').notEmpty(),
   body('type').isIn(UPDATE_QUESTION_TYPES),
+  body('standardKey').optional({ nullable: true }).isIn(UPDATE_QUESTION_STANDARD_KEYS),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -345,10 +358,15 @@ router.post('/questions', authorizeRole(['coach', 'admin']), [
     const connection = await pool.getConnection();
     await ensureWeeklyUpdateSchema(connection);
 
+    const standardKey = req.body.standardKey || null;
+    if (standardKey) {
+      await connection.query('UPDATE update_questions SET standard_key = NULL WHERE standard_key = ?', [standardKey]);
+    }
+
     const [result] = await connection.query(
       `INSERT INTO update_questions
-        (question, type, options, is_required, placeholder, allow_photos, max_photos, allow_pdf, sort_order, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (question, type, options, is_required, placeholder, allow_photos, max_photos, allow_pdf, sort_order, is_active, standard_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         req.body.question,
         req.body.type,
@@ -360,6 +378,7 @@ router.post('/questions', authorizeRole(['coach', 'admin']), [
         req.body.allowPdf === true ? 1 : 0,
         req.body.sortOrder || 0,
         req.body.isActive === false ? 0 : 1,
+        standardKey,
       ]
     );
 
@@ -375,6 +394,7 @@ router.post('/questions', authorizeRole(['coach', 'admin']), [
 router.put('/questions/:id', authorizeRole(['coach', 'admin']), [
   body('question').notEmpty(),
   body('type').isIn(UPDATE_QUESTION_TYPES),
+  body('standardKey').optional({ nullable: true }).isIn(UPDATE_QUESTION_STANDARD_KEYS),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -383,9 +403,14 @@ router.put('/questions/:id', authorizeRole(['coach', 'admin']), [
     const connection = await pool.getConnection();
     await ensureWeeklyUpdateSchema(connection);
 
+    const standardKey = req.body.standardKey || null;
+    if (standardKey) {
+      await connection.query('UPDATE update_questions SET standard_key = NULL WHERE standard_key = ? AND id != ?', [standardKey, req.params.id]);
+    }
+
     await connection.query(
       `UPDATE update_questions
-       SET question = ?, type = ?, options = ?, is_required = ?, placeholder = ?, allow_photos = ?, max_photos = ?, allow_pdf = ?, sort_order = ?, is_active = ?
+       SET question = ?, type = ?, options = ?, is_required = ?, placeholder = ?, allow_photos = ?, max_photos = ?, allow_pdf = ?, sort_order = ?, is_active = ?, standard_key = ?
        WHERE id = ?`,
       [
         req.body.question,
@@ -398,6 +423,7 @@ router.put('/questions/:id', authorizeRole(['coach', 'admin']), [
         req.body.allowPdf === true ? 1 : 0,
         req.body.sortOrder || 0,
         req.body.isActive === false ? 0 : 1,
+        standardKey,
         req.params.id,
       ]
     );
@@ -596,7 +622,7 @@ async function attachAnswersAndFiles(connection, updates) {
   if (!updates.length) return updates;
   const ids = updates.map((u) => u.id);
   const [answerRows] = await connection.query(
-    `SELECT wa.update_id, wa.question_id, wa.answer, q.question, q.type
+    `SELECT wa.update_id, wa.question_id, wa.answer, q.question, q.type, q.standard_key
      FROM weekly_update_answers wa
      JOIN update_questions q ON q.id = wa.question_id
      WHERE wa.update_id IN (?)`,

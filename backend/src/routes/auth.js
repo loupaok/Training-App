@@ -82,7 +82,7 @@ function normalizeStatus(user) {
 
 function getRedirectPath(user, onboardingCompleted = true) {
   if (['coach', 'admin', 'moderator'].includes(user.role)) return '/coach/dashboard';
-  if (user.role === 'client' && !onboardingCompleted) return '/client-onboarding';
+  if (user.role === 'client' && !onboardingCompleted) return '/register';
   if (user.role === 'client' && user.status === 'active') return '/client/dashboard';
   if (user.role === 'client' && user.status === 'expired') return '/client/expired';
   if (user.role === 'client') return '/client/pending';
@@ -125,6 +125,16 @@ export async function ensureAuthSchema(connection) {
 
 async function getOnboardingCompleted(connection, userId, role) {
   if (role !== 'client') return true;
+
+  try {
+    const [rows] = await connection.query(
+      'SELECT onboarding_completed FROM client_onboarding WHERE client_id = ? LIMIT 1',
+      [userId]
+    );
+    if (rows.length > 0) return Boolean(rows[0].onboarding_completed);
+  } catch (error) {
+    if (error.code !== 'ER_NO_SUCH_TABLE' && error.code !== 'ER_BAD_FIELD_ERROR') throw error;
+  }
 
   try {
     const [rows] = await connection.query(

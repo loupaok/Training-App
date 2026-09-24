@@ -50,9 +50,9 @@ export function ClientShell({
         collapsed={collapsed}
         onToggle={toggle}
       />
-      <div className={cn("flex flex-1 flex-col transition-[padding] duration-200", collapsed ? "pl-16" : "pl-56")}>
+      <div className={cn("flex min-w-0 flex-1 flex-col transition-[padding] duration-200", collapsed ? "pl-16" : "pl-56")}>
         <AppHeader title={title} user={user} logout={logout} />
-        <main className="flex-1 bg-muted/30 p-6">{children}</main>
+        <main className="min-w-0 flex-1 bg-muted/30 p-6">{children}</main>
       </div>
     </div>
   );

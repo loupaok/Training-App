@@ -1896,7 +1896,7 @@ router.get('/:id/weekly-updates', authorizeRole(['coach', 'admin', 'moderator'])
 
     const [answerRows] = await connection.query(
       `SELECT wu.id, wu.submitted_at, wu.week_start, wu.is_read,
-              wua.answer, wuq.question, wuq.type, wuq.sort_order
+              wua.answer, wuq.question, wuq.type, wuq.sort_order, wuq.standard_key
        FROM weekly_updates wu
        LEFT JOIN weekly_update_answers wua ON wua.update_id = wu.id
        LEFT JOIN update_questions wuq ON wuq.id = wua.question_id
@@ -1931,7 +1931,7 @@ router.get('/:id/weekly-updates', authorizeRole(['coach', 'admin', 'moderator'])
         .replace(/[\u0300-\u036f]/g, '');
       const value = Number(String(row.answer).replace(',', '.'));
 
-      if (row.type === 'number' && question.includes('βαροσ') && Number.isFinite(value)) {
+      if (row.standard_key === 'weight_kg' && Number.isFinite(value)) {
         update.weight = value;
       } else if (row.type === 'rating' && question.includes('προπον') && Number.isFinite(value)) {
         update.trainingRating = value;
@@ -1963,6 +1963,35 @@ router.get('/:id/weekly-updates', authorizeRole(['coach', 'admin', 'moderator'])
     }
 
     res.json(updates);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+// GET /:id/workouts — completed workout sessions with the client's own
+// post-workout feeling/notes, for the coach's Πρόοδος tab.
+router.get('/:id/workouts', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    const { ensureWorkoutSchema } = await import('./client.js');
+    await ensureWorkoutSchema(connection);
+
+    const [workouts] = await connection.query(
+      `SELECT id, day_name, completed_at, duration_seconds, total_sets_completed, total_volume_kg, workout_feeling, notes
+       FROM workout_logs
+       WHERE client_id = ? AND completed_at IS NOT NULL
+       ORDER BY completed_at DESC
+       LIMIT 20`,
+      [clientId]
+    );
+    res.json(workouts);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -3007,7 +3036,7 @@ router.delete('/:id', authorizeRole(['admin']), async (req, res) => {
     const [rows] = await connection.query(
       `SELECT u.id, c.deleted_at
        FROM users u
-       INNER JOIN clients c ON c.user_id = u.id
+       LEFT JOIN clients c ON c.user_id = u.id
        WHERE u.id = ? AND u.role = 'client'`,
       [clientId]
     );
@@ -3023,12 +3052,22 @@ router.delete('/:id', authorizeRole(['admin']), async (req, res) => {
     }
 
     await connection.beginTransaction();
-    await connection.query(
+    const [updateResult] = await connection.query(
       `UPDATE clients
        SET deleted_at = NOW(), deleted_by = ?
        WHERE user_id = ? AND deleted_at IS NULL`,
       [req.user.id, clientId]
     );
+
+    // Some legacy client users predate the clients profile row. Create the
+    // minimal profile record so they follow the same soft-delete lifecycle.
+    if (updateResult.affectedRows === 0) {
+      await connection.query(
+        `INSERT INTO clients (user_id, deleted_at, deleted_by)
+         VALUES (?, NOW(), ?)`,
+        [clientId, req.user.id]
+      );
+    }
     await logClientActivity(connection, {
       clientId,
       action: 'Μεταφορά στον Κάδο',
@@ -3130,6 +3169,7 @@ router.delete('/:id/permanent', authorizeRole(['admin']), async (req, res) => {
     await ignoreDelete('DELETE FROM social_links WHERE user_id = ?', [clientId]);
     await ignoreDelete('DELETE FROM training_plans WHERE client_id = ?', [clientId]);
     await ignoreDelete('DELETE FROM nutrition_plans WHERE client_id = ?', [clientId]);
+    await ignoreDelete('DELETE FROM workout_logs WHERE client_id = ?', [clientId]);
     await ignoreDelete('DELETE FROM notifications WHERE user_id = ? OR client_id = ?', [clientId, clientId]);
     await ignoreDelete('DELETE FROM clients WHERE user_id = ?', [clientId]);
     await connection.query('DELETE FROM users WHERE id = ? AND role = "client"', [clientId]);

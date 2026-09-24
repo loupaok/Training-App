@@ -30,7 +30,7 @@ const upload = multer({
   },
 });
 
-async function ensureWorkoutSchema(connection) {
+export async function ensureWorkoutSchema(connection) {
   await connection.query(`
     CREATE TABLE IF NOT EXISTS workout_logs (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -102,7 +102,7 @@ function summarizeUpdate(update) {
     if (!answer.answer) continue;
     const text = normalizeText(answer.question);
     const number = Number(String(answer.answer).replace(',', '.'));
-    if (answer.type === 'number' && text.includes('\u03b2\u03b1\u03c1\u03bf\u03c3') && Number.isFinite(number)) result.weight = number;
+    if (answer.standard_key === 'weight_kg' && Number.isFinite(number)) result.weight = number;
     else if (answer.type === 'rating' && text.includes('\u03c0\u03c1\u03bf\u03c0\u03bf\u03bd') && Number.isFinite(number)) result.trainingRating = number;
     else if (answer.type === 'rating' && text.includes('\u03b4\u03b9\u03b1\u03c4\u03c1\u03bf\u03c6') && Number.isFinite(number)) result.nutritionRating = number;
     else if (answer.type === 'rating' && text.includes('\u03b5\u03b2\u03b4\u03bf\u03bc\u03b1\u03b4') && Number.isFinite(number)) result.generalRating = number;
@@ -117,7 +117,7 @@ async function getUpdates(connection, clientId, limit = 12) {
   const [updates] = await connection.query('SELECT id, submitted_at, week_start, is_read FROM weekly_updates WHERE client_id = ? ORDER BY submitted_at DESC LIMIT ?', [clientId, limit]);
   if (!updates.length) return [];
   const ids = updates.map((update) => update.id);
-  const [answers] = await connection.query(`SELECT wa.update_id, wa.answer, q.question, q.type FROM weekly_update_answers wa JOIN update_questions q ON q.id = wa.question_id WHERE wa.update_id IN (?) ORDER BY q.sort_order`, [ids]);
+  const [answers] = await connection.query(`SELECT wa.update_id, wa.answer, q.question, q.type, q.standard_key FROM weekly_update_answers wa JOIN update_questions q ON q.id = wa.question_id WHERE wa.update_id IN (?) ORDER BY q.sort_order`, [ids]);
   const [files] = await connection.query('SELECT update_id, question_id, file_url, file_type, original_name FROM weekly_update_files WHERE update_id IN (?) ORDER BY created_at DESC', [ids]);
   return updates.map((update) => summarizeUpdate({ ...update, answers: answers.filter((answer) => answer.update_id === update.id), files: files.filter((file) => file.update_id === update.id) }));
 }
@@ -358,12 +358,24 @@ router.get('/workout/last/:planId/:dayNumber', async (req, res) => {
   try {
     await ensureWorkoutSchema(connection);
     const [logs] = await connection.query(
-      'SELECT id, completed_at FROM workout_logs WHERE client_id = ? AND training_plan_id = ? AND day_number = ? AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 1',
+      'SELECT id, completed_at, total_volume_kg FROM workout_logs WHERE client_id = ? AND training_plan_id = ? AND day_number = ? AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 1',
       [req.user.id, Number(req.params.planId), Number(req.params.dayNumber)]
     );
     if (!logs.length) return res.json({ sets: [] });
     const [sets] = await connection.query('SELECT exercise_name AS exerciseName, exercise_id AS exerciseId, set_number AS setNumber, weight_kg AS weightKg, reps_completed AS repsCompleted FROM workout_set_logs WHERE workout_log_id = ? ORDER BY set_number', [logs[0].id]);
-    res.json({ completedAt: logs[0].completed_at, sets });
+    res.json({ completedAt: logs[0].completed_at, totalVolumeKg: logs[0].total_volume_kg === null ? null : Number(logs[0].total_volume_kg), sets });
+  } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
+});
+
+router.get('/workout/total-volume', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureWorkoutSchema(connection);
+    const [[{ total }]] = await connection.query(
+      'SELECT COALESCE(SUM(total_volume_kg), 0) AS total FROM workout_logs WHERE client_id = ? AND completed_at IS NOT NULL',
+      [req.user.id]
+    );
+    res.json({ totalVolumeKg: Number(total) });
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
 });
 
@@ -383,7 +395,7 @@ router.get('/payments', async (req, res) => {
   const connection = await pool.getConnection();
   try {
     const [subscriptions] = await connection.query("SELECT plan_name, price, status, end_date, DATEDIFF(end_date, CURDATE()) AS days_remaining FROM subscriptions WHERE client_id = ? ORDER BY created_at DESC LIMIT 1", [req.user.id]);
-    const [payments] = await connection.query('SELECT id, amount, method, status, paid_at AS paidAt, notes FROM payments WHERE client_id = ? ORDER BY created_at DESC', [req.user.id]);
+    const [payments] = await connection.query('SELECT id, amount, currency, method, status, reference_number AS referenceNumber, paid_at AS paidAt, notes FROM payments WHERE client_id = ? ORDER BY created_at DESC', [req.user.id]);
     res.json({ subscription: subscriptions[0] || null, payments });
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
 });

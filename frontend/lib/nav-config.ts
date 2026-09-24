@@ -13,7 +13,6 @@ import {
   Salad,
   TrendingUp,
   CreditCard,
-  User,
   ScrollText,
   MessageCircleMore,
   LayoutTemplate,
@@ -109,12 +108,11 @@ export interface ClientNavSection {
 export const clientNavSections: ClientNavSection[] = [
   { label: "Αρχική", path: "/client-dashboard", key: "dashboard", icon: Home },
   { label: "Πρόγραμμα", path: "/client-program", locked: true, key: "training", icon: Dumbbell },
-  { label: "Διατροφή", path: "/client-nutrition", key: "nutrition", icon: Salad },
+  { label: "Διατροφή", path: "/client-nutrition", locked: true, key: "nutrition", icon: Salad },
   { label: "Progress", locked: true, key: "progress", icon: TrendingUp },
-  { label: "Πληρωμές και Συνδρομή", path: "/client-billing", key: "billing", icon: CreditCard },
-  { label: "Προφίλ", path: "/client-profile", key: "profile", icon: User },
-  { label: "Αλλαγές & Νέα", path: "/changelog", key: "changelog", icon: ScrollText },
-  { label: "Μηνύματα", path: "/client-messages", key: "messages", icon: MessageCircleMore },
+  { label: "Πληρωμές και Συνδρομή", path: "/client-billing", locked: true, key: "billing", icon: CreditCard },
+  { label: "Αλλαγές & Νέα", path: "/changelog", locked: true, key: "changelog", icon: ScrollText },
+  { label: "Μηνύματα", path: "/client-messages", locked: true, key: "messages", icon: MessageCircleMore },
   { label: "Ειδοποιήσεις", path: "/client-notifications", key: "notifications", icon: Bell, spacerBefore: true },
 ];
 

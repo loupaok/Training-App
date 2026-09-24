@@ -3,18 +3,14 @@
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Eye, EyeOff, LockKeyhole } from "lucide-react";
+import { Eye, EyeOff, LockKeyhole } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth/auth-context";
-
-const benefits = [
-  "Δες το πρόγραμμά σου",
-  "Παρακολούθησε την πρόοδό σου",
-  "Επικοινώνησε με τον coach σου",
-];
+import { useBranding } from "@/contexts/BrandingContext";
+import { resolveMediaUrl } from "@/lib/media";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -22,6 +18,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const { login, loading } = useAuth();
+  const { branding } = useBranding();
   const router = useRouter();
 
   const handleSubmit = async (event: FormEvent) => {
@@ -36,100 +33,43 @@ export default function LoginPage() {
     }
   };
 
+  const backgroundImage = branding.loginBackgroundUrl ? `url("${resolveMediaUrl(branding.loginBackgroundUrl)}")` : undefined;
+
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[2fr_3fr]">
-      <aside className="hidden min-h-screen flex-col bg-gradient-to-br from-gray-900 via-gray-800 to-primary/80 p-12 text-white [&_h1]:text-white [&_h2]:text-white [&_h3]:text-white lg:flex">
-        <div>
-          <div className="text-2xl font-bold tracking-tight">CoachApp</div>
-          <p className="mt-2 max-w-xs text-sm text-white/70">Η πλατφόρμα για online personal training</p>
-        </div>
-
-        <div className="my-auto max-w-md">
-          <h1 className="text-4xl font-bold tracking-tight">Καλώς ήρθες πίσω!</h1>
-          <ul className="mt-8 space-y-4">
-            {benefits.map((benefit) => (
-              <li key={benefit} className="flex items-center gap-3 text-sm text-white/90">
-                <CheckCircle2 className="h-5 w-5 shrink-0 text-white" />
-                {benefit}
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <blockquote className="max-w-sm rounded-xl bg-white/10 p-5 text-sm leading-6 text-white/80">
-          <p className="mt-3 italic">«Έχασα 12kg σε 4 μήνες! Το καλύτερο επένδυση που έκανα.»</p>
-          <footer className="mt-3 text-xs text-white/60">— Μαρία Κ.</footer>
-        </blockquote>
-      </aside>
-
-      <main className="flex min-h-screen items-center justify-center bg-background px-5 py-10 sm:px-10 lg:px-14">
-        <div className="w-full max-w-md">
-          <div className="mb-10">
-            <div className="mb-6 flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground lg:hidden">
-              <LockKeyhole className="h-5 w-5" />
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight">Σύνδεση</h1>
-          </div>
-
-          {error && (
-            <Alert variant="destructive" className="mb-6">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
+    <main className="relative grid min-h-screen place-items-center overflow-hidden bg-slate-50 px-5 py-10" style={backgroundImage ? { backgroundImage, backgroundPosition: "center", backgroundSize: "cover" } : undefined}>
+      {backgroundImage && <div className="absolute inset-0" style={{ backgroundColor: "color-mix(in oklab, #000000 45%, transparent)" }} />}
+      <section className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white/95 p-8 shadow-2xl shadow-slate-900/15 sm:p-10">
+        <div className="text-center">
+          {branding.logoUrl ? (
+            <img src={resolveMediaUrl(branding.logoUrl)} alt={branding.appName} className="mx-auto max-h-16 max-w-44 object-contain" />
+          ) : (
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-slate-100 text-slate-700"><LockKeyhole className="h-6 w-6" /></div>
           )}
-
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-                className="h-11"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Κωδικός</Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                  className="h-11 pr-11"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowPassword((current) => !current)}
-                  className="absolute right-1 top-1/2 -translate-y-1/2"
-                  aria-label={showPassword ? "Απόκρυψη κωδικού" : "Εμφάνιση κωδικού"}
-                >
-                  {showPassword ? <EyeOff /> : <Eye />}
-                </Button>
-              </div>
-            </div>
-
-            <Button type="submit" size="lg" disabled={loading} className="mt-2 w-full">
-              {loading ? "Σύνδεση..." : "Σύνδεση"}
-            </Button>
-            <p className="text-center text-sm text-muted-foreground">
-              Δεν έχεις λογαριασμό;{" "}
-              <Link href="/pricing-plans" className="font-medium text-primary hover:underline">
-                Ξεκίνα εδώ →
-              </Link>
-            </p>
-          </form>
-
+          <p className="mt-4 text-sm font-semibold text-slate-600">{branding.appName}</p>
+          <h1 className="mt-8 text-3xl font-bold text-slate-900">Καλώς ήρθες πίσω</h1>
+          <p className="mt-3 text-sm text-slate-600">Συνδέσου για να συνεχίσεις το ταξίδι σου.</p>
         </div>
-      </main>
-    </div>
+
+        {error && <Alert variant="destructive" className="mt-7"><AlertDescription>{error}</AlertDescription></Alert>}
+
+        <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input id="email" type="email" autoComplete="email" placeholder="Email Address" value={email} onChange={(event) => setEmail(event.target.value)} required className="h-13 rounded-lg border-slate-300 px-4 focus-visible:border-primary" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="password">Κωδικός</Label>
+            <div className="relative">
+              <Input id="password" type={showPassword ? "text" : "password"} autoComplete="current-password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} required className="h-13 rounded-lg border-slate-300 px-4 pr-12 focus-visible:border-primary" />
+              <Button type="button" variant="ghost" size="icon" onClick={() => setShowPassword((current) => !current)} className="absolute right-1 top-1/2 -translate-y-1/2" aria-label={showPassword ? "Απόκρυψη κωδικού" : "Εμφάνιση κωδικού"}>{showPassword ? <EyeOff /> : <Eye />}</Button>
+            </div>
+          </div>
+          <Button type="submit" size="lg" disabled={loading} className="mt-3 h-12 w-full rounded-lg font-semibold shadow-lg shadow-primary/20">
+            {loading ? "Σύνδεση..." : "Σύνδεση"}
+          </Button>
+          <p className="pt-2 text-center text-sm text-slate-600">Δεν έχεις λογαριασμό; <Link href="/register" className="font-semibold text-primary hover:underline">Ξεκίνα εδώ</Link></p>
+        </form>
+      </section>
+    </main>
   );
 }

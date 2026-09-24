@@ -6,6 +6,11 @@ import { authenticateToken, authorizeRole } from '../middleware/auth.js';
 const router = express.Router();
 
 const QUESTION_TYPES = ['single_select', 'multi_select', 'text', 'number', 'textarea', 'url'];
+// A "standard field" is a question the app relies on for a specific meaning
+// (e.g. reading which day a client wants their weekly update) — at most one
+// question can hold a given key, so consumers can look it up reliably
+// instead of guessing by question type.
+const QUESTION_STANDARD_KEYS = ['update_day'];
 
 const seedQuestions = [
   {
@@ -136,6 +141,7 @@ export async function ensureQuestionnaireSchema(connection) {
     'ALTER TABLE questionnaire_questions ADD COLUMN allow_photos BOOLEAN DEFAULT FALSE',
     'ALTER TABLE questionnaire_questions ADD COLUMN max_photos INT DEFAULT 4',
     'ALTER TABLE questionnaire_questions ADD COLUMN allow_pdf BOOLEAN DEFAULT FALSE',
+    'ALTER TABLE questionnaire_questions ADD COLUMN standard_key VARCHAR(30) NULL',
   ]) {
     try {
       await connection.query(statement);
@@ -183,6 +189,7 @@ function normalizeQuestion(row) {
     allowPdf: Boolean(row.allow_pdf),
     sortOrder: row.sort_order,
     isActive: Boolean(row.is_active),
+    standardKey: row.standard_key || null,
   };
 }
 
@@ -240,6 +247,7 @@ router.put('/questions/reorder', authenticateToken, authorizeRole(['coach']), [
 router.post('/questions', authenticateToken, authorizeRole(['coach']), [
   body('question').notEmpty(),
   body('type').isIn(QUESTION_TYPES),
+  body('standardKey').optional({ nullable: true }).isIn(QUESTION_STANDARD_KEYS),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -248,10 +256,15 @@ router.post('/questions', authenticateToken, authorizeRole(['coach']), [
     const connection = await pool.getConnection();
     await ensureQuestionnaireSchema(connection);
 
+    const standardKey = req.body.standardKey || null;
+    if (standardKey) {
+      await connection.query('UPDATE questionnaire_questions SET standard_key = NULL WHERE standard_key = ?', [standardKey]);
+    }
+
     const [result] = await connection.query(
       `INSERT INTO questionnaire_questions
-        (question, type, options, is_required, placeholder, allow_photos, max_photos, allow_pdf, sort_order, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (question, type, options, is_required, placeholder, allow_photos, max_photos, allow_pdf, sort_order, is_active, standard_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         req.body.question,
         req.body.type,
@@ -263,6 +276,7 @@ router.post('/questions', authenticateToken, authorizeRole(['coach']), [
         req.body.allowPdf === true ? 1 : 0,
         req.body.sortOrder || 0,
         req.body.isActive === false ? 0 : 1,
+        standardKey,
       ]
     );
 
@@ -278,6 +292,7 @@ router.post('/questions', authenticateToken, authorizeRole(['coach']), [
 router.put('/questions/:id', authenticateToken, authorizeRole(['coach']), [
   body('question').notEmpty(),
   body('type').isIn(QUESTION_TYPES),
+  body('standardKey').optional({ nullable: true }).isIn(QUESTION_STANDARD_KEYS),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -286,9 +301,14 @@ router.put('/questions/:id', authenticateToken, authorizeRole(['coach']), [
     const connection = await pool.getConnection();
     await ensureQuestionnaireSchema(connection);
 
+    const standardKey = req.body.standardKey || null;
+    if (standardKey) {
+      await connection.query('UPDATE questionnaire_questions SET standard_key = NULL WHERE standard_key = ? AND id != ?', [standardKey, req.params.id]);
+    }
+
     await connection.query(
       `UPDATE questionnaire_questions
-       SET question = ?, type = ?, options = ?, is_required = ?, placeholder = ?, allow_photos = ?, max_photos = ?, allow_pdf = ?, sort_order = ?, is_active = ?
+       SET question = ?, type = ?, options = ?, is_required = ?, placeholder = ?, allow_photos = ?, max_photos = ?, allow_pdf = ?, sort_order = ?, is_active = ?, standard_key = ?
        WHERE id = ?`,
       [
         req.body.question,
@@ -301,6 +321,7 @@ router.put('/questions/:id', authenticateToken, authorizeRole(['coach']), [
         req.body.allowPdf === true ? 1 : 0,
         req.body.sortOrder || 0,
         req.body.isActive === false ? 0 : 1,
+        standardKey,
         req.params.id,
       ]
     );

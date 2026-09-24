@@ -66,10 +66,16 @@ interface Question {
   allowPdf: boolean;
   sortOrder: number;
   isActive: boolean;
+  standardKey: string | null;
 }
 
 interface TypeOption {
   value: QuestionType;
+  label: string;
+}
+
+interface StandardKeyOption {
+  value: string;
   label: string;
 }
 
@@ -93,6 +99,7 @@ const emptyQuestion: Question = {
   allowPdf: false,
   sortOrder: 0,
   isActive: true,
+  standardKey: null,
 };
 
 const registrationTypeOptions: TypeOption[] = [
@@ -126,6 +133,17 @@ const updateEndpoints: QuestionEndpoints = {
   remove: (id) => `/updates/questions/${id}`,
   reorder: "/updates/questions/reorder",
 };
+
+// A "standard" question is the one the app reads for a specific meaning
+// (e.g. the client's weekly weight) instead of guessing from the question's
+// type or wording — at most one question per set can hold a given key.
+const registrationStandardKeyOptions: StandardKeyOption[] = [
+  { value: "update_day", label: "Ημέρα Update" },
+];
+
+const updateStandardKeyOptions: StandardKeyOption[] = [
+  { value: "weight_kg", label: "Κιλά (Βάρος)" },
+];
 
 function typeLabel(type: QuestionType, typeOptions: TypeOption[]): string {
   return typeOptions.find((option) => option.value === type)?.label || type;
@@ -163,6 +181,7 @@ function CoachQuestionnaireContent() {
             subtitle="Οι ερωτήσεις που απαντούν οι νέοι πελάτες κατά την εγγραφή τους."
             typeOptions={registrationTypeOptions}
             endpoints={registrationEndpoints}
+            standardKeyOptions={registrationStandardKeyOptions}
           />
         </TabsContent>
         <TabsContent value="update">
@@ -171,6 +190,7 @@ function CoachQuestionnaireContent() {
             subtitle="Οι ερωτήσεις που απαντούν οι πελάτες στο εβδομαδιαίο update τους."
             typeOptions={updateTypeOptions}
             endpoints={updateEndpoints}
+            standardKeyOptions={updateStandardKeyOptions}
           />
         </TabsContent>
       </Tabs>
@@ -183,11 +203,13 @@ function QuestionSetEditor({
   subtitle,
   typeOptions,
   endpoints,
+  standardKeyOptions,
 }: {
   title: string;
   subtitle: string;
   typeOptions: TypeOption[];
   endpoints: QuestionEndpoints;
+  standardKeyOptions: StandardKeyOption[];
 }) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -240,6 +262,7 @@ function QuestionSetEditor({
     allowPdf: source.allowPdf,
     sortOrder: source.sortOrder,
     isActive: source.isActive,
+    standardKey: source.standardKey,
   });
 
   const saveQuestion = async () => {
@@ -429,6 +452,32 @@ function QuestionSetEditor({
                     </SelectContent>
                   </Select>
                 </Label>
+
+                {standardKeyOptions.length > 0 && (
+                  <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+                    Standard πεδίο
+                    <Select
+                      items={[{ value: "none", label: "Κανένα" }, ...standardKeyOptions]}
+                      value={form.standardKey || "none"}
+                      onValueChange={(value) => update("standardKey", value && value !== "none" ? value : null)}
+                    >
+                      <SelectTrigger className="h-12 w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Κανένα</SelectItem>
+                        {standardKeyOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <span className="text-xs font-semibold text-slate-400">
+                      Η εφαρμογή χρησιμοποιεί αυτή την ερώτηση για να διαβάζει την τιμή, αντί να μαντεύει βάσει τύπου. Μόνο μία ερώτηση μπορεί να έχει το κάθε standard πεδίο.
+                    </span>
+                  </Label>
+                )}
 
                 <div className="space-y-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800">
                   <div className="text-sm font-bold text-slate-700 dark:text-slate-200">Επιτρέπει ανέβασμα αρχείων;</div>

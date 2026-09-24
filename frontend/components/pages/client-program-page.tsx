@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { LineChart } from "@tremor/react"
-import { ChevronDown, ChevronLeft, ChevronRight, Clock3, Dumbbell, ExternalLink, ImageOff, Info, Play, Plus, Settings2, Volume2, VolumeX, X } from "lucide-react"
+import { ChevronDown, ChevronLeft, ChevronRight, Clock3, Dumbbell, ExternalLink, ImageOff, Info, Layers3, Play, Plus, Settings2, TrendingUp, Volume2, VolumeX, X } from "lucide-react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { RestTimer } from "@/components/client/rest-timer"
 import { SetRow, type SetType } from "@/components/client/set-row"
@@ -29,7 +29,7 @@ import { resolveMediaUrl } from "@/lib/media"
 type Exercise = { id: number; exercise_id?: number | null; exercise_name?: string; name?: string; sets?: string; reps?: string; rest_seconds?: string | number | null; notes?: string | null; image_url?: string | null; muscle_group?: string | null; equipment?: string | null; video_url?: string | null; instructions?: string | null }
 type TrainingDay = { id: number; day_of_week: number; title?: string | null; name?: string; exercises: Exercise[] }
 type TrainingPlan = { id: number; title: string; description?: string | null; days: TrainingDay[] } | null
-type WorkoutLog = { id: number; training_plan_id: number; day_number: number; completed_at: string; duration_seconds: number }
+type WorkoutLog = { id: number; training_plan_id: number; day_number: number; day_name?: string | null; completed_at: string; duration_seconds: number; total_volume_kg?: number | null; workout_feeling?: "easy" | "good" | "hard" | "pr" | null; notes?: string | null }
 type LastSet = { exerciseName: string; setNumber: number; weightKg: number; repsCompleted: number }
 type HistorySession = { completedAt: string; sets: Array<{ setNumber: number; weightKg: number; repsCompleted: number }> }
 type SetState = { weight: number; reps: number; completed: boolean }
@@ -51,7 +51,14 @@ type Dashboard = { client?: { subscriptionStatus?: string | null }; unreadNotifi
 type WorkoutSettings = { weightUnit: "kg" | "lbs"; defaultRest: number; autoRest: boolean; soundEnabled: boolean }
 
 const dateFormat = new Intl.DateTimeFormat("el-GR", { day: "numeric", month: "short", year: "numeric" })
+const workoutFeelingMeta: Record<string, { emoji: string; label: string }> = {
+  easy: { emoji: "😊", label: "Εύκολο" },
+  good: { emoji: "😄", label: "Καλά" },
+  hard: { emoji: "😤", label: "Δύσκολο" },
+  pr: { emoji: "🏆", label: "PR" },
+}
 const settingsKey = "workout-settings"
+const workoutDraftKey = "workout-draft"
 const defaultSettings: WorkoutSettings = { weightUnit: "kg", defaultRest: 90, autoRest: true, soundEnabled: true }
 const baseSetCount = (exercise: Exercise) => Math.max(1, Number.parseInt(String(exercise.sets || "1"), 10) || 1)
 const plannedReps = (exercise: Exercise) => Number.parseInt(String(exercise.reps || "0"), 10) || 0
@@ -120,14 +127,35 @@ function ClientProgramContent() {
   const [workoutFeeling, setWorkoutFeeling] = useState<WorkoutFeeling>(null)
   const [saving, setSaving] = useState(false)
   const [infoExercise, setInfoExercise] = useState<Exercise | null>(null)
+  const [totalVolumeKg, setTotalVolumeKg] = useState<number | null>(null)
+  const [lastDayVolume, setLastDayVolume] = useState<number | null>(null)
+  const [lastVolumeByDay, setLastVolumeByDay] = useState<Record<number, number | null>>({})
+  const [draftRestored, setDraftRestored] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true); setError("")
     try {
       const [training, workoutHistory, dashboard] = await Promise.all([api.get<TrainingPlan>("/client/training-plan"), api.get<WorkoutLog[]>("/client/workout/history"), api.get<Dashboard>("/client/dashboard")])
       setPlan(training); setHistory(workoutHistory); setPaymentApproved(dashboard.client?.subscriptionStatus === "active"); setUnreadNotifications(dashboard.unreadNotifications || 0)
+      if (training?.days?.length) {
+        const entries = await Promise.all(training.days.map(async (_, index) => {
+          try {
+            const last = await api.get<{ totalVolumeKg?: number | null }>(`/client/workout/last/${training.id}/${index + 1}`)
+            return [index, last.totalVolumeKg ?? null] as const
+          } catch { return [index, null] as const }
+        }))
+        setLastVolumeByDay(Object.fromEntries(entries))
+      }
     } catch (caughtError) { setError(caughtError instanceof Error ? caughtError.message : "Δεν φορτώθηκε το πρόγραμμα προπόνησης.") } finally { setLoading(false) }
+    api.get<{ totalVolumeKg: number }>("/client/workout/total-volume").then((result) => setTotalVolumeKg(result.totalVolumeKg)).catch(() => {})
   }, [])
+
+  const openDayDetails = (index: number, planId: number) => {
+    setSelectedDay(index); setPhase("details"); setLastDayVolume(null)
+    api.get<{ totalVolumeKg?: number | null }>(`/client/workout/last/${planId}/${index + 1}`)
+      .then((last) => setLastDayVolume(last.totalVolumeKg ?? null))
+      .catch(() => setLastDayVolume(null))
+  }
 
   useEffect(() => {
     void load()
@@ -135,6 +163,29 @@ function ClientProgramContent() {
     if (saved) {
       try { setSettings({ ...defaultSettings, ...JSON.parse(saved) }) } catch { window.localStorage.removeItem(settingsKey) }
     }
+    // Resume an in-progress workout after an accidental refresh — the server
+    // still has the open workout_logs row, so we just restore the local
+    // entered sets/timer and keep logging against the same workoutLogId.
+    try {
+      const draft = window.sessionStorage.getItem(workoutDraftKey)
+      if (draft) {
+        const parsed = JSON.parse(draft)
+        if (parsed.phase === "workout" || parsed.phase === "complete") {
+          setDayIndex(parsed.dayIndex ?? 0)
+          setWorkoutLogId(parsed.workoutLogId ?? null)
+          setSets(parsed.sets || {})
+          setSetTypes(parsed.setTypes || {})
+          setPreviousSets(parsed.previousSets || {})
+          setPersonalBests(parsed.personalBests || {})
+          setExtraSets(parsed.extraSets || {})
+          setElapsedSeconds(parsed.elapsedSeconds || 0)
+          setSummaryNotes(parsed.summaryNotes || "")
+          setWorkoutFeeling(parsed.workoutFeeling ?? null)
+          setPhase(parsed.phase)
+        }
+      }
+    } catch { window.sessionStorage.removeItem(workoutDraftKey) }
+    setDraftRestored(true)
   }, [load])
   useEffect(() => { window.localStorage.setItem(settingsKey, JSON.stringify(settings)) }, [settings])
   useEffect(() => {
@@ -142,6 +193,15 @@ function ClientProgramContent() {
     const timer = window.setInterval(() => setElapsedSeconds((value) => value + 1), 1000)
     return () => window.clearInterval(timer)
   }, [phase])
+  useEffect(() => {
+    if (!draftRestored) return
+    if (phase === "workout" || phase === "complete") {
+      window.sessionStorage.setItem(workoutDraftKey, JSON.stringify({ phase, dayIndex, workoutLogId, sets, setTypes, previousSets, personalBests, extraSets, elapsedSeconds, summaryNotes, workoutFeeling }))
+    } else {
+      window.sessionStorage.removeItem(workoutDraftKey)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftRestored, phase, dayIndex, workoutLogId, sets, setTypes, previousSets, personalBests, extraSets, elapsedSeconds, summaryNotes, workoutFeeling])
 
   const rawDays = plan?.days || []
   const days = rawDays.map((currentDay, index) => ({ ...currentDay, title: getDayTitle(currentDay, index), name: getDayTitle(currentDay, index) }))
@@ -149,7 +209,7 @@ function ClientProgramContent() {
   const visibleSetCount = useCallback((exercise: Exercise) => baseSetCount(exercise) + (extraSets[exerciseKey(exercise)] || 0), [extraSets])
   const allSets = useMemo(() => day?.exercises.flatMap((exercise) => Array.from({ length: visibleSetCount(exercise) }, (_, index) => ({ exercise, setNumber: index + 1 }))) || [], [day, visibleSetCount])
   const completedSets = allSets.filter(({ exercise, setNumber }) => sets[setKey(exercise, setNumber)]?.completed).length
-  const totalVolume = allSets.reduce((sum, { exercise, setNumber }) => { const state = sets[setKey(exercise, setNumber)]; return sum + (state?.completed ? state.weight * state.reps : 0) }, 0)
+  const totalVolume = allSets.reduce((sum, { exercise, setNumber }) => { const state = sets[setKey(exercise, setNumber)]; return sum + (state?.completed ? state.weight : 0) }, 0)
   const completedExercises = day?.exercises.filter((exercise) => Array.from({ length: visibleSetCount(exercise) }, (_, index) => sets[setKey(exercise, index + 1)]?.completed).some(Boolean)).length || 0
   const activeExerciseNumber = Math.min((day?.exercises.findIndex((exercise) => !Array.from({ length: visibleSetCount(exercise) }, (_, index) => sets[setKey(exercise, index + 1)]?.completed).every(Boolean)) ?? 0) + 1, day?.exercises.length || 1)
   const exerciseProgress = day?.exercises.length ? (activeExerciseNumber / day.exercises.length) * 100 : 0
@@ -219,10 +279,21 @@ function ClientProgramContent() {
   return <ClientShell title="Η Προπόνησή μου" user={user} logout={logout} paymentApproved={paymentApproved} unreadNotifications={unreadNotifications} active="training">
     {phase === "list" && <div className="mx-auto max-w-3xl space-y-6">
       {error && <Alert variant="destructive"><AlertTitle>Σφάλμα</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
-      {!plan || !days.length ? <div className="py-20 text-center"><Dumbbell className="mx-auto mb-4 h-12 w-12 text-muted-foreground" /><p className="font-medium">Δεν έχει οριστεί πρόγραμμα</p><p className="mt-1 text-sm text-muted-foreground">Ο coach σου θα σου στείλει το πρόγραμμά σου σύντομα.</p></div> : <><section><h1 className="text-xl font-bold">{plan.title}</h1><p className="mt-1 text-sm text-muted-foreground">{days.length} ημέρες</p></section><div className="divide-y border-y">{days.map((item, index) => { const cover = item.exercises[0]; return <button key={item.id} type="button" onClick={() => { setSelectedDay(index); setPhase("details") }} className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40">{cover?.image_url ? <img src={resolveMediaUrl(cover.image_url)} alt="" className="h-12 w-12 rounded-lg bg-muted object-cover" /> : <span className="grid h-12 w-12 place-items-center rounded-lg bg-muted"><Dumbbell className="h-5 w-5 text-muted-foreground" /></span>}<span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{getDayTitle(item, index)}</span><span className="mt-1 block text-xs text-muted-foreground">Ημέρα {index + 1} · {item.exercises.length} ασκήσεις</span></span><ChevronRight className="h-4 w-4 text-muted-foreground" /></button> })}</div></>}
+      {!plan || !days.length ? <div className="py-20 text-center"><Dumbbell className="mx-auto mb-4 h-12 w-12 text-muted-foreground" /><p className="font-medium">Δεν έχει οριστεί πρόγραμμα</p><p className="mt-1 text-sm text-muted-foreground">Ο coach σου θα σου στείλει το πρόγραμμά σου σύντομα.</p></div> : <><section><h1 className="text-2xl font-bold">{plan.title}</h1><div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground"><span>{days.length} ημέρες</span>{Boolean(totalVolumeKg) && <><span>·</span><span className="font-semibold text-primary">Σύνολο: {totalVolumeKg!.toLocaleString("el-GR")} kg</span></>}</div></section><div className="space-y-3">{days.map((item, index) => { const cover = item.exercises[0]; const minutes = Math.round(item.exercises.reduce((total, exercise) => total + baseSetCount(exercise) * (1 + (restSeconds(exercise) || 90) / 60), 0)); const lastVolume = lastVolumeByDay[index]; return <button key={item.id} type="button" onClick={() => openDayDetails(index, plan.id)} className="flex w-full items-center gap-4 rounded-xl border bg-card p-3 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-muted/30">{cover?.image_url ? <img src={resolveMediaUrl(cover.image_url)} alt="" className="h-16 w-16 shrink-0 rounded-lg bg-muted object-cover" /> : <span className="grid h-16 w-16 shrink-0 place-items-center rounded-lg bg-muted"><Dumbbell className="h-6 w-6 text-muted-foreground" /></span>}<span className="min-w-0 flex-1"><span className="block truncate text-base font-bold">{getDayTitle(item, index)}</span><span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground"><span className="flex shrink-0 items-center gap-1"><Dumbbell className="h-3.5 w-3.5" />{item.exercises.length} ασκήσεις</span><span className="flex shrink-0 items-center gap-1"><Clock3 className="h-3.5 w-3.5" />~{minutes} λεπτά</span></span>{Boolean(lastVolume) && <Badge className="mt-1.5 border-none bg-primary/10 text-primary hover:bg-primary/10">Τελευταία: {lastVolume!.toLocaleString("el-GR")} kg</Badge>}</span><ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" /></button> })}</div>{Boolean(history.length) && <section><h2 className="text-sm font-bold text-muted-foreground">Ιστορικό</h2><div className="mt-2 divide-y border-y">{history.slice(0, 5).map((log) => { const feeling = log.workout_feeling ? workoutFeelingMeta[log.workout_feeling] : null; return <div key={log.id} className="flex items-center gap-3 px-1 py-3"><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{log.day_name || "Προπόνηση"}</span><span className="mt-0.5 block text-xs text-muted-foreground">{dateFormat.format(new Date(log.completed_at))}{log.total_volume_kg ? ` · ${log.total_volume_kg} kg` : ""}{log.notes ? ` · ${log.notes}` : ""}</span></span>{feeling && <span className="text-lg" title={feeling.label}>{feeling.emoji}</span>}</div> })}</div></section>}</>}
     </div>}
-    {phase === "details" && selectedDay !== null && days[selectedDay] && <div className="mx-auto max-w-3xl space-y-6"><Button variant="ghost" className="px-0" onClick={() => setPhase("list")}><ChevronLeft className="mr-1 h-4 w-4" />Πίσω</Button><section><h1 className="text-xl font-bold">{getDayTitle(days[selectedDay], selectedDay)}</h1><p className="mt-1 text-sm text-muted-foreground">Ημέρα {selectedDay + 1} · {days[selectedDay].exercises.length} ασκήσεις · ~{Math.round(days[selectedDay].exercises.reduce((total, exercise) => total + baseSetCount(exercise) * (1 + (restSeconds(exercise) || 90) / 60), 0))} λεπτά</p></section><Button size="lg" className="w-full" onClick={() => void startWorkout(selectedDay)}><Play className="mr-2 h-4 w-4" />Έναρξη Προπόνησης</Button><div className="divide-y border-y">{days[selectedDay].exercises.map((exercise, index) => <div key={exercise.id} className="flex items-center gap-3 p-3"><span className="w-6 text-sm font-bold text-muted-foreground">{index + 1}</span>{exercise.image_url ? <img src={resolveMediaUrl(exercise.image_url)} alt="" className="h-10 w-10 rounded-md object-cover" /> : <span className="grid h-10 w-10 place-items-center rounded-md bg-muted"><Dumbbell className="h-4 w-4 text-muted-foreground" /></span>}<div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{displayName(exercise)}</p><p className="text-xs text-muted-foreground">{baseSetCount(exercise)} σετ · {exercise.reps || "-" } επαν.</p></div></div>)}</div></div>}
-    {phase === "recap" && day && <div className="mx-auto max-w-3xl space-y-6"><Button variant="ghost" className="px-0" onClick={() => setPhase("list")}><ChevronLeft className="mr-1 h-4 w-4" />Επιστροφή στις Προπονήσεις</Button><section><h1 className="text-xl font-bold">{day.title || day.name || `Ημέρα ${dayIndex + 1}`}</h1><p className="mt-1 text-sm text-muted-foreground">{dateFormat.format(new Date())}</p></section><div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Διάρκεια</p><p className="mt-1 text-lg font-semibold">{Math.max(1, Math.round(elapsedSeconds / 60))} λεπτά</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Όγκος</p><p className="mt-1 text-lg font-semibold">{totalVolume.toLocaleString("el-GR")} kg</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Σετ</p><p className="mt-1 text-lg font-semibold">{completedSets}</p></CardContent></Card></div><div className="divide-y border-y">{day.exercises.map((exercise) => { const exerciseSets = Array.from({ length: visibleSetCount(exercise) }, (_, index) => sets[setKey(exercise, index + 1)]).filter((set): set is SetState => Boolean(set?.completed)); if (!exerciseSets.length) return null; const exerciseVolume = exerciseSets.reduce((sum, set) => sum + set.weight * set.reps, 0); return <div key={exercise.id} className="flex items-center gap-3 py-3">{exercise.image_url ? <img src={resolveMediaUrl(exercise.image_url)} alt="" className="h-11 w-11 rounded-md object-cover" /> : <span className="grid h-11 w-11 place-items-center rounded-md bg-muted"><Dumbbell className="h-4 w-4 text-muted-foreground" /></span>}<div className="min-w-0 flex-1"><p className="font-medium">{displayName(exercise)}</p><p className="mt-0.5 text-sm text-muted-foreground">{exerciseSets.length} σετ · {exerciseVolume.toLocaleString("el-GR")} kg</p><p className="mt-1 truncate text-xs text-muted-foreground">{exerciseSets.map((set) => `${set.weight}×${set.reps}`).join(" · ")}</p></div></div> })}</div>{workoutFeeling && <Card><CardContent className="flex items-center gap-2 p-4"><span className="text-xl">{workoutFeeling === "easy" ? "😊" : workoutFeeling === "good" ? "😄" : workoutFeeling === "hard" ? "😤" : "🏆"}</span><div><p className="text-xs text-muted-foreground">Πώς πήγε;</p><p className="font-medium">{workoutFeeling === "easy" ? "Εύκολο" : workoutFeeling === "good" ? "Καλά" : workoutFeeling === "hard" ? "Δύσκολο" : "PR"}</p></div></CardContent></Card>}<Button className="w-full" size="lg" onClick={() => setPhase("list")}>Επιστροφή στις Προπονήσεις</Button></div>}
+    {phase === "details" && selectedDay !== null && days[selectedDay] && <div className="mx-auto max-w-3xl space-y-6">{(() => { const detailDay = days[selectedDay]; const detailCover = detailDay.exercises[0]; const detailMinutes = Math.round(detailDay.exercises.reduce((total, exercise) => total + baseSetCount(exercise) * (1 + (restSeconds(exercise) || 90) / 60), 0)); const totalSets = detailDay.exercises.reduce((sum, exercise) => sum + baseSetCount(exercise), 0); return <>
+      <Button variant="ghost" className="px-0" onClick={() => setPhase("list")}><ChevronLeft className="mr-1 h-4 w-4" />Πίσω</Button>
+      <div className="relative -mx-4 h-44 overflow-hidden bg-muted sm:mx-0 sm:rounded-2xl">{detailCover?.image_url ? <img src={resolveMediaUrl(detailCover.image_url)} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full w-full place-items-center"><Dumbbell className="h-10 w-10 text-muted-foreground" /></div>}<Badge className="absolute left-3 top-3 border-none bg-background/90 text-foreground">Ημέρα {selectedDay + 1}</Badge></div>
+      <section><h1 className="text-2xl font-bold">{getDayTitle(detailDay, selectedDay)}</h1><p className="mt-1 text-sm text-muted-foreground">{detailDay.exercises.length} ασκήσεις · ~{detailMinutes} λεπτά</p></section>
+      <div className="grid grid-cols-3 gap-3">
+        <div className="rounded-xl border bg-card p-4 text-center"><Dumbbell className="mx-auto h-5 w-5 text-primary" /><p className="mt-2 text-lg font-bold">{detailDay.exercises.length}</p><p className="text-xs text-muted-foreground">Ασκήσεις</p></div>
+        <div className="rounded-xl border bg-card p-4 text-center"><Layers3 className="mx-auto h-5 w-5 text-primary" /><p className="mt-2 text-lg font-bold">{totalSets}</p><p className="text-xs text-muted-foreground">Συνολικά sets</p></div>
+        <div className="rounded-xl border bg-card p-4 text-center"><TrendingUp className="mx-auto h-5 w-5 text-primary" /><p className="mt-2 text-lg font-bold">{lastDayVolume ? `${lastDayVolume.toLocaleString("el-GR")} kg` : "-"}</p><p className="text-xs text-muted-foreground">Τελευταία επίδοση</p></div>
+      </div>
+      <Button size="lg" className="w-full" onClick={() => void startWorkout(selectedDay)}><Play className="mr-2 h-4 w-4" />Ξεκίνα Προπόνηση</Button>
+      <div className="space-y-2">{detailDay.exercises.map((exercise, index) => <div key={exercise.id} className="flex items-center gap-3 rounded-xl border bg-card p-3"><span className="w-6 text-sm font-bold text-muted-foreground">{index + 1}</span>{exercise.image_url ? <img src={resolveMediaUrl(exercise.image_url)} alt="" className="h-12 w-12 rounded-lg object-cover" /> : <span className="grid h-12 w-12 place-items-center rounded-lg bg-muted"><Dumbbell className="h-5 w-5 text-muted-foreground" /></span>}<div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{displayName(exercise)}</p><p className="text-xs text-muted-foreground">{baseSetCount(exercise)} sets · {exercise.reps || "-"} επαν.{exercise.muscle_group ? ` · ${exercise.muscle_group}` : ""}</p></div><ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" /></div>)}</div>
+    </> })()}</div>}
+    {phase === "recap" && day && <div className="mx-auto max-w-3xl space-y-6"><Button variant="ghost" className="px-0" onClick={() => setPhase("list")}><ChevronLeft className="mr-1 h-4 w-4" />Επιστροφή στις Προπονήσεις</Button><section><h1 className="text-xl font-bold">{day.title || day.name || `Ημέρα ${dayIndex + 1}`}</h1><p className="mt-1 text-sm text-muted-foreground">{dateFormat.format(new Date())}</p></section><div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Διάρκεια</p><p className="mt-1 text-lg font-semibold">{Math.max(1, Math.round(elapsedSeconds / 60))} λεπτά</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Κιλά</p><p className="mt-1 text-lg font-semibold">{totalVolume.toLocaleString("el-GR")} kg</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Σετ</p><p className="mt-1 text-lg font-semibold">{completedSets}</p></CardContent></Card></div><div className="divide-y border-y">{day.exercises.map((exercise) => { const exerciseSets = Array.from({ length: visibleSetCount(exercise) }, (_, index) => sets[setKey(exercise, index + 1)]).filter((set): set is SetState => Boolean(set?.completed)); if (!exerciseSets.length) return null; const exerciseVolume = exerciseSets.reduce((sum, set) => sum + set.weight, 0); return <div key={exercise.id} className="flex items-center gap-3 py-3">{exercise.image_url ? <img src={resolveMediaUrl(exercise.image_url)} alt="" className="h-11 w-11 rounded-md object-cover" /> : <span className="grid h-11 w-11 place-items-center rounded-md bg-muted"><Dumbbell className="h-4 w-4 text-muted-foreground" /></span>}<div className="min-w-0 flex-1"><p className="font-medium">{displayName(exercise)}</p><p className="mt-0.5 text-sm text-muted-foreground">{exerciseSets.length} σετ · {exerciseVolume.toLocaleString("el-GR")} kg</p><p className="mt-1 truncate text-xs text-muted-foreground">{exerciseSets.map((set) => `${set.weight}×${set.reps}`).join(" · ")}</p></div></div> })}</div>{workoutFeeling && <Card><CardContent className="flex items-center gap-2 p-4"><span className="text-xl">{workoutFeeling === "easy" ? "😊" : workoutFeeling === "good" ? "😄" : workoutFeeling === "hard" ? "😤" : "🏆"}</span><div><p className="text-xs text-muted-foreground">Πώς πήγε;</p><p className="font-medium">{workoutFeeling === "easy" ? "Εύκολο" : workoutFeeling === "good" ? "Καλά" : workoutFeeling === "hard" ? "Δύσκολο" : "PR"}</p></div></CardContent></Card>}<Button className="w-full" size="lg" onClick={() => setPhase("list")}>Επιστροφή στις Προπονήσεις</Button></div>}
     {phase === "overview" && <div className="mx-auto max-w-5xl space-y-6">
       {error && <Alert variant="destructive"><AlertTitle>Σφάλμα</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
       {!plan || !days.length ? <Card><CardContent className="py-16 text-center text-muted-foreground">Δεν έχει ανατεθεί πρόγραμμα προπόνησης ακόμα.</CardContent></Card> : <><section><div className="flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold">{plan.title}</h1><Badge>Ενεργό</Badge></div>{plan.description && <p className="mt-2 text-muted-foreground">{plan.description}</p>}</section><div className="grid gap-4 md:grid-cols-2">{days.map((item, index) => {
@@ -235,7 +306,7 @@ function ClientProgramContent() {
     {phase === "workout" && day && <div className="fixed inset-0 z-50 overflow-y-auto bg-background">
       <header className="sticky top-0 z-20 border-b bg-background/95 px-4 py-3 backdrop-blur"><div className="mx-auto flex max-w-4xl items-center justify-between gap-3"><Button size="icon" variant="ghost" onClick={() => setExitOpen(true)} aria-label="Έξοδος"><X className="h-5 w-5" /></Button><div className="min-w-0 text-center"><p className="truncate font-medium">Ημέρα {dayIndex + 1} - {day.title || day.name}</p><p className="text-xs text-muted-foreground">Άσκηση {activeExerciseNumber} από {day.exercises.length}</p></div><div className="flex items-center gap-1"><span className="hidden items-center gap-1 text-sm tabular-nums text-muted-foreground sm:flex"><Clock3 className="h-4 w-4" />{workoutTime(elapsedSeconds)}</span><Button size="icon" variant="ghost" onClick={() => setSettingsOpen(true)} aria-label="Ρυθμίσεις προπόνησης"><Settings2 className="h-5 w-5" /></Button><Button size="icon" variant="ghost" onClick={() => setSettings((current) => ({ ...current, soundEnabled: !current.soundEnabled }))} aria-label="Ρύθμιση ήχου">{settings.soundEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}</Button></div></div></header>
       <div className="border-b px-4 py-2"><div className="mx-auto max-w-4xl"><div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>Άσκηση {activeExerciseNumber} από {day.exercises.length}</span><span>{Math.round(exerciseProgress)}%</span></div><Progress value={exerciseProgress} className="h-1" /></div></div>
-      <div className="border-b bg-background/95 px-4 py-2"><div className="mx-auto grid max-w-4xl grid-cols-3 divide-x text-center"><div><p className="text-xs text-muted-foreground">Διάρκεια</p><p className="font-medium tabular-nums">{workoutTime(elapsedSeconds)}</p></div><div><p className="text-xs text-muted-foreground">Όγκος</p><p className="font-medium">{displayWeight(totalVolume, settings.weightUnit).toLocaleString("el-GR")} {settings.weightUnit}</p></div><div><p className="text-xs text-muted-foreground">Ασκήσεις</p><p className="font-medium">{completedExercises}/{day.exercises.length}</p></div></div></div>
+      <div className="border-b bg-background/95 px-4 py-2"><div className="mx-auto grid max-w-4xl grid-cols-3 divide-x text-center"><div><p className="text-xs text-muted-foreground">Διάρκεια</p><p className="font-medium tabular-nums">{workoutTime(elapsedSeconds)}</p></div><div><p className="text-xs text-muted-foreground">Κιλά</p><p className="font-medium">{displayWeight(totalVolume, settings.weightUnit).toLocaleString("el-GR")} {settings.weightUnit}</p></div><div><p className="text-xs text-muted-foreground">Ασκήσεις</p><p className="font-medium">{completedExercises}/{day.exercises.length}</p></div></div></div>
       <main className="mx-auto max-w-4xl space-y-0 p-4 pb-28 sm:p-8 sm:pb-32">{day.exercises.map((exercise, exerciseIndex) => <div key={exercise.id}><Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="space-y-4 p-4"><div className="flex items-center gap-3">{exercise.image_url ? <button type="button" onClick={() => setInfoExercise(exercise)} className="shrink-0 cursor-pointer rounded-full ring-2 ring-transparent transition hover:ring-primary hover:ring-offset-2"><img src={resolveMediaUrl(exercise.image_url)} alt="" className="h-10 w-10 rounded-full object-cover" /></button> : <button type="button" onClick={() => setInfoExercise(exercise)} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-muted ring-2 ring-transparent transition hover:ring-primary hover:ring-offset-2"><ImageOff className="h-4 w-4 text-muted-foreground" /></button>}<div className="min-w-0 flex-1"><h2 className="truncate text-base font-semibold">{displayName(exercise)}</h2><p className="text-xs text-muted-foreground">{exercise.muscle_group || "-"}</p><div className="mt-2 flex items-center gap-2"><span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3.5 w-3.5" />{restSeconds(exercise) || settings.defaultRest}&quot;</span><Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => startRest(exercise)}><Play className="mr-1 h-3.5 w-3.5" />Έναρξη</Button></div></div></div><ExerciseHistory exerciseName={displayName(exercise)} /><div><table className="w-full text-sm"><thead className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="w-10 p-2 text-center">Σετ</th><th className="p-2 text-right">Προηγ.</th><th className="p-2 text-center">{settings.weightUnit}</th><th className="p-2 text-center">Επαν.</th><th className="p-2 text-right">✓</th></tr></thead><tbody>{Array.from({ length: visibleSetCount(exercise) }, (_, index) => {
         const setNumber = index + 1; const key = setKey(exercise, setNumber); const state = sets[key] || { weight: 0, reps: plannedReps(exercise), completed: false }; const priorWeightInExercise = Math.max(personalBests[displayName(exercise)] || 0, ...Array.from({ length: setNumber - 1 }, (_, priorIndex) => sets[setKey(exercise, priorIndex + 1)]?.completed ? sets[setKey(exercise, priorIndex + 1)].weight : 0)); const isPersonalRecord = state.completed && priorWeightInExercise > 0 && state.weight > priorWeightInExercise
         return <SetRow key={key} setNumber={setNumber} setType={setTypes[key] || "normal"} previous={previousSets[key]} weightKg={state.weight} repsCompleted={state.reps} isCompleted={state.completed} autoFocusKg={focusSet === key} weightUnit={settings.weightUnit} isPersonalRecord={isPersonalRecord} onSetTypeChange={(setType) => setSetTypes((current) => ({ ...current, [key]: setType }))} onWeightChange={(weight) => setSets((current) => ({ ...current, [key]: { ...state, weight } }))} onRepsChange={(reps) => setSets((current) => ({ ...current, [key]: { ...state, reps } }))} onComplete={(completed) => void toggleSet(exercise, setNumber, completed)} />

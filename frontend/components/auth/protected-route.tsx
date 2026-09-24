@@ -23,7 +23,7 @@ export function ProtectedRoute({ children, allow }: { children: ReactNode; allow
   const redirectTo = (() => {
     if (!authReady) return null;
     if (!user) return "/login";
-    if (needsOnboarding && pathname !== "/client-onboarding") return "/client-onboarding";
+    if (needsOnboarding && pathname !== "/register") return "/register";
     if (user.role === "client" && user.onboardingCompleted && pathname === "/client-onboarding") {
       return getAuthRedirect(user);
     }

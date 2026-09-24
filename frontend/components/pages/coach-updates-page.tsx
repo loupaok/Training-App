@@ -24,6 +24,7 @@ interface UpdateAnswer {
   answer: string;
   question: string;
   type: string;
+  standard_key: string | null;
 }
 
 interface UpdateFile {
@@ -81,7 +82,7 @@ function formatDate(value: string): string {
 }
 
 function extractQuickStats(answers: UpdateAnswer[]) {
-  const weight = answers.find((a) => a.type === "number")?.answer;
+  const weight = answers.find((a) => a.standard_key === "weight_kg")?.answer;
   // Match on the word stem, not the exact word — Greek question text inflects
   // (e.g. "προπόνηση" vs "προπονήσεις") depending on how the coach phrases it.
   const trainingRating = answers.find((a) => a.type === "rating" && a.question.includes("προπον"))?.answer;

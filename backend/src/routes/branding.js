@@ -32,7 +32,8 @@ export async function ensureBrandingSchema(connection) {
       ADD COLUMN IF NOT EXISTS title_color VARCHAR(7) DEFAULT '#1a1a2e',
       ADD COLUMN IF NOT EXISTS button_color VARCHAR(7) DEFAULT '#e74c3c',
       ADD COLUMN IF NOT EXISTS button_hover_color VARCHAR(7) DEFAULT '#c0392b',
-      ADD COLUMN IF NOT EXISTS button_text_color VARCHAR(7) DEFAULT '#ffffff'
+      ADD COLUMN IF NOT EXISTS button_text_color VARCHAR(7) DEFAULT '#ffffff',
+      ADD COLUMN IF NOT EXISTS login_background_url VARCHAR(255) NULL
   `);
 }
 
@@ -47,6 +48,7 @@ function normalizeBranding(row) {
     buttonTextColor: row.button_text_color,
     logoUrl: row.logo_url,
     faviconUrl: row.favicon_url,
+    loginBackgroundUrl: row.login_background_url,
   };
 }
 
@@ -97,6 +99,12 @@ const uploadFavicon = uploadSingle(createUpload({
   maxSize: 512 * 1024,
   extensions: ['.png', '.ico', '.svg'],
   mimeTypes: ['image/png', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/svg+xml'],
+}));
+const uploadLoginBackground = uploadSingle(createUpload({
+  kind: 'login-background',
+  maxSize: 5 * 1024 * 1024,
+  extensions: ['.jpg', '.jpeg', '.png', '.webp'],
+  mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
 }));
 
 router.get('/', async (_req, res) => {
@@ -173,5 +181,6 @@ async function saveBrandImage(req, res, column) {
 
 router.post('/logo', authenticateToken, authorizeRole(['coach']), uploadLogo, (req, res) => saveBrandImage(req, res, 'logo_url'));
 router.post('/favicon', authenticateToken, authorizeRole(['coach']), uploadFavicon, (req, res) => saveBrandImage(req, res, 'favicon_url'));
+router.post('/login-background', authenticateToken, authorizeRole(['coach']), uploadLoginBackground, (req, res) => saveBrandImage(req, res, 'login_background_url'));
 
 export default router;

@@ -121,6 +121,17 @@ interface ProgressWeeklyUpdate {
   photos: string[];
 }
 
+interface ProgressWorkout {
+  id: number | string;
+  day_name: string | null;
+  completed_at: string;
+  duration_seconds: number | null;
+  total_sets_completed: number | null;
+  total_volume_kg: number | null;
+  workout_feeling: "easy" | "good" | "hard" | "pr" | null;
+  notes: string | null;
+}
+
 interface ProgressPhoto {
   id: number | string;
   photo_url?: string;
@@ -1641,6 +1652,7 @@ function QuestionnaireAnswerField({
                 <Link2 className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
                 <Input
                   type="url"
+                  autoComplete="off"
                   value={labelValues[label] || ""}
                   onChange={(event) => onChange({ ...labelValues, [label]: event.target.value })}
                   placeholder={`${label} URL`}
@@ -1657,6 +1669,7 @@ function QuestionnaireAnswerField({
         <Link2 className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
         <Input
           type="url"
+          autoComplete="off"
           value={(value as string) || ""}
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}
@@ -2127,9 +2140,18 @@ function RatingStars({ value }: { value: number | null }) {
   );
 }
 
+const workoutFeelingMeta: Record<string, { emoji: string; label: string }> = {
+  easy: { emoji: "😊", label: "Εύκολο" },
+  good: { emoji: "😄", label: "Καλά" },
+  hard: { emoji: "😤", label: "Δύσκολο" },
+  pr: { emoji: "🏆", label: "PR" },
+};
+
 function ProgressTab({ client }: { client: ClientRecord }) {
   const [weeklyUpdates, setWeeklyUpdates] = useState<ProgressWeeklyUpdate[]>([]);
+  const [workouts, setWorkouts] = useState<ProgressWorkout[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [workoutsLoading, setWorkoutsLoading] = useState(true);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
 
   useEffect(() => {
@@ -2146,6 +2168,19 @@ function ProgressTab({ client }: { client: ClientRecord }) {
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
+      });
+
+    setWorkoutsLoading(true);
+    api
+      .get<ProgressWorkout[]>(`/clients/${client.id}/workouts`)
+      .then((rows) => {
+        if (!cancelled) setWorkouts(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setWorkouts([]);
+      })
+      .finally(() => {
+        if (!cancelled) setWorkoutsLoading(false);
       });
 
     return () => {
@@ -2252,6 +2287,46 @@ function ProgressTab({ client }: { client: ClientRecord }) {
               <TableRow>
                 <TableCell colSpan={6} className="px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
                   {isLoading ? "Φόρτωση εβδομαδιαίων updates..." : "Δεν υπάρχουν εβδομαδιαία updates ακόμα."}
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </Card>
+
+      <Card className="overflow-hidden p-0">
+        <CardHeader className="border-b border-slate-200 px-6 py-5 dark:border-slate-800">
+          <CardTitle className="text-xl font-bold">Προπονήσεις</CardTitle>
+        </CardHeader>
+        <Table>
+          <TableHeader className="border-b border-slate-200 bg-slate-50 text-xs font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-400">
+            <TableRow>
+              <TableHead className="px-5 py-4">Ημερομηνία</TableHead>
+              <TableHead className="px-5 py-4">Ημέρα</TableHead>
+              <TableHead className="px-5 py-4">Διάρκεια</TableHead>
+              <TableHead className="px-5 py-4">Κιλά</TableHead>
+              <TableHead className="px-5 py-4">Διάθεση</TableHead>
+              <TableHead className="px-5 py-4">Σημειώσεις</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody className="divide-y divide-slate-100 dark:divide-slate-800">
+            {workouts.map((workout) => {
+              const feeling = workout.workout_feeling ? workoutFeelingMeta[workout.workout_feeling] : null;
+              return (
+                <TableRow key={workout.id}>
+                  <TableCell className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{formatDateTime(workout.completed_at)}</TableCell>
+                  <TableCell className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{workout.day_name || "-"}</TableCell>
+                  <TableCell className="px-5 py-4 text-slate-500 dark:text-slate-400">{workout.duration_seconds ? `${Math.round(workout.duration_seconds / 60)} λεπτά` : "-"}</TableCell>
+                  <TableCell className="px-5 py-4 font-bold text-slate-950 dark:text-slate-50">{workout.total_volume_kg ? `${workout.total_volume_kg} kg` : "-"}</TableCell>
+                  <TableCell className="px-5 py-4">{feeling ? <span className="inline-flex items-center gap-1.5"><span className="text-lg">{feeling.emoji}</span>{feeling.label}</span> : "-"}</TableCell>
+                  <TableCell className="max-w-xs px-5 py-4 font-semibold text-slate-500 dark:text-slate-400">{workout.notes || "-"}</TableCell>
+                </TableRow>
+              );
+            })}
+            {!workouts.length && (
+              <TableRow>
+                <TableCell colSpan={6} className="px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
+                  {workoutsLoading ? "Φόρτωση προπονήσεων..." : "Δεν υπάρχουν προπονήσεις ακόμα."}
                 </TableCell>
               </TableRow>
             )}

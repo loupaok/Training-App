@@ -127,8 +127,7 @@ function ClientDashboardContent() {
   useEffect(() => { void loadDashboard() }, [])
   const chartData = useMemo(() => updates
     .map((update) => {
-      const weight = update.weight ?? update.answers?.find((answer) => answer.type === "number" && answer.question.toLocaleLowerCase("el-GR").normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes("\u03b2\u03b1\u03c1\u03bf\u03c3"))?.answer
-      return weight ? { date: formatDate(update.submittedAt), weight: Number(weight) } : null
+      return update.weight ? { date: formatDate(update.submittedAt), weight: Number(update.weight) } : null
     })
     .filter((entry): entry is { date: string; weight: number } => entry !== null)
     .reverse(), [updates])
@@ -154,7 +153,7 @@ function ClientDashboardContent() {
       const selected = Array.isArray(value) ? value : []
       return <fieldset key={question.id} className="space-y-2"><legend className="text-sm font-medium">{question.question}{required}</legend><div className="grid gap-2 sm:grid-cols-2">{(question.options ?? []).map((option) => <label key={option} className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm"><input type="checkbox" checked={selected.includes(option)} onChange={() => setValue(selected.includes(option) ? selected.filter((item) => item !== option) : [...selected, option])} />{option}</label>)}</div></fieldset>
     }
-    return <div key={question.id} className="space-y-2"><Label>{question.question}{required}</Label><Input type={question.type === "number" ? "number" : question.type === "url" ? "url" : "text"} value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} /></div>
+    return <div key={question.id} className="space-y-2"><Label>{question.question}{required}</Label><Input type={question.type === "number" ? "number" : question.type === "url" ? "url" : "text"} autoComplete={question.type === "url" ? "off" : undefined} value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} /></div>
   }
 
   const submitUpdate = async (event: FormEvent) => {

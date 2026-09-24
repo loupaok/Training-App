@@ -1,21 +1,19 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ChartNoAxesColumnIncreasing, Download, Lightbulb, MoreVertical, ShoppingCart, Utensils } from "lucide-react"
+import { ChartNoAxesColumnIncreasing, Download, Lightbulb, MoreVertical, ShoppingCart, Utensils, X } from "lucide-react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { ClientShell } from "@/components/shell/client-shell"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Progress } from "@/components/ui/progress"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { api } from "@/lib/api/client"
 import { useAuth } from "@/lib/auth/auth-context"
 import { toast } from "sonner"
@@ -343,7 +341,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
         </Accordion>
 
         {plan.notes && (
-          <Card className="mt-6 border-border bg-muted/30 shadow-sm">
+          <Card className="mt-6 border-border bg-[#F2F9F7] shadow-sm">
             <CardContent className="p-4">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Lightbulb className="h-4 w-4 text-foreground" />
@@ -355,17 +353,34 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
         )}
       </section>
 
-      <Sheet open={shoppingOpen} onOpenChange={setShoppingOpen}>
-        <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">
-          <SheetHeader className="border-b p-5 pr-12">
-            <SheetTitle className="flex items-center gap-2 text-lg">
-              <ShoppingCart className="h-5 w-5 text-foreground" />
-              Λίστα για Ψώνια
-            </SheetTitle>
-            <SheetDescription>Βάσει του πλάνου διατροφής</SheetDescription>
-          </SheetHeader>
+      {shoppingOpen && (
+        <div className="fixed inset-0 z-50">
+          <button
+            type="button"
+            aria-label="Κλείσιμο λίστας για ψώνια"
+            className="absolute inset-0 bg-black/20"
+            onClick={() => setShoppingOpen(false)}
+          />
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="shopping-list-title"
+            className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col border-l bg-background shadow-xl will-change-transform animate-in slide-in-from-right duration-200"
+          >
+            <div className="flex items-start justify-between gap-4 border-b p-5">
+              <div>
+                <h2 id="shopping-list-title" className="flex items-center gap-2 text-lg font-semibold">
+                  <ShoppingCart className="h-5 w-5 text-foreground" />
+                  Λίστα για Ψώνια
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">Βάσει του πλάνου διατροφής</p>
+              </div>
+              <Button size="icon-sm" variant="ghost" aria-label="Κλείσιμο" onClick={() => setShoppingOpen(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
 
-          <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
             <div className="flex items-center gap-2">
               <Button size="sm" variant="outline" className="flex-1" onClick={exportShoppingList}>
                 <Download className="mr-2 h-4 w-4" />
@@ -395,7 +410,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
             </Select>
 
             <Separator />
-            <ScrollArea className="min-h-0 flex-1 pr-3">
+            <div className="min-h-0 flex-1 overflow-y-auto pr-3">
               <div className="space-y-1.5">
                 {filteredShoppingItems.map((item) => (
                   <label key={item.key} className={`flex cursor-pointer items-center gap-3 rounded-lg border border-transparent px-2 py-2.5 text-sm transition-colors hover:border-border hover:bg-muted/30 ${checked[item.key] ? "text-muted-foreground" : ""}`}>
@@ -415,10 +430,11 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
                   </label>
                 ))}
               </div>
-            </ScrollArea>
-          </div>
-        </SheetContent>
-      </Sheet>
+            </div>
+            </div>
+          </aside>
+        </div>
+      )}
     </div>
   )
 }

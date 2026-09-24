@@ -53,7 +53,11 @@ export const pool = mysql.createPool({
   database: process.env.DB_NAME,
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0
+  queueLimit: 0,
+  // Without this, mysql2 returns every DECIMAL column (weight_kg, price,
+  // amount, ...) as a string like "50.00" instead of the number 50 — this
+  // fixes it everywhere at once instead of converting each query by hand.
+  decimalNumbers: true
 });
 
 // Test database connection

@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useTheme } from "next-themes";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl } from "@/lib/media";
 
@@ -22,6 +23,7 @@ export interface BrandingData {
   buttonTextColor: string;
   logoUrl: string | null;
   faviconUrl: string | null;
+  loginBackgroundUrl: string | null;
 }
 
 const defaults: BrandingData = {
@@ -34,6 +36,7 @@ const defaults: BrandingData = {
   buttonTextColor: "#ffffff",
   logoUrl: null,
   faviconUrl: null,
+  loginBackgroundUrl: null,
 };
 
 interface BrandingContextValue {
@@ -70,14 +73,23 @@ function hexToHsl(hex: string): string {
   return `${hue} ${Math.round(saturation * 100)}% ${Math.round(lightness * 100)}%`;
 }
 
-function applyBranding(branding: BrandingData) {
+function applyBranding(branding: BrandingData, isDark: boolean) {
   document.title = branding.appName;
   const root = document.documentElement;
   const asHslColor = (color: string) => `hsl(${hexToHsl(color)})`;
 
   root.style.setProperty("--brand-primary", asHslColor(branding.primaryColor));
-  root.style.setProperty("--foreground", asHslColor(branding.fontColor));
-  root.style.setProperty("--title-color", asHslColor(branding.titleColor));
+  // The coach's branded text colors are only meant for light mode — forcing
+  // them as inline styles would otherwise always win over the .dark class's
+  // own --foreground/--title-color, leaving dark mode with unreadable
+  // near-black text on a near-black background.
+  if (isDark) {
+    root.style.removeProperty("--foreground");
+    root.style.removeProperty("--title-color");
+  } else {
+    root.style.setProperty("--foreground", asHslColor(branding.fontColor));
+    root.style.setProperty("--title-color", asHslColor(branding.titleColor));
+  }
   root.style.setProperty("--primary", asHslColor(branding.buttonColor));
   root.style.setProperty("--button-hover", asHslColor(branding.buttonHoverColor));
   root.style.setProperty("--primary-foreground", asHslColor(branding.buttonTextColor));
@@ -110,6 +122,7 @@ function applyBranding(branding: BrandingData) {
 
 export function BrandingProvider({ children }: { children: ReactNode }) {
   const [branding, setBranding] = useState<BrandingData>(defaults);
+  const { resolvedTheme } = useTheme();
 
   const refreshBranding = useCallback(async () => {
     const nextBranding = await api.get<BrandingData>("/branding");
@@ -121,8 +134,8 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
   }, [refreshBranding]);
 
   useEffect(() => {
-    applyBranding(branding);
-  }, [branding]);
+    applyBranding(branding, resolvedTheme === "dark");
+  }, [branding, resolvedTheme]);
 
   const value = useMemo(() => ({ branding, refreshBranding }), [branding, refreshBranding]);
 

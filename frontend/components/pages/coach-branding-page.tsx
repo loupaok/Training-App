@@ -27,6 +27,7 @@ const emptyBranding: Branding = {
   buttonTextColor: "#ffffff",
   logoUrl: null,
   faviconUrl: null,
+  loginBackgroundUrl: null,
 };
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -78,10 +79,11 @@ function CoachBrandingContent() {
   const { refreshBranding } = useBranding();
   const logoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
+  const loginBackgroundInputRef = useRef<HTMLInputElement>(null);
   const [branding, setBranding] = useState<Branding>(emptyBranding);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState<"logo" | "favicon" | null>(null);
+  const [uploading, setUploading] = useState<"logo" | "favicon" | "login-background" | null>(null);
 
   useEffect(() => {
     api
@@ -121,7 +123,7 @@ function CoachBrandingContent() {
     }
   };
 
-  const uploadBrandImage = async (kind: "logo" | "favicon", event: ChangeEvent<HTMLInputElement>) => {
+  const uploadBrandImage = async (kind: "logo" | "favicon" | "login-background", event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -131,7 +133,7 @@ function CoachBrandingContent() {
       formData.append("file", file);
       setBranding(await api.upload<Branding>(`/branding/${kind}`, formData));
       await refreshBranding();
-      toast.success(kind === "logo" ? "Το logo ανέβηκε." : "Το favicon ανέβηκε.");
+      toast.success(kind === "logo" ? "Το logo ανέβηκε." : kind === "favicon" ? "Το favicon ανέβηκε." : "Το background του login ανέβηκε.");
     } catch (error) {
       toast.error(getErrorMessage(error, "Η μεταφόρτωση απέτυχε."));
     } finally {
@@ -189,6 +191,21 @@ function CoachBrandingContent() {
               </div>
               <p className="text-xs text-muted-foreground">Προεπισκόπηση χρώματος</p>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Background Σύνδεσης</CardTitle>
+            <CardDescription>Προαιρετική εικόνα φόντου για τη σελίδα σύνδεσης. Προτεινόμενο: οριζόντια JPG, PNG ή WEBP, max 5MB.</CardDescription>
+          </CardHeader>
+          <CardContent className="gap-5">
+            <BrandImagePreview url={branding.loginBackgroundUrl} type="login-background" />
+            <Button type="button" variant="outline" onClick={() => loginBackgroundInputRef.current?.click()} disabled={uploading !== null || loading}>
+              {uploading === "login-background" ? <LoaderCircle className="animate-spin" /> : <Upload />}
+              {uploading === "login-background" ? "Ανέβασμα..." : "Ανέβασε Background"}
+            </Button>
+            <input ref={loginBackgroundInputRef} type="file" accept=".jpg,.jpeg,.png,.webp" onChange={(event) => uploadBrandImage("login-background", event)} className="hidden" />
           </CardContent>
         </Card>
 
@@ -287,20 +304,20 @@ function CoachBrandingContent() {
   );
 }
 
-function BrandImagePreview({ url, type }: { url: string | null; type: "logo" | "favicon" }) {
+function BrandImagePreview({ url, type }: { url: string | null; type: "logo" | "favicon" | "login-background" }) {
   if (url) {
     return (
       <div className="flex min-h-20 items-center rounded-lg border bg-muted/30 p-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={resolveMediaUrl(url)} alt={type === "logo" ? "Current logo" : "Current favicon"} className={type === "logo" ? "max-h-16 max-w-full object-contain" : "h-8 w-8 object-contain"} />
+        <img src={resolveMediaUrl(url)} alt={type === "logo" ? "Current logo" : type === "favicon" ? "Current favicon" : "Current login background"} className={type === "logo" ? "max-h-16 max-w-full object-contain" : type === "favicon" ? "h-8 w-8 object-contain" : "max-h-48 w-full rounded-md object-cover"} />
       </div>
     );
   }
 
   return (
-    <div className={`flex items-center justify-center rounded-lg border border-dashed bg-muted/30 text-muted-foreground ${type === "logo" ? "min-h-20 gap-2" : "h-12 w-12"}`}>
+    <div className={`flex items-center justify-center rounded-lg border border-dashed bg-muted/30 text-muted-foreground ${type === "logo" ? "min-h-20 gap-2" : type === "favicon" ? "h-12 w-12" : "min-h-36 gap-2"}`}>
       <ImageIcon className="h-5 w-5" />
-      {type === "logo" && <span className="text-sm">Δεν έχει οριστεί logo</span>}
+      {type !== "favicon" && <span className="text-sm">{type === "logo" ? "Δεν έχει οριστεί logo" : "Δεν έχει οριστεί background"}</span>}
     </div>
   );
 }
