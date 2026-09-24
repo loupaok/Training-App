@@ -37,6 +37,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Progress } from "@/components/ui/progress";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { resolveMediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
 import { Field, PlanHeader, PlanHistory, SelectField, type PlanHistoryRow } from "@/components/shared/plan-editor-ui";
@@ -489,7 +490,15 @@ export function NutritionPlanEditor({
           </div>
         </div>
 
-        <Field label="Γενικές οδηγίες διατροφής" value={plan.notes} onChange={(value) => setPlan({ ...plan, notes: value })} />
+        <div className="block">
+          <label className="text-xs font-bold text-slate-500 dark:text-slate-400">Γενικές οδηγίες διατροφής</label>
+          <Textarea
+            value={plan.notes ?? ""}
+            onChange={(event) => setPlan({ ...plan, notes: event.target.value })}
+            placeholder="Γράψε γενικές οδηγίες για το διατροφικό πλάνο..."
+            className="mt-1 min-h-28 resize-y text-sm font-semibold"
+          />
+        </div>
       </div>
 
       <DndContext sensors={dndSensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>

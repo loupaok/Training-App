@@ -15,6 +15,7 @@ import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { api } from "@/lib/api/client"
 import { useAuth } from "@/lib/auth/auth-context"
 import { toast } from "sonner"
@@ -122,6 +123,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
   const isWeeklyPlan = weeklyDays.length > 1
   const [selectedDay, setSelectedDay] = useState<number | null>(null)
   const [activeCategory, setActiveCategory] = useState("Όλα")
+  const [shoppingOpen, setShoppingOpen] = useState(false)
   const storageKey = `shopping_checked_${plan.id}`
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   const [checkedPlanId, setCheckedPlanId] = useState<number | null>(null)
@@ -254,163 +256,169 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.22fr)_minmax(20rem,1fr)]">
-        <section className="min-w-0">
-          <div className="mb-4 flex items-center justify-between gap-4">
-            <h2 className="text-xl font-bold">Πλάνο Διατροφής</h2>
+      <section className="min-w-0">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <h2 className="text-xl font-bold">Πλάνο Διατροφής</h2>
+          <Button size="sm" variant="outline" onClick={() => setShoppingOpen(true)}>
+            <ShoppingCart className="mr-2 h-4 w-4" />
+            Λίστα για Ψώνια
+          </Button>
+        </div>
+
+        {isWeeklyPlan && (
+          <div className="mb-4 flex items-center gap-1 overflow-x-auto pb-1">
+            {weeklyDays.map((day) => (
+              <Button
+                key={day}
+                size="sm"
+                variant={selectedDay === day ? "default" : "ghost"}
+                className="shrink-0"
+                onClick={() => setSelectedDay(day)}
+              >
+                {["Κυρ", "Δευ", "Τρι", "Τετ", "Πεμ", "Παρ", "Σαβ"][day] || `Ημέρα ${day}`}
+              </Button>
+            ))}
           </div>
+        )}
 
-          {isWeeklyPlan && (
-            <div className="mb-4 flex items-center gap-1 overflow-x-auto pb-1">
-              {weeklyDays.map((day) => (
-                <Button
-                  key={day}
-                  size="sm"
-                  variant={selectedDay === day ? "default" : "ghost"}
-                  className="shrink-0"
-                  onClick={() => setSelectedDay(day)}
-                >
-                  {["Κυρ", "Δευ", "Τρι", "Τετ", "Πεμ", "Παρ", "Σαβ"][day] || `Ημέρα ${day}`}
-                </Button>
-              ))}
-            </div>
-          )}
+        <Accordion className="space-y-3" defaultValue={visibleMeals.map((_, index) => `meal-${index}`)}>
+          {visibleMeals.map((meal, mealIndex) => {
+            const totals = mealTotals(meal.foods)
+            const mealIndexInPlan = plan.meals.indexOf(meal)
+            const mealName = mealTitle(meal, mealIndexInPlan)
 
-          <Accordion className="space-y-3" defaultValue={visibleMeals.map((_, index) => `meal-${index}`)}>
-            {visibleMeals.map((meal, mealIndex) => {
-              const totals = mealTotals(meal.foods)
-              const mealIndexInPlan = plan.meals.indexOf(meal)
-              const mealName = mealTitle(meal, mealIndexInPlan)
-
-              return (
-                <AccordionItem key={meal.id ?? `${meal.name}-${mealIndex}`} value={`meal-${mealIndex}`} className="overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-shadow hover:shadow-md">
-                  <AccordionTrigger className="px-4 py-4 hover:bg-muted/40 hover:no-underline">
-                    <div className="flex min-w-0 flex-1 items-center gap-3 pr-2">
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-base font-semibold">{mealName}</span>
-                      </span>
-                      <span className="shrink-0 text-sm text-foreground">Ποσότητα</span>
-                      <span className="shrink-0 text-sm font-semibold">{Math.round(totals.calories)} kcal</span>
-                      <span className="hidden shrink-0 text-sm text-foreground sm:inline">{Math.round(totals.protein)}Π</span>
-                      <span className="hidden shrink-0 text-sm text-foreground sm:inline">{Math.round(totals.carbs)}Υ</span>
-                      <span className="hidden shrink-0 text-sm text-foreground sm:inline">{Math.round(totals.fats)}Λ</span>
-                    </div>
-                  </AccordionTrigger>
-
-                  <AccordionContent className="border-t border-border/60 px-4 pb-4 pt-3">
-                    {meal.notes && <p className="mb-3 text-sm italic text-muted-foreground">{meal.notes}</p>}
-                    <Table className="min-w-[560px]">
-                      <TableBody className="[&_tr]:border-border/40">
-                        {meal.foods.map((food, foodIndex) => {
-                          const quantity = parseQuantity(food.quantity ?? food.amount)
-                          const imageUrl = food.food_image ?? food.food_image_url ?? food.imageUrl ?? food.image_url
-
-                          return (
-                            <TableRow key={food.id ?? `${food.name}-${foodIndex}`} className="hover:bg-transparent">
-                              <TableCell className="px-1 py-2">
-                                <div className="flex min-w-[12rem] items-center gap-2">
-                                  {imageUrl ? (
-                                    <img src={imageUrl} alt="" className="h-9 w-9 shrink-0 rounded-md object-cover" />
-                                  ) : (
-                                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-muted">
-                                      <Utensils className="h-4 w-4 text-muted-foreground" />
-                                    </span>
-                                  )}
-                                  <span className="truncate text-base font-medium">{food.name}</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="w-14 px-1 py-2 text-right text-base text-foreground">
-                                {quantity.quantity === null ? "-" : formatQuantity({ key: "", name: "", quantity: quantity.quantity, unit: quantity.unit })}
-                              </TableCell>
-                              <TableCell className="w-16 px-1 py-2 text-right text-base text-muted-foreground">{Math.round(numberValue(food.calories))}</TableCell>
-                              <TableCell className="w-12 px-1 py-2 text-right text-sm text-foreground">{formatGrams(food.protein_g)}</TableCell>
-                              <TableCell className="w-12 px-1 py-2 text-right text-sm text-foreground">{formatGrams(food.carbs_g)}</TableCell>
-                              <TableCell className="w-12 px-1 py-2 text-right text-sm text-foreground">{formatGrams(food.fat_g)}</TableCell>
-                            </TableRow>
-                          )
-                        })}
-                      </TableBody>
-                    </Table>
-                  </AccordionContent>
-                </AccordionItem>
-              )
-            })}
-          </Accordion>
-        </section>
-
-        <aside>
-          <Card className="h-full overflow-hidden border-border bg-card shadow-sm lg:sticky lg:top-6">
-            <CardHeader className="space-y-4 border-b bg-muted/20 p-4 sm:p-5">
-              <div className="flex min-w-0 items-center gap-2">
-                <CardTitle className="flex min-w-0 flex-1 items-center gap-2 truncate text-lg">
-                  <ShoppingCart className="h-5 w-5 text-foreground" />
-                  Λίστα για Ψώνια
-                </CardTitle>
-                <div className="flex items-center gap-1">
-                  <Button size="sm" variant="outline" className="shrink-0" onClick={exportShoppingList}>
-                    <Download className="h-4 w-4 sm:mr-2" />
-                    <span className="hidden sm:inline">Εξαγωγή</span>
-                  </Button>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger render={<Button size="icon-sm" variant="ghost" aria-label="Ενέργειες λίστας αγορών" />}>
-                      <MoreVertical className="h-4 w-4" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem onClick={() => void copyShoppingList()}>Αντιγραφή</DropdownMenuItem>
-                      <DropdownMenuItem onClick={resetShoppingList}>Καθαρισμός</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-
-              <Select value={activeCategory} onValueChange={(value) => setActiveCategory(value || "Όλα")}>
-                <SelectTrigger size="sm" className="w-full">
-                  <SelectValue placeholder="Επίλεξε κατηγορία" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Όλα">Όλα ({shoppingItems.length})</SelectItem>
-                  {availableCategories.map(([category, count]) => (
-                    <SelectItem key={category} value={category}>{category} ({count})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </CardHeader>
-
-            <CardContent className="p-4 sm:p-5">
-              <ScrollArea className="max-h-[52vh] pr-3">
-                <div className="space-y-1.5">
-                  {filteredShoppingItems.map((item) => (
-                    <label key={item.key} className={`flex cursor-pointer items-center gap-3 rounded-lg border border-transparent px-2 py-2.5 text-sm transition-colors hover:border-border hover:bg-muted/30 ${checked[item.key] ? "text-muted-foreground" : ""}`}>
-                      <Checkbox
-                        checked={Boolean(checked[item.key])}
-                        onCheckedChange={(value) => setChecked((current) => ({ ...current, [item.key]: value === true }))}
-                      />
-                      {item.imageUrl ? (
-                        <img src={item.imageUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
-                      ) : (
-                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
-                          {item.name.trim().charAt(0).toLocaleUpperCase("el-GR")}
-                        </span>
-                      )}
-                      <span className={`min-w-0 flex-1 truncate font-medium ${checked[item.key] ? "line-through" : ""}`}>{item.name}</span>
-                      <span className="shrink-0 text-muted-foreground">{formatQuantity(item)}</span>
-                    </label>
-                  ))}
-                </div>
-              </ScrollArea>
-              {plan.notes && (
-                <div className="rounded-lg bg-muted/60 p-4">
-                  <div className="flex items-center gap-2 text-sm font-medium">
-                    <Lightbulb className="h-4 w-4 text-foreground" />
-                    Σημείωση από τον coach
+            return (
+              <AccordionItem key={meal.id ?? `${meal.name}-${mealIndex}`} value={`meal-${mealIndex}`} className="overflow-hidden rounded-xl border border-border bg-card shadow-sm transition-shadow hover:shadow-md">
+                <AccordionTrigger className="px-4 py-4 hover:bg-muted/40 hover:no-underline">
+                  <div className="flex min-w-0 flex-1 items-center gap-3 pr-2">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-base font-semibold">{mealName}</span>
+                    </span>
+                    <span className="shrink-0 text-sm text-foreground">Ποσότητα</span>
+                    <span className="shrink-0 text-sm font-semibold">{Math.round(totals.calories)} kcal</span>
+                    <span className="hidden shrink-0 text-sm text-foreground sm:inline">{Math.round(totals.protein)}Π</span>
+                    <span className="hidden shrink-0 text-sm text-foreground sm:inline">{Math.round(totals.carbs)}Υ</span>
+                    <span className="hidden shrink-0 text-sm text-foreground sm:inline">{Math.round(totals.fats)}Λ</span>
                   </div>
-                  <p className="mt-2 text-sm italic text-muted-foreground">{plan.notes}</p>
-                </div>
-              )}
+                </AccordionTrigger>
+
+                <AccordionContent className="border-t border-border/60 px-4 pb-4 pt-3">
+                  {meal.notes && <p className="mb-3 text-sm italic text-muted-foreground">{meal.notes}</p>}
+                  <Table className="min-w-[560px]">
+                    <TableBody className="[&_tr]:border-border/40">
+                      {meal.foods.map((food, foodIndex) => {
+                        const quantity = parseQuantity(food.quantity ?? food.amount)
+                        const imageUrl = food.food_image ?? food.food_image_url ?? food.imageUrl ?? food.image_url
+
+                        return (
+                          <TableRow key={food.id ?? `${food.name}-${foodIndex}`} className="hover:bg-transparent">
+                            <TableCell className="px-1 py-2">
+                              <div className="flex min-w-[12rem] items-center gap-2">
+                                {imageUrl ? (
+                                  <img src={imageUrl} alt="" className="h-9 w-9 shrink-0 rounded-md object-cover" />
+                                ) : (
+                                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-muted">
+                                    <Utensils className="h-4 w-4 text-muted-foreground" />
+                                  </span>
+                                )}
+                                <span className="truncate text-base font-medium">{food.name}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="w-14 px-1 py-2 text-right text-base text-foreground">
+                              {quantity.quantity === null ? "-" : formatQuantity({ key: "", name: "", quantity: quantity.quantity, unit: quantity.unit })}
+                            </TableCell>
+                            <TableCell className="w-16 px-1 py-2 text-right text-base text-muted-foreground">{Math.round(numberValue(food.calories))}</TableCell>
+                            <TableCell className="w-12 px-1 py-2 text-right text-sm text-foreground">{formatGrams(food.protein_g)}</TableCell>
+                            <TableCell className="w-12 px-1 py-2 text-right text-sm text-foreground">{formatGrams(food.carbs_g)}</TableCell>
+                            <TableCell className="w-12 px-1 py-2 text-right text-sm text-foreground">{formatGrams(food.fat_g)}</TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </AccordionContent>
+              </AccordionItem>
+            )
+          })}
+        </Accordion>
+
+        {plan.notes && (
+          <Card className="mt-6 border-border bg-muted/30 shadow-sm">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Lightbulb className="h-4 w-4 text-foreground" />
+                Σημείωση από τον coach
+              </div>
+              <p className="mt-2 text-sm italic text-muted-foreground">{plan.notes}</p>
             </CardContent>
           </Card>
-        </aside>
-      </div>
+        )}
+      </section>
+
+      <Sheet open={shoppingOpen} onOpenChange={setShoppingOpen}>
+        <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">
+          <SheetHeader className="border-b p-5 pr-12">
+            <SheetTitle className="flex items-center gap-2 text-lg">
+              <ShoppingCart className="h-5 w-5 text-foreground" />
+              Λίστα για Ψώνια
+            </SheetTitle>
+            <SheetDescription>Βάσει του πλάνου διατροφής</SheetDescription>
+          </SheetHeader>
+
+          <div className="flex min-h-0 flex-1 flex-col gap-4 p-5">
+            <div className="flex items-center gap-2">
+              <Button size="sm" variant="outline" className="flex-1" onClick={exportShoppingList}>
+                <Download className="mr-2 h-4 w-4" />
+                Εξαγωγή
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button size="icon-sm" variant="ghost" aria-label="Ενέργειες λίστας αγορών" />}>
+                  <MoreVertical className="h-4 w-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => void copyShoppingList()}>Αντιγραφή</DropdownMenuItem>
+                  <DropdownMenuItem onClick={resetShoppingList}>Καθαρισμός</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            <Select value={activeCategory} onValueChange={(value) => setActiveCategory(value || "Όλα")}>
+              <SelectTrigger size="sm" className="w-full">
+                <SelectValue placeholder="Επίλεξε κατηγορία" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Όλα">Όλα ({shoppingItems.length})</SelectItem>
+                {availableCategories.map(([category, count]) => (
+                  <SelectItem key={category} value={category}>{category} ({count})</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Separator />
+            <ScrollArea className="min-h-0 flex-1 pr-3">
+              <div className="space-y-1.5">
+                {filteredShoppingItems.map((item) => (
+                  <label key={item.key} className={`flex cursor-pointer items-center gap-3 rounded-lg border border-transparent px-2 py-2.5 text-sm transition-colors hover:border-border hover:bg-muted/30 ${checked[item.key] ? "text-muted-foreground" : ""}`}>
+                    <Checkbox
+                      checked={Boolean(checked[item.key])}
+                      onCheckedChange={(value) => setChecked((current) => ({ ...current, [item.key]: value === true }))}
+                    />
+                    {item.imageUrl ? (
+                      <img src={item.imageUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+                    ) : (
+                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
+                        {item.name.trim().charAt(0).toLocaleUpperCase("el-GR")}
+                      </span>
+                    )}
+                    <span className={`min-w-0 flex-1 truncate font-medium ${checked[item.key] ? "line-through" : ""}`}>{item.name}</span>
+                    <span className="shrink-0 text-muted-foreground">{formatQuantity(item)}</span>
+                  </label>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
