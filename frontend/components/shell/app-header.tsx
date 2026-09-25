@@ -30,7 +30,7 @@ export function AppHeader({
   }
 
   return (
-    <header className="flex items-center justify-between gap-3 border-b bg-background px-4 py-4 sm:px-6">
+    <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b bg-background px-4 py-4 sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <h1 className="truncate text-lg font-semibold">{title}</h1>
         {user?.role && (
