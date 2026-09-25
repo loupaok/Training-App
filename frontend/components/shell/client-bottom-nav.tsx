@@ -10,7 +10,7 @@ import { clientNavSections, isActivePath } from "@/lib/nav-config"
 
 const primaryKeys = new Set(["dashboard", "training", "nutrition", "progress"])
 
-export function ClientBottomNav({ paymentApproved, unreadNotifications = 0 }: { paymentApproved: boolean; unreadNotifications?: number }) {
+export function ClientBottomNav({ paymentApproved, unreadNotifications = 0, unreadMessages = 0 }: { paymentApproved: boolean; unreadNotifications?: number; unreadMessages?: number }) {
   const pathname = usePathname()
   const primaryItems = clientNavSections.filter((item) => primaryKeys.has(item.key))
   const moreItems = clientNavSections.filter((item) => !primaryKeys.has(item.key))
@@ -23,12 +23,12 @@ export function ClientBottomNav({ paymentApproved, unreadNotifications = 0 }: { 
         <SheetTrigger render={<button type="button" className={cn("relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors", moreActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground")} />}>
           <Menu className="h-5 w-5" />
           <span>Περισσότερα</span>
-          {unreadNotifications > 0 && <Badge className="absolute top-1 right-2 grid h-4 min-w-4 place-items-center rounded-full p-0 text-[9px]">{unreadNotifications > 9 ? "9+" : unreadNotifications}</Badge>}
+          {unreadNotifications + unreadMessages > 0 && <Badge className="absolute top-1 right-2 grid h-4 min-w-4 place-items-center rounded-full p-0 text-[9px]">{unreadNotifications + unreadMessages > 9 ? "9+" : unreadNotifications + unreadMessages}</Badge>}
         </SheetTrigger>
         <SheetContent side="bottom" className="max-h-[80dvh] rounded-t-2xl p-0" showCloseButton>
           <SheetHeader className="border-b px-5 pt-5 pb-4 text-left"><SheetTitle>Περισσότερα</SheetTitle><SheetDescription>Όλες οι επιλογές του λογαριασμού σου.</SheetDescription></SheetHeader>
           <div className="grid gap-1 p-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-            {moreItems.map((item) => <MoreItem key={item.key} item={item} active={isActivePath(pathname, item.path)} locked={Boolean(item.locked && !paymentApproved)} unreadNotifications={item.key === "notifications" ? unreadNotifications : 0} />)}
+            {moreItems.map((item) => <MoreItem key={item.key} item={item} active={isActivePath(pathname, item.path)} locked={Boolean(item.locked && !paymentApproved)} unreadNotifications={item.key === "notifications" ? unreadNotifications : item.key === "messages" ? unreadMessages : 0} />)}
             <Link href="/client-profile" className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Προφίλ</Link>
           </div>
         </SheetContent>

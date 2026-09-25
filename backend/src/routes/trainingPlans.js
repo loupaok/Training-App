@@ -309,6 +309,18 @@ router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
     await insertTrainingPlanDays(connection, planId, days);
 
     await connection.commit();
+    try {
+      const { notifyUser } = await import('./clients.js');
+      await notifyUser(connection, clientId, {
+        clientId,
+        type: 'training_plan_updated',
+        title: 'Το πρόγραμμα προπόνησής σου ενημερώθηκε',
+        body: `Ο coach έκανε αλλαγές στο πρόγραμμα «${title}».`,
+        linkUrl: '/client-program',
+      });
+    } catch (notificationError) {
+      console.error('Training plan notification failed:', notificationError);
+    }
     const plan = await getFullTrainingPlan(connection, clientId);
     connection.release();
     res.json({ message: 'Training plan saved', plan });

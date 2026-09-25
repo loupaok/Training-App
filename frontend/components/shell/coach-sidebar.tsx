@@ -58,11 +58,22 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
   };
 
   const [unreadUpdates, setUnreadUpdates] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   useEffect(() => {
     api
       .get<{ totalUnread: number }>("/updates/stats")
       .then((data) => setUnreadUpdates(data.totalUnread))
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const loadUnreadMessages = () => api
+      .get<Array<{ unread_count?: number }>>("/clients/messages/inbox")
+      .then((items) => setUnreadMessages(items.reduce((total, item) => total + Number(item.unread_count || 0), 0)))
+      .catch(() => {});
+    void loadUnreadMessages();
+    const interval = window.setInterval(() => void loadUnreadMessages(), 10000);
+    return () => window.clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -174,6 +185,11 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
                 {!collapsed && section.key === "updates" && unreadUpdates > 0 && (
                   <Badge className="h-5 min-w-5 shrink-0 justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white hover:bg-red-600">
                     {unreadUpdates}
+                  </Badge>
+                )}
+                {!collapsed && section.key === "messages" && unreadMessages > 0 && (
+                  <Badge className="h-5 min-w-5 shrink-0 justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white hover:bg-red-600">
+                    {unreadMessages > 99 ? "99+" : unreadMessages}
                   </Badge>
                 )}
               </Link>

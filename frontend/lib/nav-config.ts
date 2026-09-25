@@ -52,6 +52,7 @@ export const coachNavSections: CoachNavSection[] = [
   { key: "dashboard", label: "Dashboard", path: "/dashboard", icon: LayoutDashboard },
   { key: "clients", label: "Πελάτες", path: "/clients", icon: Users },
   { key: "updates", label: "Updates", path: "/coach/updates", icon: ClipboardList },
+  { key: "messages", label: "Μηνύματα", path: "/coach/messages", icon: MessageCircleMore },
   { key: "exercises", label: "Βιβλιοθήκη Ασκήσεων", path: "/exercises", icon: Dumbbell },
   {
     key: "templates",

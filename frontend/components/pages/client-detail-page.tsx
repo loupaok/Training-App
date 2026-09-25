@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Clock, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, X } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
@@ -206,6 +206,7 @@ interface ClientRecord {
   progressUpdates?: ProgressUpdate[];
   socialLinks?: SocialLink[];
   subscription?: Subscription;
+  upcomingSubscription?: Subscription;
   updateSchedule?: UpdateSchedule;
 }
 
@@ -409,7 +410,9 @@ function statusMeta(client: ClientRecord | null): StatusMetaResult {
 function ClientDetailContent({ clientId }: { clientId: string }) {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState("overview");
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [exercises, setExercises] = useState<LibraryExercise[]>([]);
   const [foods, setFoods] = useState<LibraryFood[]>([]);
@@ -438,13 +441,15 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
       api.get<{ items: LibraryFood[] }>("/foods?limit=500").catch(() => ({ items: [] })),
       api.get<RawTrainingPlan>(`/training-plans/${clientId}/full`).catch(() => ({ days: [] })),
       api.get<RawNutritionPlan>(`/nutrition-plans/${clientId}/full`).catch(() => ({ meals: [] })),
+      api.get<{ unread?: number }>(`/clients/${clientId}/messages/unread-count`).catch(() => ({ unread: 0 })),
     ])
-      .then(([clientData, exerciseRows, foodsResponse, trainingData, nutritionData]) => {
+      .then(([clientData, exerciseRows, foodsResponse, trainingData, nutritionData, messageCount]) => {
         setClient(clientData);
         setExercises(Array.isArray(exerciseRows) ? exerciseRows : []);
         setFoods(Array.isArray(foodsResponse?.items) ? foodsResponse.items : []);
         setTrainingPlan(normalizeTrainingPlan(trainingData));
         setNutritionPlan(normalizeNutritionPlan(nutritionData));
+        setUnreadMessages(Number(messageCount.unread || 0));
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Δεν φορτώθηκε ο πελάτης."))
       .finally(() => setLoading(false));
@@ -454,6 +459,10 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
     loadClientDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId]);
+
+  useEffect(() => {
+    if (searchParams.get("tab") === "messages") setActiveTab("messages");
+  }, [searchParams]);
 
   const loadPlanHistory = () => {
     api
@@ -693,6 +702,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                     className="h-11 rounded-md px-5 text-sm font-bold text-slate-600 data-active:bg-red-600 data-active:text-white data-active:shadow-sm hover:bg-slate-100 hover:text-slate-950 dark:data-active:bg-red-600 dark:data-active:text-white"
                   >
                     {tab.label}
+                    {tab.id === "messages" && unreadMessages > 0 && <Badge className="ml-2 rounded-full px-1.5 text-[10px]">{unreadMessages}</Badge>}
                   </TabsTrigger>
                 ))}
               </TabsList>
@@ -783,7 +793,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
             </TabsContent>
 
             <TabsContent value="messages" className="mt-6">
-              <MessagesTab clientId={clientId} />
+              <MessagesTab clientId={clientId} onRead={() => setUnreadMessages(0)} />
             </TabsContent>
 
             <TabsContent value="activity" className="mt-6">
@@ -1460,19 +1470,21 @@ function OverviewTab({
         </CardContent>
       </Card>
     ),
-    subscription: client.subscription ? (
+    subscription: (client.subscription || client.upcomingSubscription) ? (
       <Card className="overflow-hidden">
         <CardHeader className="space-y-3 pb-4">
           <CardTitle className="text-lg">Συνδρομή</CardTitle>
-          {(() => {
+          {client.subscription ? (() => {
             const status = subscriptionStatusMeta(client.subscription?.status, client.subscription?.end_date);
             return <Badge className={`h-auto w-full justify-center rounded-md px-3 py-2 text-sm font-bold ${status.className}`}>{status.label}</Badge>;
-          })()}
+          })() : <Badge className="h-auto w-full justify-center rounded-md px-3 py-2 text-sm font-bold bg-muted text-muted-foreground">Προγραμματισμένη συνδρομή</Badge>}
         </CardHeader>
         <CardContent className="space-y-5">
-          {client.subscription.start_date && client.subscription.end_date && (() => {
-            const start = new Date(client.subscription!.start_date!).getTime();
-            const end = new Date(client.subscription!.end_date!).getTime();
+          {client.subscription?.start_date && client.subscription?.end_date && (() => {
+            const activeSubscription = client.subscription;
+            if (!activeSubscription?.start_date || !activeSubscription.end_date) return null;
+            const start = new Date(activeSubscription.start_date).getTime();
+            const end = new Date(activeSubscription.end_date).getTime();
             const totalDays = Math.max(1, Math.ceil((end - start) / 86400000));
             const remainingDays = Math.max(0, Math.ceil((end - Date.now()) / 86400000));
             const remainingRatio = remainingDays / totalDays;
@@ -1486,8 +1498,8 @@ function OverviewTab({
                 </div>
                 <Progress value={subscriptionElapsedPct(client)} indicatorClassName={progressColor} className="mt-3" />
                 <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-                  <span>{shortDate(client.subscription.start_date)}</span>
-                  <span>{shortDate(client.subscription.end_date)}</span>
+                  <span>{shortDate(activeSubscription.start_date)}</span>
+                  <span>{shortDate(activeSubscription.end_date)}</span>
                 </div>
               </div>
             );
@@ -1498,13 +1510,27 @@ function OverviewTab({
           <div className="grid grid-cols-2 divide-x rounded-lg border">
             <div className="p-3">
               <p className="text-xs text-muted-foreground">Πακέτο</p>
-              <p className="mt-1 text-sm font-semibold">{onboarding.selected_package || "-"}</p>
+              <p className="mt-1 text-sm font-semibold">{client.subscription?.plan_name || "-"}</p>
             </div>
             <div className="p-3">
               <p className="text-xs text-muted-foreground">Τρόπος πληρωμής</p>
               <p className="mt-1 text-sm font-semibold">{paymentMethodLabel(latestPayment?.method)}</p>
             </div>
           </div>
+
+          {client.upcomingSubscription && (
+            <>
+              <Separator />
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold">Επόμενο πλάνο</p>
+                  <Badge variant="secondary">Πληρωμένο</Badge>
+                </div>
+                <p className="mt-2 text-sm font-medium">{client.upcomingSubscription.plan_name}</p>
+                <p className="mt-1 text-xs text-muted-foreground">Ξεκινά {shortDate(client.upcomingSubscription.start_date)} · {money(client.upcomingSubscription.price, client.upcomingSubscription.currency || "EUR")}</p>
+              </div>
+            </>
+          )}
 
           {pendingPayment && (
             <Button type="button" onClick={() => onApprovePayment(pendingPayment.id)} disabled={approvingPayment} className="h-10 w-full bg-emerald-600 font-bold text-white hover:bg-emerald-700">
@@ -2555,7 +2581,7 @@ interface MessageRow {
   created_at?: string;
 }
 
-function MessagesTab({ clientId }: { clientId: string }) {
+function MessagesTab({ clientId, onRead }: { clientId: string; onRead: () => void }) {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [draft, setDraft] = useState("");
@@ -2565,7 +2591,7 @@ function MessagesTab({ clientId }: { clientId: string }) {
   const loadMessages = () => {
     api
       .get<MessageRow[]>(`/clients/${clientId}/messages`)
-      .then(setMessages)
+      .then((rows) => { setMessages(rows); onRead(); })
       .catch(() => setMessages([]))
       .finally(() => setLoading(false));
   };

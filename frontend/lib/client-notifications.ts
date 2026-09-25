@@ -8,6 +8,7 @@ export interface RawNotification {
   created_at?: string;
   link_url?: string | null;
   type?: string;
+  read_at?: string | null;
 }
 
 export interface PaymentRow {
@@ -28,10 +29,13 @@ export interface ClientNotificationsResponse {
 
 export interface ClientNotificationRow {
   id: string;
+  notificationId?: string;
   title: string;
   body: string;
   date: string;
   href: string | null;
+  type?: string;
+  readAt?: string | null;
   icon: LucideIcon;
   tone: string;
 }
@@ -65,15 +69,6 @@ function formatDate(value?: string): string {
   return date.toLocaleDateString("el-GR");
 }
 
-function daysUntil(value: string): number {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 999;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  date.setHours(0, 0, 0, 0);
-  return Math.ceil((date.getTime() - today.getTime()) / 86400000);
-}
-
 export function buildClientNotifications(data: ClientNotificationsResponse | null): ClientNotificationRow[] {
   if (!data) return [];
   const rows: ClientNotificationRow[] = [];
@@ -81,76 +76,17 @@ export function buildClientNotifications(data: ClientNotificationsResponse | nul
   (data.notifications || []).forEach((item) => {
     rows.push({
       id: `db-${item.id}`,
+      notificationId: String(item.id),
       title: item.title,
       body: item.body || "Νέα ενημέρωση από τον coach.",
       date: formatDate(item.created_at),
       href: item.link_url || null,
+      type: item.type,
+      readAt: item.read_at || null,
       icon: iconForType(item.type),
       tone: toneForType(item.type),
     });
   });
-
-  const latestPayment = data.payments?.[0];
-  if (latestPayment?.status === "pending") {
-    rows.unshift({
-      id: "payment-pending",
-      title: "Η πληρωμή σου είναι σε εκκρεμότητα",
-      body: "Μόλις εγκριθεί από τον coach, θα ξεκλειδώσουν τα προγράμματα και το progress.",
-      date: formatDate(latestPayment.created_at),
-      href: "/client-billing",
-      icon: Euro,
-      tone: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400",
-    });
-  }
-  if (latestPayment?.status === "completed") {
-    rows.unshift({
-      id: "payment-approved",
-      title: "Η πληρωμή σου εγκρίθηκε",
-      body: "Η συνδρομή σου είναι ενεργή και τα προγράμματα ξεκλειδώθηκαν.",
-      date: formatDate(latestPayment.paid_at || latestPayment.created_at),
-      href: "/client-dashboard",
-      icon: Bell,
-      tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
-    });
-  }
-
-  if (data.subscription?.end_date) {
-    const daysLeft = daysUntil(data.subscription.end_date);
-    if (daysLeft >= 0 && daysLeft <= 7) {
-      rows.unshift({
-        id: "subscription-ending",
-        title: `Η συνδρομή σου λήγει σε ${daysLeft} ημέρες`,
-        body: "Μπορείς να ανανεώσεις από τη σελίδα Πληρωμές και Συνδρομή.",
-        date: formatDate(data.subscription.end_date),
-        href: "/client-billing",
-        icon: Clock,
-        tone: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400",
-      });
-    }
-  }
-
-  if (data.training?.updated_at) {
-    rows.push({
-      id: "training-updated",
-      title: "Ενημερώθηκε το πρόγραμμα προπόνησης",
-      body: "Ο coach έκανε αλλαγές στο προπονητικό σου πλάνο.",
-      date: formatDate(data.training.updated_at),
-      href: "/client-dashboard",
-      icon: Dumbbell,
-      tone: "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400",
-    });
-  }
-  if (data.nutrition?.updated_at) {
-    rows.push({
-      id: "nutrition-updated",
-      title: "Ενημερώθηκε η διατροφή σου",
-      body: "Ο coach έκανε αλλαγές στο διατροφικό σου πλάνο.",
-      date: formatDate(data.nutrition.updated_at),
-      href: "/client-dashboard",
-      icon: Salad,
-      tone: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400",
-    });
-  }
 
   return rows;
 }

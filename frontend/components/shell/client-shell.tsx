@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { ClientSidebar } from "@/components/shell/client-sidebar";
 import { ClientBottomNav } from "@/components/shell/client-bottom-nav";
 import { AppHeader } from "@/components/shell/app-header";
+import { api } from "@/lib/api/client";
 import type { AuthUser } from "@/types/auth";
 
 const STORAGE_KEY = "client-sidebar-collapsed";
@@ -26,12 +27,24 @@ export function ClientShell({
   children: ReactNode;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [unreadMessages, setUnreadMessages] = useState(0);
 
   useEffect(() => {
     Promise.resolve().then(() => {
       if (window.localStorage.getItem(STORAGE_KEY) === "true") setCollapsed(true);
     });
   }, []);
+
+  useEffect(() => {
+    if (user?.role !== "client") return;
+    const loadUnreadMessages = () => api
+      .get<{ unread?: number }>("/clients/me/messages/unread-count")
+      .then((data) => setUnreadMessages(Number(data.unread || 0)))
+      .catch(() => setUnreadMessages(0));
+    void loadUnreadMessages();
+    const interval = window.setInterval(() => void loadUnreadMessages(), 10000);
+    return () => window.clearInterval(interval);
+  }, [user?.id, user?.role]);
 
   function toggle() {
     setCollapsed((previous) => {
@@ -48,6 +61,7 @@ export function ClientShell({
         logout={logout}
         paymentApproved={paymentApproved}
         unreadNotifications={unreadNotifications}
+        unreadMessages={unreadMessages}
         collapsed={collapsed}
         onToggle={toggle}
       />
@@ -55,7 +69,7 @@ export function ClientShell({
         <AppHeader title={title} user={user} logout={logout} />
         <main className="min-w-0 flex-1 bg-muted/30 p-4 pb-28 sm:p-6 sm:pb-28 lg:p-6">{children}</main>
       </div>
-      <ClientBottomNav paymentApproved={paymentApproved} unreadNotifications={unreadNotifications} />
+      <ClientBottomNav paymentApproved={paymentApproved} unreadNotifications={unreadNotifications} unreadMessages={unreadMessages} />
     </div>
   );
 }

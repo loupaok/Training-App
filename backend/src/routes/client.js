@@ -177,7 +177,7 @@ router.get('/dashboard', async (req, res) => {
     const clientId = req.user.id;
     const [users] = await connection.query('SELECT full_name FROM users WHERE id = ?', [clientId]);
     const [schedules] = await connection.query('SELECT day_of_week, next_due_date FROM update_schedule WHERE client_id = ? ORDER BY updated_at DESC LIMIT 1', [clientId]);
-    const [subscriptions] = await connection.query("SELECT plan_name, status, start_date, end_date, DATEDIFF(end_date, CURDATE()) AS days_remaining FROM subscriptions WHERE client_id = ? ORDER BY created_at DESC LIMIT 1", [clientId]);
+    const [subscriptions] = await connection.query("SELECT plan_name, status, start_date, end_date, DATEDIFF(end_date, CURDATE()) AS days_remaining FROM subscriptions WHERE client_id = ? AND status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE() ORDER BY end_date DESC LIMIT 1", [clientId]);
     let updates = [];
     try {
       updates = await getUpdates(connection, clientId, 52);
@@ -468,9 +468,11 @@ router.get('/progress', async (req, res) => {
 router.get('/payments', async (req, res) => {
   const connection = await pool.getConnection();
   try {
-    const [subscriptions] = await connection.query("SELECT plan_name, price, status, end_date, DATEDIFF(end_date, CURDATE()) AS days_remaining FROM subscriptions WHERE client_id = ? ORDER BY created_at DESC LIMIT 1", [req.user.id]);
+    const [subscriptions] = await connection.query("SELECT plan_name, price, status, start_date, end_date, DATEDIFF(end_date, CURDATE()) AS days_remaining FROM subscriptions WHERE client_id = ? AND status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE() ORDER BY end_date DESC LIMIT 1", [req.user.id]);
+    const [pendingSubscriptions] = await connection.query("SELECT plan_name, price, status, start_date, end_date FROM subscriptions WHERE client_id = ? AND status = 'pending_payment' ORDER BY created_at DESC LIMIT 1", [req.user.id]);
+    const [upcomingSubscriptions] = await connection.query("SELECT s.plan_name, s.price, s.currency, s.status, s.start_date, s.end_date FROM subscriptions s INNER JOIN payments p ON p.subscription_id = s.id AND p.status = 'completed' WHERE s.client_id = ? AND s.status = 'active' AND s.start_date > CURDATE() ORDER BY s.start_date ASC", [req.user.id]);
     const [payments] = await connection.query('SELECT id, amount, currency, method, status, reference_number AS referenceNumber, paid_at AS paidAt, notes FROM payments WHERE client_id = ? ORDER BY created_at DESC', [req.user.id]);
-    res.json({ subscription: subscriptions[0] || null, payments });
+    res.json({ subscription: subscriptions[0] || null, pendingSubscription: pendingSubscriptions[0] || null, upcomingSubscriptions, payments });
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
 });
 

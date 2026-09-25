@@ -17,6 +17,7 @@ interface ClientSidebarProps {
   logout: () => Promise<void>;
   paymentApproved: boolean;
   unreadNotifications?: number;
+  unreadMessages?: number;
   collapsed: boolean;
   onToggle: () => void;
 }
@@ -26,6 +27,7 @@ export function ClientSidebar({
   logout,
   paymentApproved,
   unreadNotifications = 0,
+  unreadMessages = 0,
   collapsed,
   onToggle,
 }: ClientSidebarProps) {
@@ -86,6 +88,9 @@ export function ClientSidebar({
               )}
               {!collapsed && section.key === "notifications" && unreadNotifications > 0 && (
                 <Badge className="absolute right-2 top-1/2 -translate-y-1/2 bg-red-600 text-white">{unreadNotifications}</Badge>
+              )}
+              {!collapsed && section.key === "messages" && unreadMessages > 0 && (
+                <Badge className="absolute right-2 top-1/2 -translate-y-1/2 bg-red-600 text-white">{unreadMessages}</Badge>
               )}
               {!collapsed && isLocked && (
                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">Κλειδωμένο</span>

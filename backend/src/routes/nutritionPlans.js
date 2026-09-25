@@ -229,6 +229,18 @@ router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
     await insertNutritionPlanMeals(connection, planId, meals);
 
     await connection.commit();
+    try {
+      const { notifyUser } = await import('./clients.js');
+      await notifyUser(connection, clientId, {
+        clientId,
+        type: 'nutrition_plan_updated',
+        title: 'Το πρόγραμμα διατροφής σου ενημερώθηκε',
+        body: `Ο coach έκανε αλλαγές στο πρόγραμμα «${title}».`,
+        linkUrl: '/client-nutrition',
+      });
+    } catch (notificationError) {
+      console.error('Nutrition plan notification failed:', notificationError);
+    }
     const plan = await getFullNutritionPlan(connection, clientId);
     connection.release();
     res.json({ message: 'Nutrition plan saved', plan });

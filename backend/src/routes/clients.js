@@ -14,6 +14,24 @@ import { ensureClientActivityLogSchema, logClientActivity } from '../lib/client-
 import { ensureQuestionnaireSchema } from './questionnaire.js';
 
 const router = express.Router();
+const activeMessageTypers = new Map();
+
+function setMessageTyping(clientId, typer) {
+  if (!typer.isTyping) {
+    activeMessageTypers.delete(String(clientId));
+    return;
+  }
+  activeMessageTypers.set(String(clientId), { ...typer, expiresAt: Date.now() + 5000 });
+}
+
+function getMessageTyper(clientId, expectedRole) {
+  const typer = activeMessageTypers.get(String(clientId));
+  if (!typer || typer.expiresAt < Date.now()) {
+    activeMessageTypers.delete(String(clientId));
+    return null;
+  }
+  return typer.role === expectedRole ? { name: typer.name } : null;
+}
 
 const onboardingStorage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -573,7 +591,7 @@ export async function notifyCoaches(connection, notification) {
   }
 }
 
-async function notifyUser(connection, userId, notification) {
+export async function notifyUser(connection, userId, notification) {
   await ensureNotificationsSchema(connection);
   await connection.query(
     `INSERT INTO notifications (user_id, client_id, payment_id, type, title, body, link_url)
@@ -1201,15 +1219,6 @@ router.post('/me/billing', authorizeRole(['client']), [
       return res.status(400).json({ message: 'Μη έγκυρο πακέτο συνδρομής.' });
     }
 
-    const [onboardingRows] = await connection.query(
-      'SELECT id FROM onboarding_forms WHERE client_id = ? LIMIT 1',
-      [req.user.id]
-    );
-    if (!onboardingRows.length) {
-      connection.release();
-      return res.status(400).json({ message: 'Πρέπει πρώτα να ολοκληρωθεί η φόρμα εισαγωγής.' });
-    }
-
     await connection.beginTransaction();
 
     const coachId = await getDefaultCoachId(connection);
@@ -1261,10 +1270,24 @@ router.post('/me/billing', authorizeRole(['client']), [
       ]
     );
 
-    await connection.query(
-      'UPDATE users SET status = "pending_payment", approved_at = NULL, approved_by = NULL WHERE id = ? AND role = "client"',
+    // A renewal or plan change must never revoke an already valid subscription.
+    // New clients (or clients whose access has expired) remain pending as before.
+    const [activeSubscriptions] = await connection.query(
+      `SELECT id
+       FROM subscriptions
+       WHERE client_id = ?
+         AND status IN ('active', 'expiring_soon')
+         AND start_date <= CURDATE()
+         AND end_date >= CURDATE()
+       LIMIT 1`,
       [req.user.id]
     );
+    if (!activeSubscriptions.length) {
+      await connection.query(
+        'UPDATE users SET status = "pending_payment", approved_at = NULL, approved_by = NULL WHERE id = ? AND role = "client"',
+        [req.user.id]
+      );
+    }
 
     const [[clientUser]] = await connection.query(
       'SELECT full_name, email FROM users WHERE id = ? LIMIT 1',
@@ -1430,7 +1453,14 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
          LEFT JOIN onboarding_forms ofm ON ofm.client_id = u.id
          LEFT JOIN update_schedule us ON us.client_id = u.id
          LEFT JOIN subscriptions s ON s.client_id = u.id AND s.id = (
-           SELECT s2.id FROM subscriptions s2 WHERE s2.client_id = u.id ORDER BY s2.created_at DESC LIMIT 1
+           SELECT s2.id
+           FROM subscriptions s2
+           WHERE s2.client_id = u.id
+             AND s2.status IN ('active', 'expiring_soon')
+             AND s2.start_date <= CURDATE()
+             AND s2.end_date >= CURDATE()
+           ORDER BY s2.end_date DESC
+           LIMIT 1
          )
          LEFT JOIN payments lp ON lp.client_id = u.id AND lp.id = (
            SELECT p2.id FROM payments p2 WHERE p2.client_id = u.id ORDER BY p2.created_at DESC LIMIT 1
@@ -1491,7 +1521,14 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
          LEFT JOIN onboarding_forms ofm ON ofm.client_id = u.id
          LEFT JOIN update_schedule us ON us.client_id = u.id
          LEFT JOIN subscriptions s ON s.client_id = u.id AND s.id = (
-           SELECT s2.id FROM subscriptions s2 WHERE s2.client_id = u.id ORDER BY s2.created_at DESC LIMIT 1
+           SELECT s2.id
+           FROM subscriptions s2
+           WHERE s2.client_id = u.id
+             AND s2.status IN ('active', 'expiring_soon')
+             AND s2.start_date <= CURDATE()
+             AND s2.end_date >= CURDATE()
+           ORDER BY s2.end_date DESC
+           LIMIT 1
          )
          LEFT JOIN payments lp ON lp.client_id = u.id AND lp.id = (
            SELECT p2.id FROM payments p2 WHERE p2.client_id = u.id ORDER BY p2.created_at DESC LIMIT 1
@@ -1551,13 +1588,15 @@ router.get('/admin/notifications', authorizeRole(['coach', 'admin', 'moderator']
     const connection = await pool.getConnection();
     await ensureNotificationsSchema(connection);
 
+    const recentOnly = req.query.recent === 'true';
     const [rows] = await connection.query(
       `SELECT n.*, u.full_name AS client_name, u.email AS client_email
        FROM notifications n
        LEFT JOIN users u ON u.id = n.client_id
        WHERE n.user_id = ?
+         ${recentOnly ? 'AND n.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)' : ''}
        ORDER BY n.created_at DESC
-       LIMIT 100`,
+       LIMIT ${recentOnly ? 10 : 100}`,
       [req.user.id]
     );
 
@@ -1602,14 +1641,47 @@ router.post('/notifications/read', authorizeRole(['coach', 'admin', 'moderator',
   }
 });
 
+// Mark one notification as read. The ownership condition is intentional: a
+// notification can only be read by the user it was delivered to.
+router.post('/notifications/:notificationId/read', authorizeRole(['coach', 'admin', 'moderator', 'client']), async (req, res) => {
+  const notificationId = Number(req.params.notificationId);
+  if (!Number.isInteger(notificationId) || notificationId <= 0) {
+    return res.status(400).json({ message: 'Invalid notification id' });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await ensureNotificationsSchema(connection);
+    const [result] = await connection.query(
+      'UPDATE notifications SET read_at = COALESCE(read_at, NOW()) WHERE id = ? AND user_id = ?',
+      [notificationId, req.user.id]
+    );
+    if (!result.affectedRows) return res.status(404).json({ message: 'Notification not found' });
+
+    const [[count]] = await connection.query(
+      'SELECT COUNT(id) AS unread FROM notifications WHERE user_id = ? AND read_at IS NULL',
+      [req.user.id]
+    );
+    res.json({ id: notificationId, unread: Number(count?.unread || 0) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
 router.get('/me/notifications', authorizeRole(['client']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await ensureNotificationsSchema(connection);
     await ensurePaymentProofColumns(connection);
 
+    const recentOnly = req.query.recent === 'true';
     const [notificationRows] = await connection.query(
-      'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 100',
+      `SELECT * FROM notifications
+       WHERE user_id = ? ${recentOnly ? 'AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)' : ''}
+       ORDER BY created_at DESC LIMIT ${recentOnly ? 10 : 100}`,
       [req.user.id]
     );
     const [paymentRows] = await connection.query(
@@ -1840,7 +1912,6 @@ router.get('/:id/questionnaire-answers', authorizeRole(['coach', 'admin', 'moder
        ORDER BY qq.sort_order ASC, qq.id ASC`,
       [req.params.id]
     );
-
     res.json(rows);
   } catch (error) {
     console.error(error);
@@ -2071,7 +2142,21 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
               DATEDIFF(end_date, CURDATE()) AS days_remaining
        FROM subscriptions
        WHERE client_id = ?
-       ORDER BY created_at DESC
+         AND status IN ('active', 'expiring_soon')
+         AND start_date <= CURDATE()
+         AND end_date >= CURDATE()
+       ORDER BY end_date DESC
+       LIMIT 1`,
+      [req.params.id]
+    );
+    const [upcomingSubscriptionRows] = await connection.query(
+      `SELECT s.id, s.plan_name, s.price, s.currency, s.start_date, s.end_date, s.status
+       FROM subscriptions s
+       INNER JOIN payments p ON p.subscription_id = s.id AND p.status = 'completed'
+       WHERE s.client_id = ?
+         AND s.status = 'active'
+         AND s.start_date > CURDATE()
+       ORDER BY s.start_date ASC
        LIMIT 1`,
       [req.params.id]
     );
@@ -2116,6 +2201,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
       subscription: subscriptionRows[0]
         ? { ...subscriptionRows[0], daysRemaining: subscriptionRows[0].days_remaining }
         : null,
+      upcomingSubscription: upcomingSubscriptionRows[0] || null,
       payments: paymentRows,
       updateSchedule: scheduleRows[0] || null,
       progressUpdates: progressRows,
@@ -2357,12 +2443,44 @@ router.delete('/:id/payments/:paymentId', authorizeRole(['coach', 'admin']), asy
 // GET/POST /clients/me/messages — client-side view/send for their own thread
 // (declared before the /:id/messages wildcard routes below so "me" is never
 // captured as an :id value)
+router.get('/messages/inbox', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureMessagesSchema(connection);
+    const isAdmin = req.user.role === 'admin';
+    const [rows] = await connection.query(
+      `SELECT u.id AS client_id, u.full_name AS client_name, u.email AS client_email, u.profile_photo,
+              MAX(m.created_at) AS last_message_at,
+              SUBSTRING_INDEX(GROUP_CONCAT(m.body ORDER BY m.created_at DESC SEPARATOR '\\n'), '\\n', 1) AS last_message,
+              SUM(CASE WHEN m.sender_role = 'client' AND m.read_at IS NULL THEN 1 ELSE 0 END) AS unread_count
+       FROM coach_clients cc
+       INNER JOIN users u ON u.id = cc.client_id AND u.role = 'client'
+       LEFT JOIN messages m ON m.client_id = u.id
+       ${isAdmin ? '' : 'WHERE cc.coach_id = ?'}
+       GROUP BY u.id, u.full_name, u.email, u.profile_photo
+       HAVING last_message_at IS NOT NULL
+       ORDER BY unread_count DESC, last_message_at DESC`,
+      isAdmin ? [] : [req.user.id]
+    );
+    res.json(rows.map((row) => ({ ...row, unread_count: Number(row.unread_count || 0) })));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
 router.get('/me/messages', authorizeRole(['client']), async (req, res) => {
   const connection = await pool.getConnection();
   try {
     await ensureMessagesSchema(connection);
     const [rows] = await connection.query(
       'SELECT id, sender_role, body, read_at, created_at FROM messages WHERE client_id = ? ORDER BY created_at ASC',
+      [req.user.id]
+    );
+    await connection.query(
+      "UPDATE messages SET read_at = COALESCE(read_at, NOW()) WHERE client_id = ? AND sender_role = 'coach' AND read_at IS NULL",
       [req.user.id]
     );
     res.json(rows);
@@ -2374,12 +2492,67 @@ router.get('/me/messages', authorizeRole(['client']), async (req, res) => {
   }
 });
 
+router.get('/me/messages/unread-count', authorizeRole(['client']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureMessagesSchema(connection);
+    const [[row]] = await connection.query(
+      "SELECT COUNT(*) AS unread FROM messages WHERE client_id = ? AND sender_role = 'coach' AND read_at IS NULL",
+      [req.user.id]
+    );
+    res.json({ unread: Number(row?.unread || 0) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.get('/me/messages/coach', authorizeRole(['client']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureMessagesSchema(connection);
+    const [rows] = await connection.query(
+      `SELECT u.id, u.full_name, u.email, u.profile_photo
+       FROM coach_clients cc
+       INNER JOIN users u ON u.id = cc.coach_id
+       WHERE cc.client_id = ?
+       ORDER BY cc.created_at DESC
+       LIMIT 1`,
+      [req.user.id]
+    );
+    res.json(rows[0] || null);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.post('/me/messages/typing', authorizeRole(['client']), (req, res) => {
+  setMessageTyping(req.user.id, {
+    role: 'client',
+    name: String(req.body?.name || 'Ο πελάτης').trim().slice(0, 100),
+    isTyping: Boolean(req.body?.isTyping),
+  });
+  res.json({ ok: true });
+});
+
+router.get('/me/messages/typing', authorizeRole(['client']), (req, res) => {
+  res.json({ typer: getMessageTyper(req.user.id, 'coach') });
+});
+
 router.post('/me/messages', authorizeRole(['client']), [
   body('message').isString().notEmpty()
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
+  }
+  if (/(data:image\/|<img\b|base64,)/i.test(req.body.message)) {
+    return res.status(400).json({ message: 'Images are not supported in messages' });
   }
 
   const connection = await pool.getConnection();
@@ -2393,17 +2566,33 @@ router.post('/me/messages', authorizeRole(['client']), [
       return res.status(400).json({ message: 'No coach assigned yet' });
     }
     const coachId = coachRows[0].coach_id;
+    const [[clientRow]] = await connection.query('SELECT full_name FROM users WHERE id = ?', [req.user.id]);
+    const clientName = clientRow?.full_name || 'πελάτη';
 
     await connection.query(
       `INSERT INTO messages (client_id, coach_id, sender_role, body) VALUES (?, ?, 'client', ?)`,
       [req.user.id, coachId, req.body.message]
     );
     await notifyUser(connection, coachId, {
+      clientId: req.user.id,
       type: 'client_message',
       title: 'Νέο μήνυμα από πελάτη',
       body: req.body.message,
-      linkUrl: `/clients/${req.user.id}`
+      title: `Μήνυμα από τον/την ${clientName}`,
+      linkUrl: `/clients/${req.user.id}?tab=messages`
     });
+    const [adminRows] = await connection.query(
+      "SELECT id FROM users WHERE role = 'admin' AND is_active = 1 AND id <> ?",
+      [coachId]
+    );
+    await Promise.all(adminRows.map((admin) => notifyUser(connection, admin.id, {
+      clientId: req.user.id,
+      type: 'client_message',
+      title: 'Νέο μήνυμα από πελάτη',
+      body: req.body.message,
+      title: `Μήνυμα από τον/την ${clientName}`,
+      linkUrl: `/clients/${req.user.id}?tab=messages`
+    })));
 
     res.status(201).json({ message: 'Message sent' });
   } catch (error) {
@@ -2423,6 +2612,10 @@ router.get('/:id/messages', authorizeRole(['coach', 'admin']), async (req, res) 
       'SELECT id, sender_role, body, read_at, created_at FROM messages WHERE client_id = ? ORDER BY created_at ASC',
       [req.params.id]
     );
+    await connection.query(
+      "UPDATE messages SET read_at = COALESCE(read_at, NOW()) WHERE client_id = ? AND sender_role = 'client' AND read_at IS NULL",
+      [req.params.id]
+    );
     res.json(rows);
   } catch (error) {
     console.error(error);
@@ -2432,6 +2625,36 @@ router.get('/:id/messages', authorizeRole(['coach', 'admin']), async (req, res) 
   }
 });
 
+router.get('/:id/messages/unread-count', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureMessagesSchema(connection);
+    const [[row]] = await connection.query(
+      "SELECT COUNT(*) AS unread FROM messages WHERE client_id = ? AND sender_role = 'client' AND read_at IS NULL",
+      [req.params.id]
+    );
+    res.json({ unread: Number(row?.unread || 0) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.post('/:id/messages/typing', authorizeRole(['coach', 'admin']), (req, res) => {
+  setMessageTyping(req.params.id, {
+    role: 'coach',
+    name: String(req.body?.name || 'Ο coach').trim().slice(0, 100),
+    isTyping: Boolean(req.body?.isTyping),
+  });
+  res.json({ ok: true });
+});
+
+router.get('/:id/messages/typing', authorizeRole(['coach', 'admin']), (req, res) => {
+  res.json({ typer: getMessageTyper(req.params.id, 'client') });
+});
+
 router.post('/:id/messages', authorizeRole(['coach', 'admin']), [
   body('message').isString().notEmpty()
 ], async (req, res) => {
@@ -2439,10 +2662,15 @@ router.post('/:id/messages', authorizeRole(['coach', 'admin']), [
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
+  if (/(data:image\/|<img\b|base64,)/i.test(req.body.message)) {
+    return res.status(400).json({ message: 'Images are not supported in messages' });
+  }
 
   const connection = await pool.getConnection();
   try {
     await ensureMessagesSchema(connection);
+    const [[coachRow]] = await connection.query('SELECT full_name FROM users WHERE id = ?', [req.user.id]);
+    const coachName = coachRow?.full_name || 'coach';
     await connection.query(
       `INSERT INTO messages (client_id, coach_id, sender_role, body) VALUES (?, ?, 'coach', ?)`,
       [req.params.id, req.user.id, req.body.message]
@@ -2451,6 +2679,7 @@ router.post('/:id/messages', authorizeRole(['coach', 'admin']), [
       type: 'coach_message',
       title: 'Νέο μήνυμα από τον coach',
       body: req.body.message,
+      title: `Μήνυμα από τον/την ${coachName}`,
       linkUrl: '/client-messages'
     });
 
@@ -2711,11 +2940,26 @@ router.post('/:id/approve-payment', authorizeRole(['coach', 'admin']), async (re
     if (payments[0].subscription_id) {
       const monthsByPlanType = { monthly: 1, quarterly: 3, semi_annual: 6, annual: 12, custom: 1 };
       const months = monthsByPlanType[payments[0].plan_type] || 1;
+      const [currentSubscriptions] = await connection.query(
+        `SELECT end_date
+         FROM subscriptions
+         WHERE client_id = ?
+           AND id <> ?
+           AND status IN ('active', 'expiring_soon')
+           AND start_date <= CURDATE()
+           AND end_date >= CURDATE()
+         ORDER BY end_date DESC
+         LIMIT 1`,
+        [clientId, payments[0].subscription_id]
+      );
+      const currentEndDate = currentSubscriptions[0]?.end_date || null;
       await connection.query(
         `UPDATE subscriptions
-         SET start_date = CURDATE(), end_date = DATE_ADD(CURDATE(), INTERVAL ? MONTH), status = 'active'
+         SET start_date = CASE WHEN ? IS NULL THEN CURDATE() ELSE DATE_ADD(?, INTERVAL 1 DAY) END,
+             end_date = DATE_ADD(CASE WHEN ? IS NULL THEN CURDATE() ELSE DATE_ADD(?, INTERVAL 1 DAY) END, INTERVAL ? MONTH),
+             status = 'active'
          WHERE id = ?`,
-        [months, payments[0].subscription_id]
+        [currentEndDate, currentEndDate, currentEndDate, currentEndDate, months, payments[0].subscription_id]
       );
     }
 
