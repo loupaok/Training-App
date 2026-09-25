@@ -125,6 +125,14 @@ function nextDateForWeekday(day) {
   return next.toISOString().slice(0, 10);
 }
 
+function subscriptionPlanType(period) {
+  const value = String(period || '').toLowerCase();
+  if (value.includes('3') || value.includes('τρίμη') || value.includes('quarter')) return 'quarterly';
+  if (value.includes('6') || value.includes('εξάμη')) return 'semi_annual';
+  if (value.includes('12') || value.includes('έτος') || value.includes('year')) return 'annual';
+  return 'monthly';
+}
+
 router.post('/check-email', [body('email').isEmail()], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ message: 'Μη έγκυρο email.' });
@@ -406,22 +414,23 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     }
 
     const startDate = new Date().toISOString().slice(0, 10);
-    const endDateObj = new Date();
-    endDateObj.setMonth(endDateObj.getMonth() + 1);
-    const endDate = endDateObj.toISOString().slice(0, 10);
+    // These dates are placeholders required by the existing schema. The coach
+    // approval replaces both dates, which is when the subscription starts.
+    const pendingDate = new Date().toISOString().slice(0, 10);
 
     const [subscriptionResult] = await connection.query(
       `INSERT INTO subscriptions (client_id, coach_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes)
-       VALUES (?, ?, ?, 'monthly', ?, ?, ?, ?, 'pending_payment', ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?)`,
       [
         userId,
         coachId,
         plan.name,
+        subscriptionPlanType(plan.period),
         plan.price,
         plan.currency || 'EUR',
-        startDate,
-        endDate,
-        paymentMethod === 'stripe' ? 'Stripe selected - integration pending' : 'Bank transfer selected',
+        pendingDate,
+        pendingDate,
+        paymentMethod === 'stripe' ? 'Η πληρωμή με κάρτα αναμένει έγκριση coach.' : 'Το τραπεζικό έμβασμα αναμένει έγκριση coach.',
       ]
     );
 

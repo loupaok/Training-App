@@ -432,12 +432,6 @@ export function NutritionPlanEditor({
     if (food && !Number.isNaN(mealIndex)) addFoodFromLibrary(mealIndex, food);
   };
 
-  // Purely derived from existing state — no new stored values.
-  const proteinKcal = Number(plan.proteinG || 0) * 4;
-  const carbsKcal = Number(plan.carbsG || 0) * 4;
-  const fatKcal = Number(plan.fatG || 0) * 9;
-  const macroKcalTotal = proteinKcal + carbsKcal + fatKcal;
-
   const totals = plan.meals.reduce(
     (acc, meal) => {
       meal.foods.forEach((food) => {
@@ -450,6 +444,12 @@ export function NutritionPlanEditor({
     },
     { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
   );
+
+  // The summary is calculated from the foods in all meals, so it always stays in sync.
+  const proteinKcal = totals.proteinG * 4;
+  const carbsKcal = totals.carbsG * 4;
+  const fatKcal = totals.fatG * 9;
+  const macroKcalTotal = proteinKcal + carbsKcal + fatKcal;
 
   const pctDiff = (actual: number, target: string | number): number | null => {
     const targetNum = Number(target);
@@ -466,27 +466,20 @@ export function NutritionPlanEditor({
       <div className="space-y-6 p-6 pb-0">
         <Field label="Τίτλος" value={plan.title} onChange={(value) => setPlan({ ...plan, title: value })} />
 
-        {/* Macro targets — big kcal number + split bars + the same editable target fields */}
+        {/* Automatically calculated from the foods assigned to the meals below. */}
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800">
           <div className="grid gap-6 lg:grid-cols-[auto_1fr]">
             <div>
-              <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Ημερήσιος Στόχος</div>
+              <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Ημερήσιο Σύνολο</div>
               <div className="mt-1 text-4xl font-bold dark:text-slate-50">
-                {plan.dailyCalories || "—"} <span className="text-base font-semibold text-slate-500 dark:text-slate-400">kcal</span>
+                {Math.round(totals.calories)} <span className="text-base font-semibold text-slate-500 dark:text-slate-400">kcal</span>
               </div>
             </div>
             <div className="space-y-2.5">
-              <MacroBar label="Πρωτεΐνη" grams={plan.proteinG} kcal={proteinKcal} totalKcal={macroKcalTotal} colorClassName="bg-blue-500" />
-              <MacroBar label="Υδατάνθρακες" grams={plan.carbsG} kcal={carbsKcal} totalKcal={macroKcalTotal} colorClassName="bg-amber-500" />
-              <MacroBar label="Λίπη" grams={plan.fatG} kcal={fatKcal} totalKcal={macroKcalTotal} colorClassName="bg-rose-500" />
+              <MacroBar label="Πρωτεΐνη" grams={totals.proteinG} kcal={proteinKcal} totalKcal={macroKcalTotal} colorClassName="bg-blue-500" />
+              <MacroBar label="Υδατάνθρακες" grams={totals.carbsG} kcal={carbsKcal} totalKcal={macroKcalTotal} colorClassName="bg-amber-500" />
+              <MacroBar label="Λίπη" grams={totals.fatG} kcal={fatKcal} totalKcal={macroKcalTotal} colorClassName="bg-rose-500" />
             </div>
-          </div>
-
-          <div className="mt-5 grid gap-4 sm:grid-cols-4">
-            <Field label="Θερμίδες" type="number" value={plan.dailyCalories} onChange={(value) => setPlan({ ...plan, dailyCalories: value })} />
-            <Field label="Πρωτεΐνη g" type="number" value={plan.proteinG} onChange={(value) => setPlan({ ...plan, proteinG: value })} />
-            <Field label="Υδατάνθρακες g" type="number" value={plan.carbsG} onChange={(value) => setPlan({ ...plan, carbsG: value })} />
-            <Field label="Λίπη g" type="number" value={plan.fatG} onChange={(value) => setPlan({ ...plan, fatG: value })} />
           </div>
         </div>
 

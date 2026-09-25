@@ -106,7 +106,7 @@ function ClientPendingContent() {
             <div>
               <h1 className="text-2xl font-bold text-amber-900 dark:text-amber-200">Η πληρωμή σου είναι σε εκκρεμότητα</h1>
               <p className="mt-2 text-sm font-semibold leading-6 text-amber-800 dark:text-amber-300">
-                Η αίτησή σου καταχωρήθηκε. Μόλις ο coach επιβεβαιώσει την πληρωμή σου, θα ξεκλειδώσουν αυτόματα το πρόγραμμα, η διατροφή και το progress.
+                Η πληρωμή σου καταχωρήθηκε και αναμένει επιβεβαίωση από τον coach. Ισχύει για πληρωμή με κάρτα και για τραπεζικό έμβασμα. Με την έγκριση ξεκινά η συνδρομή σου και ξεκλειδώνουν αυτόματα το πρόγραμμα, η διατροφή και το progress.
               </p>
             </div>
           </div>

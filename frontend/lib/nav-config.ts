@@ -109,7 +109,7 @@ export const clientNavSections: ClientNavSection[] = [
   { label: "Αρχική", path: "/client-dashboard", key: "dashboard", icon: Home },
   { label: "Πρόγραμμα", path: "/client-program", locked: true, key: "training", icon: Dumbbell },
   { label: "Διατροφή", path: "/client-nutrition", locked: true, key: "nutrition", icon: Salad },
-  { label: "Progress", locked: true, key: "progress", icon: TrendingUp },
+  { label: "Progress", path: "/client-progress", locked: true, key: "progress", icon: TrendingUp },
   { label: "Πληρωμές και Συνδρομή", path: "/client-billing", locked: true, key: "billing", icon: CreditCard },
   { label: "Αλλαγές & Νέα", path: "/changelog", locked: true, key: "changelog", icon: ScrollText },
   { label: "Μηνύματα", path: "/client-messages", locked: true, key: "messages", icon: MessageCircleMore },

@@ -3,12 +3,17 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import {
+  Activity,
+  ArrowRight,
   CalendarDays,
   CheckCircle2,
+  Clock3,
   Dumbbell,
   FileText,
+  Flame,
   Salad,
   Send,
+  Sparkles,
   Upload,
 } from "lucide-react"
 import { AreaChart } from "@tremor/react"
@@ -21,6 +26,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
@@ -53,6 +59,8 @@ type DashboardData = {
     subscriptionStatus: string | null
     daysRemaining: number | null
     planName: string | null
+    subscriptionStartDate?: string | null
+    subscriptionEndDate?: string | null
   }
   todayIsUpdateDay: boolean
   alreadySubmittedThisWeek: boolean
@@ -83,6 +91,53 @@ function formatDate(date: string | null | undefined) {
 function PlanCard({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
   return <Card><CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-lg">{icon}{title}</CardTitle></CardHeader><CardContent>{children}</CardContent></Card>
 }
+
+function DashboardQuickLink({ href, title, description, icon: Icon }: { href: string; title: string; description: string; icon: typeof Dumbbell }) {
+  return <Link href={href} className="group flex min-h-32 flex-col justify-between rounded-xl border border-border bg-card p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md"><span className="grid h-10 w-10 place-items-center rounded-lg bg-muted transition-colors group-hover:bg-primary/10"><Icon className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" /></span><span><span className="flex items-center justify-between gap-3 text-base font-semibold">{title}<ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-foreground" /></span><span className="mt-1 block text-sm text-muted-foreground">{description}</span></span></Link>
+}
+
+function ModernOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpdate }: { dashboard: DashboardData | null; trainingPlan: TrainingPlan; nutritionPlan: NutritionPlanPreview; onOpenUpdate: () => void }) {
+  const client = dashboard?.client
+  const updateReady = dashboard?.todayIsUpdateDay && !dashboard.alreadySubmittedThisWeek
+  const updateDone = dashboard?.alreadySubmittedThisWeek
+  const nextUpdate = formatDate(dashboard?.nextUpdateDate)
+  const daysRemaining = client?.daysRemaining
+  const subscriptionActive = client?.subscriptionStatus === "active" || client?.subscriptionStatus === "expiring_soon"
+  const startDate = client?.subscriptionStartDate ? new Date(client.subscriptionStartDate) : null
+  const endDate = client?.subscriptionEndDate ? new Date(client.subscriptionEndDate) : null
+  const totalDays = startDate && endDate ? Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / 86400000)) : 1
+  const elapsedDays = startDate ? Math.max(0, Math.ceil((Date.now() - startDate.getTime()) / 86400000)) : 0
+  const subscriptionProgress = Math.min(100, Math.max(0, (elapsedDays / totalDays) * 100))
+  const remainingRatio = daysRemaining == null ? 1 : Math.max(0, daysRemaining / totalDays)
+  const progressColor = remainingRatio > 0.5 ? "[&_[data-slot=progress-indicator]]:bg-emerald-500" : remainingRatio >= 0.2 ? "[&_[data-slot=progress-indicator]]:bg-amber-500" : "[&_[data-slot=progress-indicator]]:bg-red-500"
+
+  return <div className="space-y-6">
+    <section className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+      <div className="absolute inset-y-0 left-0 w-1 bg-primary" />
+      <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_15rem] lg:items-center">
+        <div><div className="flex items-center gap-2 text-sm font-medium text-muted-foreground"><Sparkles className="h-4 w-4 text-primary" />Η σημερινή σου εικόνα</div><h2 className="mt-3 text-2xl font-bold tracking-normal">{updateReady ? "Ώρα για το εβδομαδιαίο σου update" : updateDone ? "Το update σου καταχωρήθηκε" : trainingPlan ? "Η προπόνησή σου είναι έτοιμη" : "Ξεκίνα με σταθερό ρυθμό"}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{updateReady ? "Συμπλήρωσε σε λίγα λεπτά πώς πήγε η εβδομάδα σου, για να έχει ο coach σου την πλήρη εικόνα." : updateDone ? `Το επόμενο check-in σου είναι στις ${nextUpdate}.` : trainingPlan ? `${trainingPlan.title} είναι διαθέσιμο για την επόμενη προπόνησή σου.` : "Ο coach σου θα προσθέσει σύντομα το προσωπικό σου πρόγραμμα."}</p><div className="mt-5">{updateReady ? <Button onClick={onOpenUpdate}><Send className="mr-2 h-4 w-4" />Συμπλήρωση update</Button> : trainingPlan ? <Link href="/client-program" className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90">Άνοιγμα προπόνησης<ArrowRight className="ml-2 h-4 w-4" /></Link> : <Link href="/client-messages" className="inline-flex h-9 items-center rounded-md border border-input bg-background px-4 text-sm font-medium shadow-sm transition-colors hover:bg-accent">Επικοινωνία με coach</Link>}</div></div>
+        <div className="rounded-lg bg-muted/60 p-5"><p className="text-sm text-muted-foreground">Συνδρομή</p><p className="mt-2 truncate text-lg font-semibold">{client?.planName || "Σε αναμονή πλάνου"}</p>{subscriptionActive ? <><div className="mt-4 flex items-end justify-between gap-3"><div><p className="text-3xl font-bold tabular-nums">{daysRemaining ?? "-"}</p><p className="text-xs text-muted-foreground">ημέρες απομένουν</p></div><CalendarDays className="h-8 w-8 text-primary" /></div><Progress value={subscriptionProgress} className={`mt-4 h-1.5 ${progressColor}`} /><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{formatDate(client?.subscriptionStartDate)}</span><span>{formatDate(client?.subscriptionEndDate)}</span></div></> : <div className="mt-4 rounded-md border border-border bg-background/70 px-3 py-2 text-xs text-muted-foreground">Αναμονή επιβεβαίωσης από τον coach</div>}</div>
+      </div>
+    </section>
+
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"><div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">Τρέχον βάρος</p><ScaleIcon /></div><p className="mt-3 text-2xl font-bold tabular-nums">{client?.currentWeight ?? "-"}{client?.currentWeight ? " kg" : ""}</p><p className="mt-1 text-xs text-muted-foreground">Από το τελευταίο check-in</p></div>
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"><div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">Ρυθμός updates</p><Flame className="h-4 w-4 text-primary" /></div><p className="mt-3 text-2xl font-bold tabular-nums">{dashboard?.streak ?? 0}</p><p className="mt-1 text-xs text-muted-foreground">συνεχόμενες εβδομάδες</p></div>
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"><div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">Επόμενο update</p><Clock3 className="h-4 w-4 text-primary" /></div><p className="mt-3 text-lg font-bold">{updateDone ? nextUpdate : updateReady ? "Σήμερα" : nextUpdate}</p><p className="mt-1 text-xs text-muted-foreground">{updateDone ? "Είσαι ενημερωμένος" : "Μην το ξεχάσεις"}</p></div>
+      <Link href="/client-progress" className="group rounded-xl border border-border bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md"><div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">Η πρόοδός μου</p><Activity className="h-4 w-4 transition-transform group-hover:scale-110" /></div><p className="mt-3 text-lg font-bold">Δες αναλυτικά</p><p className="mt-1 text-xs text-muted-foreground">Βάρος, προπονήσεις και check-ins</p></Link>
+    </section>
+
+    <section className="grid gap-4 md:grid-cols-3"><DashboardQuickLink href="/client-program" title="Προπόνηση" description={trainingPlan ? `${trainingPlan.days.length} ημέρες προπόνησης` : "Δες το πρόγραμμά σου"} icon={Dumbbell} /><DashboardQuickLink href="/client-nutrition" title="Διατροφή" description={nutritionPlan ? `${nutritionPlan.meals.length} γεύματα στο πλάνο` : "Δες το πλάνο διατροφής"} icon={Salad} /><DashboardQuickLink href="/client-progress" title="Progress" description="Μετρήσεις, φωτογραφίες και ρεκόρ" icon={Activity} /></section>
+
+    <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <Card><CardHeader className="pb-3"><CardTitle className="text-lg">Τελευταία δραστηριότητα</CardTitle></CardHeader><CardContent className="divide-y">{dashboard?.lastUpdate ? <ActivityRow icon={<CheckCircle2 className="h-4 w-4 text-primary" />} title="Υποβλήθηκε εβδομαδιαίο update" detail={formatDate(dashboard.lastUpdate.submittedAt)} /> : <ActivityRow icon={<CalendarDays className="h-4 w-4 text-muted-foreground" />} title="Δεν υπάρχει update ακόμα" detail="Το πρώτο σου check-in θα εμφανιστεί εδώ." />}{trainingPlan && <ActivityRow icon={<Dumbbell className="h-4 w-4 text-primary" />} title="Το πρόγραμμα προπόνησης είναι διαθέσιμο" detail={trainingPlan.title} />}{nutritionPlan && <ActivityRow icon={<Salad className="h-4 w-4 text-primary" />} title="Το πλάνο διατροφής είναι διαθέσιμο" detail={nutritionPlan.title} />}</CardContent></Card>
+      <Card className="border-primary/20 bg-primary/5"><CardContent className="p-5"><p className="text-sm font-semibold">Μικρό βήμα, σταθερή πρόοδος</p><p className="mt-2 text-sm leading-6 text-muted-foreground">Η συνέπεια στα workouts και στα εβδομαδιαία updates βοηθά τον coach να προσαρμόζει το πλάνο σου σωστά.</p><Link href="/client-progress" className="mt-4 inline-flex items-center text-sm font-medium text-foreground hover:underline">Προβολή Progress<ArrowRight className="ml-1 h-4 w-4" /></Link></CardContent></Card>
+    </section>
+  </div>
+}
+
+function ActivityRow({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) { return <div className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"><span className="grid h-9 w-9 place-items-center rounded-lg bg-muted">{icon}</span><div className="min-w-0"><p className="text-sm font-medium">{title}</p><p className="truncate text-xs text-muted-foreground">{detail}</p></div></div> }
+function ScaleIcon() { return <Dumbbell className="h-4 w-4 text-primary" /> }
 
 function ClientDashboardContent() {
   const { user, logout } = useAuth()
@@ -195,9 +250,11 @@ function ClientDashboardContent() {
         </div>
         {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <ScrollArea className="w-full whitespace-nowrap"><TabsList className="h-auto"><TabsTrigger value="overview">Αρχική</TabsTrigger><TabsTrigger value="training">Προπόνηση</TabsTrigger><TabsTrigger value="progress">Πρόοδος</TabsTrigger><TabsTrigger value="payments">Πληρωμές</TabsTrigger><TabsTrigger value="update">Update</TabsTrigger></TabsList></ScrollArea>
+          <ScrollArea className="w-full whitespace-nowrap"><TabsList className="h-auto"><TabsTrigger value="overview">Αρχική</TabsTrigger><TabsTrigger value="update">Update</TabsTrigger></TabsList></ScrollArea>
 
           <TabsContent value="overview" className="space-y-6">
+            <ModernOverview dashboard={dashboard} trainingPlan={trainingPlan} nutritionPlan={nutritionPlan} onOpenUpdate={() => setActiveTab("update")} />
+            <div className="hidden">
             {dashboard?.todayIsUpdateDay && !dashboard.alreadySubmittedThisWeek && <Alert><CalendarDays className="h-4 w-4" /><AlertTitle>Σήμερα είναι ημέρα update</AlertTitle><AlertDescription className="flex flex-wrap items-center gap-3">Συμπλήρωσε το εβδομαδιαίο σου update για να ενημερωθεί ο coach σου.<Button size="sm" onClick={() => setActiveTab("update")}>Συμπλήρωση update</Button></AlertDescription></Alert>}
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <PlanCard title="Τρέχον βάρος" icon={<Dumbbell className="h-5 w-5 text-primary" />}><p className="text-3xl font-bold">{dashboard?.client.currentWeight ?? "-"}{dashboard?.client.currentWeight ? " kg" : ""}</p></PlanCard>
@@ -208,6 +265,7 @@ function ClientDashboardContent() {
             <div className="grid gap-6 lg:grid-cols-2">
               <PlanCard title="Πρόγραμμα Προπόνησης" icon={<Dumbbell className="h-5 w-5 text-primary" />}>{trainingPlan ? <><p className="font-medium">{trainingPlan.title}</p><p className="mt-1 text-sm text-muted-foreground">{trainingPlan.days.length} ημέρες προπόνησης</p><Button className="mt-4" variant="outline" size="sm" onClick={() => setActiveTab("training")}>Δες το πρόγραμμα</Button></> : <p className="text-sm text-muted-foreground">Δεν έχει ανατεθεί πρόγραμμα προπόνησης ακόμα.</p>}</PlanCard>
               <PlanCard title="Πλάνο Διατροφής" icon={<Salad className="h-5 w-5 text-primary" />}>{nutritionPlan ? <><p className="font-medium">{nutritionPlan.title}</p><p className="mt-1 text-sm text-muted-foreground">{nutritionPlan.meals.length} γεύματα</p><Button asChild nativeButton={false} className="mt-4" variant="outline" size="sm"><Link href="/client-nutrition">Δες τη διατροφή</Link></Button></> : <p className="text-sm text-muted-foreground">Δεν έχει ανατεθεί διατροφικό πλάνο ακόμα.</p>}</PlanCard>
+            </div>
             </div>
           </TabsContent>
 

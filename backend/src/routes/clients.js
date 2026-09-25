@@ -1213,8 +1213,8 @@ router.post('/me/billing', authorizeRole(['client']), [
     await connection.beginTransaction();
 
     const coachId = await getDefaultCoachId(connection);
-    const startDate = new Date().toISOString().slice(0, 10);
-    const endDate = addMonths(new Date(), selectedPackage.months);
+    // The subscription clock begins only after the coach approves the payment.
+    const pendingDate = new Date().toISOString().slice(0, 10);
     const referenceNumber = `KAIZEN-${String(req.user.id).padStart(4, '0')}-${Date.now().toString().slice(-4)}`;
 
     await connection.query(
@@ -1232,16 +1232,17 @@ router.post('/me/billing', authorizeRole(['client']), [
 
     const [subscriptionResult] = await connection.query(
       `INSERT INTO subscriptions (client_id, coach_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes)
-       VALUES (?, ?, ?, 'custom', ?, ?, ?, ?, 'active', ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?)`,
       [
         req.user.id,
         coachId,
         selectedPackage.label,
+        selectedPackage.months === 3 ? 'quarterly' : selectedPackage.months === 6 ? 'semi_annual' : selectedPackage.months === 12 ? 'annual' : 'monthly',
         selectedPackage.price,
         selectedPackage.currency || 'EUR',
-        startDate,
-        endDate,
-        paymentMethod === 'stripe_card' ? 'Stripe card selected - integration pending' : 'Bank transfer selected'
+        pendingDate,
+        pendingDate,
+        paymentMethod === 'stripe_card' ? 'Η πληρωμή με κάρτα αναμένει έγκριση coach.' : 'Το τραπεζικό έμβασμα αναμένει έγκριση coach.'
       ]
     );
 
@@ -1258,6 +1259,11 @@ router.post('/me/billing', authorizeRole(['client']), [
         referenceNumber,
         paymentMethod === 'stripe_card' ? 'Stripe θα συνδεθεί αργότερα.' : 'Αναμένεται τραπεζικό έμβασμα.'
       ]
+    );
+
+    await connection.query(
+      'UPDATE users SET status = "pending_payment", approved_at = NULL, approved_by = NULL WHERE id = ? AND role = "client"',
+      [req.user.id]
     );
 
     const [[clientUser]] = await connection.query(
@@ -2679,10 +2685,11 @@ router.post('/:id/approve-payment', authorizeRole(['coach', 'admin']), async (re
     }
 
     const [payments] = await connection.query(
-      `SELECT id, subscription_id, amount, currency, method, status, proof_url
-       FROM payments
-       WHERE client_id = ? AND status = 'pending' AND (? IS NULL OR id = ?)
-       ORDER BY proof_uploaded_at DESC, created_at DESC
+      `SELECT p.id, p.subscription_id, p.amount, p.currency, p.method, p.status, p.proof_url, s.plan_type
+       FROM payments p
+       LEFT JOIN subscriptions s ON s.id = p.subscription_id
+       WHERE p.client_id = ? AND p.status = 'pending' AND (? IS NULL OR p.id = ?)
+       ORDER BY p.proof_uploaded_at DESC, p.created_at DESC
        LIMIT 1`,
       [clientId, paymentId, paymentId]
     );
@@ -2702,9 +2709,13 @@ router.post('/:id/approve-payment', authorizeRole(['coach', 'admin']), async (re
     );
 
     if (payments[0].subscription_id) {
+      const monthsByPlanType = { monthly: 1, quarterly: 3, semi_annual: 6, annual: 12, custom: 1 };
+      const months = monthsByPlanType[payments[0].plan_type] || 1;
       await connection.query(
-        "UPDATE subscriptions SET status = 'active' WHERE id = ?",
-        [payments[0].subscription_id]
+        `UPDATE subscriptions
+         SET start_date = CURDATE(), end_date = DATE_ADD(CURDATE(), INTERVAL ? MONTH), status = 'active'
+         WHERE id = ?`,
+        [months, payments[0].subscription_id]
       );
     }
 

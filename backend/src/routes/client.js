@@ -177,7 +177,7 @@ router.get('/dashboard', async (req, res) => {
     const clientId = req.user.id;
     const [users] = await connection.query('SELECT full_name FROM users WHERE id = ?', [clientId]);
     const [schedules] = await connection.query('SELECT day_of_week, next_due_date FROM update_schedule WHERE client_id = ? ORDER BY updated_at DESC LIMIT 1', [clientId]);
-    const [subscriptions] = await connection.query("SELECT plan_name, status, DATEDIFF(end_date, CURDATE()) AS days_remaining FROM subscriptions WHERE client_id = ? ORDER BY created_at DESC LIMIT 1", [clientId]);
+    const [subscriptions] = await connection.query("SELECT plan_name, status, start_date, end_date, DATEDIFF(end_date, CURDATE()) AS days_remaining FROM subscriptions WHERE client_id = ? ORDER BY created_at DESC LIMIT 1", [clientId]);
     let updates = [];
     try {
       updates = await getUpdates(connection, clientId, 52);
@@ -199,7 +199,7 @@ router.get('/dashboard', async (req, res) => {
     const ratings = [lastUpdate?.trainingRating, lastUpdate?.nutritionRating, lastUpdate?.generalRating].filter(Number.isFinite);
     const averageRating = ratings.length ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length : null;
     res.json({
-      client: { firstName: String(users[0]?.full_name || '').trim().split(/\s+/)[0] || 'Client', currentWeight: lastUpdate?.weight ?? null, subscriptionStatus: subscription?.status || null, daysRemaining: subscription?.days_remaining ?? null, planName: subscription?.plan_name || null },
+      client: { firstName: String(users[0]?.full_name || '').trim().split(/\s+/)[0] || 'Client', currentWeight: lastUpdate?.weight ?? null, subscriptionStatus: subscription?.status || null, daysRemaining: subscription?.days_remaining ?? null, planName: subscription?.plan_name || null, subscriptionStartDate: subscription?.start_date || null, subscriptionEndDate: subscription?.end_date || null },
       todayIsUpdateDay, alreadySubmittedThisWeek, nextUpdateDate: schedule?.next_due_date || nextScheduledDate(schedule?.day_of_week), streak: streakFor(updates), updatesCount: updates.length,
       lastUpdate: lastUpdate ? { submittedAt: lastUpdate.submittedAt, averageRating } : null,
       trainingPlan: training ? { id: training.id, title: training.title } : null, nutritionPlan: nutrition ? { id: nutrition.id, title: nutrition.title } : null,
@@ -383,6 +383,80 @@ router.get('/nutrition-plan', async (req, res) => {
   const connection = await pool.getConnection();
   try { res.json((await getPlans(connection, req.user.id)).nutrition); }
   catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
+});
+
+router.get('/nutrition-equivalents', async (req, res) => {
+  const target = {
+    calories: Math.max(0, Number(req.query.calories) || 0),
+    protein: Math.max(0, Number(req.query.protein) || 0),
+    carbs: Math.max(0, Number(req.query.carbs) || 0),
+    fats: Math.max(0, Number(req.query.fats) || 0),
+  };
+  const foodName = String(req.query.foodName || '').trim();
+
+  if (!foodName || !Object.values(target).some(Boolean)) {
+    return res.status(400).json({ message: 'Food macros are required.' });
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    const [foods] = await connection.query(
+      `SELECT id, name_gr, name_en, image_url, calories_per_100g, protein_per_100g,
+              carbs_per_100g, fats_per_100g
+       FROM foods
+       WHERE is_active = TRUE
+         AND LOWER(name_gr) <> LOWER(?)
+         AND (name_en IS NULL OR LOWER(name_en) <> LOWER(?))`,
+      [foodName, foodName],
+    );
+
+    const macroEntries = [
+      ['protein', 'protein_per_100g'],
+      ['carbs', 'carbs_per_100g'],
+      ['fats', 'fats_per_100g'],
+    ];
+    const primary = macroEntries.reduce((best, entry) => target[entry[0]] > target[best[0]] ? entry : best, macroEntries[0]);
+
+    const equivalents = foods.map((food) => {
+      const primaryPer100 = Number(food[primary[1]]) || 0;
+      const grams = primaryPer100 > 0
+        ? (target[primary[0]] / primaryPer100) * 100
+        : (target.calories / Math.max(Number(food.calories_per_100g) || 1, 1)) * 100;
+      const factor = grams / 100;
+      const macros = {
+        calories: (Number(food.calories_per_100g) || 0) * factor,
+        protein: (Number(food.protein_per_100g) || 0) * factor,
+        carbs: (Number(food.carbs_per_100g) || 0) * factor,
+        fats: (Number(food.fats_per_100g) || 0) * factor,
+      };
+      const score = ['calories', 'protein', 'carbs', 'fats'].reduce(
+        (total, key) => total + Math.abs(macros[key] - target[key]) / Math.max(target[key], 1),
+        0,
+      );
+      return {
+        id: food.id,
+        name: food.name_gr || food.name_en,
+        imageUrl: food.image_url,
+        quantityG: Math.round(grams / 5) * 5,
+        calories: Math.round(macros.calories),
+        proteinG: Number(macros.protein.toFixed(1)),
+        carbsG: Number(macros.carbs.toFixed(1)),
+        fatsG: Number(macros.fats.toFixed(1)),
+        score,
+      };
+    })
+      .filter((food) => food.quantityG > 0 && food.quantityG <= 1000)
+      .sort((first, second) => first.score - second.score)
+      .slice(0, 6)
+      .map(({ score, ...food }) => food);
+
+    res.json({ equivalents });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
 });
 
 router.get('/progress', async (req, res) => {

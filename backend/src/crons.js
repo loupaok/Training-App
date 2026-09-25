@@ -20,7 +20,7 @@ async function runSubscriptionStatus() {
       `UPDATE subscriptions
        SET status = 'expired'
        WHERE end_date < CURDATE()
-         AND status NOT IN ('cancelled', 'paused', 'expired')`
+         AND status IN ('active', 'expiring_soon')`
     );
 
     // Mark expiring soon (within 7 days)

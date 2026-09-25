@@ -35,7 +35,7 @@ export function ClientSidebar({
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-40 flex flex-col bg-[#07131d] text-white transition-[width] duration-200",
+        "fixed inset-y-0 left-0 z-40 hidden flex-col bg-[#07131d] text-white transition-[width] duration-200 lg:flex",
         collapsed ? "w-16" : "w-56",
       )}
     >

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ChartNoAxesColumnIncreasing, Download, Lightbulb, MoreVertical, ShoppingCart, Utensils, X } from "lucide-react"
+import { ArrowRightLeft, ChartNoAxesColumnIncreasing, Download, Lightbulb, MoreVertical, ShoppingCart, Utensils, X } from "lucide-react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { ClientShell } from "@/components/shell/client-shell"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -13,6 +13,7 @@ import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api } from "@/lib/api/client"
 import { useAuth } from "@/lib/auth/auth-context"
@@ -24,6 +25,7 @@ type NutritionPlan = { id: number; title: string; notes?: string | null; daily_c
 type Dashboard = { client?: { subscriptionStatus?: string | null }; unreadNotifications?: number }
 type MacroTotals = { calories: number; protein: number; carbs: number; fats: number }
 type ShoppingItem = { key: string; name: string; quantity: number | null; unit: string; imageUrl?: string | null }
+type FoodEquivalent = { id: number; name: string; imageUrl?: string | null; quantityG: number; calories: number; proteinG: number; carbsG: number; fatsG: number }
 
 const numberValue = (value: number | string | null | undefined) => Number(value) || 0
 const mealTitle = (meal: NutritionMeal, index: number) => meal.title?.trim() || meal.name || `Γεύμα ${index + 1}`
@@ -56,23 +58,22 @@ function shoppingCategory(name: string) {
   return Object.entries(shoppingCategories).find(([, keywords]) => keywords.some((keyword) => normalized.includes(keyword)))?.[0] || "Άλλα"
 }
 
-function CalorieRing({ consumed, target }: { consumed: number; target: number }) {
+function CalorieRing({ calories }: { calories: number }) {
   const radius = 42
   const circumference = 2 * Math.PI * radius
-  const progress = target ? Math.min(consumed / target, 1) : 0
+  const progress = calories > 0 ? 1 : 0
 
-  return <svg viewBox="0 0 100 100" className="h-32 w-32 shrink-0 text-emerald-500" aria-label={`${Math.round(consumed)} kcal`}>
+  return <svg viewBox="0 0 100 100" className="h-32 w-32 shrink-0 text-emerald-500" aria-label={`${Math.round(calories)} kcal`}>
     <circle cx="50" cy="50" r={radius} fill="none" stroke="currentColor" strokeWidth="8" className="text-muted" />
     <circle cx="50" cy="50" r={radius} fill="none" stroke="currentColor" strokeWidth="8" strokeDasharray={circumference} strokeDashoffset={circumference * (1 - progress)} strokeLinecap="round" className="transition-all duration-300" transform="rotate(-90 50 50)" />
-    <text x="50" y="48" textAnchor="middle" fill="currentColor" fontSize="16" fontWeight="700">{Math.round(consumed).toLocaleString("el-GR")}</text>
-    <text x="50" y="62" textAnchor="middle" fill="currentColor" fontSize="8">/ {target.toLocaleString("el-GR")} kcal</text>
+    <text x="50" y="48" textAnchor="middle" fill="currentColor" fontSize="16" fontWeight="700">{Math.round(calories).toLocaleString("el-GR")}</text>
+    <text x="50" y="62" textAnchor="middle" fill="currentColor" fontSize="8">kcal</text>
   </svg>
 }
 
-function MacroProgress({ label, value, target, progressClass }: { label: string; value: number; target: number; progressClass: string }) {
-  if (!target) return null
-  const percentage = Math.round(Math.min(100, (value / target) * 100))
-  return <div className="space-y-2"><p className="text-base font-semibold">{label}</p><p className="text-2xl font-bold">{Math.round(value)} <span className="text-base font-medium text-muted-foreground">/ {Math.round(target)} g</span></p><div className="flex items-center gap-3"><Progress value={percentage} className={`h-2 flex-1 ${progressClass}`} /><span className="text-sm text-muted-foreground">{percentage}%</span></div></div>
+function MacroProgress({ label, value, calories, totalCalories, progressClass }: { label: string; value: number; calories: number; totalCalories: number; progressClass: string }) {
+  const percentage = totalCalories > 0 ? Math.round((calories / totalCalories) * 100) : 0
+  return <div className="space-y-2"><p className="text-base font-semibold">{label}</p><p className="text-2xl font-bold">{Math.round(value)} <span className="text-base font-medium text-muted-foreground">g</span></p><div className="flex items-center gap-3"><Progress value={percentage} className={`h-2 flex-1 ${progressClass}`} /><span className="text-sm text-muted-foreground">{percentage}%</span></div></div>
 }
 
 function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
@@ -125,6 +126,9 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
   const storageKey = `shopping_checked_${plan.id}`
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   const [checkedPlanId, setCheckedPlanId] = useState<number | null>(null)
+  const [equivalentFood, setEquivalentFood] = useState<NutritionFood | null>(null)
+  const [equivalents, setEquivalents] = useState<FoodEquivalent[]>([])
+  const [equivalentsLoading, setEquivalentsLoading] = useState(false)
 
   useEffect(() => {
     try {
@@ -149,12 +153,36 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
   const filteredShoppingItems = activeCategory === "Όλα"
     ? shoppingItems
     : shoppingItems.filter((item) => shoppingCategory(item.name) === activeCategory)
-  const calorieTarget = numberValue(plan.daily_calories)
+  const proteinCalories = totals.protein * 4
+  const carbsCalories = totals.carbs * 4
+  const fatCalories = totals.fats * 9
+  const macroCalories = proteinCalories + carbsCalories + fatCalories
 
   const resetShoppingList = () => {
     setChecked({})
     window.localStorage.removeItem(storageKey)
     toast.success("Οι επιλογές καθαρίστηκαν.")
+  }
+
+  const showEquivalents = async (food: NutritionFood) => {
+    setEquivalentFood(food)
+    setEquivalents([])
+    setEquivalentsLoading(true)
+    const params = new URLSearchParams({
+      foodName: food.name,
+      calories: String(numberValue(food.calories)),
+      protein: String(numberValue(food.protein_g)),
+      carbs: String(numberValue(food.carbs_g)),
+      fats: String(numberValue(food.fat_g)),
+    })
+    try {
+      const result = await api.get<{ equivalents: FoodEquivalent[] }>(`/client/nutrition-equivalents?${params.toString()}`)
+      setEquivalents(Array.isArray(result.equivalents) ? result.equivalents : [])
+    } catch {
+      toast.error("Δεν ήταν δυνατή η φόρτωση ισοδύναμων τροφίμων.")
+    } finally {
+      setEquivalentsLoading(false)
+    }
   }
 
   const copyShoppingList = async () => {
@@ -224,18 +252,48 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
 
   return (
     <div className="space-y-6">
+      <Dialog open={Boolean(equivalentFood)} onOpenChange={(open) => !open && setEquivalentFood(null)}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Ισοδύναμα τρόφιμα</DialogTitle>
+            <DialogDescription>
+              {equivalentFood ? `Επιλογές με παρόμοια πρωτεΐνη, υδατάνθρακες και λίπη με το ${equivalentFood.name}.` : ""}
+            </DialogDescription>
+          </DialogHeader>
+
+          {equivalentsLoading ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">Αναζήτηση ισοδύναμων τροφίμων...</p>
+          ) : equivalents.length ? (
+            <div className="divide-y divide-border rounded-lg border">
+              {equivalents.map((food) => (
+                <div key={food.id} className="flex items-center gap-3 p-3">
+                  {food.imageUrl ? <img src={food.imageUrl} alt="" className="h-10 w-10 rounded-md object-cover" /> : <span className="grid h-10 w-10 place-items-center rounded-md bg-muted"><Utensils className="h-4 w-4 text-muted-foreground" /></span>}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{food.name}</p>
+                    <p className="text-xs text-muted-foreground">{food.quantityG}g · {food.calories} kcal</p>
+                  </div>
+                  <p className="shrink-0 text-right text-xs text-muted-foreground">Π {formatGrams(food.proteinG)}<br />Υ {formatGrams(food.carbsG)} · Λ {formatGrams(food.fatsG)}</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">Δεν βρέθηκαν ισοδύναμες επιλογές.</p>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Card className="border-border bg-card shadow-sm">
         <CardContent className="p-6">
           <h2 className="mb-5 text-2xl font-bold">Ημέρα - Σύνολο</h2>
           <div className="grid gap-6 lg:grid-cols-[12rem_minmax(0,1fr)_17rem] lg:items-center">
             <div className="flex justify-center">
-              <CalorieRing consumed={totals.calories} target={calorieTarget} />
+              <CalorieRing calories={totals.calories} />
             </div>
 
             <div className="grid gap-6 sm:grid-cols-3 sm:divide-x sm:divide-border">
-              <div className="sm:pr-6"><MacroProgress label="Πρωτεΐνη" value={totals.protein} target={numberValue(plan.protein_g)} progressClass="[&_[data-slot=progress-track]]:bg-blue-100 [&_[data-slot=progress-indicator]]:bg-blue-500" /></div>
-              <div className="sm:px-6"><MacroProgress label="Υδατάνθρακες" value={totals.carbs} target={numberValue(plan.carbs_g)} progressClass="[&_[data-slot=progress-track]]:bg-amber-100 [&_[data-slot=progress-indicator]]:bg-amber-500" /></div>
-              <div className="sm:pl-6"><MacroProgress label="Λίπος" value={totals.fats} target={numberValue(plan.fat_g)} progressClass="[&_[data-slot=progress-track]]:bg-pink-100 [&_[data-slot=progress-indicator]]:bg-pink-500" /></div>
+              <div className="sm:pr-6"><MacroProgress label="Πρωτεΐνη" value={totals.protein} calories={proteinCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-blue-100 [&_[data-slot=progress-indicator]]:bg-blue-500" /></div>
+              <div className="sm:px-6"><MacroProgress label="Υδατάνθρακες" value={totals.carbs} calories={carbsCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-amber-100 [&_[data-slot=progress-indicator]]:bg-amber-500" /></div>
+              <div className="sm:pl-6"><MacroProgress label="Λίπος" value={totals.fats} calories={fatCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-pink-100 [&_[data-slot=progress-indicator]]:bg-pink-500" /></div>
             </div>
 
             <div className="rounded-xl bg-emerald-50 p-5 dark:bg-emerald-950/20">
@@ -244,8 +302,8 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
                   <ChartNoAxesColumnIncreasing className="h-6 w-6" />
                 </span>
                 <div>
-                  <p className="text-sm text-muted-foreground">Στόχος ημέρας</p>
-                  <p className="text-2xl font-bold">{calorieTarget.toLocaleString("el-GR")} kcal</p>
+                  <p className="text-sm text-muted-foreground">Ημερήσιο σύνολο</p>
+                  <p className="text-2xl font-bold">{Math.round(totals.calories).toLocaleString("el-GR")} kcal</p>
                   <p className="mt-1 text-xs text-emerald-600">Συνέχισε έτσι!</p>
                 </div>
               </div>
@@ -320,6 +378,17 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
                                   </span>
                                 )}
                                 <span className="truncate text-base font-medium">{food.name}</span>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                                  onClick={() => void showEquivalents(food)}
+                                  aria-label={`Ισοδύναμα τρόφιμα για ${food.name}`}
+                                  title="Ισοδύναμα τρόφιμα"
+                                >
+                                  <ArrowRightLeft className="h-4 w-4" />
+                                </Button>
                               </div>
                             </TableCell>
                             <TableCell className="w-14 px-1 py-2 text-right text-base text-foreground">
