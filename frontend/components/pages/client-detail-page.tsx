@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, Clock, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, X, FileText } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, X, FileText } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -192,6 +192,7 @@ interface ClientRecord {
   phone?: string;
   created_at?: string;
   weight_kg?: number | string;
+  target_weight_kg?: number | string;
   height_cm?: number | string;
   date_of_birth?: string;
   gender?: string;
@@ -1388,7 +1389,7 @@ function OverviewTab({
   };
 
   const latestPayment = client.payments?.[0];
-  const pendingPayment = latestPayment?.status === "pending" ? latestPayment : null;
+  const pendingPayment = client.payments?.find((payment) => ["pending", "pending_payment"].includes(payment.status || "")) || null;
   const selectedUpdateDay = String(client.updateSchedule?.day_of_week ?? onboarding.update_day ?? "");
 
   const sectionsMap: Record<string, ReactNode> = {
@@ -1476,15 +1477,7 @@ function OverviewTab({
       <InfoCard title="Φωτογραφίες & αρχεία εγγραφής">
         {client.intakeFiles?.length ? (
           <div className="space-y-4">
-            {client.intakeFiles.filter((file) => file.file_type === "photo").length > 0 && (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {client.intakeFiles.filter((file) => file.file_type === "photo").map((file) => (
-                  <a key={file.id} href={resolveMediaUrl(file.file_url)} target="_blank" rel="noreferrer" className="group relative aspect-square overflow-hidden rounded-lg border bg-muted">
-                    <img src={resolveMediaUrl(file.file_url)} alt={file.original_name || "Φωτογραφία εγγραφής"} className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" />
-                  </a>
-                ))}
-              </div>
-            )}
+            <IntakePhotoGallery files={client.intakeFiles.filter((file) => file.file_type === "photo")} />
             {client.intakeFiles.filter((file) => file.file_type === "pdf").map((file) => (
               <a key={file.id} href={resolveMediaUrl(file.file_url)} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50">
                 <span className="grid h-10 w-10 place-items-center rounded-md bg-muted"><FileText className="h-5 w-5 text-muted-foreground" /></span>
@@ -1683,7 +1676,72 @@ function OverviewTab({
           </OverviewColumn>
         </div>
       </DndContext>
+
     </div>
+  );
+}
+
+function IntakePhotoGallery({ files }: { files: IntakeFile[] }) {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const hasSelection = selectedIndex !== null;
+  const selectedFile = hasSelection ? files[selectedIndex] : null;
+  const selectedNumber = selectedIndex ?? 0;
+
+  useEffect(() => {
+    if (!hasSelection) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedIndex(null);
+      if (event.key === "ArrowLeft") setSelectedIndex((index) => index === null ? null : (index - 1 + files.length) % files.length);
+      if (event.key === "ArrowRight") setSelectedIndex((index) => index === null ? null : (index + 1) % files.length);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [files.length, hasSelection]);
+
+  if (!files.length) return null;
+
+  const showPrevious = () => setSelectedIndex((index) => index === null ? null : (index - 1 + files.length) % files.length);
+  const showNext = () => setSelectedIndex((index) => index === null ? null : (index + 1) % files.length);
+
+  return (
+    <>
+      <div className="flex flex-wrap gap-2">
+        {files.map((file, index) => (
+          <button
+            key={file.id}
+            type="button"
+            onClick={() => setSelectedIndex(index)}
+            className="group relative h-16 w-16 overflow-hidden rounded-md border bg-muted transition-shadow hover:ring-2 hover:ring-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:h-20 sm:w-20"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={resolveMediaUrl(file.file_url)} alt={file.original_name || "Φωτογραφία εγγραφής"} className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" decoding="async" />
+          </button>
+        ))}
+      </div>
+
+      {selectedFile && (
+        <div className="fixed inset-0 z-[100] flex h-[100dvh] w-screen items-center justify-center bg-black/95 p-4 sm:p-8" role="dialog" aria-modal="true" aria-label="Προβολή φωτογραφιών εγγραφής">
+          <button type="button" onClick={() => setSelectedIndex(null)} aria-label="Κλείσιμο" className="absolute right-5 top-5 grid h-10 w-10 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+            <X className="h-5 w-5" />
+          </button>
+          {files.length > 1 && (
+            <button type="button" onClick={showPrevious} aria-label="Προηγούμενη φωτογραφία" className="absolute left-3 grid h-11 w-11 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:left-6">
+              <ChevronLeft className="h-6 w-6" />
+            </button>
+          )}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={resolveMediaUrl(selectedFile.file_url)} alt={selectedFile.original_name || "Φωτογραφία εγγραφής"} className="max-h-full max-w-full object-contain" decoding="async" />
+          {files.length > 1 && (
+            <button type="button" onClick={showNext} aria-label="Επόμενη φωτογραφία" className="absolute right-3 grid h-11 w-11 place-items-center rounded-full bg-white/15 text-white transition-colors hover:bg-white/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-6">
+              <ChevronRight className="h-6 w-6" />
+            </button>
+          )}
+          {files.length > 1 && <div className="absolute bottom-5 rounded-full bg-black/50 px-3 py-1 text-sm font-medium text-white">{selectedNumber + 1} / {files.length}</div>}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -2299,22 +2357,32 @@ function ProgressTab({ client }: { client: ClientRecord }) {
     };
   }, [client.id]);
 
-  const chartData = [...weeklyUpdates]
+  const registrationWeight = client.weight_kg === null || client.weight_kg === undefined || client.weight_kg === ""
+    ? null
+    : Number(client.weight_kg);
+  const targetWeight = client.target_weight_kg === null || client.target_weight_kg === undefined || client.target_weight_kg === ""
+    ? null
+    : Number(client.target_weight_kg);
+  const weeklyWeightChartData = [...weeklyUpdates]
     .filter((update) => update.weight !== null)
     .reverse()
     .map((update) => ({ date: formatDate(update.submittedAt), Βάρος: update.weight as number }));
+  const chartData = registrationWeight !== null && Number.isFinite(registrationWeight)
+    ? [{ date: "Εγγραφή", Βάρος: registrationWeight }, ...weeklyWeightChartData]
+    : weeklyWeightChartData;
 
   const recentPhotos = weeklyUpdates.flatMap((update) => update.photos).slice(0, 3);
   const weightEntries = weeklyUpdates.filter((update) => update.weight !== null);
-  const currentWeight = weightEntries.length ? weightEntries[0].weight : null;
-  const initialWeight = weightEntries.length ? weightEntries[weightEntries.length - 1].weight : null;
+  const currentWeight = weightEntries.length ? weightEntries[0].weight : registrationWeight;
+  const initialWeight = registrationWeight ?? (weightEntries.length ? weightEntries[weightEntries.length - 1].weight : null);
   const weightChange = currentWeight !== null && initialWeight !== null ? currentWeight - initialWeight : null;
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <WeightStatCard label="Αρχικό βάρος" value={initialWeight} />
         <WeightStatCard label="Τρέχον βάρος" value={currentWeight} />
+        <WeightStatCard label="Στόχος βάρους" value={Number.isFinite(targetWeight) ? targetWeight : null} />
         <WeightStatCard label="Αλλαγή" value={weightChange} isChange />
       </div>
 

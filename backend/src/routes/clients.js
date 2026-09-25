@@ -12,6 +12,7 @@ import { insertNutritionPlanMeals } from './nutritionPlans.js';
 import { getFullTrainingTemplate, getFullNutritionTemplate } from './templates.js';
 import { ensureClientActivityLogSchema, logClientActivity } from '../lib/client-activity-log.js';
 import { ensureQuestionnaireSchema, syncUpdateDayQuestionnaireAnswer } from './questionnaire.js';
+import { awardPoints } from './points.js';
 
 const router = express.Router();
 const activeMessageTypers = new Map();
@@ -515,10 +516,15 @@ async function ensurePaymentProofColumns(connection) {
 }
 
 async function ensureClientDetailColumns(connection) {
-  try {
-    await connection.query('ALTER TABLE clients ADD COLUMN discord_id VARCHAR(50) NULL');
-  } catch (error) {
-    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  for (const statement of [
+    'ALTER TABLE clients ADD COLUMN discord_id VARCHAR(50) NULL',
+    'ALTER TABLE clients ADD COLUMN target_weight_kg DECIMAL(6,2) NULL'
+  ]) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
   }
 }
 
@@ -2143,7 +2149,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
     const [rows] = await connection.query(
       `SELECT u.id, u.email, u.full_name, u.profile_photo, u.bio, u.is_active,
               u.status AS user_status, u.created_at, u.last_seen_at,
-              c.date_of_birth, c.gender, c.phone, c.height_cm, c.weight_kg,
+              c.date_of_birth, c.gender, c.phone, c.height_cm, c.weight_kg, c.target_weight_kg,
               c.fitness_goal, c.medical_notes, c.coach_notes, c.discord_id,
               c.emergency_contact_name, c.emergency_contact_phone, c.deleted_at, c.deleted_by,
               cc.status AS coaching_status, cc.coach_id
@@ -2243,6 +2249,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
       ...rows[0],
       height_cm: rows[0].height_cm || registrationBody.heightCm || null,
       weight_kg: rows[0].weight_kg || registrationBody.weightKg || null,
+      target_weight_kg: rows[0].target_weight_kg || registrationBody.targetWeightKg || null,
       fitness_goal: rows[0].fitness_goal || registrationBody.goal || null,
       onboarding: onboardingRows[0] || null,
       socialLinks: socialRows,
@@ -2376,6 +2383,8 @@ router.post('/:id/payments', authorizeRole(['coach', 'admin']), [
     }
 
     await ensurePricingPlansSchema(connection);
+    const { ensureSubscriptionPlanIdColumn } = await import('./register.js');
+    await ensureSubscriptionPlanIdColumn(connection);
     let plan = null;
     if (planId) {
       const [plans] = await connection.query(
@@ -2412,17 +2421,17 @@ router.post('/:id/payments', authorizeRole(['coach', 'admin']), [
       subscriptionId = existingSubscriptions[0].id;
       await connection.query(
         `UPDATE subscriptions
-         SET coach_id = ?, plan_name = ?, plan_type = ?, price = ?, currency = ?,
+         SET coach_id = ?, plan_id = ?, plan_name = ?, plan_type = ?, price = ?, currency = ?,
              start_date = ?, end_date = ?, status = 'active', notes = ?
          WHERE id = ?`,
-        [req.user.id, planName, planType, planPrice, currency, startDate, endDate, notes || null, subscriptionId]
+        [req.user.id, plan?.id || null, planName, planType, planPrice, currency, startDate, endDate, notes || null, subscriptionId]
       );
     } else {
       const [subscriptionResult] = await connection.query(
         `INSERT INTO subscriptions
-           (client_id, coach_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
-        [clientId, req.user.id, planName, planType, planPrice, currency, startDate, endDate, notes || null]
+           (client_id, coach_id, plan_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+        [clientId, req.user.id, plan?.id || null, planName, planType, planPrice, currency, startDate, endDate, notes || null]
       );
       subscriptionId = subscriptionResult.insertId;
     }
@@ -2445,6 +2454,7 @@ router.post('/:id/payments', authorizeRole(['coach', 'admin']), [
     });
 
     await connection.commit();
+    if (plan?.id) await awardPoints(connection, { clientId, planId: plan.id, paymentId: paymentResult.insertId });
     res.status(201).json({ message: 'Payment and subscription recorded', id: paymentResult.insertId, subscriptionId });
   } catch (error) {
     await connection.rollback();
@@ -2949,6 +2959,8 @@ router.post('/:id/approve-payment', authorizeRole(['coach', 'admin']), async (re
   try {
     await ensureNotificationsSchema(connection);
     await ensurePaymentProofColumns(connection);
+    const { ensureSubscriptionPlanIdColumn } = await import('./register.js');
+    await ensureSubscriptionPlanIdColumn(connection);
 
     const clientId = Number(req.params.id);
     const paymentId = req.body?.paymentId ? Number(req.body.paymentId) : null;
@@ -2963,7 +2975,7 @@ router.post('/:id/approve-payment', authorizeRole(['coach', 'admin']), async (re
     }
 
     const [payments] = await connection.query(
-      `SELECT p.id, p.subscription_id, p.amount, p.currency, p.method, p.status, p.proof_url, s.plan_type
+      `SELECT p.id, p.subscription_id, p.amount, p.currency, p.method, p.status, p.proof_url, s.plan_type, s.plan_id
        FROM payments p
        LEFT JOIN subscriptions s ON s.id = p.subscription_id
        WHERE p.client_id = ? AND p.status = 'pending' AND (? IS NULL OR p.id = ?)
@@ -3047,6 +3059,7 @@ router.post('/:id/approve-payment', authorizeRole(['coach', 'admin']), async (re
     });
 
     await connection.commit();
+    if (payments[0].plan_id) await awardPoints(connection, { clientId, planId: payments[0].plan_id, paymentId: payments[0].id });
     connection.release();
 
     res.json({

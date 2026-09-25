@@ -89,38 +89,56 @@ function getRedirectPath(user, onboardingCompleted = true) {
   return '/login';
 }
 
+let authSchemaReady = false;
+let authSchemaEnsuring = null;
+
 export async function ensureAuthSchema(connection) {
-  for (const statement of [
-    'ALTER TABLE users ADD COLUMN first_name VARCHAR(100)',
-    'ALTER TABLE users ADD COLUMN last_name VARCHAR(100)',
-    "ALTER TABLE users ADD COLUMN status ENUM('pending_payment', 'active', 'expired') DEFAULT 'pending_payment'",
-    "ALTER TABLE users ADD COLUMN payment_method ENUM('bank', 'stripe') DEFAULT 'bank'",
-    'ALTER TABLE users ADD COLUMN approved_at TIMESTAMP NULL',
-    'ALTER TABLE users ADD COLUMN approved_by INT NULL',
-    'ALTER TABLE users ADD COLUMN profile_photo VARCHAR(255)',
-    'ALTER TABLE users ADD COLUMN specializations TEXT',
-    'ALTER TABLE users ADD COLUMN push_enabled TINYINT(1) NOT NULL DEFAULT 0',
-    "ALTER TABLE users ADD COLUMN font_size ENUM('small', 'medium', 'large') NOT NULL DEFAULT 'medium'"
-  ]) {
-    try {
-      await connection.query(statement);
-    } catch (error) {
-      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
-    }
+  if (authSchemaReady) return;
+
+  if (!authSchemaEnsuring) {
+    authSchemaEnsuring = (async () => {
+      for (const statement of [
+        'ALTER TABLE users ADD COLUMN first_name VARCHAR(100)',
+        'ALTER TABLE users ADD COLUMN last_name VARCHAR(100)',
+        "ALTER TABLE users ADD COLUMN status ENUM('pending_payment', 'active', 'expired') DEFAULT 'pending_payment'",
+        "ALTER TABLE users ADD COLUMN payment_method ENUM('bank', 'stripe') DEFAULT 'bank'",
+        'ALTER TABLE users ADD COLUMN approved_at TIMESTAMP NULL',
+        'ALTER TABLE users ADD COLUMN approved_by INT NULL',
+        'ALTER TABLE users ADD COLUMN profile_photo VARCHAR(255)',
+        'ALTER TABLE users ADD COLUMN specializations TEXT',
+        'ALTER TABLE users ADD COLUMN push_enabled TINYINT(1) NOT NULL DEFAULT 0',
+        "ALTER TABLE users ADD COLUMN font_size ENUM('small', 'medium', 'large') NOT NULL DEFAULT 'medium'"
+      ]) {
+        try {
+          await connection.query(statement);
+        } catch (error) {
+          if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+        }
+      }
+
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS refresh_tokens (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          user_id INT NOT NULL,
+          token VARCHAR(255) NOT NULL UNIQUE,
+          expires_at TIMESTAMP NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          INDEX idx_token (token),
+          INDEX idx_user_id (user_id)
+        )
+      `);
+      authSchemaReady = true;
+    })();
   }
 
-  await connection.query(`
-    CREATE TABLE IF NOT EXISTS refresh_tokens (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      user_id INT NOT NULL,
-      token VARCHAR(255) NOT NULL UNIQUE,
-      expires_at TIMESTAMP NOT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-      INDEX idx_token (token),
-      INDEX idx_user_id (user_id)
-    )
-  `);
+  try {
+    await authSchemaEnsuring;
+  } finally {
+    if (!authSchemaReady) {
+      authSchemaEnsuring = null;
+    }
+  }
 }
 
 async function getOnboardingCompleted(connection, userId, role) {

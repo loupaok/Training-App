@@ -6,14 +6,18 @@ import {
   Activity,
   ArrowRight,
   CalendarDays,
+  Check,
   CheckCircle2,
   Clock3,
+  Copy,
   Dumbbell,
   FileText,
   Flame,
+  Gift,
   Salad,
   Send,
   Sparkles,
+  Target,
   Upload,
 } from "lucide-react"
 import { AreaChart } from "@tremor/react"
@@ -24,6 +28,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
@@ -68,6 +73,7 @@ type DashboardData = {
   streak: number
   updatesCount: number
   lastUpdate: { submittedAt: string; averageRating: number | null } | null
+  lastWeightUpdate?: { submittedAt: string } | null
 }
 
 type TrainingPlan = {
@@ -80,6 +86,18 @@ type NutritionPlanPreview = { id: number; title: string; meals: unknown[] } | nu
 
 type Payment = { id: number; amount: number; method: string; status: string; paidAt: string; notes?: string | null }
 type PaymentData = { subscription: { planName?: string | null; price?: number | null; endDate?: string | null; daysRemaining?: number | null; status?: string | null } | null; payments: Payment[] }
+
+type PointsTransaction = { id: number; type: "earned" | "redeemed" | "expired" | "adjusted"; points: number; description: string | null; coupon_code: string | null; created_at: string }
+type PointsData = { totalPoints: number; usedPoints: number; availablePoints: number; transactions: PointsTransaction[] }
+type PointsSettings = { euro_per_points: number; min_points_redeem: number; is_active: boolean | number }
+type RedeemResult = { couponCode: string; discount: number; expiryDate: string }
+
+const pointsTypeMeta: Record<string, { label: string; className: string }> = {
+  earned: { label: "Κέρδισες πόντους", className: "text-emerald-600" },
+  redeemed: { label: "Εξαργυρώθηκαν", className: "text-amber-600" },
+  expired: { label: "Έληξαν", className: "text-muted-foreground" },
+  adjusted: { label: "Προσαρμογή από coach", className: "text-primary" },
+}
 
 const dateFormat = new Intl.DateTimeFormat("el-GR", { day: "numeric", month: "short", year: "numeric" })
 const paymentMethod: Record<string, string> = { card: "Κάρτα", bank: "Τραπεζικό Έμβασμα", stripe: "Stripe", cash: "Μετρητά" }
@@ -94,6 +112,125 @@ function PlanCard({ title, icon, children }: { title: string; icon: ReactNode; c
 
 function DashboardQuickLink({ href, title, description, icon: Icon }: { href: string; title: string; description: string; icon: typeof Dumbbell }) {
   return <Link href={href} className="group flex min-h-32 flex-col justify-between rounded-xl border border-border bg-card p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md"><span className="grid h-10 w-10 place-items-center rounded-lg bg-muted transition-colors group-hover:bg-primary/10"><Icon className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" /></span><span><span className="flex items-center justify-between gap-3 text-base font-semibold">{title}<ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-foreground" /></span><span className="mt-1 block text-sm text-muted-foreground">{description}</span></span></Link>
+}
+
+function PointsWidget() {
+  const [points, setPoints] = useState<PointsData | null>(null)
+  const [settings, setSettings] = useState<PointsSettings | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [redeemAmount, setRedeemAmount] = useState(0)
+  const [redeeming, setRedeeming] = useState(false)
+  const [redeemError, setRedeemError] = useState("")
+  const [coupon, setCoupon] = useState<RedeemResult | null>(null)
+  const [copied, setCopied] = useState(false)
+
+  const load = async () => {
+    try {
+      const [pointsResponse, settingsResponse] = await Promise.all([
+        api.get<PointsData>("/points/my"),
+        api.get<PointsSettings>("/points/settings"),
+      ])
+      setPoints(pointsResponse)
+      setSettings(settingsResponse)
+    } catch {
+      // best-effort widget — a points-system hiccup shouldn't break the dashboard
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { void load() }, [])
+
+  if (loading || !points || !settings || !settings.is_active) return null
+
+  const euroPerPoints = settings.euro_per_points || 100
+  const availableEuro = Math.round((points.availablePoints / euroPerPoints) * 100) / 100
+  const canRedeem = points.availablePoints >= settings.min_points_redeem
+  const discountPreview = Math.round((redeemAmount / euroPerPoints) * 100) / 100
+
+  const openDialog = () => {
+    setCoupon(null)
+    setRedeemError("")
+    setRedeemAmount(Math.min(points.availablePoints, Math.max(settings.min_points_redeem, 100)))
+    setDialogOpen(true)
+  }
+
+  const submitRedeem = async () => {
+    setRedeeming(true)
+    setRedeemError("")
+    try {
+      const result = await api.post<RedeemResult>("/points/redeem", { pointsToRedeem: redeemAmount })
+      setCoupon(result)
+      await load()
+    } catch (redeemErr) {
+      setRedeemError(redeemErr instanceof Error ? redeemErr.message : "Δεν ήταν δυνατή η εξαργύρωση.")
+    } finally {
+      setRedeeming(false)
+    }
+  }
+
+  const copyCoupon = async () => {
+    if (!coupon) return
+    await navigator.clipboard.writeText(coupon.couponCode)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 2000)
+  }
+
+  return <>
+    <section className="rounded-xl border border-border bg-card p-5 shadow-sm sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-primary/10"><Target className="h-5 w-5 text-primary" /></span>
+          <div>
+            <p className="text-sm text-muted-foreground">Οι πόντοι μου</p>
+            <p className="text-2xl font-bold tabular-nums">{points.availablePoints} <span className="text-sm font-normal text-muted-foreground">πόντοι</span></p>
+            <p className="text-xs text-muted-foreground">= {availableEuro.toFixed(2)}€ έκπτωση</p>
+          </div>
+        </div>
+        <div className="flex flex-col items-stretch gap-2 sm:items-end">
+          <Button onClick={openDialog} disabled={!canRedeem}><Gift className="mr-2 h-4 w-4" />Εξαργύρωση Πόντων</Button>
+          {!canRedeem && <p className="text-xs text-muted-foreground">Ελάχιστο για εξαργύρωση: {settings.min_points_redeem} πόντοι</p>}
+          {points.transactions.length > 0 && <button type="button" onClick={() => setHistoryOpen((current) => !current)} className="text-xs font-medium text-primary hover:underline">{historyOpen ? "Απόκρυψη ιστορικού" : "Ιστορικό πόντων"}</button>}
+        </div>
+      </div>
+      {historyOpen && <div className="mt-4 divide-y border-t border-border pt-3">{points.transactions.slice(0, 10).map((tx) => <div key={tx.id} className="flex items-center justify-between py-2 text-sm"><div><p className={pointsTypeMeta[tx.type]?.className}>{pointsTypeMeta[tx.type]?.label ?? tx.type}</p><p className="text-xs text-muted-foreground">{tx.description || (tx.coupon_code ? `Coupon ${tx.coupon_code}` : "")}</p></div><div className="text-right"><p className="font-semibold tabular-nums">{tx.type === "redeemed" ? "-" : "+"}{Math.abs(tx.points)}</p><p className="text-xs text-muted-foreground">{formatDate(tx.created_at)}</p></div></div>)}</div>}
+    </section>
+
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <DialogContent>
+        {coupon ? <>
+          <DialogHeader><DialogTitle>✅ Coupon δημιουργήθηκε!</DialogTitle><DialogDescription>Χρησιμοποίησέ το στο επόμενο checkout σου για να λάβεις την έκπτωση.</DialogDescription></DialogHeader>
+          <div className="space-y-3 rounded-lg border border-dashed border-primary/40 bg-primary/5 p-4 text-center">
+            <p className="text-xs font-medium uppercase text-muted-foreground">Κωδικός Coupon</p>
+            <p className="text-xl font-bold tracking-wide">{coupon.couponCode}</p>
+            <Button variant="outline" size="sm" onClick={copyCoupon}>{copied ? <><Check className="mr-2 h-4 w-4" />Αντιγράφηκε</> : <><Copy className="mr-2 h-4 w-4" />Αντιγραφή</>}</Button>
+            <div className="flex justify-center gap-6 pt-2 text-sm">
+              <div><p className="text-muted-foreground">Αξία</p><p className="font-semibold">{coupon.discount}€</p></div>
+              <div><p className="text-muted-foreground">Λήγει</p><p className="font-semibold">{formatDate(coupon.expiryDate)}</p></div>
+            </div>
+          </div>
+          <DialogFooter><Button onClick={() => setDialogOpen(false)}>Κλείσιμο</Button></DialogFooter>
+        </> : <>
+          <DialogHeader><DialogTitle>🎁 Εξαργύρωση Πόντων</DialogTitle><DialogDescription>Έχεις {points.availablePoints} διαθέσιμους πόντους.</DialogDescription></DialogHeader>
+          <div className="space-y-4 py-2">
+            <input type="range" min={settings.min_points_redeem} max={Math.max(points.availablePoints, settings.min_points_redeem)} step={10} value={redeemAmount} onChange={(event) => setRedeemAmount(Number(event.target.value))} className="w-full accent-primary" />
+            <div className="flex items-center gap-3">
+              <Input type="number" min={settings.min_points_redeem} max={points.availablePoints} value={redeemAmount} onChange={(event) => setRedeemAmount(Math.min(points.availablePoints, Math.max(0, Number(event.target.value) || 0)))} className="w-28" />
+              <p className="text-sm text-muted-foreground">πόντοι</p>
+            </div>
+            <p className="text-lg font-semibold">= {discountPreview.toFixed(2)}€ έκπτωση</p>
+            {redeemError && <p className="text-sm text-destructive">{redeemError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Ακύρωση</Button>
+            <Button onClick={submitRedeem} disabled={redeeming || redeemAmount < settings.min_points_redeem || redeemAmount > points.availablePoints}>{redeeming ? "Δημιουργία..." : "Επιβεβαίωση"}</Button>
+          </DialogFooter>
+        </>}
+      </DialogContent>
+    </Dialog>
+  </>
 }
 
 function ModernOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpdate }: { dashboard: DashboardData | null; trainingPlan: TrainingPlan; nutritionPlan: NutritionPlanPreview; onOpenUpdate: () => void }) {
@@ -121,11 +258,13 @@ function ModernOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpdate }
     </section>
 
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <div className="rounded-xl border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"><div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">Τρέχον βάρος</p><ScaleIcon /></div><p className="mt-3 text-2xl font-bold tabular-nums">{client?.currentWeight ?? "-"}{client?.currentWeight ? " kg" : ""}</p><p className="mt-1 text-xs text-muted-foreground">Από το τελευταίο check-in</p></div>
+      <div className="rounded-xl border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"><div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">Τρέχον βάρος</p><ScaleIcon /></div><p className="mt-3 text-2xl font-bold tabular-nums">{client?.currentWeight ?? "-"}{client?.currentWeight ? " kg" : ""}</p><p className="mt-1 text-xs text-muted-foreground">{dashboard?.lastWeightUpdate ? "Από το τελευταίο check-in" : "Από την εγγραφή σου"}</p></div>
       <div className="rounded-xl border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"><div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">Ρυθμός updates</p><Flame className="h-4 w-4 text-primary" /></div><p className="mt-3 text-2xl font-bold tabular-nums">{dashboard?.streak ?? 0}</p><p className="mt-1 text-xs text-muted-foreground">συνεχόμενες εβδομάδες</p></div>
       <div className="rounded-xl border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"><div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">Επόμενο update</p><Clock3 className="h-4 w-4 text-primary" /></div><p className="mt-3 text-lg font-bold">{updateDone ? nextUpdate : updateReady ? "Σήμερα" : nextUpdate}</p><p className="mt-1 text-xs text-muted-foreground">{updateDone ? "Είσαι ενημερωμένος" : "Μην το ξεχάσεις"}</p></div>
       <Link href="/client-progress" className="group rounded-xl border border-border bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md"><div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">Η πρόοδός μου</p><Activity className="h-4 w-4 transition-transform group-hover:scale-110" /></div><p className="mt-3 text-lg font-bold">Δες αναλυτικά</p><p className="mt-1 text-xs text-muted-foreground">Βάρος, προπονήσεις και check-ins</p></Link>
     </section>
+
+    <PointsWidget />
 
     <section className="grid gap-4 md:grid-cols-3"><DashboardQuickLink href="/client-program" title="Προπόνηση" description={trainingPlan ? `${trainingPlan.days.length} ημέρες προπόνησης` : "Δες το πρόγραμμά σου"} icon={Dumbbell} /><DashboardQuickLink href="/client-nutrition" title="Διατροφή" description={nutritionPlan ? `${nutritionPlan.meals.length} γεύματα στο πλάνο` : "Δες το πλάνο διατροφής"} icon={Salad} /><DashboardQuickLink href="/client-progress" title="Progress" description="Μετρήσεις, φωτογραφίες και ρεκόρ" icon={Activity} /></section>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -433,6 +433,23 @@ function RegisterWizardContent() {
     return "";
   };
 
+  const validateRegistration = (): string => {
+    if (!account.firstName || !account.lastName || !account.email || !account.phone || account.password.length < 6) {
+      return "Συμπλήρωσε όλα τα υποχρεωτικά προσωπικά στοιχεία.";
+    }
+    if (!birthDateToIso(account.dateOfBirth)) return "Συμπλήρωσε έγκυρη ημερομηνία γέννησης στη μορφή dd/mm/yyyy.";
+    if (!account.gender) return "Επίλεξε φύλο για να συνεχίσεις.";
+    if (account.password !== confirmPassword) return "Η επιβεβαίωση κωδικού δεν ταιριάζει.";
+    if (!bodyGoal.height || !bodyGoal.currentWeight || !bodyGoal.goal) return "Συμπλήρωσε ύψος, τρέχον βάρος και στόχο.";
+
+    const missingRequiredAnswer = questions.some(
+      (question) => question.isRequired && isAnswerEmpty(fixedAnswerForQuestion(question) ?? answers[question.id]),
+    );
+    if (missingRequiredAnswer) return "Συμπλήρωσε όλες τις υποχρεωτικές ερωτήσεις του ερωτηματολογίου.";
+    if (!selectedPlanId) return "Επέλεξε ένα πλάνο συνδρομής.";
+    return "";
+  };
+
   const getProgressData = () => {
     const savedAccount: Omit<AccountForm, "password"> = {
       firstName: account.firstName,
@@ -475,7 +492,7 @@ function RegisterWizardContent() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    const message = validateStep();
+    const message = validateRegistration();
     if (message) {
       setStepError(message);
       return;
@@ -1288,10 +1305,13 @@ function FilesStep({
 }
 
 function PhotoThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
-  const url = useMemo(() => URL.createObjectURL(file), [file]);
+  const [url, setUrl] = useState("");
+
   useEffect(() => {
-    return () => URL.revokeObjectURL(url);
-  }, [url]);
+    const objectUrl = URL.createObjectURL(file);
+    setUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [file]);
 
   return (
     <div className="group relative aspect-square overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">

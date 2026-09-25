@@ -23,6 +23,7 @@ import {
   ClipboardList,
   Clock,
   Menu,
+  Target,
   type LucideIcon,
 } from "lucide-react";
 
@@ -81,6 +82,7 @@ export const coachNavSections: CoachNavSection[] = [
       { key: "branding", label: "Branding", path: "/coach/branding", icon: Palette },
       { key: "automations", label: "Emails & Αυτοματισμοί", path: "/coach/automations", icon: Clock },
       { key: "menu", label: "Μενού", path: "/coach/menu", icon: Menu },
+      { key: "points", label: "Πόντοι & Rewards", path: "/coach/points", icon: Target },
     ],
   },
   {

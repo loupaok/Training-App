@@ -90,6 +90,17 @@ async function ensureSubscriptionPendingStatus(connection) {
   );
 }
 
+// A reliable reference back to the pricing plan a subscription was created
+// from — subscriptions.plan_name is just a copied text snapshot, so without
+// this, points-reward lookup would have to guess by matching that text.
+export async function ensureSubscriptionPlanIdColumn(connection) {
+  try {
+    await connection.query('ALTER TABLE subscriptions ADD COLUMN plan_id INT NULL');
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
+}
+
 async function ensureRegistrationProgressSchema(connection) {
   await connection.query(`
     CREATE TABLE IF NOT EXISTS client_onboarding (
@@ -107,6 +118,7 @@ async function ensureRegistrationProgressSchema(connection) {
     "ALTER TABLE client_onboarding ADD COLUMN onboarding_status VARCHAR(20) NOT NULL DEFAULT 'not_started'",
     'ALTER TABLE client_onboarding ADD COLUMN current_step TINYINT NOT NULL DEFAULT 0',
     'ALTER TABLE client_onboarding ADD COLUMN draft_data JSON NULL',
+    'ALTER TABLE clients ADD COLUMN target_weight_kg DECIMAL(6,2) NULL',
   ]) {
     try {
       await connection.query(statement);
@@ -292,13 +304,34 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
   body('gender').optional({ nullable: true, checkFalsy: true }).isIn(['male', 'female', 'other']),
   body('heightCm').optional({ nullable: true, checkFalsy: true }).isNumeric(),
   body('weightKg').optional({ nullable: true, checkFalsy: true }).isNumeric(),
+  body('targetWeightKg').optional({ nullable: true, checkFalsy: true }).isNumeric(),
   body('fitnessGoal').optional({ nullable: true }).isString(),
   body('plan_id').isInt(),
   body('payment_method').isIn(['bank', 'stripe']),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+    const validationErrors = errors.array();
+    const fieldLabels = {
+      firstName: 'Όνομα',
+      lastName: 'Επώνυμο',
+      email: 'Email',
+      phone: 'Τηλέφωνο',
+      password: 'Κωδικός',
+      dateOfBirth: 'Ημερομηνία γέννησης',
+      gender: 'Φύλο',
+      heightCm: 'Ύψος',
+      weightKg: 'Τρέχον βάρος',
+      fitnessGoal: 'Στόχος',
+      plan_id: 'Πλάνο συνδρομής',
+      payment_method: 'Τρόπος πληρωμής',
+    };
+    const firstError = validationErrors[0];
+    const field = fieldLabels[firstError.path] || firstError.path || 'πεδίο';
+    return res.status(400).json({
+      message: `Έλεγξε το πεδίο: ${field}.`,
+      errors: validationErrors,
+    });
   }
 
   const {
@@ -311,6 +344,7 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     gender,
     heightCm: submittedHeightCm,
     weightKg: submittedWeightKg,
+    targetWeightKg: submittedTargetWeightKg,
     fitnessGoal: submittedFitnessGoal,
     plan_id: planId,
     payment_method: paymentMethod,
@@ -339,6 +373,7 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     await ensureClientIntakeFilesSchema(connection);
     await ensureRegistrationProgressSchema(connection);
     await ensureSubscriptionPendingStatus(connection);
+    await ensureSubscriptionPlanIdColumn(connection);
 
     const [existingRows] = await connection.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
     if (existingRows.length) {
@@ -378,6 +413,8 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     const fitnessGoal = String(submittedFitnessGoal || '').trim()
       || registrationAnswer(activeQuestions, answers, (question) => question.includes('στοχ'));
 
+    const targetWeightKg = numericRegistrationAnswer(submittedTargetWeightKg);
+
     await connection.beginTransaction();
 
     const [userResult] = await connection.query(
@@ -388,12 +425,12 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     const userId = userResult.insertId;
 
     await connection.query(
-      `INSERT INTO clients (user_id, date_of_birth, gender, phone, height_cm, weight_kg, fitness_goal)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO clients (user_id, date_of_birth, gender, phone, height_cm, weight_kg, target_weight_kg, fitness_goal)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
          date_of_birth = VALUES(date_of_birth), gender = VALUES(gender), phone = VALUES(phone),
-         height_cm = VALUES(height_cm), weight_kg = VALUES(weight_kg), fitness_goal = VALUES(fitness_goal)`,
-      [userId, dateOfBirth || null, gender || null, phone, heightCm, weightKg, fitnessGoal]
+         height_cm = VALUES(height_cm), weight_kg = VALUES(weight_kg), target_weight_kg = VALUES(target_weight_kg), fitness_goal = VALUES(fitness_goal)`,
+      [userId, dateOfBirth || null, gender || null, phone, heightCm, weightKg, targetWeightKg, fitnessGoal]
     );
 
     await connection.query('DELETE FROM questionnaire_answers WHERE client_id = ?', [userId]);
@@ -451,11 +488,12 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     const pendingDate = new Date().toISOString().slice(0, 10);
 
     const [subscriptionResult] = await connection.query(
-      `INSERT INTO subscriptions (client_id, coach_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?)`,
+      `INSERT INTO subscriptions (client_id, coach_id, plan_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?)`,
       [
         userId,
         coachId,
+        plan.id,
         plan.name,
         subscriptionPlanType(plan.period),
         plan.price,

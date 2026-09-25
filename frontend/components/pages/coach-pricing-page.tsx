@@ -30,6 +30,7 @@ interface PricingPlan {
   isActive: boolean;
   isPopular: boolean;
   sortOrder: number;
+  pointsReward: number;
 }
 
 const emptyPlan: PricingPlan = {
@@ -47,6 +48,7 @@ const emptyPlan: PricingPlan = {
   isActive: true,
   isPopular: false,
   sortOrder: 0,
+  pointsReward: 0,
 };
 
 function formatPlanPeriod(period?: string): string {
@@ -261,6 +263,11 @@ function CoachPricingContent() {
                     </Select>
                   </Label>
                 </div>
+                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+                  🎯 Πόντοι Reward
+                  <Input type="number" min={0} value={form.pointsReward} onChange={(event) => update("pointsReward", Number(event.target.value) || 0)} placeholder="π.χ. 150" />
+                  <span className="text-xs font-semibold text-slate-400">Οι πελάτες κερδίζουν αυτούς τους πόντους με κάθε πληρωμή.</span>
+                </Label>
                 <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
                   Χρώμα Θέματος
                   <div className="flex h-12 w-full items-center gap-3 rounded-md border border-slate-200 px-3 dark:border-slate-800">

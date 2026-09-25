@@ -93,6 +93,14 @@ function normalizeText(value) {
   return String(value || '').toLocaleLowerCase('el-GR').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
+async function ensureProgressGoalSchema(connection) {
+  try {
+    await connection.query('ALTER TABLE clients ADD COLUMN target_weight_kg DECIMAL(6,2) NULL');
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
+}
+
 function summarizeUpdate(update) {
   const result = {
     id: update.id, submittedAt: update.submitted_at, weekStart: update.week_start, isRead: Boolean(update.is_read),
@@ -175,7 +183,13 @@ router.get('/dashboard', async (req, res) => {
       console.error('Client dashboard weekly-update schema check failed:', schemaError);
     }
     const clientId = req.user.id;
-    const [users] = await connection.query('SELECT full_name FROM users WHERE id = ?', [clientId]);
+    const [users] = await connection.query(
+      `SELECT u.full_name, c.weight_kg
+       FROM users u
+       LEFT JOIN clients c ON c.user_id = u.id
+       WHERE u.id = ?`,
+      [clientId],
+    );
     const [schedules] = await connection.query('SELECT day_of_week, next_due_date FROM update_schedule WHERE client_id = ? ORDER BY updated_at DESC LIMIT 1', [clientId]);
     const [subscriptions] = await connection.query("SELECT plan_name, status, start_date, end_date, DATEDIFF(end_date, CURDATE()) AS days_remaining FROM subscriptions WHERE client_id = ? AND status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE() ORDER BY end_date DESC LIMIT 1", [clientId]);
     let updates = [];
@@ -196,12 +210,14 @@ router.get('/dashboard', async (req, res) => {
     const todayIsUpdateDay = schedule ? Number(schedule.day_of_week) === new Date().getDay() : false;
     const alreadySubmittedThisWeek = updates.some((update) => today(new Date(update.weekStart)) === currentWeekStart());
     const lastUpdate = updates[0] || null;
+    const lastWeightUpdate = updates.find((update) => update.weight !== null) || null;
     const ratings = [lastUpdate?.trainingRating, lastUpdate?.nutritionRating, lastUpdate?.generalRating].filter(Number.isFinite);
     const averageRating = ratings.length ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length : null;
     res.json({
-      client: { firstName: String(users[0]?.full_name || '').trim().split(/\s+/)[0] || 'Client', currentWeight: lastUpdate?.weight ?? null, subscriptionStatus: subscription?.status || null, daysRemaining: subscription?.days_remaining ?? null, planName: subscription?.plan_name || null, subscriptionStartDate: subscription?.start_date || null, subscriptionEndDate: subscription?.end_date || null },
+      client: { firstName: String(users[0]?.full_name || '').trim().split(/\s+/)[0] || 'Client', currentWeight: lastWeightUpdate?.weight ?? users[0]?.weight_kg ?? null, subscriptionStatus: subscription?.status || null, daysRemaining: subscription?.days_remaining ?? null, planName: subscription?.plan_name || null, subscriptionStartDate: subscription?.start_date || null, subscriptionEndDate: subscription?.end_date || null },
       todayIsUpdateDay, alreadySubmittedThisWeek, nextUpdateDate: schedule?.next_due_date || nextScheduledDate(schedule?.day_of_week), streak: streakFor(updates), updatesCount: updates.length,
       lastUpdate: lastUpdate ? { submittedAt: lastUpdate.submittedAt, averageRating } : null,
+      lastWeightUpdate: lastWeightUpdate ? { submittedAt: lastWeightUpdate.submittedAt } : null,
       trainingPlan: training ? { id: training.id, title: training.title } : null, nutritionPlan: nutrition ? { id: nutrition.id, title: nutrition.title } : null,
     });
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
@@ -463,9 +479,10 @@ router.get('/progress', async (req, res) => {
   const connection = await pool.getConnection();
   try {
     await ensureWeeklyUpdateSchema(connection);
+    await ensureProgressGoalSchema(connection);
     const updates = await getUpdates(connection, req.user.id, 52);
     const [[client]] = await connection.query(
-      `SELECT c.weight_kg, u.created_at
+      `SELECT c.weight_kg, c.target_weight_kg, c.fitness_goal, u.created_at
        FROM users u
        LEFT JOIN clients c ON c.user_id = u.id
        WHERE u.id = ?
@@ -473,6 +490,23 @@ router.get('/progress', async (req, res) => {
       [req.user.id]
     );
     const startingWeight = client?.weight_kg === null || client?.weight_kg === undefined ? null : Number(client.weight_kg);
+    let targetWeight = client?.target_weight_kg === null || client?.target_weight_kg === undefined ? null : Number(client.target_weight_kg);
+    if (targetWeight === null || !Number.isFinite(targetWeight)) {
+      const [targetAnswers] = await connection.query(
+        `SELECT qa.answer, q.question
+         FROM questionnaire_answers qa
+         INNER JOIN questionnaire_questions q ON q.id = qa.question_id
+         WHERE qa.client_id = ? AND q.type = 'number'`,
+        [req.user.id],
+      );
+      const targetAnswer = targetAnswers.find((answer) => {
+        const question = normalizeText(answer.question);
+        return question.includes('επιθυμητ') && question.includes('βαρ');
+      });
+      const targetValue = String(targetAnswer?.answer ?? '').trim();
+      const parsedTarget = targetValue ? Number(targetValue.replace(',', '.')) : Number.NaN;
+      targetWeight = Number.isFinite(parsedTarget) ? parsedTarget : null;
+    }
     const updateWeights = updates
       .filter((update) => update.weight !== null)
       .map((update) => ({ submittedAt: update.submittedAt, weight: update.weight }))
@@ -483,6 +517,8 @@ router.get('/progress', async (req, res) => {
 
     res.json({
       startingWeight: startingWeight !== null && Number.isFinite(startingWeight) ? startingWeight : null,
+      targetWeight: targetWeight !== null && Number.isFinite(targetWeight) ? targetWeight : null,
+      fitnessGoal: client?.fitness_goal || null,
       weights,
       photos: updates.flatMap((update) => update.photos).slice(0, 24),
       updates,

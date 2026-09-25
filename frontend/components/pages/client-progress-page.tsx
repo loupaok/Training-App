@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { AreaChart, BarChart } from "@tremor/react"
-import { CalendarDays, Camera, Dumbbell, ImageOff, Scale, TrendingDown, TrendingUp, Trophy } from "lucide-react"
+import { CalendarDays, Camera, Dumbbell, ImageOff, Scale, Target, TrendingDown, TrendingUp, Trophy } from "lucide-react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { ClientShell } from "@/components/shell/client-shell"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
@@ -31,6 +31,8 @@ type WeeklyUpdate = {
 
 type ProgressResponse = {
   startingWeight?: number | null
+  targetWeight?: number | null
+  fitnessGoal?: string | null
   weights: Array<{ submittedAt: string; weight: number }>
   photos: string[]
   updates: WeeklyUpdate[]
@@ -92,7 +94,9 @@ function ClientProgressContent() {
   const weights = useMemo(() => (data?.weights || []).map((entry) => ({ ...entry, date: formatDate(entry.submittedAt) })), [data])
   const startWeight = data?.startingWeight ?? weights[0]?.weight ?? null
   const currentWeight = weights.at(-1)?.weight ?? null
+  const targetWeight = data?.targetWeight ?? null
   const weightChange = startWeight !== null && currentWeight !== null ? currentWeight - startWeight : null
+  const remainingToTarget = currentWeight !== null && targetWeight !== null ? Math.abs(currentWeight - targetWeight) : null
   const currentMonth = new Date().getMonth()
   const currentYear = new Date().getFullYear()
   const monthlyWorkouts = workouts.filter((workout) => {
@@ -133,10 +137,11 @@ function ClientProgressContent() {
     <main className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
       <div><h1 className="text-2xl font-bold">Η πρόοδός μου</h1><p className="mt-1 text-sm text-muted-foreground">Οι μετρήσεις, τα check-ins και οι προπονήσεις σου σε ένα μέρος.</p></div>
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-      {loading ? <div className="space-y-6"><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-36" />)}</div><Skeleton className="h-80" /></div> : <>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      {loading ? <div className="space-y-6"><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">{Array.from({ length: 6 }, (_, index) => <Skeleton key={index} className="h-36" />)}</div><Skeleton className="h-80" /></div> : <>
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
           <StatCard label="Τρέχον βάρος" value={currentWeight !== null ? `${currentWeight.toLocaleString("el-GR")} kg` : "-"} detail={weightChange === null ? "Πρόσθεσε check-in με βάρος" : `${weightChange > 0 ? "+" : ""}${weightChange.toLocaleString("el-GR", { maximumFractionDigits: 1 })} kg από την αρχή`} icon={Scale} trend={weightChange === null ? undefined : weightChange <= 0 ? "down" : "up"} />
           <StatCard label="Αρχικό βάρος" value={startWeight !== null ? `${startWeight.toLocaleString("el-GR")} kg` : "-"} detail="Από την εγγραφή σου" icon={Scale} />
+          <StatCard label="Στόχος" value={data?.fitnessGoal || "-"} detail={targetWeight === null ? "Από την εγγραφή σου" : remainingToTarget === 0 ? `Βάρος στόχου: ${targetWeight.toLocaleString("el-GR")} kg` : `${remainingToTarget?.toLocaleString("el-GR", { maximumFractionDigits: 1 })} kg έως τα ${targetWeight.toLocaleString("el-GR")} kg`} icon={Target} />
           <StatCard label="Προπονήσεις μήνα" value={String(monthlyWorkouts)} detail="Ολοκληρωμένες προπονήσεις" icon={Dumbbell} />
           <StatCard label="Συνολικός όγκος" value={`${Math.round(totalVolume).toLocaleString("el-GR")} kg`} detail="Από τις καταγεγραμμένες προπονήσεις" icon={Trophy} />
           <StatCard label="Συνέπεια updates" value={`${updateConsistency}/4`} detail="Check-ins τις τελευταίες 4 εβδομάδες" icon={CalendarDays} />

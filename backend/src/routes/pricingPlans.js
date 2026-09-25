@@ -151,10 +151,15 @@ export async function ensurePricingPlansSchema(connection) {
     )
   `);
 
-  try {
-    await connection.query('ALTER TABLE pricing_plans ADD COLUMN is_popular TINYINT(1) NOT NULL DEFAULT 0');
-  } catch (error) {
-    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  for (const statement of [
+    'ALTER TABLE pricing_plans ADD COLUMN is_popular TINYINT(1) NOT NULL DEFAULT 0',
+    'ALTER TABLE pricing_plans ADD COLUMN points_reward INT NOT NULL DEFAULT 0',
+  ]) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
   }
 
   const [rows] = await connection.query('SELECT COUNT(*) AS total FROM pricing_plans');
@@ -228,6 +233,7 @@ function normalizePlan(row) {
     isActive: Boolean(row.is_active),
     isPopular: Boolean(row.is_popular),
     sortOrder: row.sort_order,
+    pointsReward: Number(row.points_reward) || 0,
   };
 }
 
@@ -313,8 +319,8 @@ router.post('/', authenticateToken, authorizeRole(['coach']), [
 
     const [result] = await connection.query(
       `INSERT INTO pricing_plans
-        (slug, name, badge, description, price, currency, period, theme_color, features_json, is_active, sort_order, is_popular)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (slug, name, badge, description, price, currency, period, theme_color, features_json, is_active, sort_order, is_popular, points_reward)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         slug,
         req.body.name,
@@ -328,6 +334,7 @@ router.post('/', authenticateToken, authorizeRole(['coach']), [
         req.body.isActive === false ? 0 : 1,
         req.body.sortOrder || 0,
         req.body.isPopular ? 1 : 0,
+        Number(req.body.pointsReward) || 0,
       ]
     );
 
@@ -348,7 +355,7 @@ router.put('/:id', authenticateToken, authorizeRole(['coach']), async (req, res)
     await connection.query(
       `UPDATE pricing_plans
        SET name = ?, badge = ?, description = ?, price = ?, currency = ?, period = ?,
-           theme_color = ?, features_json = ?, is_active = ?, sort_order = ?, is_popular = ?
+           theme_color = ?, features_json = ?, is_active = ?, sort_order = ?, is_popular = ?, points_reward = ?
        WHERE id = ?`,
       [
         req.body.name,
@@ -362,6 +369,7 @@ router.put('/:id', authenticateToken, authorizeRole(['coach']), async (req, res)
         req.body.isActive ? 1 : 0,
         req.body.sortOrder || 0,
         req.body.isPopular ? 1 : 0,
+        Number(req.body.pointsReward) || 0,
         req.params.id,
       ]
     );
