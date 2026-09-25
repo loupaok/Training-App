@@ -48,6 +48,24 @@ const progressUpload = multer({
   },
 });
 
+function normalizedQuestionText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('el-GR');
+}
+
+function registrationAnswer(activeQuestions, answers, matches) {
+  const question = activeQuestions.find((item) => matches(normalizedQuestionText(item.question)));
+  const entry = question ? answers.find((item) => item && Number(item.question_id) === Number(question.id)) : null;
+  return entry?.answer === undefined || entry?.answer === null ? null : String(entry.answer).trim() || null;
+}
+
+function numericRegistrationAnswer(value) {
+  const number = Number(String(value || '').replace(',', '.'));
+  return Number.isFinite(number) ? number : null;
+}
+
 async function ensureClientIntakeFilesSchema(connection) {
   await connection.query(`
     CREATE TABLE IF NOT EXISTS client_intake_files (
@@ -272,6 +290,9 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
   body('password').isLength({ min: 6 }),
   body('dateOfBirth').optional({ nullable: true, checkFalsy: true }).isString(),
   body('gender').optional({ nullable: true, checkFalsy: true }).isIn(['male', 'female', 'other']),
+  body('heightCm').optional({ nullable: true, checkFalsy: true }).isNumeric(),
+  body('weightKg').optional({ nullable: true, checkFalsy: true }).isNumeric(),
+  body('fitnessGoal').optional({ nullable: true }).isString(),
   body('plan_id').isInt(),
   body('payment_method').isIn(['bank', 'stripe']),
 ], async (req, res) => {
@@ -288,6 +309,9 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     password,
     dateOfBirth,
     gender,
+    heightCm: submittedHeightCm,
+    weightKg: submittedWeightKg,
+    fitnessGoal: submittedFitnessGoal,
     plan_id: planId,
     payment_method: paymentMethod,
   } = req.body;
@@ -347,6 +371,12 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
 
     const fullName = `${firstName} ${lastName}`.trim();
     const hashedPassword = await bcrypt.hash(password, 10);
+    const heightCm = numericRegistrationAnswer(submittedHeightCm)
+      ?? numericRegistrationAnswer(registrationAnswer(activeQuestions, answers, (question) => question.includes('υψ')));
+    const weightKg = numericRegistrationAnswer(submittedWeightKg)
+      ?? numericRegistrationAnswer(registrationAnswer(activeQuestions, answers, (question) => question.includes('τρεχ') && question.includes('βαρ')));
+    const fitnessGoal = String(submittedFitnessGoal || '').trim()
+      || registrationAnswer(activeQuestions, answers, (question) => question.includes('στοχ'));
 
     await connection.beginTransaction();
 
@@ -358,10 +388,12 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     const userId = userResult.insertId;
 
     await connection.query(
-      `INSERT INTO clients (user_id, date_of_birth, gender, phone)
-       VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE date_of_birth = VALUES(date_of_birth), gender = VALUES(gender), phone = VALUES(phone)`,
-      [userId, dateOfBirth || null, gender || null, phone]
+      `INSERT INTO clients (user_id, date_of_birth, gender, phone, height_cm, weight_kg, fitness_goal)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         date_of_birth = VALUES(date_of_birth), gender = VALUES(gender), phone = VALUES(phone),
+         height_cm = VALUES(height_cm), weight_kg = VALUES(weight_kg), fitness_goal = VALUES(fitness_goal)`,
+      [userId, dateOfBirth || null, gender || null, phone, heightCm, weightKg, fitnessGoal]
     );
 
     await connection.query('DELETE FROM questionnaire_answers WHERE client_id = ?', [userId]);

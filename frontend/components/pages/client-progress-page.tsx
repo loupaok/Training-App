@@ -30,6 +30,7 @@ type WeeklyUpdate = {
 }
 
 type ProgressResponse = {
+  startingWeight?: number | null
   weights: Array<{ submittedAt: string; weight: number }>
   photos: string[]
   updates: WeeklyUpdate[]
@@ -89,7 +90,7 @@ function ClientProgressContent() {
   }, [])
 
   const weights = useMemo(() => (data?.weights || []).map((entry) => ({ ...entry, date: formatDate(entry.submittedAt) })), [data])
-  const startWeight = weights[0]?.weight ?? null
+  const startWeight = data?.startingWeight ?? weights[0]?.weight ?? null
   const currentWeight = weights.at(-1)?.weight ?? null
   const weightChange = startWeight !== null && currentWeight !== null ? currentWeight - startWeight : null
   const currentMonth = new Date().getMonth()
@@ -133,8 +134,9 @@ function ClientProgressContent() {
       <div><h1 className="text-2xl font-bold">Η πρόοδός μου</h1><p className="mt-1 text-sm text-muted-foreground">Οι μετρήσεις, τα check-ins και οι προπονήσεις σου σε ένα μέρος.</p></div>
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
       {loading ? <div className="space-y-6"><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-36" />)}</div><Skeleton className="h-80" /></div> : <>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <StatCard label="Τρέχον βάρος" value={currentWeight !== null ? `${currentWeight.toLocaleString("el-GR")} kg` : "-"} detail={weightChange === null ? "Πρόσθεσε check-in με βάρος" : `${weightChange > 0 ? "+" : ""}${weightChange.toLocaleString("el-GR", { maximumFractionDigits: 1 })} kg από την αρχή`} icon={Scale} trend={weightChange === null ? undefined : weightChange <= 0 ? "down" : "up"} />
+          <StatCard label="Αρχικό βάρος" value={startWeight !== null ? `${startWeight.toLocaleString("el-GR")} kg` : "-"} detail="Από την εγγραφή σου" icon={Scale} />
           <StatCard label="Προπονήσεις μήνα" value={String(monthlyWorkouts)} detail="Ολοκληρωμένες προπονήσεις" icon={Dumbbell} />
           <StatCard label="Συνολικός όγκος" value={`${Math.round(totalVolume).toLocaleString("el-GR")} kg`} detail="Από τις καταγεγραμμένες προπονήσεις" icon={Trophy} />
           <StatCard label="Συνέπεια updates" value={`${updateConsistency}/4`} detail="Check-ins τις τελευταίες 4 εβδομάδες" icon={CalendarDays} />

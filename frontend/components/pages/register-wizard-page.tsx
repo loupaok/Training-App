@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -214,6 +214,7 @@ function RegisterWizardContent() {
   const preselectedPlan = searchParams.get("plan");
 
   const [stepIndex, setStepIndex] = useState(0);
+  const justCompletedRegistration = useRef(false);
   // Starts true to match the server-rendered markup, then corrects on the client
   // after mount — reading sessionStorage in the initializer itself caused a
   // hydration mismatch whenever the flag was already set (server always sees
@@ -302,7 +303,7 @@ function RegisterWizardContent() {
     api.get<RegistrationProgress>("/register/progress")
       .then((progress) => {
         if (!active) return;
-        if (progress.completed || progress.status === "completed") {
+        if ((progress.completed || progress.status === "completed") && !justCompletedRegistration.current) {
           router.replace("/client/dashboard");
           return;
         }
@@ -498,6 +499,10 @@ function RegisterWizardContent() {
     const isoDob = birthDateToIso(account.dateOfBirth);
     if (isoDob) formData.append("dateOfBirth", isoDob);
     if (account.gender) formData.append("gender", account.gender);
+    formData.append("heightCm", bodyGoal.height);
+    formData.append("weightKg", bodyGoal.currentWeight);
+    formData.append("fitnessGoal", bodyGoal.goal);
+    if (bodyGoal.targetWeight) formData.append("targetWeightKg", bodyGoal.targetWeight);
     formData.append("plan_id", String(Number(selectedPlanId)));
     formData.append("payment_method", paymentMethod);
     formData.append("answers", JSON.stringify(answersPayload));
@@ -506,6 +511,7 @@ function RegisterWizardContent() {
 
     try {
       const result = await api.upload<RegisterResponse>("/register", formData);
+      justCompletedRegistration.current = true;
       const loginResult = await login(account.email, account.password);
       if (loginResult.success) updateUser(result.user);
 
@@ -700,7 +706,7 @@ function MobileRegistrationHeader({ appName, logoUrl }: { appName: string; logoU
       <div className="flex items-center gap-2.5">
         {logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={logoUrl} alt={appName} className="h-8 max-w-28 object-contain" />
+          <img src={resolveMediaUrl(logoUrl)} alt={appName} className="h-8 max-w-28 object-contain" />
         ) : <span className="text-lg font-bold text-slate-900">{appName}</span>}
       </div>
       <span className="text-xs text-slate-500">Έχεις ήδη λογαριασμό; <Link href="/login" className="font-semibold text-slate-900">Σύνδεση</Link></span>
@@ -714,7 +720,7 @@ function RegistrationSidebar({ activeIndex, appName, logoUrl }: { activeIndex: n
       <div className="flex items-center gap-3 px-3">
         {logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={logoUrl} alt={appName} className="h-9 max-w-32 object-contain" />
+          <img src={resolveMediaUrl(logoUrl)} alt={appName} className="h-9 max-w-32 object-contain" />
         ) : <span className="text-2xl font-bold">{appName}</span>}
       </div>
       <nav className="mt-10 space-y-2">

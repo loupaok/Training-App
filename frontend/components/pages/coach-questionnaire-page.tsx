@@ -137,9 +137,7 @@ const updateEndpoints: QuestionEndpoints = {
 // A "standard" question is the one the app reads for a specific meaning
 // (e.g. the client's weekly weight) instead of guessing from the question's
 // type or wording — at most one question per set can hold a given key.
-const registrationStandardKeyOptions: StandardKeyOption[] = [
-  { value: "update_day", label: "Ημέρα Update" },
-];
+const registrationStandardKeyOptions: StandardKeyOption[] = [];
 
 const updateStandardKeyOptions: StandardKeyOption[] = [
   { value: "weight_kg", label: "Κιλά (Βάρος)" },
@@ -220,6 +218,7 @@ function QuestionSetEditor({
   const [error, setError] = useState("");
 
   const selectedQuestion = useMemo(() => questions.find((item) => item.id === selectedId) || null, [questions, selectedId]);
+  const isLockedStandardQuestion = form.standardKey === "update_day";
   const activeCount = questions.filter((item) => item.isActive).length;
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -305,6 +304,7 @@ function QuestionSetEditor({
   };
 
   const toggleActive = async (targetQuestion: Question, nextActive: boolean) => {
+    if (targetQuestion.standardKey === "update_day") return;
     setQuestions((current) => current.map((item) => (item.id === targetQuestion.id ? { ...item, isActive: nextActive } : item)));
     if (selectedId === targetQuestion.id) update("isActive", nextActive);
     try {
@@ -406,7 +406,7 @@ function QuestionSetEditor({
                   render={
                     <Button
                       variant="outline"
-                      disabled={!form.id || saving}
+                      disabled={!form.id || saving || isLockedStandardQuestion}
                       className="h-10 px-4 text-sm font-bold text-slate-700 hover:border-red-200 hover:text-red-600 disabled:opacity-40 dark:text-slate-200"
                     >
                       Διαγραφή
@@ -434,12 +434,12 @@ function QuestionSetEditor({
               <div className="space-y-4">
                 <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
                   Κείμενο Ερώτησης
-                  <Textarea value={form.question} onChange={(event) => update("question", event.target.value)} className="min-h-20" />
+                  <Textarea value={form.question} onChange={(event) => update("question", event.target.value)} disabled={isLockedStandardQuestion} className="min-h-20" />
                 </Label>
 
                 <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
                   Τύπος Ερώτησης
-                  <Select items={typeOptions} value={form.type} onValueChange={(value) => value && update("type", value as QuestionType)}>
+                  <Select items={typeOptions} value={form.type} disabled={isLockedStandardQuestion} onValueChange={(value) => value && update("type", value as QuestionType)}>
                     <SelectTrigger className="h-12 w-full">
                       <SelectValue />
                     </SelectTrigger>
@@ -483,7 +483,7 @@ function QuestionSetEditor({
                   <div className="text-sm font-bold text-slate-700 dark:text-slate-200">Επιτρέπει ανέβασμα αρχείων;</div>
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">📷 Φωτογραφίες</span>
-                    <Switch checked={form.allowPhotos} onCheckedChange={(checked) => update("allowPhotos", checked === true)} />
+                    <Switch checked={form.allowPhotos} disabled={isLockedStandardQuestion} onCheckedChange={(checked) => update("allowPhotos", checked === true)} />
                   </div>
                   {form.allowPhotos && (
                     <div className="flex items-center justify-between gap-3 pl-6">
@@ -493,14 +493,14 @@ function QuestionSetEditor({
                         min={1}
                         max={4}
                         value={form.maxPhotos}
-                        onChange={(event) => update("maxPhotos", Math.min(4, Math.max(1, Number(event.target.value) || 1)))}
+                        onChange={(event) => update("maxPhotos", Math.min(4, Math.max(1, Number(event.target.value) || 1)))} disabled={isLockedStandardQuestion}
                         className="h-9 w-20"
                       />
                     </div>
                   )}
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">📄 PDF</span>
-                    <Switch checked={form.allowPdf} onCheckedChange={(checked) => update("allowPdf", checked === true)} />
+                    <Switch checked={form.allowPdf} disabled={isLockedStandardQuestion} onCheckedChange={(checked) => update("allowPdf", checked === true)} />
                   </div>
                 </div>
 
@@ -518,13 +518,13 @@ function QuestionSetEditor({
                     <div className="space-y-2">
                       {form.options.map((option, index) => (
                         <div key={index} className="flex items-center gap-2">
-                          <Input value={option} onChange={(event) => updateOption(index, event.target.value)} className="h-10" />
+                          <Input value={option} onChange={(event) => updateOption(index, event.target.value)} disabled={isLockedStandardQuestion} className="h-10" />
                           <Button
                             type="button"
                             variant="ghost"
                             size="icon"
                             onClick={() => removeOption(index)}
-                            disabled={form.type !== "url" && form.options.length <= 1}
+                            disabled={isLockedStandardQuestion || (form.type !== "url" && form.options.length <= 1)}
                             className="h-9 w-9 shrink-0 text-slate-400 hover:text-red-600 dark:text-slate-500"
                           >
                             <X className="h-4 w-4" />
@@ -536,6 +536,7 @@ function QuestionSetEditor({
                       type="button"
                       variant="outline"
                       onClick={addOption}
+                      disabled={isLockedStandardQuestion}
                       className="mt-3 h-10 px-4 text-sm font-bold text-slate-700 hover:border-red-200 hover:text-red-600 dark:text-slate-200"
                     >
                       {form.type === "url" ? "+ Προσθήκη Επιλογής" : "+ Προσθήκη επιλογής"}
@@ -548,7 +549,7 @@ function QuestionSetEditor({
                     Placeholder κειμένου
                     <Input
                       value={form.placeholder}
-                      onChange={(event) => update("placeholder", event.target.value)}
+                      onChange={(event) => update("placeholder", event.target.value)} disabled={isLockedStandardQuestion}
                       placeholder="π.χ. Περίγραψε αν υπάρχουν..."
                     />
                   </Label>
@@ -556,7 +557,7 @@ function QuestionSetEditor({
 
                 <Label className="flex items-center justify-between gap-3 text-sm font-bold text-slate-700 dark:text-slate-200">
                   Υποχρεωτική ερώτηση
-                  <Switch checked={form.isRequired} onCheckedChange={(checked) => update("isRequired", checked === true)} />
+                  <Switch checked={form.isRequired} disabled={isLockedStandardQuestion} onCheckedChange={(checked) => update("isRequired", checked === true)} />
                 </Label>
               </div>
 
@@ -569,7 +570,7 @@ function QuestionSetEditor({
             </div>
 
             <div className="mt-6 flex justify-end">
-              <Button onClick={saveQuestion} disabled={saving || !form.question.trim()} className="h-11 px-6 font-bold disabled:bg-slate-400">
+              <Button onClick={saveQuestion} disabled={saving || !form.question.trim() || isLockedStandardQuestion} className="h-11 px-6 font-bold disabled:bg-slate-400">
                 {saving ? "Αποθήκευση..." : "Αποθήκευση Ερώτησης"}
               </Button>
             </div>

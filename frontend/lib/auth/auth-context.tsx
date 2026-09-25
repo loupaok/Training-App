@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api/client";
 import type { AuthResult, AuthUser } from "@/types/auth";
 
@@ -43,6 +44,7 @@ export function getAuthRedirect(user: AuthUser | null | undefined): string {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [user, setUser] = useState<AuthUser | null>(() => {
     if (typeof window === "undefined") return null;
     try {
@@ -68,6 +70,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let ignore = false;
+
+    // Public auth pages do not need a profile refresh. Avoid surfacing expected
+    // 403/401 responses when a visitor has an expired session in local storage.
+    if (pathname === "/login" || pathname === "/register") {
+      setRefreshingProfile(false);
+      return () => {
+        ignore = true;
+      };
+    }
 
     const loadMe = async (allowRefresh = true): Promise<{ user: AuthUser }> => {
       const headers: Record<string, string> = {};
@@ -126,7 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [pathname]);
 
   const login = async (email: string, password: string): Promise<AuthResult> => {
     setLoading(true);

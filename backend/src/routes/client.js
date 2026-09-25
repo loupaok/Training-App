@@ -461,7 +461,33 @@ router.get('/nutrition-equivalents', async (req, res) => {
 
 router.get('/progress', async (req, res) => {
   const connection = await pool.getConnection();
-  try { await ensureWeeklyUpdateSchema(connection); const updates = await getUpdates(connection, req.user.id, 52); res.json({ weights: updates.filter((update) => update.weight !== null).map((update) => ({ submittedAt: update.submittedAt, weight: update.weight })).reverse(), photos: updates.flatMap((update) => update.photos).slice(0, 24), updates }); }
+  try {
+    await ensureWeeklyUpdateSchema(connection);
+    const updates = await getUpdates(connection, req.user.id, 52);
+    const [[client]] = await connection.query(
+      `SELECT c.weight_kg, u.created_at
+       FROM users u
+       LEFT JOIN clients c ON c.user_id = u.id
+       WHERE u.id = ?
+       LIMIT 1`,
+      [req.user.id]
+    );
+    const startingWeight = client?.weight_kg === null || client?.weight_kg === undefined ? null : Number(client.weight_kg);
+    const updateWeights = updates
+      .filter((update) => update.weight !== null)
+      .map((update) => ({ submittedAt: update.submittedAt, weight: update.weight }))
+      .reverse();
+    const weights = startingWeight !== null && Number.isFinite(startingWeight)
+      ? [{ submittedAt: client.created_at, weight: startingWeight }, ...updateWeights]
+      : updateWeights;
+
+    res.json({
+      startingWeight: startingWeight !== null && Number.isFinite(startingWeight) ? startingWeight : null,
+      weights,
+      photos: updates.flatMap((update) => update.photos).slice(0, 24),
+      updates,
+    });
+  }
   catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
 });
 

@@ -10,7 +10,22 @@ const QUESTION_TYPES = ['single_select', 'multi_select', 'text', 'number', 'text
 // (e.g. reading which day a client wants their weekly update) — at most one
 // question can hold a given key, so consumers can look it up reliably
 // instead of guessing by question type.
-const QUESTION_STANDARD_KEYS = ['update_day'];
+const UPDATE_DAY_OPTIONS = ['Δευτέρα', 'Τρίτη', 'Τετάρτη', 'Πέμπτη', 'Παρασκευή', 'Σάββατο', 'Κυριακή'];
+const UPDATE_DAY_QUESTION = 'Ημέρα Update';
+
+function parseOptions(value) {
+  try {
+    return Array.isArray(value) ? value : JSON.parse(value || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function isLegacyUpdateDayQuestion(row) {
+  const options = parseOptions(row.options);
+  return options.length === UPDATE_DAY_OPTIONS.length
+    && UPDATE_DAY_OPTIONS.every((day) => options.includes(day));
+}
 
 const seedQuestions = [
   {
@@ -167,6 +182,68 @@ export async function ensureQuestionnaireSchema(connection) {
       ])]
     );
   }
+
+  // The check-in day is a built-in registration field. It gives every client
+  // one reliable value for their weekly update schedule.
+  const [standardRows] = await connection.query(
+    'SELECT * FROM questionnaire_questions WHERE standard_key = ? ORDER BY id ASC',
+    ['update_day']
+  );
+  const [legacyRows] = await connection.query(
+    'SELECT * FROM questionnaire_questions WHERE standard_key IS NULL ORDER BY sort_order ASC, id ASC'
+  );
+  const existing = standardRows[0] || legacyRows.find(isLegacyUpdateDayQuestion);
+  let updateDayQuestionId;
+
+  if (existing) {
+    updateDayQuestionId = existing.id;
+    await connection.query(
+      `UPDATE questionnaire_questions
+       SET question = ?, type = 'single_select', options = ?, is_required = 1,
+           placeholder = NULL, allow_photos = 0, allow_pdf = 0, is_active = 1,
+           standard_key = 'update_day'
+       WHERE id = ?`,
+      [UPDATE_DAY_QUESTION, JSON.stringify(UPDATE_DAY_OPTIONS), updateDayQuestionId]
+    );
+  } else {
+    const [[sortRow]] = await connection.query(
+      'SELECT COALESCE(MAX(sort_order), 0) + 1 AS next_sort_order FROM questionnaire_questions'
+    );
+    const [result] = await connection.query(
+      `INSERT INTO questionnaire_questions
+        (question, type, options, is_required, placeholder, allow_photos, max_photos, allow_pdf, sort_order, is_active, standard_key)
+       VALUES (?, 'single_select', ?, 1, NULL, 0, 4, 0, ?, 1, 'update_day')`,
+      [UPDATE_DAY_QUESTION, JSON.stringify(UPDATE_DAY_OPTIONS), sortRow.next_sort_order]
+    );
+    updateDayQuestionId = result.insertId;
+  }
+
+  await connection.query(
+    'UPDATE questionnaire_questions SET standard_key = NULL WHERE standard_key = ? AND id != ?',
+    ['update_day', updateDayQuestionId]
+  );
+}
+
+export async function syncUpdateDayQuestionnaireAnswer(connection, clientId, dayOfWeek) {
+  const normalizedDay = Number(dayOfWeek);
+  const answer = UPDATE_DAY_OPTIONS[normalizedDay === 0 ? 6 : normalizedDay - 1];
+  if (!answer) return;
+
+  const [rows] = await connection.query(
+    'SELECT id FROM questionnaire_questions WHERE standard_key = ? LIMIT 1',
+    ['update_day']
+  );
+  const questionId = rows[0]?.id;
+  if (!questionId) return;
+
+  await connection.query(
+    'DELETE FROM questionnaire_answers WHERE client_id = ? AND question_id = ?',
+    [clientId, questionId]
+  );
+  await connection.query(
+    'INSERT INTO questionnaire_answers (client_id, question_id, answer) VALUES (?, ?, ?)',
+    [clientId, questionId, answer]
+  );
 }
 
 function normalizeQuestion(row) {
@@ -247,7 +324,6 @@ router.put('/questions/reorder', authenticateToken, authorizeRole(['coach']), [
 router.post('/questions', authenticateToken, authorizeRole(['coach']), [
   body('question').notEmpty(),
   body('type').isIn(QUESTION_TYPES),
-  body('standardKey').optional({ nullable: true }).isIn(QUESTION_STANDARD_KEYS),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -255,11 +331,6 @@ router.post('/questions', authenticateToken, authorizeRole(['coach']), [
   try {
     const connection = await pool.getConnection();
     await ensureQuestionnaireSchema(connection);
-
-    const standardKey = req.body.standardKey || null;
-    if (standardKey) {
-      await connection.query('UPDATE questionnaire_questions SET standard_key = NULL WHERE standard_key = ?', [standardKey]);
-    }
 
     const [result] = await connection.query(
       `INSERT INTO questionnaire_questions
@@ -276,7 +347,7 @@ router.post('/questions', authenticateToken, authorizeRole(['coach']), [
         req.body.allowPdf === true ? 1 : 0,
         req.body.sortOrder || 0,
         req.body.isActive === false ? 0 : 1,
-        standardKey,
+        null,
       ]
     );
 
@@ -292,7 +363,6 @@ router.post('/questions', authenticateToken, authorizeRole(['coach']), [
 router.put('/questions/:id', authenticateToken, authorizeRole(['coach']), [
   body('question').notEmpty(),
   body('type').isIn(QUESTION_TYPES),
-  body('standardKey').optional({ nullable: true }).isIn(QUESTION_STANDARD_KEYS),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -301,9 +371,13 @@ router.put('/questions/:id', authenticateToken, authorizeRole(['coach']), [
     const connection = await pool.getConnection();
     await ensureQuestionnaireSchema(connection);
 
-    const standardKey = req.body.standardKey || null;
-    if (standardKey) {
-      await connection.query('UPDATE questionnaire_questions SET standard_key = NULL WHERE standard_key = ? AND id != ?', [standardKey, req.params.id]);
+    const [existingRows] = await connection.query(
+      'SELECT standard_key FROM questionnaire_questions WHERE id = ? LIMIT 1',
+      [req.params.id]
+    );
+    if (existingRows[0]?.standard_key === 'update_day') {
+      connection.release();
+      return res.status(403).json({ message: 'The standard update-day question cannot be changed.' });
     }
 
     await connection.query(
@@ -321,7 +395,7 @@ router.put('/questions/:id', authenticateToken, authorizeRole(['coach']), [
         req.body.allowPdf === true ? 1 : 0,
         req.body.sortOrder || 0,
         req.body.isActive === false ? 0 : 1,
-        standardKey,
+        null,
         req.params.id,
       ]
     );
@@ -340,6 +414,14 @@ router.delete('/questions/:id', authenticateToken, authorizeRole(['coach']), asy
   try {
     const connection = await pool.getConnection();
     await ensureQuestionnaireSchema(connection);
+    const [existingRows] = await connection.query(
+      'SELECT standard_key FROM questionnaire_questions WHERE id = ? LIMIT 1',
+      [req.params.id]
+    );
+    if (existingRows[0]?.standard_key === 'update_day') {
+      connection.release();
+      return res.status(403).json({ message: 'The standard update-day question cannot be deleted.' });
+    }
     await connection.query('DELETE FROM questionnaire_questions WHERE id = ?', [req.params.id]);
     connection.release();
     res.json({ message: 'Question deleted' });

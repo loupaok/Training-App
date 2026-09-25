@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Plus, Search, X, Mail, Ban, Trash2, Undo2 } from "lucide-react";
+import { Search, X, Mail, Ban, Trash2, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -394,11 +394,6 @@ function ClientsContent() {
             <span className="text-slate-600 dark:text-slate-400">Πελάτες</span>
           </div>
         </div>
-
-        <Button onClick={() => setShowAddClient(true)} className="h-14 gap-3 px-7 font-bold shadow-lg shadow-red-200">
-          <Plus className="h-5 w-5" />
-          Προσθήκη Νέου Πελάτη
-        </Button>
       </div>
 
       <Tabs value={clientListTab} onValueChange={setClientListTab}>

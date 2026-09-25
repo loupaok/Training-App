@@ -11,7 +11,7 @@ import { insertTrainingPlanDays } from './trainingPlans.js';
 import { insertNutritionPlanMeals } from './nutritionPlans.js';
 import { getFullTrainingTemplate, getFullNutritionTemplate } from './templates.js';
 import { ensureClientActivityLogSchema, logClientActivity } from '../lib/client-activity-log.js';
-import { ensureQuestionnaireSchema } from './questionnaire.js';
+import { ensureQuestionnaireSchema, syncUpdateDayQuestionnaireAnswer } from './questionnaire.js';
 
 const router = express.Router();
 const activeMessageTypers = new Map();
@@ -412,6 +412,30 @@ function parseDecimalText(value) {
   if (value === undefined || value === null || value === '') return null;
   const parsed = Number.parseFloat(String(value).replace(',', '.').replace(/[^\d.]/g, ''));
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function normalizeRegistrationQuestion(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('el-GR');
+}
+
+async function getRegistrationBodyFallback(connection, clientId) {
+  const [rows] = await connection.query(
+    `SELECT qq.question, qa.answer
+     FROM questionnaire_answers qa
+     INNER JOIN questionnaire_questions qq ON qq.id = qa.question_id
+     WHERE qa.client_id = ?`,
+    [clientId]
+  );
+
+  const findAnswer = (matches) => rows.find((row) => matches(normalizeRegistrationQuestion(row.question)))?.answer || null;
+  return {
+    heightCm: parseDecimalText(findAnswer((question) => question.includes('υψ'))),
+    weightKg: parseDecimalText(findAnswer((question) => question.includes('τρεχ') && question.includes('βαρ'))),
+    goal: findAnswer((question) => question.includes('στοχ')),
+  };
 }
 
 function normalizeSocialLinks(raw) {
@@ -948,12 +972,14 @@ router.get('/me/profile', authorizeRole(['client']), async (req, res) => {
     const [rows] = await connection.query(
       `SELECT u.id, u.email, u.full_name, u.profile_photo,
               c.phone, c.gender, c.date_of_birth, c.height_cm, c.weight_kg, c.fitness_goal,
-              ofm.update_day, ofm.occupation_schedule, ofm.health_problem, ofm.injuries,
+              COALESCE(us.day_of_week, ofm.update_day) AS update_day,
+              ofm.occupation_schedule, ofm.health_problem, ofm.injuries,
               ofm.cycle_history, ofm.cardio_sessions_per_week, ofm.sleep_schedule,
               ofm.current_training_plan, ofm.current_nutrition_plan, ofm.previous_plan_history
        FROM users u
        LEFT JOIN clients c ON c.user_id = u.id
        LEFT JOIN onboarding_forms ofm ON ofm.client_id = u.id
+       LEFT JOIN update_schedule us ON us.client_id = u.id
        WHERE u.id = ? AND u.role = 'client'
        LIMIT 1`,
       [req.user.id]
@@ -969,6 +995,8 @@ router.get('/me/profile', authorizeRole(['client']), async (req, res) => {
       [req.user.id]
     );
 
+    const registrationBody = await getRegistrationBodyFallback(connection, req.user.id);
+
     connection.release();
     const row = rows[0];
     res.json({
@@ -979,9 +1007,9 @@ router.get('/me/profile', authorizeRole(['client']), async (req, res) => {
       gender: row.gender || '',
       dateOfBirth: row.date_of_birth || '',
       age: calculateAge(row.date_of_birth),
-      heightCm: row.height_cm || '',
-      weightKg: row.weight_kg || '',
-      goal: row.fitness_goal || '',
+      heightCm: row.height_cm || registrationBody.heightCm || '',
+      weightKg: row.weight_kg || registrationBody.weightKg || '',
+      goal: row.fitness_goal || registrationBody.goal || '',
       updateDay: row.update_day ?? '',
       occupationSchedule: row.occupation_schedule || '',
       healthProblem: row.health_problem || '',
@@ -1037,6 +1065,7 @@ router.put('/me/profile', authorizeRole(['client']), [
 
   try {
     await ensureOnboardingSchema(connection);
+    await ensureQuestionnaireSchema(connection);
     await connection.beginTransaction();
 
     const [existingEmail] = await connection.query(
@@ -1125,13 +1154,15 @@ router.put('/me/profile', authorizeRole(['client']), [
     }
 
     if (updateDay !== '' && updateDay !== null && updateDay !== undefined) {
+      const normalizedUpdateDay = Number(updateDay);
       const coachId = await getDefaultCoachId(connection);
       await connection.query(
         `INSERT INTO update_schedule (coach_id, client_id, frequency, day_of_week, reminder_enabled, next_due_date)
          VALUES (?, ?, 'weekly', ?, 1, ?)
          ON DUPLICATE KEY UPDATE day_of_week = VALUES(day_of_week), next_due_date = VALUES(next_due_date), reminder_enabled = 1`,
-        [coachId, req.user.id, Number(updateDay), nextDateForWeekday(Number(updateDay))]
+        [coachId, req.user.id, normalizedUpdateDay, nextDateForWeekday(normalizedUpdateDay)]
       );
+      await syncUpdateDayQuestionnaireAnswer(connection, req.user.id, normalizedUpdateDay);
     }
 
     await connection.commit();
@@ -2104,6 +2135,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
   try {
     const connection = await pool.getConnection();
     await ensureOnboardingSchema(connection);
+    await ensureQuestionnaireSchema(connection);
     await ensurePaymentProofColumns(connection);
     await ensureClientDetailColumns(connection);
     await ensureClientSoftDeleteColumns(connection);
@@ -2137,6 +2169,19 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
       'SELECT platform, url FROM social_links WHERE user_id = ? ORDER BY platform',
       [req.params.id]
     );
+    let intakeFileRows = [];
+    try {
+      [intakeFileRows] = await connection.query(
+        `SELECT id, file_url, file_type, original_name, created_at
+         FROM client_intake_files
+         WHERE client_id = ?
+         ORDER BY created_at ASC, id ASC`,
+        [req.params.id]
+      );
+    } catch (error) {
+      if (error.code !== 'ER_NO_SUCH_TABLE') throw error;
+    }
+    const registrationBody = await getRegistrationBodyFallback(connection, req.params.id);
     const [subscriptionRows] = await connection.query(
       `SELECT id, plan_name, price, currency, start_date, end_date, status,
               DATEDIFF(end_date, CURDATE()) AS days_remaining
@@ -2196,8 +2241,12 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
     connection.release();
     res.json({
       ...rows[0],
+      height_cm: rows[0].height_cm || registrationBody.heightCm || null,
+      weight_kg: rows[0].weight_kg || registrationBody.weightKg || null,
+      fitness_goal: rows[0].fitness_goal || registrationBody.goal || null,
       onboarding: onboardingRows[0] || null,
       socialLinks: socialRows,
+      intakeFiles: intakeFileRows,
       subscription: subscriptionRows[0]
         ? { ...subscriptionRows[0], daysRemaining: subscriptionRows[0].days_remaining }
         : null,
@@ -3230,6 +3279,7 @@ router.put('/:id/update-day', authorizeRole(['coach', 'admin']), [
 
   try {
     await ensureOnboardingSchema(connection);
+    await ensureQuestionnaireSchema(connection);
     const clientId = Number(req.params.id);
     const updateDay = Number(req.body.updateDay);
 
@@ -3269,6 +3319,7 @@ router.put('/:id/update-day', authorizeRole(['coach', 'admin']), [
        ON DUPLICATE KEY UPDATE day_of_week = VALUES(day_of_week), next_due_date = VALUES(next_due_date), reminder_enabled = 1`,
       [coachId, clientId, updateDay, nextDueDate]
     );
+    await syncUpdateDayQuestionnaireAnswer(connection, clientId, updateDay);
     await connection.commit();
     connection.release();
 

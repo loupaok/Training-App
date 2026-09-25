@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, Clock, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, X } from "lucide-react";
+import { AlertTriangle, Clock, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, X, FileText } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -76,6 +76,13 @@ import { AssignTemplateDialog } from "@/components/shared/assign-template-dialog
 interface SocialLink {
   platform: string;
   url: string;
+}
+
+interface IntakeFile {
+  id: number | string;
+  file_url: string;
+  file_type: "photo" | "pdf";
+  original_name?: string | null;
 }
 
 interface Payment {
@@ -205,6 +212,7 @@ interface ClientRecord {
   weeklyUpdates?: WeeklyUpdate[];
   progressUpdates?: ProgressUpdate[];
   socialLinks?: SocialLink[];
+  intakeFiles?: IntakeFile[];
   subscription?: Subscription;
   upcomingSubscription?: Subscription;
   updateSchedule?: UpdateSchedule;
@@ -1078,8 +1086,12 @@ const OVERVIEW_LAYOUT_STORAGE_KEY = "coach-client-overview-layout-v1";
 
 const DEFAULT_SECTION_ORDER: { id: string; column: "left" | "right" }[] = [
   { id: "contact", column: "left" },
+  { id: "body", column: "left" },
   { id: "questionnaire", column: "left" },
   { id: "subscription", column: "right" },
+  { id: "update", column: "right" },
+  { id: "social", column: "right" },
+  { id: "files", column: "left" },
   { id: "notes", column: "right" },
 ];
 
@@ -1377,6 +1389,7 @@ function OverviewTab({
 
   const latestPayment = client.payments?.[0];
   const pendingPayment = latestPayment?.status === "pending" ? latestPayment : null;
+  const selectedUpdateDay = String(client.updateSchedule?.day_of_week ?? onboarding.update_day ?? "");
 
   const sectionsMap: Record<string, ReactNode> = {
     contact: (
@@ -1413,6 +1426,74 @@ function OverviewTab({
             {saving ? "Αποθήκευση..." : "Αποθήκευση στοιχείων"}
           </Button>
         </div>
+      </InfoCard>
+    ),
+    body: (
+      <InfoCard title="Στοιχεία σώματος & στόχος">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <EditField label="Ύψος (cm)" value={form.heightCm} onChange={(value) => updateField("heightCm", value)} disabled={!canEdit} />
+          <EditField label="Τρέχον βάρος (kg)" value={form.weightKg} onChange={(value) => updateField("weightKg", value)} disabled={!canEdit} />
+          <div className="sm:col-span-2">
+            <EditField label="Κύριος στόχος" value={form.fitnessGoal} onChange={(value) => updateField("fitnessGoal", value)} disabled={!canEdit} />
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end">
+          <Button type="button" onClick={saveDetails} disabled={saving || !canEdit} className="h-10 px-6 font-bold">
+            {saving ? "Αποθήκευση..." : "Αποθήκευση στοιχείων"}
+          </Button>
+        </div>
+      </InfoCard>
+    ),
+    update: (
+      <InfoCard title="Εβδομαδιαίο Update">
+        <p className="text-sm text-muted-foreground">Η ημέρα που ο πελάτης στέλνει το εβδομαδιαίο update.</p>
+        <Select items={updateDayOptions.map((option) => ({ value: String(option.value), label: option.label }))} value={selectedUpdateDay} onValueChange={(value) => value && saveUpdateDay(value)}>
+          <SelectTrigger className="h-11 w-full" disabled={!canEdit || savingUpdateDay}>
+            <SelectValue placeholder="Επιλογή ημέρας" />
+          </SelectTrigger>
+          <SelectContent>
+            {updateDayOptions.map((option) => <SelectItem key={option.value} value={String(option.value)}>{option.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {client.updateSchedule?.next_due_date && <p className="text-xs text-muted-foreground">Επόμενο update: {shortDate(client.updateSchedule.next_due_date)}</p>}
+      </InfoCard>
+    ),
+    social: (
+      <InfoCard title="Social Media">
+        {client.socialLinks?.length ? (
+          <div className="space-y-2">
+            {client.socialLinks.map((link) => (
+              <a key={`${link.platform}-${link.url}`} href={link.url} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm transition-colors hover:bg-muted/50">
+                <span className="font-medium">{link.platform}</span>
+                <span className="max-w-[65%] truncate text-muted-foreground">{link.url}</span>
+              </a>
+            ))}
+          </div>
+        ) : <p className="text-sm text-muted-foreground">Δεν έχουν προστεθεί social media από τον πελάτη.</p>}
+      </InfoCard>
+    ),
+    files: (
+      <InfoCard title="Φωτογραφίες & αρχεία εγγραφής">
+        {client.intakeFiles?.length ? (
+          <div className="space-y-4">
+            {client.intakeFiles.filter((file) => file.file_type === "photo").length > 0 && (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {client.intakeFiles.filter((file) => file.file_type === "photo").map((file) => (
+                  <a key={file.id} href={resolveMediaUrl(file.file_url)} target="_blank" rel="noreferrer" className="group relative aspect-square overflow-hidden rounded-lg border bg-muted">
+                    <img src={resolveMediaUrl(file.file_url)} alt={file.original_name || "Φωτογραφία εγγραφής"} className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" />
+                  </a>
+                ))}
+              </div>
+            )}
+            {client.intakeFiles.filter((file) => file.file_type === "pdf").map((file) => (
+              <a key={file.id} href={resolveMediaUrl(file.file_url)} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50">
+                <span className="grid h-10 w-10 place-items-center rounded-md bg-muted"><FileText className="h-5 w-5 text-muted-foreground" /></span>
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">{file.original_name || "PDF αρχείου εγγραφής"}</span>
+                <span className="text-xs text-muted-foreground">Προβολή</span>
+              </a>
+            ))}
+          </div>
+        ) : <p className="text-sm text-muted-foreground">Δεν έχουν επισυναφθεί φωτογραφίες ή αρχεία κατά την εγγραφή.</p>}
       </InfoCard>
     ),
     questionnaire: (
@@ -1462,7 +1543,11 @@ function OverviewTab({
                 <div key={item.question_id} className={index > 0 ? "border-t pt-4" : ""}>
                   {index > 0 && <div className="mb-4" />}
                   <p className="text-sm text-muted-foreground">{item.question}</p>
-                  <p className="mt-1 text-sm font-medium">{formatQuestionnaireAnswer(item.answer, item.type)}</p>
+                  {item.type === "url" && item.answer && isValidHttpUrl(item.answer.trim()) ? (
+                    <a href={item.answer.trim()} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+                      {item.answer.trim()} <Link2 className="h-3.5 w-3.5" />
+                    </a>
+                  ) : <p className="mt-1 text-sm font-medium">{formatQuestionnaireAnswer(item.answer, item.type)}</p>}
                 </div>
               ))}
             </div>

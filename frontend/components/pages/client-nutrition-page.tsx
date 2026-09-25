@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api } from "@/lib/api/client"
 import { useAuth } from "@/lib/auth/auth-context"
+import { resolveMediaUrl } from "@/lib/media"
 import { toast } from "sonner"
 
 type NutritionFood = { id?: number; name: string; food_image?: string | null; food_image_url?: string | null; image_url?: string | null; imageUrl?: string | null; amount?: string | null; quantity?: string | null; calories?: number | string | null; protein_g?: number | string | null; carbs_g?: number | string | null; fat_g?: number | string | null }
@@ -222,7 +223,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
         const image = printDocument.createElement("img")
         image.className = "food-image"
         image.alt = ""
-        try { image.src = new URL(item.imageUrl, window.location.origin).href } catch { image.src = item.imageUrl }
+        try { image.src = new URL(resolveMediaUrl(item.imageUrl), window.location.origin).href } catch { image.src = resolveMediaUrl(item.imageUrl) }
         row.appendChild(image)
       } else {
         const placeholder = printDocument.createElement("span")
@@ -267,7 +268,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
             <div className="divide-y divide-border rounded-lg border">
               {equivalents.map((food) => (
                 <div key={food.id} className="flex items-center gap-3 p-3">
-                  {food.imageUrl ? <img src={food.imageUrl} alt="" className="h-10 w-10 rounded-md object-cover" /> : <span className="grid h-10 w-10 place-items-center rounded-md bg-muted"><Utensils className="h-4 w-4 text-muted-foreground" /></span>}
+                  {food.imageUrl ? <img src={resolveMediaUrl(food.imageUrl)} alt="" className="h-10 w-10 rounded-md object-cover" /> : <span className="grid h-10 w-10 place-items-center rounded-md bg-muted"><Utensils className="h-4 w-4 text-muted-foreground" /></span>}
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">{food.name}</p>
                     <p className="text-xs text-muted-foreground">{food.quantityG}g · {food.calories} kcal</p>
@@ -371,7 +372,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
                             <TableCell className="px-1 py-2">
                               <div className="flex min-w-[12rem] items-center gap-2">
                                 {imageUrl ? (
-                                  <img src={imageUrl} alt="" className="h-9 w-9 shrink-0 rounded-md object-cover" />
+                                  <img src={resolveMediaUrl(imageUrl)} alt="" className="h-9 w-9 shrink-0 rounded-md object-cover" />
                                 ) : (
                                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-muted">
                                     <Utensils className="h-4 w-4 text-muted-foreground" />
@@ -488,7 +489,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
                       onCheckedChange={(value) => setChecked((current) => ({ ...current, [item.key]: value === true }))}
                     />
                     {item.imageUrl ? (
-                      <img src={item.imageUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+                      <img src={resolveMediaUrl(item.imageUrl)} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
                     ) : (
                       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-muted text-xs font-medium text-muted-foreground">
                         {item.name.trim().charAt(0).toLocaleUpperCase("el-GR")}
