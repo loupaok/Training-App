@@ -190,6 +190,7 @@ function ClientsContent() {
   const [bulkMessageOpen, setBulkMessageOpen] = useState(false);
   const [bulkMessageText, setBulkMessageText] = useState("");
   const [bulkSending, setBulkSending] = useState(false);
+  const [bulkTrashDeleteOpen, setBulkTrashDeleteOpen] = useState(false);
 
   // Debounce search input by 300ms before it drives filtering.
   useEffect(() => {
@@ -239,6 +240,14 @@ function ClientsContent() {
   const permanentlyDeleteClient = async (client: TrashedClient) => {
     await api.delete(`/clients/${client.id}/permanent`);
     toast.success("Ο πελάτης διαγράφηκε οριστικά.");
+    await Promise.all([loadClients(), loadTrash()]);
+  };
+
+  const permanentlyDeleteClients = async (ids: Array<number | string>) => {
+    const results = await Promise.allSettled(ids.map((id) => api.delete(`/clients/${id}/permanent`)));
+    const failed = results.filter((result) => result.status === "rejected").length;
+    if (failed) toast.error(`Η μόνιμη διαγραφή απέτυχε για ${failed} από ${ids.length} πελάτες.`);
+    else toast.success(`${ids.length} πελάτες διαγράφηκαν οριστικά.`);
     await Promise.all([loadClients(), loadTrash()]);
   };
 
@@ -381,6 +390,22 @@ function ClientsContent() {
     loadClients();
   };
 
+  const handleBulkMoveToTrash = async () => {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+
+    setBulkSending(true);
+    const results = await Promise.allSettled(ids.map((id) => api.delete(`/clients/${id}`)));
+    const failed = results.filter((result) => result.status === "rejected").length;
+    setBulkSending(false);
+    setBulkTrashDeleteOpen(false);
+    setSelectedIds(new Set());
+
+    if (failed) toast.error(`Η μεταφορά στον Κάδο απέτυχε για ${failed} από ${ids.length} πελάτες.`);
+    else toast.success(`${ids.length} πελάτες μεταφέρθηκαν στον Κάδο.`);
+    await Promise.all([loadClients(), loadTrash()]);
+  };
+
   return (
     <CoachShell title="Πελάτες" user={user} logout={logout}>
       <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -396,7 +421,13 @@ function ClientsContent() {
         </div>
       </div>
 
-      <Tabs value={clientListTab} onValueChange={setClientListTab}>
+      <Tabs
+        value={clientListTab}
+        onValueChange={(value) => {
+          setClientListTab(value);
+          setSelectedIds(new Set());
+        }}
+      >
         <TabsList>
           <TabsTrigger value="active">Ενεργοί</TabsTrigger>
           <TabsTrigger value="trash" className="gap-2">
@@ -686,7 +717,7 @@ function ClientsContent() {
         </DialogContent>
       </Dialog>
 
-      {selectedIds.size > 0 && (
+      {clientListTab === "active" && selectedIds.size > 0 && (
         <div className="fixed bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-900 px-5 py-3 text-white shadow-lg dark:bg-slate-800">
           <div className="flex items-center gap-4">
             <span className="text-sm font-semibold">{selectedIds.size} πελάτες επιλεγμένοι</span>
@@ -709,6 +740,18 @@ function ClientsContent() {
             >
               <Ban className="h-4 w-4" /> Απενεργοποίηση
             </Button>
+            {user?.role === "admin" && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setBulkTrashDeleteOpen(true)}
+                disabled={bulkSending}
+                className="gap-2 text-red-300 hover:bg-white/10 hover:text-red-200"
+              >
+                <Trash2 className="h-4 w-4" /> Διαγραφή
+              </Button>
+            )}
             <Button
               type="button"
               size="sm"
@@ -744,6 +787,23 @@ function ClientsContent() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={bulkTrashDeleteOpen} onOpenChange={setBulkTrashDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Μεταφορά πελατών στον Κάδο;</AlertDialogTitle>
+            <AlertDialogDescription>
+              Οι {selectedIds.size} επιλεγμένοι πελάτες θα μεταφερθούν στον Κάδο και θα μπορούν να επανέλθουν αργότερα.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Ακύρωση</AlertDialogCancel>
+            <AlertDialogAction disabled={bulkSending} onClick={handleBulkMoveToTrash} className="bg-destructive text-white hover:bg-destructive/90">
+              {bulkSending ? "Μεταφορά..." : "Μεταφορά στον Κάδο"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
         </TabsContent>
 
         <TabsContent value="trash" className="mt-5">
@@ -753,6 +813,7 @@ function ClientsContent() {
             error={trashError}
             onRestore={restoreClient}
             onPermanentDelete={permanentlyDeleteClient}
+            onBulkPermanentDelete={permanentlyDeleteClients}
             canPermanentlyDelete={user?.role === "admin"}
           />
         </TabsContent>
@@ -767,6 +828,7 @@ function TrashClientsTable({
   error,
   onRestore,
   onPermanentDelete,
+  onBulkPermanentDelete,
   canPermanentlyDelete,
 }: {
   clients: TrashedClient[];
@@ -774,10 +836,13 @@ function TrashClientsTable({
   error: string;
   onRestore: (client: TrashedClient) => Promise<void>;
   onPermanentDelete: (client: TrashedClient) => Promise<void>;
+  onBulkPermanentDelete: (ids: Array<number | string>) => Promise<void>;
   canPermanentlyDelete: boolean;
 }) {
   const [restoreTarget, setRestoreTarget] = useState<TrashedClient | null>(null);
   const [permanentDeleteTarget, setPermanentDeleteTarget] = useState<TrashedClient | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number | string>>(new Set());
+  const [bulkPermanentDeleteOpen, setBulkPermanentDeleteOpen] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [permanentlyDeleting, setPermanentlyDeleting] = useState(false);
 
@@ -807,12 +872,47 @@ function TrashClientsTable({
     }
   };
 
+  const toggleSelected = (id: number | string, checked: boolean) => {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleAll = (checked: boolean) => {
+    setSelectedIds(checked ? new Set(clients.map((client) => client.id)) : new Set());
+  };
+
+  const permanentlyDeleteSelected = async () => {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    setPermanentlyDeleting(true);
+    try {
+      await onBulkPermanentDelete(ids);
+      setSelectedIds(new Set());
+      setBulkPermanentDeleteOpen(false);
+    } finally {
+      setPermanentlyDeleting(false);
+    }
+  };
+
   return (
     <>
       <section className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <Table>
           <TableHeader>
             <TableRow>
+              {canPermanentlyDelete && (
+                <TableHead className="w-12 px-4">
+                  <Checkbox
+                    checked={clients.length > 0 && clients.every((client) => selectedIds.has(client.id))}
+                    onCheckedChange={(checked) => toggleAll(Boolean(checked))}
+                    aria-label="Επιλογή όλων"
+                  />
+                </TableHead>
+              )}
               <TableHead>Όνομα</TableHead>
               <TableHead>Διαγράφηκε</TableHead>
               <TableHead>Από</TableHead>
@@ -822,6 +922,15 @@ function TrashClientsTable({
           <TableBody>
             {clients.map((client) => (
               <TableRow key={client.id}>
+                {canPermanentlyDelete && (
+                  <TableCell className="px-4">
+                    <Checkbox
+                      checked={selectedIds.has(client.id)}
+                      onCheckedChange={(checked) => toggleSelected(client.id, Boolean(checked))}
+                      aria-label={`Επιλογή ${client.full_name || client.email || "πελάτη"}`}
+                    />
+                  </TableCell>
+                )}
                 <TableCell>
                   <div className="font-medium text-foreground">{client.full_name || client.email || "-"}</div>
                   <div className="mt-1 text-sm text-muted-foreground">{client.email || "-"}</div>
@@ -849,7 +958,7 @@ function TrashClientsTable({
             ))}
             {!clients.length && (
               <TableRow>
-                <TableCell colSpan={4} className="py-16">
+                <TableCell colSpan={canPermanentlyDelete ? 5 : 4} className="py-16">
                   <div className="flex flex-col items-center gap-3 text-center text-muted-foreground">
                     <Trash2 className="h-8 w-8" />
                     <p>{loading ? "Φόρτωση κάδου..." : error || "Ο κάδος είναι άδειος"}</p>
@@ -860,6 +969,26 @@ function TrashClientsTable({
           </TableBody>
         </Table>
       </section>
+
+      {canPermanentlyDelete && selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-900 px-5 py-3 text-white shadow-lg dark:bg-slate-800">
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-semibold">{selectedIds.size} πελάτες επιλεγμένοι</span>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setBulkPermanentDeleteOpen(true)}
+              className="gap-2 text-red-300 hover:bg-white/10 hover:text-red-200"
+            >
+              <Trash2 className="h-4 w-4" /> Μόνιμη Διαγραφή
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())} className="text-white hover:bg-white/10 hover:text-white">
+              Ακύρωση
+            </Button>
+          </div>
+        </div>
+      )}
 
       <AlertDialog open={Boolean(restoreTarget)} onOpenChange={(open) => !open && setRestoreTarget(null)}>
         <AlertDialogContent>
@@ -885,6 +1014,23 @@ function TrashClientsTable({
           <AlertDialogFooter>
             <AlertDialogCancel>Ακύρωση</AlertDialogCancel>
             <AlertDialogAction disabled={permanentlyDeleting} onClick={permanentlyDelete} className="bg-destructive text-white hover:bg-destructive/90">
+              {permanentlyDeleting ? "Διαγραφή..." : "Μόνιμη Διαγραφή"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={bulkPermanentDeleteOpen} onOpenChange={setBulkPermanentDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Μόνιμη διαγραφή πελατών;</AlertDialogTitle>
+            <AlertDialogDescription>
+              Αυτή η ενέργεια δεν αναιρείται. Τα δεδομένα των {selectedIds.size} επιλεγμένων πελατών θα διαγραφούν οριστικά.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Ακύρωση</AlertDialogCancel>
+            <AlertDialogAction disabled={permanentlyDeleting} onClick={permanentlyDeleteSelected} className="bg-destructive text-white hover:bg-destructive/90">
               {permanentlyDeleting ? "Διαγραφή..." : "Μόνιμη Διαγραφή"}
             </AlertDialogAction>
           </AlertDialogFooter>
