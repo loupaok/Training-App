@@ -21,6 +21,7 @@ interface PointsSettings {
   min_points_redeem: number;
   max_discount_percent: number;
   is_active: boolean | number;
+  shop_url: string | null;
 }
 
 interface ClientRow {
@@ -86,6 +87,7 @@ function CoachPointsContent() {
         minPointsRedeem: Number(settings.min_points_redeem),
         maxDiscountPercent: Number(settings.max_discount_percent),
         isActive: Boolean(settings.is_active),
+        shopUrl: settings.shop_url || "",
       });
       setSettings(saved);
       setMessage("Οι ρυθμίσεις αποθηκεύτηκαν.");
@@ -163,6 +165,17 @@ function CoachPointsContent() {
                   <Input type="number" value={settings.max_discount_percent} onChange={(e) => update("max_discount_percent", Number(e.target.value) || 0)} />
                 </Label>
               </div>
+              <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+                Link καταστήματος
+                <Input
+                  type="url"
+                  autoComplete="off"
+                  value={settings.shop_url || ""}
+                  onChange={(e) => update("shop_url", e.target.value)}
+                  placeholder="https://mystore.com/shop"
+                />
+                <span className="text-xs font-semibold text-slate-400">Ο πελάτης βλέπει αυτό το link για να χρησιμοποιήσει το coupon του.</span>
+              </Label>
               <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3 dark:border-slate-800">
                 <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Ενεργό</span>
                 <Switch checked={Boolean(settings.is_active)} onCheckedChange={(checked) => update("is_active", checked === true)} />

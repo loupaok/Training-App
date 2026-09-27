@@ -24,6 +24,11 @@ export async function ensurePointsSchema(connection) {
   await connection.query(
     'INSERT IGNORE INTO points_settings (id, points_per_euro, euro_per_points) VALUES (1, 1, 100)'
   );
+  try {
+    await connection.query('ALTER TABLE points_settings ADD COLUMN shop_url VARCHAR(500) NULL');
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
 
   await connection.query(`
     CREATE TABLE IF NOT EXISTS client_points (
@@ -76,6 +81,15 @@ export async function awardPoints(connection, { clientId, planId, paymentId }) {
        VALUES (?, 'earned', ?, ?, ?, 'payment')`,
       [clientId, reward, `Πληρωμή ${plans[0]?.name || ''}`.trim(), paymentId || null]
     );
+
+    const { notifyUser } = await import('./clients.js');
+    await notifyUser(connection, clientId, {
+      clientId,
+      type: 'points_earned',
+      title: '🎯 Κέρδισες πόντους!',
+      body: `Κέρδισες ${reward} πόντους από την πληρωμή "${plans[0]?.name || ''}".`.trim(),
+      linkUrl: '/client-points',
+    });
   } catch (error) {
     console.error('Points award failed:', error);
   }
@@ -101,6 +115,7 @@ router.put('/settings', authenticateToken, authorizeRole(['coach']), [
   body('minPointsRedeem').optional().isInt({ min: 0 }),
   body('maxDiscountPercent').optional().isInt({ min: 0, max: 100 }),
   body('isActive').optional().isBoolean(),
+  body('shopUrl').optional({ nullable: true }).isString(),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -113,7 +128,7 @@ router.put('/settings', authenticateToken, authorizeRole(['coach']), [
     await connection.query(
       `UPDATE points_settings
        SET points_per_euro = ?, euro_per_points = ?, coupon_expiry_days = ?, min_points_redeem = ?,
-           max_discount_percent = ?, is_active = ?
+           max_discount_percent = ?, is_active = ?, shop_url = ?
        WHERE id = 1`,
       [
         req.body.pointsPerEuro ?? current.points_per_euro,
@@ -122,6 +137,7 @@ router.put('/settings', authenticateToken, authorizeRole(['coach']), [
         req.body.minPointsRedeem ?? current.min_points_redeem,
         req.body.maxDiscountPercent ?? current.max_discount_percent,
         req.body.isActive === undefined ? current.is_active : (req.body.isActive ? 1 : 0),
+        req.body.shopUrl === undefined ? current.shop_url : (req.body.shopUrl || null),
       ]
     );
 
@@ -134,18 +150,24 @@ router.put('/settings', authenticateToken, authorizeRole(['coach']), [
   }
 });
 
-async function getClientPointsPayload(connection, clientId) {
+async function getClientPointsPayload(connection, clientId, { limit = 50, offset = 0 } = {}) {
+  const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
+  const safeOffset = Math.max(parseInt(offset, 10) || 0, 0);
+
   const [pointsRows] = await connection.query('SELECT * FROM client_points WHERE client_id = ?', [clientId]);
-  const [transactions] = await connection.query(
-    'SELECT * FROM points_transactions WHERE client_id = ? ORDER BY created_at DESC LIMIT 50',
+  const [rows] = await connection.query(
+    `SELECT * FROM points_transactions WHERE client_id = ? ORDER BY created_at DESC LIMIT ${safeLimit + 1} OFFSET ${safeOffset}`,
     [clientId]
   );
+  const hasMore = rows.length > safeLimit;
+  const transactions = hasMore ? rows.slice(0, safeLimit) : rows;
   const points = pointsRows[0] || { total_points: 0, used_points: 0, available_points: 0 };
   return {
     totalPoints: points.total_points,
     usedPoints: points.used_points,
     availablePoints: points.available_points,
     transactions,
+    hasMore,
   };
 }
 
@@ -153,7 +175,7 @@ router.get('/my', authenticateToken, authorizeRole(['client']), async (req, res)
   try {
     const connection = await pool.getConnection();
     await ensurePointsSchema(connection);
-    const payload = await getClientPointsPayload(connection, req.user.id);
+    const payload = await getClientPointsPayload(connection, req.user.id, { limit: req.query.limit, offset: req.query.offset });
     connection.release();
     res.json(payload);
   } catch (error) {
@@ -198,6 +220,17 @@ router.post('/award', authenticateToken, authorizeRole(['coach']), [
        VALUES (?, 'adjusted', ?, ?)`,
       [clientId, points, description || 'Χειροκίνητη προσθήκη από coach']
     );
+
+    if (points > 0) {
+      const { notifyUser } = await import('./clients.js');
+      await notifyUser(connection, clientId, {
+        clientId,
+        type: 'points_earned',
+        title: '🎯 Κέρδισες πόντους!',
+        body: description ? `Κέρδισες ${points} πόντους: ${description}` : `Κέρδισες ${points} πόντους από τον coach σου.`,
+        linkUrl: '/client-points',
+      });
+    }
 
     const payload = await getClientPointsPayload(connection, clientId);
     connection.release();

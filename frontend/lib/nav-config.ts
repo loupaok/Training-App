@@ -114,6 +114,7 @@ export const clientNavSections: ClientNavSection[] = [
   { label: "Διατροφή", path: "/client-nutrition", locked: true, key: "nutrition", icon: Salad },
   { label: "Progress", path: "/client-progress", locked: true, key: "progress", icon: TrendingUp },
   { label: "Πληρωμές και Συνδρομή", path: "/client-billing", locked: true, key: "billing", icon: CreditCard },
+  { label: "Πόντοι & Rewards", path: "/client-points", locked: true, key: "points", icon: Target },
   { label: "Αλλαγές & Νέα", path: "/changelog", locked: true, key: "changelog", icon: ScrollText },
   { label: "Μηνύματα", path: "/client-messages", locked: true, key: "messages", icon: MessageCircleMore },
   { label: "Ειδοποιήσεις", path: "/client-notifications", key: "notifications", icon: Bell, spacerBefore: true },
