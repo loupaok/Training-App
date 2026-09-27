@@ -2665,25 +2665,45 @@ function PointsTab({ clientId }: { clientId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    let active = true;
+  const [addOpen, setAddOpen] = useState(false);
+  const [addPoints, setAddPoints] = useState("100");
+  const [addDescription, setAddDescription] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState("");
+
+  const load = () => {
     setLoading(true);
     setError("");
-    api
+    return api
       .get<ClientPointsData>(`/points/client/${clientId}`)
-      .then((result) => {
-        if (active) setData(result);
-      })
-      .catch((requestError) => {
-        if (active) setError(requestError instanceof Error ? requestError.message : "Δεν φορτώθηκαν οι πόντοι.");
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
-    };
+      .then((result) => setData(result))
+      .catch((requestError) => setError(requestError instanceof Error ? requestError.message : "Δεν φορτώθηκαν οι πόντοι."))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
   }, [clientId]);
+
+  const submitAddPoints = async () => {
+    setAdding(true);
+    setAddError("");
+    try {
+      await api.post(`/points/award`, {
+        clientId: Number(clientId),
+        points: Number(addPoints),
+        description: addDescription || undefined,
+      });
+      setAddOpen(false);
+      setAddPoints("100");
+      setAddDescription("");
+      await load();
+    } catch (err) {
+      setAddError(err instanceof Error ? err.message : "Δεν προστέθηκαν οι πόντοι.");
+    } finally {
+      setAdding(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -2719,8 +2739,11 @@ function PointsTab({ clientId }: { clientId: string }) {
       </div>
 
       <Card className="p-6">
-        <CardHeader className="p-0">
+        <CardHeader className="flex flex-row items-center justify-between p-0">
           <CardTitle className="text-lg font-semibold">Ιστορικό Πόντων</CardTitle>
+          <Button onClick={() => setAddOpen(true)} size="sm" className="font-bold">
+            + Προσθήκη Πόντων
+          </Button>
         </CardHeader>
         <CardContent className="p-0 pt-6">
           {!data.transactions.length ? (
@@ -2755,6 +2778,34 @@ function PointsTab({ clientId }: { clientId: string }) {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Προσθήκη Πόντων</DialogTitle>
+            <DialogDescription>Προσθέτει πόντους σε αυτόν τον πελάτη, ανεξάρτητα από πληρωμή.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <Label className="flex flex-col items-start gap-2 text-sm font-bold">
+              Πόντοι
+              <Input type="number" value={addPoints} onChange={(event) => setAddPoints(event.target.value)} />
+            </Label>
+            <Label className="flex flex-col items-start gap-2 text-sm font-bold">
+              Περιγραφή (προαιρετικό)
+              <Input value={addDescription} onChange={(event) => setAddDescription(event.target.value)} placeholder="π.χ. Bonus προόδου" />
+            </Label>
+            {addError && <p className="text-sm text-destructive">{addError}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddOpen(false)}>
+              Ακύρωση
+            </Button>
+            <Button onClick={submitAddPoints} disabled={adding || !addPoints}>
+              {adding ? "Αποθήκευση..." : "Αποθήκευση"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
