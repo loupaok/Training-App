@@ -7,20 +7,31 @@ export async function wcRequest(method, endpoint, data) {
   if (!WC_URL || !process.env.WC_CONSUMER_KEY || !process.env.WC_CONSUMER_SECRET) {
     throw new Error('WooCommerce is not configured (WC_URL/WC_CONSUMER_KEY/WC_CONSUMER_SECRET missing).');
   }
-  const response = await fetch(`${WC_URL}/wp-json/wc/v3${endpoint}`, {
-    method,
-    headers: {
-      Authorization: authHeader(),
-      'Content-Type': 'application/json',
-    },
-    body: data ? JSON.stringify(data) : undefined,
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message = body?.message || `WooCommerce request failed (${response.status})`;
-    throw new Error(message);
+
+  // WooCommerce's REST API only performs Basic Auth over HTTPS (it silently falls through to
+  // OAuth 1.0a over plain HTTP), so a local dev store's self-signed cert has to be tolerated here.
+  const isLocalHttps = /^https:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(WC_URL);
+  const previousTlsSetting = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+  if (isLocalHttps) process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+
+  try {
+    const response = await fetch(`${WC_URL}/wp-json/wc/v3${endpoint}`, {
+      method,
+      headers: {
+        Authorization: authHeader(),
+        'Content-Type': 'application/json',
+      },
+      body: data ? JSON.stringify(data) : undefined,
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = body?.message || `WooCommerce request failed (${response.status})`;
+      throw new Error(message);
+    }
+    return body;
+  } finally {
+    if (isLocalHttps) process.env.NODE_TLS_REJECT_UNAUTHORIZED = previousTlsSetting;
   }
-  return body;
 }
 
 export async function createCoupon({ code, amount, clientEmail, expiryDays = 30 }) {
