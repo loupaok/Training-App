@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, X, FileText } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, X, FileText, Target } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -296,6 +296,7 @@ const tabs = [
   { id: "training", label: "Πρόγραμμα Προπόνησης" },
   { id: "nutrition", label: "Πρόγραμμα Διατροφής" },
   { id: "payments", label: "Πληρωμές" },
+  { id: "points", label: "Πόντοι" },
   { id: "messages", label: "Μηνύματα" },
   { id: "activity", label: "Ιστορικό" },
 ];
@@ -799,6 +800,10 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 rejectingPaymentId={rejectingPaymentId}
                 onUpdated={loadClientDetail}
               />
+            </TabsContent>
+
+            <TabsContent value="points" className="mt-6">
+              <PointsTab clientId={clientId} />
             </TabsContent>
 
             <TabsContent value="messages" className="mt-6">
@@ -2633,6 +2638,123 @@ function ActivityLogSkeleton() {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+type PointsTransaction = {
+  id: number;
+  type: "earned" | "redeemed" | "expired" | "adjusted";
+  points: number;
+  description: string | null;
+  coupon_code: string | null;
+  created_at: string;
+};
+
+type ClientPointsData = { totalPoints: number; usedPoints: number; availablePoints: number; transactions: PointsTransaction[] };
+
+const pointsTypeMeta: Record<string, { label: string; dotClass: string }> = {
+  earned: { label: "Αυτόματη πίστωση", dotClass: "bg-emerald-500" },
+  redeemed: { label: "Εξαργύρωση", dotClass: "bg-amber-500" },
+  adjusted: { label: "Χειροκίνητη προσθήκη", dotClass: "bg-blue-500" },
+  expired: { label: "Λήξη", dotClass: "bg-slate-400" },
+};
+
+function PointsTab({ clientId }: { clientId: string }) {
+  const [data, setData] = useState<ClientPointsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError("");
+    api
+      .get<ClientPointsData>(`/points/client/${clientId}`)
+      .then((result) => {
+        if (active) setData(result);
+      })
+      .catch((requestError) => {
+        if (active) setError(requestError instanceof Error ? requestError.message : "Δεν φορτώθηκαν οι πόντοι.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [clientId]);
+
+  if (loading) {
+    return (
+      <Card className="p-6">
+        <ActivityLogSkeleton />
+      </Card>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <Card className="p-6">
+        <p className="text-sm text-destructive">{error || "Δεν φορτώθηκαν οι πόντοι."}</p>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card className="p-5">
+          <p className="text-sm text-muted-foreground">Σύνολο πόντων</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums">{data.totalPoints}</p>
+        </Card>
+        <Card className="p-5">
+          <p className="text-sm text-muted-foreground">Διαθέσιμοι</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums text-primary">{data.availablePoints}</p>
+        </Card>
+        <Card className="p-5">
+          <p className="text-sm text-muted-foreground">Εξαργυρωμένοι</p>
+          <p className="mt-2 text-2xl font-bold tabular-nums">{data.usedPoints}</p>
+        </Card>
+      </div>
+
+      <Card className="p-6">
+        <CardHeader className="p-0">
+          <CardTitle className="text-lg font-semibold">Ιστορικό Πόντων</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0 pt-6">
+          {!data.transactions.length ? (
+            <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+              <Target className="h-8 w-8" />
+              <p className="text-sm">Δεν υπάρχει ιστορικό πόντων ακόμα.</p>
+            </div>
+          ) : (
+            <div className="relative ml-2 border-l border-border pl-6">
+              {data.transactions.map((tx) => {
+                const meta = pointsTypeMeta[tx.type] ?? { label: tx.type, dotClass: "bg-slate-400" };
+                const signedPoints = tx.type === "redeemed" ? -Math.abs(tx.points) : Math.abs(tx.points);
+                return (
+                  <div key={tx.id} className="relative pb-7 last:pb-1">
+                    <span className={`absolute -left-[1.84rem] top-1.5 h-3 w-3 rounded-full ring-4 ring-background ${meta.dotClass}`} />
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium text-foreground">{meta.label}</p>
+                      <p className={`text-sm font-bold tabular-nums ${signedPoints < 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                        {signedPoints > 0 ? "+" : ""}
+                        {signedPoints}
+                      </p>
+                    </div>
+                    {tx.description && <p className="mt-1 text-sm text-muted-foreground">{tx.description}</p>}
+                    {tx.coupon_code && <p className="mt-1 text-xs text-muted-foreground">Coupon: {tx.coupon_code}</p>}
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {relativeTime(tx.created_at)} · {formatDateTime(tx.created_at)}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
