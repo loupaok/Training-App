@@ -269,6 +269,54 @@ async function runSubscriptionExpiry() {
   }
 }
 
+// ─── CRON 6 ──────────────────────────────────────────────────────────────────
+// Daily 00:00 — reconcile the Discord "Ενεργό Μέλος" role against subscription
+// status for every client who has connected Discord.
+async function runDiscordRoleSync() {
+  console.log('[CRON] Running Discord role sync...');
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    const [rows] = await connection.query(`
+      SELECT u.id, u.discord_id,
+        EXISTS(
+          SELECT 1 FROM subscriptions s
+          WHERE s.client_id = u.id AND s.status IN ('active', 'expiring_soon')
+            AND s.start_date <= CURDATE() AND s.end_date >= CURDATE()
+        ) AS is_active
+      FROM users u
+      WHERE u.discord_id IS NOT NULL
+    `);
+
+    if (!rows.length) return;
+
+    const { getActiveRoleId, addRole, removeRole } = await import('./lib/discord.js');
+    const roleId = await getActiveRoleId();
+    if (!roleId) {
+      console.error('[CRON] Discord role sync skipped: "Ενεργό Μέλος" role id unavailable.');
+      return;
+    }
+
+    let updated = 0;
+    for (const row of rows) {
+      try {
+        if (row.is_active) await addRole(row.discord_id, roleId);
+        else await removeRole(row.discord_id, roleId);
+        updated += 1;
+      } catch (err) {
+        console.error(`[CRON] Discord role sync failed for user ${row.id}:`, err.message);
+      }
+    }
+    console.log(`[CRON] Discord role sync processed ${updated}/${rows.length} users`);
+  } catch (err) {
+    console.error('[CRON] Discord role sync failed:', err.message);
+  } finally {
+    connection?.release();
+  }
+}
+
+cron.schedule('0 0 * * *', () => { void runDiscordRoleSync(); }, { timezone: 'Europe/Athens' });
+
 const cronJobs = new Map();
 const managedCronJobs = new Map([
   ['update_reminder', runUpdateReminder],

@@ -28,6 +28,7 @@ import brandingRoutes from './routes/branding.js';
 import weeklyUpdateRoutes from './routes/weekly-updates.js';
 import settingsRoutes from './routes/settings.js';
 import pointsRoutes from './routes/points.js';
+import discordRoutes from './routes/discord.js';
 import { authenticateToken, isClient, isCoach } from './middleware/auth.js';
 
 dotenv.config();
@@ -106,6 +107,7 @@ app.use('/api/branding', brandingRoutes);
 app.use('/api/updates', authenticateToken, weeklyUpdateRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/points', pointsRoutes);
+app.use('/api/discord', discordRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -131,4 +133,5 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`Environment: ${process.env.NODE_ENV}`);
   import('./crons.js');
+  import('./lib/discord.js').then(({ getActiveRoleId }) => getActiveRoleId()).catch(() => {});
 });

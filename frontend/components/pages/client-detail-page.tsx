@@ -40,6 +40,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AreaChart, SparkLineChart, ProgressBar } from "@tremor/react";
 import {
@@ -193,6 +194,8 @@ interface ClientRecord {
   created_at?: string;
   weight_kg?: number | string;
   target_weight_kg?: number | string;
+  is_demo?: number | boolean;
+  demo_updates_enabled?: number | boolean;
   height_cm?: number | string;
   date_of_birth?: string;
   gender?: string;
@@ -200,6 +203,8 @@ interface ClientRecord {
   fitness_goal?: string;
   coach_notes?: string;
   discord_id?: string;
+  discord_oauth_id?: string | null;
+  discord_oauth_username?: string | null;
   emergency_contact_name?: string;
   emergency_contact_phone?: string;
   profile_photo?: string | null;
@@ -901,6 +906,7 @@ function ClientHeader({
           <StatChip icon="⚖️" value={client.weight_kg ? `${client.weight_kg}kg` : "-"} />
           <StatChip icon="📅" value={`${memberDays} μέρες`} />
           <StatChip icon="📋" value={`${updatesCount}${updatesCount >= 12 ? "+" : ""} updates`} />
+          <StatChip icon="💬" value={client.discord_oauth_username ? `${client.discord_oauth_username} ✅` : "Μη συνδεδεμένος"} />
         </div>
       </div>
 
@@ -1663,6 +1669,15 @@ function OverviewTab({
         </div>
       )}
 
+      {Boolean(client.is_demo) && (
+        <DemoModeControl
+          clientId={clientId}
+          enabled={Boolean(client.demo_updates_enabled)}
+          disabled={!canEdit}
+          onUpdated={onUpdated}
+        />
+      )}
+
       <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleSectionDragEnd}>
         <div className="grid gap-6 lg:grid-cols-5">
           <OverviewColumn columnId="column-left" ids={leftIds} className="lg:col-span-3">
@@ -1747,6 +1762,41 @@ function IntakePhotoGallery({ files }: { files: IntakeFile[] }) {
         </div>
       )}
     </>
+  );
+}
+
+function DemoModeControl({ clientId, enabled, disabled, onUpdated }: { clientId: string; enabled: boolean; disabled: boolean; onUpdated: () => void }) {
+  const [isEnabled, setIsEnabled] = useState(enabled);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => setIsEnabled(enabled), [enabled]);
+
+  const updateDemoMode = async (nextEnabled: boolean) => {
+    setIsEnabled(nextEnabled);
+    setSaving(true);
+    try {
+      await api.put(`/clients/${clientId}/demo-mode`, { enabled: nextEnabled });
+      onUpdated();
+    } catch {
+      setIsEnabled(!nextEnabled);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className="border-dashed border-amber-300 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20">
+      <CardContent className="flex flex-wrap items-center gap-4 p-4">
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold">Demo Client</p>
+          <p className="mt-1 text-sm text-muted-foreground">Επιτρέπει πολλαπλά test updates χωρίς περιορισμό ημέρας ή εβδομάδας.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium">{isEnabled ? "Ενεργό" : "Ανενεργό"}</span>
+          <Switch checked={isEnabled} disabled={disabled || saving} onCheckedChange={(checked) => void updateDemoMode(checked === true)} />
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -2405,16 +2455,16 @@ function ProgressTab({ client }: { client: ClientRecord }) {
       <Card className="p-5">
         <h3 className="mb-4 text-lg font-bold">Πρόσφατες φωτογραφίες προόδου</h3>
         {recentPhotos.length ? (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="flex flex-wrap gap-2">
             {recentPhotos.map((photo) => (
               <button
                 key={photo}
                 type="button"
-                className="overflow-hidden rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                className="h-16 w-16 overflow-hidden rounded-md border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary sm:h-20 sm:w-20"
                 onClick={() => setSelectedPhoto(photo)}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={resolveMediaUrl(photo)} alt="Φωτογραφία προόδου" className="aspect-square w-full object-cover" />
+                <img src={resolveMediaUrl(photo)} alt="Φωτογραφία προόδου" className="h-full w-full object-cover" />
               </button>
             ))}
           </div>

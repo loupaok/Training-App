@@ -13,6 +13,7 @@ import { getFullTrainingTemplate, getFullNutritionTemplate } from './templates.j
 import { ensureClientActivityLogSchema, logClientActivity } from '../lib/client-activity-log.js';
 import { ensureQuestionnaireSchema, syncUpdateDayQuestionnaireAnswer } from './questionnaire.js';
 import { awardPoints } from './points.js';
+import { ensureDiscordSchema } from './discord.js';
 
 const router = express.Router();
 const activeMessageTypers = new Map();
@@ -435,6 +436,7 @@ async function getRegistrationBodyFallback(connection, clientId) {
   return {
     heightCm: parseDecimalText(findAnswer((question) => question.includes('υψ'))),
     weightKg: parseDecimalText(findAnswer((question) => question.includes('τρεχ') && question.includes('βαρ'))),
+    targetWeightKg: parseDecimalText(findAnswer((question) => question.includes("\u03b5\u03c0\u03b9\u03b8\u03c5\u03bc") && question.includes("\u03b2\u03b1\u03c1"))),
     goal: findAnswer((question) => question.includes('στοχ')),
   };
 }
@@ -518,7 +520,9 @@ async function ensurePaymentProofColumns(connection) {
 async function ensureClientDetailColumns(connection) {
   for (const statement of [
     'ALTER TABLE clients ADD COLUMN discord_id VARCHAR(50) NULL',
-    'ALTER TABLE clients ADD COLUMN target_weight_kg DECIMAL(6,2) NULL'
+    'ALTER TABLE clients ADD COLUMN target_weight_kg DECIMAL(6,2) NULL',
+    'ALTER TABLE clients ADD COLUMN is_demo TINYINT(1) NOT NULL DEFAULT 0',
+    'ALTER TABLE clients ADD COLUMN demo_updates_enabled TINYINT(1) NOT NULL DEFAULT 0'
   ]) {
     try {
       await connection.query(statement);
@@ -2145,11 +2149,13 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
     await ensurePaymentProofColumns(connection);
     await ensureClientDetailColumns(connection);
     await ensureClientSoftDeleteColumns(connection);
+    await ensureDiscordSchema(connection);
 
     const [rows] = await connection.query(
       `SELECT u.id, u.email, u.full_name, u.profile_photo, u.bio, u.is_active,
               u.status AS user_status, u.created_at, u.last_seen_at,
-              c.date_of_birth, c.gender, c.phone, c.height_cm, c.weight_kg, c.target_weight_kg,
+              u.discord_id AS discord_oauth_id, u.discord_username AS discord_oauth_username,
+              c.date_of_birth, c.gender, c.phone, c.height_cm, c.weight_kg, c.target_weight_kg, c.is_demo, c.demo_updates_enabled,
               c.fitness_goal, c.medical_notes, c.coach_notes, c.discord_id,
               c.emergency_contact_name, c.emergency_contact_phone, c.deleted_at, c.deleted_by,
               cc.status AS coaching_status, cc.coach_id
@@ -2249,7 +2255,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
       ...rows[0],
       height_cm: rows[0].height_cm || registrationBody.heightCm || null,
       weight_kg: rows[0].weight_kg || registrationBody.weightKg || null,
-      target_weight_kg: rows[0].target_weight_kg || registrationBody.targetWeightKg || null,
+      target_weight_kg: rows[0].target_weight_kg ?? registrationBody.targetWeightKg ?? null,
       fitness_goal: rows[0].fitness_goal || registrationBody.goal || null,
       onboarding: onboardingRows[0] || null,
       socialLinks: socialRows,
@@ -2952,6 +2958,83 @@ router.post('/', authorizeRole(['coach', 'admin']), [
   }
 });
 
+// Creates one reusable test account. It remains clearly marked as demo and is never
+// included in the normal client-registration flow.
+router.post('/demo', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+  const email = 'demo.client@coachapp.test';
+  const password = 'Demo123!';
+  try {
+    await ensureClientDetailColumns(connection);
+    await ensureOnboardingSchema(connection);
+    await connection.beginTransaction();
+    const [existing] = await connection.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
+    let clientId = existing[0]?.id;
+    if (!clientId) {
+      const passwordHash = await bcrypt.hash(password, 10);
+      const [created] = await connection.query(
+        'INSERT INTO users (email, password, full_name, role, is_active, status) VALUES (?, ?, ?, "client", 1, "active")',
+        [email, passwordHash, 'Demo Client']
+      );
+      clientId = created.insertId;
+    } else {
+      await connection.query('UPDATE users SET full_name = ?, is_active = 1, status = "active" WHERE id = ?', ['Demo Client', clientId]);
+    }
+    await connection.query(
+      `INSERT INTO clients
+         (user_id, phone, date_of_birth, height_cm, weight_kg, target_weight_kg, fitness_goal, medical_notes, is_demo, demo_updates_enabled)
+       VALUES (?, '+30 690 000 0000', '1992-06-15', 178, 75, 70, 'Απώλεια λίπους', 'Demo profile for testing', 1, 1)
+       ON DUPLICATE KEY UPDATE
+         phone = VALUES(phone), date_of_birth = VALUES(date_of_birth), height_cm = VALUES(height_cm),
+         weight_kg = VALUES(weight_kg), target_weight_kg = VALUES(target_weight_kg),
+         fitness_goal = VALUES(fitness_goal), medical_notes = VALUES(medical_notes),
+         is_demo = 1, demo_updates_enabled = 1`,
+      [clientId]
+    );
+    await connection.query(
+      `INSERT INTO onboarding_forms
+         (client_id, goal, level, available_days, injuries, dietary_restrictions, additional_notes,
+          date_of_birth, age, height_cm, weight_kg, update_day, submitted_at)
+       VALUES (?, 'Απώλεια λίπους', 'Μέτριος', '3-4', 'Καμία', 'Καμία', 'Demo στοιχεία για δοκιμές.',
+               '1992-06-15', 34, 178, 75, 1, NOW())
+       ON DUPLICATE KEY UPDATE
+         goal = VALUES(goal), level = VALUES(level), available_days = VALUES(available_days),
+         injuries = VALUES(injuries), dietary_restrictions = VALUES(dietary_restrictions),
+         additional_notes = VALUES(additional_notes), date_of_birth = VALUES(date_of_birth), age = VALUES(age),
+         height_cm = VALUES(height_cm), weight_kg = VALUES(weight_kg), update_day = VALUES(update_day), submitted_at = NOW()`,
+      [clientId]
+    );
+    await connection.query(
+      `INSERT INTO client_onboarding
+         (client_id, goal, date_of_birth, age, height_cm, update_day, onboarding_completed, completed_at)
+       VALUES (?, 'Απώλεια λίπους', '1992-06-15', 34, 178, 1, 1, NOW())
+       ON DUPLICATE KEY UPDATE
+         goal = VALUES(goal), date_of_birth = VALUES(date_of_birth), age = VALUES(age), height_cm = VALUES(height_cm),
+         update_day = VALUES(update_day), onboarding_completed = 1, completed_at = NOW()`,
+      [clientId]
+    );
+    const coachId = req.user.role === 'coach' ? req.user.id : await getDefaultCoachId(connection);
+    if (coachId) await connection.query(
+      'INSERT INTO coach_clients (coach_id, client_id, status) VALUES (?, ?, "active") ON DUPLICATE KEY UPDATE coach_id = VALUES(coach_id), status = "active"',
+      [coachId, clientId]
+    );
+    if (coachId) await connection.query(
+      `INSERT INTO update_schedule (coach_id, client_id, frequency, day_of_week, reminder_enabled, next_due_date)
+       VALUES (?, ?, 'weekly', 1, 0, CURDATE())
+       ON DUPLICATE KEY UPDATE coach_id = VALUES(coach_id), day_of_week = 1, reminder_enabled = 0`,
+      [coachId, clientId]
+    );
+    await connection.commit();
+    res.status(201).json({ id: clientId, email, password, message: 'Demo client is ready.' });
+  } catch (error) {
+    await connection.rollback();
+    console.error(error);
+    res.status(500).json({ message: 'Could not create demo client.' });
+  } finally {
+    connection.release();
+  }
+});
+
 // POST /clients/:id/approve-payment — manual bank transfer approval
 router.post('/:id/approve-payment', authorizeRole(['coach', 'admin']), async (req, res) => {
   const connection = await pool.getConnection();
@@ -3168,6 +3251,35 @@ router.post('/:id/reject-payment', authorizeRole(['coach', 'admin']), async (req
     connection.release();
     console.error(error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.put('/:id/demo-mode', authorizeRole(['coach', 'admin']), [
+  body('enabled').isBoolean(),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const connection = await pool.getConnection();
+  try {
+    await ensureClientDetailColumns(connection);
+    const [rows] = await connection.query(
+      `SELECT c.is_demo, cc.coach_id
+       FROM clients c
+       LEFT JOIN coach_clients cc ON cc.client_id = c.user_id
+       WHERE c.user_id = ? LIMIT 1`,
+      [req.params.id]
+    );
+    if (!rows.length || !rows[0].is_demo) return res.status(404).json({ message: 'Demo client not found.' });
+    if (req.user.role === 'coach' && Number(rows[0].coach_id) !== Number(req.user.id)) return res.status(403).json({ message: 'Access denied.' });
+    const enabled = req.body.enabled === true;
+    await connection.query('UPDATE clients SET demo_updates_enabled = ? WHERE user_id = ?', [enabled ? 1 : 0, req.params.id]);
+    res.json({ enabled, message: enabled ? 'Demo updates enabled.' : 'Demo updates disabled.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Could not update demo mode.' });
+  } finally {
+    connection.release();
   }
 });
 

@@ -15,6 +15,7 @@ import { resolveMediaUrl } from "@/lib/media";
 import { cropAndCompressImage } from "@/lib/image-compression";
 import { ChangePasswordCard } from "@/components/shared/change-password-card";
 import { PushNotificationsCard } from "@/components/shared/push-notifications-card";
+import { DiscordConnectionCard } from "@/components/shared/discord-connection-card";
 import { useFontSize, type FontSize } from "@/components/shell/font-size-context";
 import type { AuthUser } from "@/types/auth";
 
@@ -491,6 +492,8 @@ function ClientProfileContent() {
             </ToggleGroup>
           </CardContent>
         </Card>
+
+        <DiscordConnectionCard />
 
         <PushNotificationsCard />
 

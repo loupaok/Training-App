@@ -16,6 +16,8 @@ import {
   Sparkles,
   Target,
   Upload,
+  ImagePlus,
+  Paperclip,
 } from "lucide-react"
 import { AreaChart } from "@tremor/react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
@@ -31,6 +33,7 @@ import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { DiscordConnectionCard } from "@/components/shared/discord-connection-card"
 import { api } from "@/lib/api/client"
 import { useAuth } from "@/lib/auth/auth-context"
 import { resolveMediaUrl } from "@/lib/media"
@@ -42,6 +45,9 @@ type Question = {
   isRequired: boolean
   options?: string[]
   placeholder?: string | null
+  allowPhotos?: boolean
+  allowPdf?: boolean
+  maxPhotos?: number
 }
 
 type Update = {
@@ -177,6 +183,8 @@ function ModernOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpdate }
 
     <PointsWidget />
 
+    <DiscordConnectionCard />
+
     <section className="grid gap-4 md:grid-cols-3"><DashboardQuickLink href="/client-program" title="Προπόνηση" description={trainingPlan ? `${trainingPlan.days.length} ημέρες προπόνησης` : "Δες το πρόγραμμά σου"} icon={Dumbbell} /><DashboardQuickLink href="/client-nutrition" title="Διατροφή" description={nutritionPlan ? `${nutritionPlan.meals.length} γεύματα στο πλάνο` : "Δες το πλάνο διατροφής"} icon={Salad} /><DashboardQuickLink href="/client-progress" title="Progress" description="Μετρήσεις, φωτογραφίες και ρεκόρ" icon={Activity} /></section>
 
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
@@ -242,29 +250,33 @@ function ClientDashboardContent() {
     const setValue = (next: string | string[]) => setAnswers((current) => ({ ...current, [question.id]: next }))
     const required = question.isRequired ? <span className="text-destructive"> *</span> : null
 
+    if (question.allowPhotos || question.allowPdf) {
+      return <div key={question.id} className="space-y-3"><Label className="text-base font-semibold">{question.question}{required}</Label><label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 p-4 text-sm transition-colors hover:bg-muted/40"><span className="grid h-9 w-9 place-items-center rounded-md bg-background">{question.allowPhotos ? <ImagePlus className="h-4 w-4" /> : <Paperclip className="h-4 w-4" />}</span><span className="min-w-0 flex-1"><span className="block font-medium">Πρόσθεσε επισύναψη</span><span className="block text-xs text-muted-foreground">Έως {question.allowPhotos ? question.maxPhotos || 4 : 1} αρχεία, 5MB το καθένα</span></span><Input className="hidden" type="file" multiple={question.allowPhotos} accept={[question.allowPhotos ? "image/jpeg,image/png,image/webp" : "", question.allowPdf ? "application/pdf" : ""].filter(Boolean).join(",")} onChange={(event) => setFiles((current) => [...current, ...Array.from(event.target.files ?? []).map((file) => ({ file, questionId: question.id }))].slice(0, 5))} /></label>{files.filter((entry) => entry.questionId === question.id).length > 0 && <p className="text-xs text-muted-foreground">{files.filter((entry) => entry.questionId === question.id).length} αρχεία επιλέχθηκαν</p>}</div>
+    }
+
     if (question.type === "rating") {
-      return <div key={question.id} className="space-y-2"><Label>{question.question}{required}</Label><StarRating value={Number(value) || 0} onChange={(rating) => setValue(String(rating))} /></div>
+      return <div key={question.id} className="space-y-3"><Label className="text-base font-semibold">{question.question}{required}</Label><div className="rounded-lg border border-border bg-muted/30 p-4"><StarRating value={Number(value) || 0} onChange={(rating) => setValue(String(rating))} /></div></div>
     }
     if (question.type === "textarea") {
-      return <div key={question.id} className="space-y-2"><Label>{question.question}{required}</Label><Textarea value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} /></div>
+      return <div key={question.id} className="space-y-2"><Label className="text-base font-semibold">{question.question}{required}</Label><Textarea value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} className="min-h-28 resize-y" /></div>
     }
     if (question.type === "photos" || question.type === "pdf") {
       return <div key={question.id} className="space-y-2"><Label>{question.question}{required}</Label><Input type="file" multiple={question.type === "photos"} accept={question.type === "photos" ? "image/jpeg,image/png,image/webp" : "application/pdf"} onChange={(event) => setFiles((current) => [...current, ...Array.from(event.target.files ?? []).map((file) => ({ file, questionId: question.id }))].slice(0, 5))} /><p className="text-xs text-muted-foreground">Έως 5 αρχεία, 5MB το καθένα.</p></div>
     }
     if (question.type === "select" || question.type === "single_select") {
-      return <fieldset key={question.id} className="space-y-2"><legend className="text-sm font-medium">{question.question}{required}</legend><div className="grid gap-2 sm:grid-cols-2">{(question.options ?? []).map((option) => <button type="button" key={option} onClick={() => setValue(option)} className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${value === option ? "border-primary bg-primary/5" : "hover:bg-muted"}`}>{option}</button>)}</div></fieldset>
+      return <fieldset key={question.id} className="space-y-3"><legend className="text-base font-semibold">{question.question}{required}</legend><div className="flex flex-wrap gap-2">{(question.options ?? []).map((option) => <button type="button" key={option} onClick={() => setValue(option)} className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${value === option ? "border-primary bg-primary/10 text-foreground" : "bg-background hover:bg-muted"}`}>{option}</button>)}</div></fieldset>
     }
     if (question.type === "multi_select") {
       const selected = Array.isArray(value) ? value : []
-      return <fieldset key={question.id} className="space-y-2"><legend className="text-sm font-medium">{question.question}{required}</legend><div className="grid gap-2 sm:grid-cols-2">{(question.options ?? []).map((option) => <label key={option} className="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm"><input type="checkbox" checked={selected.includes(option)} onChange={() => setValue(selected.includes(option) ? selected.filter((item) => item !== option) : [...selected, option])} />{option}</label>)}</div></fieldset>
+      return <fieldset key={question.id} className="space-y-3"><legend className="text-base font-semibold">{question.question}{required}</legend><div className="flex flex-wrap gap-2">{(question.options ?? []).map((option) => <button type="button" key={option} onClick={() => setValue(selected.includes(option) ? selected.filter((item) => item !== option) : [...selected, option])} className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${selected.includes(option) ? "border-primary bg-primary/10 text-foreground" : "bg-background hover:bg-muted"}`}>{option}</button>)}</div></fieldset>
     }
-    return <div key={question.id} className="space-y-2"><Label>{question.question}{required}</Label><Input type={question.type === "number" ? "number" : question.type === "url" ? "url" : "text"} autoComplete={question.type === "url" ? "off" : undefined} value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} /></div>
+    return <div key={question.id} className="space-y-3"><div className="space-y-2"><Label className="text-base font-semibold">{question.question}{required}</Label><Input type={question.type === "number" ? "number" : question.type === "url" ? "url" : "text"} autoComplete={question.type === "url" ? "off" : undefined} value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} className="h-11" /></div>{(question.allowPhotos || question.allowPdf) && <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 p-3 text-sm transition-colors hover:bg-muted/40"><span className="grid h-8 w-8 place-items-center rounded-md bg-background">{question.allowPhotos ? <ImagePlus className="h-4 w-4" /> : <Paperclip className="h-4 w-4" />}</span><span className="min-w-0 flex-1"><span className="block font-medium">Πρόσθεσε επισύναψη</span><span className="block text-xs text-muted-foreground">Έως {question.allowPhotos ? question.maxPhotos || 4 : 1} αρχεία, 5MB το καθένα</span></span><Input className="hidden" type="file" multiple={question.allowPhotos} accept={[question.allowPhotos ? "image/jpeg,image/png,image/webp" : "", question.allowPdf ? "application/pdf" : ""].filter(Boolean).join(",")} onChange={(event) => setFiles((current) => [...current, ...Array.from(event.target.files ?? []).map((file) => ({ file, questionId: question.id }))].slice(0, 5))} /></label>}</div>
   }
 
   const submitUpdate = async (event: FormEvent) => {
     event.preventDefault()
     setError("")
-    const unansweredRequired = questions.some((question) => question.isRequired && (!answers[question.id] || (Array.isArray(answers[question.id]) && answers[question.id].length === 0)))
+    const unansweredRequired = questions.some((question) => question.isRequired && (!answers[question.id] || (Array.isArray(answers[question.id]) && answers[question.id].length === 0)) && !files.some((entry) => entry.questionId === question.id))
     if (unansweredRequired) { setError("Συμπλήρωσε όλα τα υποχρεωτικά πεδία."); return }
     setSubmitting(true)
     try {
@@ -277,7 +289,6 @@ function ClientDashboardContent() {
       setAnswers({})
       setFiles([])
       await loadDashboard()
-      window.setTimeout(() => setActiveTab("overview"), 1800)
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Δεν ήταν δυνατή η υποβολή του update.")
     } finally {
