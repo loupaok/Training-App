@@ -240,7 +240,9 @@ function CoachPointsContent() {
               Πελάτης
               <Select value={awardClientId} onValueChange={(value) => value && setAwardClientId(value)}>
                 <SelectTrigger className="h-11 w-full">
-                  <SelectValue placeholder="Επίλεξε πελάτη" />
+                  <SelectValue placeholder="Επίλεξε πελάτη">
+                    {(value: string) => clientOptions.find((option) => option.value === value)?.label ?? ""}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {clientOptions.map((option) => (
