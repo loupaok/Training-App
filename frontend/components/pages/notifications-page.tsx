@@ -10,15 +10,16 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { clearUnreadNotifications } from "@/lib/notification-count"
 import { useAuth } from "@/lib/auth/auth-context"
 import { api } from "@/lib/api/client"
 
-type FilterValue = "all" | "payments" | "updates" | "clients" | "announcements"
+type FilterValue = "all" | "payments" | "programs" | "announcements"
 type NotificationItem = { id: number | string; type?: string; title?: string; body?: string; client_name?: string; client_id?: number | string; link_url?: string | null; created_at?: string; read_at?: string | null }
 
 const filters: { label: string; value: FilterValue }[] = [
-  { label: "Όλες", value: "all" }, { label: "Πληρωμές", value: "payments" }, { label: "Updates", value: "updates" }, { label: "Πελάτες", value: "clients" }, { label: "Ανακοινώσεις", value: "announcements" },
+  { label: "Όλες", value: "all" }, { label: "Πληρωμές", value: "payments" }, { label: "Προγράμματα", value: "programs" }, { label: "Ανακοινώσεις", value: "announcements" },
 ]
 
 function NotificationsContent() {
@@ -65,7 +66,7 @@ function NotificationsContent() {
 
       <div className="grid gap-3 sm:grid-cols-3"><Metric label="Νέες" value={unread} accent /><Metric label="Τελευταίες 30 ημέρες" value={notifications.filter((item) => recent(item.created_at)).length} /><Metric label="Σύνολο ιστορικού" value={notifications.length} /></div>
 
-      <Card><CardHeader className="gap-4 border-b"><div><CardTitle>Ενημερώσεις</CardTitle><CardDescription>Διάλεξε κατηγορία ή άνοιξε μια ειδοποίηση με ενέργεια.</CardDescription></div><div className="flex flex-wrap gap-2">{filters.map((filter) => <Button key={filter.value} size="sm" variant={activeFilter === filter.value ? "default" : "outline"} onClick={() => setActiveFilter(filter.value)}>{filter.label}</Button>)}</div></CardHeader><CardContent className="p-0">
+      <Card><CardHeader className="gap-4 border-b"><div><CardTitle>Ενημερώσεις</CardTitle><CardDescription>Διάλεξε κατηγορία ή άνοιξε μια ειδοποίηση με ενέργεια.</CardDescription></div><Tabs value={activeFilter} onValueChange={(value) => setActiveFilter(value as FilterValue)}><TabsList className="h-auto max-w-full flex-wrap justify-start">{filters.map((filter) => <TabsTrigger key={filter.value} value={filter.value}>{filter.label}</TabsTrigger>)}</TabsList></Tabs></CardHeader><CardContent className="p-0">
         {loading ? <div className="space-y-4 p-6">{Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className="h-20 w-full" />)}</div> : error ? <p className="p-6 text-sm text-destructive">{error}</p> : groups.length ? <div>{groups.map((group) => <section key={group.label}><div className="bg-muted/40 px-6 py-2.5 text-xs font-semibold text-muted-foreground">{group.label}</div>{group.items.map((item) => <NotificationRow key={item.id} item={item} onOpen={open} />)}</section>)}</div> : <EmptyState />}
       </CardContent></Card>
     </main>
@@ -81,7 +82,7 @@ function NotificationRow({ item, onOpen }: { item: NotificationItem; onOpen: (it
 }
 function EmptyState() { return <div className="p-14 text-center"><Bell className="mx-auto h-9 w-9 text-muted-foreground" /><p className="mt-4 font-semibold">Δεν υπάρχουν ειδοποιήσεις εδώ</p><p className="mt-1 text-sm text-muted-foreground">Οι νέες ενημερώσεις θα εμφανίζονται σε αυτή τη λίστα.</p></div> }
 function notificationMeta(type = ""): { label: string; source: string; tone: string; Icon: LucideIcon } { if (type.includes("payment")) return { label: "Πληρωμή", source: "Σύστημα πληρωμών", tone: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300", Icon: CircleDollarSign }; if (type.includes("update")) return { label: "Weekly update", source: "Πελάτης", tone: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300", Icon: ClipboardCheck }; if (type.includes("broadcast")) return { label: "Ανακοίνωση", source: "Ομάδα υποστήριξης", tone: "bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300", Icon: Megaphone }; if (type.includes("client")) return { label: "Πελάτης", source: "Σύστημα", tone: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300", Icon: UserPlus }; return { label: "Ενημέρωση", source: "Σύστημα", tone: "bg-muted text-muted-foreground", Icon: MessageCircle } }
-function matches(item: NotificationItem, filter: FilterValue) { const type = item.type || ""; return filter === "all" || (filter === "payments" && type.includes("payment")) || (filter === "updates" && type.includes("update")) || (filter === "clients" && type.includes("client")) || (filter === "announcements" && type.includes("broadcast")) }
+function matches(item: NotificationItem, filter: FilterValue) { const type = item.type || ""; return filter === "all" || (filter === "payments" && (type.includes("payment") || type.includes("subscription"))) || (filter === "programs" && (type.includes("training") || type.includes("nutrition"))) || (filter === "announcements" && type.includes("broadcast")) }
 function recent(value?: string) { return Boolean(value && Date.now() - new Date(value).getTime() <= 30 * 86400000) }
 function groupByDay(rows: NotificationItem[]) { const today = new Date(); today.setHours(0, 0, 0, 0); const groups = new Map<string, NotificationItem[]>(); rows.forEach((item) => { const date = new Date(item.created_at || ""); const label = !Number.isNaN(date.getTime()) && date >= today ? "Σήμερα" : "Προηγούμενες"; groups.set(label, [...(groups.get(label) || []), item]) }); return [...groups].map(([label, items]) => ({ label, items })) }
 function dateLabel(value?: string) { if (!value) return "Άγνωστη ημερομηνία"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "Άγνωστη ημερομηνία" : date.toLocaleString("el-GR", { dateStyle: "medium", timeStyle: "short" }) }

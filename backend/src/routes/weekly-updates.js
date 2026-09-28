@@ -8,6 +8,7 @@ import { authorizeRole } from '../middleware/auth.js';
 import { notifyCoaches } from './clients.js';
 import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { updateNotificationEmail } from '../lib/email-templates.js';
+import { registerWeeklyUpdatePhotos } from './media.js';
 
 const router = express.Router();
 
@@ -92,6 +93,16 @@ const seedUpdateQuestions = [
 // migrates that table to the flexible question/answer shape used here; the old photos
 // table is left in place, orphaned, rather than dropped.
 export async function ensureWeeklyUpdateSchema(connection) {
+  for (const statement of [
+    'ALTER TABLE clients ADD COLUMN is_demo TINYINT(1) NOT NULL DEFAULT 0',
+    'ALTER TABLE clients ADD COLUMN demo_updates_enabled TINYINT(1) NOT NULL DEFAULT 0',
+  ]) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+  }
   await connection.query(`
     CREATE TABLE IF NOT EXISTS update_questions (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -125,6 +136,14 @@ export async function ensureWeeklyUpdateSchema(connection) {
       FOREIGN KEY (client_id) REFERENCES users(id)
     )
   `);
+
+  // The application enforces one update per week for normal clients. Removing the
+  // legacy database constraint lets demo accounts submit multiple test updates.
+  try {
+    await connection.query('ALTER TABLE weekly_updates DROP INDEX unique_client_week');
+  } catch (error) {
+    if (error.code !== 'ER_CANT_DROP_FIELD_OR_KEY') throw error;
+  }
 
   const [[isReadColumn]] = await connection.query(
     `SELECT COLUMN_NAME FROM information_schema.COLUMNS
@@ -194,6 +213,18 @@ export async function ensureWeeklyUpdateSchema(connection) {
         1,
       ])]
     );
+  }
+
+  // Weight is the single standard numeric value used by progress charts and summaries.
+  const [weightQuestionRows] = await connection.query(
+    `SELECT id FROM update_questions
+     WHERE type = 'number' AND LOWER(question) LIKE ?
+     ORDER BY sort_order ASC, id ASC LIMIT 1`,
+    ['%βάρος%']
+  );
+  if (weightQuestionRows[0]) {
+    await connection.query('UPDATE update_questions SET standard_key = NULL WHERE standard_key = ?', ['weight_kg']);
+    await connection.query('UPDATE update_questions SET standard_key = ? WHERE id = ?', ['weight_kg', weightQuestionRows[0].id]);
   }
 }
 
@@ -455,6 +486,11 @@ router.get('/can-submit/:clientId', async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await ensureWeeklyUpdateSchema(connection);
+    const [[demoClient]] = await connection.query(
+      'SELECT is_demo, demo_updates_enabled FROM clients WHERE user_id = ? LIMIT 1',
+      [req.user.id]
+    );
+    const demoUpdatesEnabled = Boolean(demoClient?.is_demo && demoClient?.demo_updates_enabled);
     const [scheduleRows] = await connection.query(
       'SELECT * FROM update_schedule WHERE client_id = ? ORDER BY updated_at DESC LIMIT 1',
       [req.params.clientId]
@@ -473,9 +509,9 @@ router.get('/can-submit/:clientId', async (req, res) => {
       : null;
 
     res.json({
-      canSubmit: isUpdateDay(schedule) && !alreadySubmittedThisWeek,
+      canSubmit: demoUpdatesEnabled || (isUpdateDay(schedule) && !alreadySubmittedThisWeek),
       nextSubmitDate,
-      alreadySubmittedThisWeek,
+      alreadySubmittedThisWeek: demoUpdatesEnabled ? false : alreadySubmittedThisWeek,
     });
   } catch (error) {
     console.error(error);
@@ -503,12 +539,18 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
       fileQuestionIds = [];
     }
 
+    const [[demoClient]] = await connection.query(
+      'SELECT is_demo, demo_updates_enabled FROM clients WHERE user_id = ? LIMIT 1',
+      [req.user.id]
+    );
+    const demoUpdatesEnabled = Boolean(demoClient?.is_demo && demoClient?.demo_updates_enabled);
+
     const [scheduleRows] = await connection.query(
       'SELECT * FROM update_schedule WHERE client_id = ? ORDER BY updated_at DESC LIMIT 1',
       [req.user.id]
     );
     const schedule = scheduleRows[0] || null;
-    if (!isUpdateDay(schedule)) {
+    if (!demoUpdatesEnabled && !isUpdateDay(schedule)) {
       connection.release();
       return res.status(403).json({ message: 'Το εβδομαδιαίο update ανοίγει μόνο την ημέρα που έχει επιλεγεί.' });
     }
@@ -518,7 +560,7 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
       'SELECT id FROM weekly_updates WHERE client_id = ? AND week_start = ?',
       [req.user.id, weekStart]
     );
-    if (existing.length) {
+    if (!demoUpdatesEnabled && existing.length) {
       connection.release();
       return res.status(400).json({ message: 'Το update αυτής της εβδομάδας έχει ήδη υποβληθεί.' });
     }
@@ -567,6 +609,11 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
     const clientName = userRows[0]?.full_name || userRows[0]?.email || 'Πελάτης';
 
     await connection.commit();
+    try {
+      await registerWeeklyUpdatePhotos(connection, req.user.id);
+    } catch (mediaError) {
+      console.error('Weekly update media-library sync failed:', mediaError);
+    }
     connection.release();
 
     try {
@@ -576,13 +623,13 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
         type: 'new_update',
         title: 'Νέο εβδομαδιαίο update',
         body: `${clientName} υπέβαλε το εβδομαδιαίο update του.`,
-        linkUrl: `/coach/updates?id=${updateId}`,
+        linkUrl: `/coach/updates/${updateId}`,
       });
       const [coachRows] = await notifyConn.query("SELECT email FROM users WHERE role IN ('admin', 'coach') AND is_active = 1");
       notifyConn.release();
 
       const { weight, trainingScore, nutritionScore } = extractUpdateStats(answers, activeQuestions);
-      const updatesLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/coach/updates?id=${updateId}`;
+      const updatesLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/coach/updates/${updateId}`;
 
       const databaseTemplate = await getEmailTemplate('update_notification', {
         clientName,

@@ -1,12 +1,12 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Loader2, CheckCircle2, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { api } from "@/lib/api/client"
 
-export default function DiscordCallbackPage() {
+function DiscordCallbackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const ranRef = useRef(false)
@@ -71,5 +71,13 @@ export default function DiscordCallbackPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function DiscordCallbackPage() {
+  return (
+    <Suspense fallback={<div className="grid min-h-screen place-items-center bg-slate-50 p-6 text-sm text-muted-foreground dark:bg-slate-950">Σύνδεση με το Discord...</div>}>
+      <DiscordCallbackContent />
+    </Suspense>
   )
 }

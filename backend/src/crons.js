@@ -31,6 +31,26 @@ async function runSubscriptionStatus() {
          AND status = 'active'`
     );
 
+    // Keep client access status aligned with the subscription that is active today.
+    // Account records remain intact; only premium access becomes expired.
+    await connection.query(
+      `UPDATE users u
+       SET u.status = 'expired'
+       WHERE u.role = 'client'
+         AND u.status = 'active'
+         AND EXISTS (
+           SELECT 1 FROM subscriptions expired_subscription
+           WHERE expired_subscription.client_id = u.id AND expired_subscription.status = 'expired'
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM subscriptions active_subscription
+           WHERE active_subscription.client_id = u.id
+             AND active_subscription.status IN ('active', 'expiring_soon')
+             AND active_subscription.start_date <= CURDATE()
+             AND active_subscription.end_date >= CURDATE()
+         )`
+    );
+
     await connection.query(
       `UPDATE cron_settings SET last_run = NOW() WHERE job_key = 'subscription_status'`
     );
@@ -315,7 +335,7 @@ async function runDiscordRoleSync() {
   }
 }
 
-cron.schedule('0 0 * * *', () => { void runDiscordRoleSync(); }, { timezone: 'Europe/Athens' });
+cron.schedule('* * * * *', () => { void runDiscordRoleSync(); }, { timezone: 'Europe/Athens' });
 
 const cronJobs = new Map();
 const managedCronJobs = new Map([

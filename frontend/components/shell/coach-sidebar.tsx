@@ -35,6 +35,8 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
   const { branding } = useBranding();
   const canSeeCoachSettings = user?.role === "admin" || user?.role === "coach";
   const isAdmin = user?.role === "admin";
+  const canUseMessages = user?.role === "admin" || user?.role === "coach" || Boolean(user?.permissions?.includes("messages"));
+  const canSendAnnouncements = isAdmin || Boolean(user?.permissions?.includes("send_announcements"));
   const [menuItems, setMenuItems] = useState(() => coachNavSections.map((section) => section.key));
   const orderedSections = useMemo(() => orderSections(menuItems), [menuItems]);
   // Each expandable section (Ρυθμίσεις, Πρότυπα Πλάνων, ...) tracks its own open state,
@@ -60,13 +62,27 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
   const [unreadUpdates, setUnreadUpdates] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
   useEffect(() => {
-    api
+    const loadUnreadUpdates = () => api
       .get<{ totalUnread: number }>("/updates/stats")
-      .then((data) => setUnreadUpdates(data.totalUnread))
+      .then((data) => setUnreadUpdates(Number(data.totalUnread || 0)))
       .catch(() => {});
+
+    void loadUnreadUpdates();
+    const interval = window.setInterval(() => void loadUnreadUpdates(), 10000);
+    window.addEventListener("coach-updates-read", loadUnreadUpdates);
+    window.addEventListener("focus", loadUnreadUpdates);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("coach-updates-read", loadUnreadUpdates);
+      window.removeEventListener("focus", loadUnreadUpdates);
+    };
   }, []);
 
   useEffect(() => {
+    if (!canUseMessages) {
+      setUnreadMessages(0);
+      return;
+    }
     const loadUnreadMessages = () => api
       .get<Array<{ unread_count?: number }>>("/clients/messages/inbox")
       .then((items) => setUnreadMessages(items.reduce((total, item) => total + Number(item.unread_count || 0), 0)))
@@ -74,7 +90,7 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
     void loadUnreadMessages();
     const interval = window.setInterval(() => void loadUnreadMessages(), 10000);
     return () => window.clearInterval(interval);
-  }, []);
+  }, [canUseMessages]);
 
   useEffect(() => {
     const loadMenuOrder = () => {
@@ -116,13 +132,17 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
 
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
         {orderedSections
-          .filter((section) => (!section.coachOrAdminOnly || canSeeCoachSettings) && (!section.adminOnly || isAdmin))
+          .filter((section) =>
+            (!section.coachOrAdminOnly || canSeeCoachSettings || (section.key === "management" && canSendAnnouncements)) &&
+            (!section.adminOnly || isAdmin) &&
+            (section.key !== "messages" || canUseMessages),
+          )
           .map((section) => {
             const active = isActivePath(pathname, section.path);
             const Icon = section.icon;
 
             if (section.children) {
-              if (!canSeeCoachSettings) return null;
+              if (!canSeeCoachSettings && !(section.key === "management" && canSendAnnouncements)) return null;
               const isOpen = openSections.has(section.key);
               return (
                 <div key={section.key}>
@@ -144,7 +164,7 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
                   {!collapsed && isOpen && (
                     <div className="ml-4 mt-1 flex flex-col gap-1 border-l border-white/10 pl-3">
                       {section.children
-                        .filter((child) => !child.adminOnly || isAdmin)
+                        .filter((child) => !child.adminOnly || isAdmin || (child.key === "manual-notifications" && canSendAnnouncements))
                         .map((child) =>
                         child.path ? (
                           <Link
@@ -186,6 +206,9 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
                   <Badge className="h-5 min-w-5 shrink-0 justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white hover:bg-red-600">
                     {unreadUpdates}
                   </Badge>
+                )}
+                {collapsed && section.key === "updates" && unreadUpdates > 0 && (
+                  <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full border-2 border-[#07131d] bg-red-500" aria-label={`${unreadUpdates} unread updates`} />
                 )}
                 {!collapsed && section.key === "messages" && unreadMessages > 0 && (
                   <Badge className="h-5 min-w-5 shrink-0 justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white hover:bg-red-600">

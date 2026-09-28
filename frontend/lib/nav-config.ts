@@ -13,7 +13,6 @@ import {
   Salad,
   TrendingUp,
   CreditCard,
-  ScrollText,
   MessageCircleMore,
   LayoutTemplate,
   Apple,
@@ -68,7 +67,6 @@ export const coachNavSections: CoachNavSection[] = [
   { key: "foods", label: "Βιβλιοθήκη Τροφίμων", path: "/coach/foods", icon: Apple, coachOrAdminOnly: true },
   { key: "exercise-media", label: "Media", path: "/coach/media", icon: Images, coachOrAdminOnly: true },
   { key: "analytics", label: "Analytics", path: "/analytics", icon: BarChart3 },
-  { key: "changelog", label: "Αλλαγές & Νέα", path: "/changelog", icon: ScrollText },
   { key: "notifications", label: "Ειδοποιήσεις", path: "/notifications", icon: Bell, spacerBefore: true },
   {
     key: "settings",
@@ -76,7 +74,7 @@ export const coachNavSections: CoachNavSection[] = [
     icon: Settings,
     coachOrAdminOnly: true,
     children: [
-      { key: "discord", label: "Discord", icon: MessageCircle },
+      { key: "discord", label: "Discord", path: "/coach/discord", icon: MessageCircle },
       { key: "pricing-plans", label: "Πλάνα & Τιμές", path: "/coach/pricing", icon: Tag },
       { key: "questionnaire", label: "Ερωτηματολόγιο", path: "/coach/questionnaire", icon: HelpCircle },
       { key: "branding", label: "Branding", path: "/coach/branding", icon: Palette },
@@ -113,11 +111,10 @@ export const clientNavSections: ClientNavSection[] = [
   { label: "Πρόγραμμα", path: "/client-program", locked: true, key: "training", icon: Dumbbell },
   { label: "Διατροφή", path: "/client-nutrition", locked: true, key: "nutrition", icon: Salad },
   { label: "Progress", path: "/client-progress", locked: true, key: "progress", icon: TrendingUp },
-  { label: "Πληρωμές και Συνδρομή", path: "/client-billing", locked: true, key: "billing", icon: CreditCard },
   { label: "Πόντοι & Rewards", path: "/client-points", locked: true, key: "points", icon: Target },
-  { label: "Αλλαγές & Νέα", path: "/changelog", locked: true, key: "changelog", icon: ScrollText },
   { label: "Μηνύματα", path: "/client-messages", locked: true, key: "messages", icon: MessageCircleMore },
-  { label: "Ειδοποιήσεις", path: "/client-notifications", key: "notifications", icon: Bell, spacerBefore: true },
+  { label: "Ειδοποιήσεις", path: "/client-notifications", key: "notifications", icon: Bell },
+  { label: "Πληρωμές και Συνδρομή", path: "/client-billing", key: "billing", icon: CreditCard },
 ];
 
 export function isActivePath(pathname: string, path?: string): boolean {

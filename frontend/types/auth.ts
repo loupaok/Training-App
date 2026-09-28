@@ -12,6 +12,7 @@ export interface AuthUser {
   redirectTo?: string;
   pushEnabled?: boolean;
   fontSize?: "small" | "medium" | "large";
+  permissions?: string[];
   [key: string]: unknown;
 }
 

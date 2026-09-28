@@ -19,7 +19,6 @@ import clientDashboardRoutes from './routes/clientDashboard.js';
 import clientAppRoutes from './routes/client.js';
 import pricingPlanRoutes from './routes/pricingPlans.js';
 import manualNotificationRoutes from './routes/manualNotifications.js';
-import changelogRoutes from './routes/changelog.js';
 import templateRoutes from './routes/templates.js';
 import foodRoutes from './routes/foods.js';
 import questionnaireRoutes from './routes/questionnaire.js';
@@ -29,6 +28,7 @@ import weeklyUpdateRoutes from './routes/weekly-updates.js';
 import settingsRoutes from './routes/settings.js';
 import pointsRoutes from './routes/points.js';
 import discordRoutes from './routes/discord.js';
+import discordSettingsRoutes from './routes/discord-settings.js';
 import { authenticateToken, isClient, isCoach } from './middleware/auth.js';
 
 dotenv.config();
@@ -96,7 +96,6 @@ app.use('/api/client', authenticateToken, clientAppRoutes);
 // gated per-route inside pricingPlans.js with authenticateToken + authorizeRole.
 app.use('/api/pricing-plans', pricingPlanRoutes);
 app.use('/api/manual-notifications', authenticateToken, manualNotificationRoutes);
-app.use('/api/changelog', authenticateToken, changelogRoutes);
 app.use('/api/templates', authenticateToken, templateRoutes);
 app.use('/api/foods', authenticateToken, foodRoutes);
 // Public GET (active questions) + coach-gated CRUD handled per-route inside.
@@ -108,6 +107,7 @@ app.use('/api/updates', authenticateToken, weeklyUpdateRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/points', pointsRoutes);
 app.use('/api/discord', discordRoutes);
+app.use('/api/discord-settings', discordSettingsRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

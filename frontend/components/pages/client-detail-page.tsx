@@ -1673,6 +1673,7 @@ function OverviewTab({
         <DemoModeControl
           clientId={clientId}
           enabled={Boolean(client.demo_updates_enabled)}
+          hasActiveSubscription={client.subscription?.status === "active" || client.subscription?.status === "expiring_soon"}
           disabled={!canEdit}
           onUpdated={onUpdated}
         />
@@ -1765,9 +1766,12 @@ function IntakePhotoGallery({ files }: { files: IntakeFile[] }) {
   );
 }
 
-function DemoModeControl({ clientId, enabled, disabled, onUpdated }: { clientId: string; enabled: boolean; disabled: boolean; onUpdated: () => void }) {
+function DemoModeControl({ clientId, enabled, hasActiveSubscription, disabled, onUpdated }: { clientId: string; enabled: boolean; hasActiveSubscription: boolean; disabled: boolean; onUpdated: () => void }) {
   const [isEnabled, setIsEnabled] = useState(enabled);
   const [saving, setSaving] = useState(false);
+  const [syncingDiscord, setSyncingDiscord] = useState(false);
+  const [expireDialogOpen, setExpireDialogOpen] = useState(false);
+  const subscriptionActionLabel = hasActiveSubscription ? "Λήξη συνδρομής" : "Αφαίρεση Discord πρόσβασης";
 
   useEffect(() => setIsEnabled(enabled), [enabled]);
 
@@ -1784,6 +1788,27 @@ function DemoModeControl({ clientId, enabled, disabled, onUpdated }: { clientId:
     }
   };
 
+  const expireDemoSubscription = async () => {
+    setSaving(true);
+    try {
+      await api.post(`/clients/${clientId}/demo-subscription/expire`, {});
+      setExpireDialogOpen(false);
+      onUpdated();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const syncDiscordAccess = async () => {
+    setSyncingDiscord(true);
+    try {
+      await api.post(`/clients/${clientId}/demo-subscription/sync-discord`, {});
+      onUpdated();
+    } finally {
+      setSyncingDiscord(false);
+    }
+  };
+
   return (
     <Card className="border-dashed border-amber-300 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20">
       <CardContent className="flex flex-wrap items-center gap-4 p-4">
@@ -1791,11 +1816,35 @@ function DemoModeControl({ clientId, enabled, disabled, onUpdated }: { clientId:
           <p className="font-semibold">Demo Client</p>
           <p className="mt-1 text-sm text-muted-foreground">Επιτρέπει πολλαπλά test updates χωρίς περιορισμό ημέρας ή εβδομάδας.</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium">{isEnabled ? "Ενεργό" : "Ανενεργό"}</span>
           <Switch checked={isEnabled} disabled={disabled || saving} onCheckedChange={(checked) => void updateDemoMode(checked === true)} />
+          <Button type="button" variant="outline" size="sm" disabled={disabled || syncingDiscord} onClick={() => void syncDiscordAccess()}>
+            {syncingDiscord ? "Συγχρονισμός..." : "Συγχρονισμός Discord"}
+          </Button>
+          <Button type="button" variant="outline" size="sm" disabled={disabled || saving} onClick={() => setExpireDialogOpen(true)}>
+            {subscriptionActionLabel}
+          </Button>
         </div>
       </CardContent>
+      <AlertDialog open={expireDialogOpen} onOpenChange={setExpireDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{hasActiveSubscription ? "Λήξη demo συνδρομής;" : "Αφαίρεση Discord πρόσβασης;"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {hasActiveSubscription
+                ? "Η ενεργή συνδρομή του Demo Client θα λήξει χθες και ο Discord role θα αφαιρεθεί άμεσα. Δεν επηρεάζεται κανένας πραγματικός πελάτης."
+                : "Η συνδρομή έχει ήδη λήξει. Θα γίνει άμεση αφαίρεση του ενεργού Discord role από τον Demo Client."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={saving}>Ακύρωση</AlertDialogCancel>
+            <AlertDialogAction disabled={saving} onClick={() => void expireDemoSubscription()} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {saving ? "Εφαρμογή..." : subscriptionActionLabel}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 }

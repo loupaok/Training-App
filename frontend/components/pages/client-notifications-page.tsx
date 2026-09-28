@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { clearUnreadNotifications } from "@/lib/notification-count"
 import { useAuth } from "@/lib/auth/auth-context"
 import { api } from "@/lib/api/client"
@@ -53,8 +54,8 @@ function ClientNotificationsContent() {
 
   return <ClientShell title="Ειδοποιήσεις" user={user} logout={logout} paymentApproved={Boolean(data?.paymentApproved)} unreadNotifications={unread} active="notifications">
     <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><div className="mb-3 grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary"><Bell className="h-5 w-5" /></div><h1 className="text-2xl font-bold">Ειδοποιήσεις</h1><p className="mt-1 text-sm text-muted-foreground">Όλες οι ενημερώσεις που αφορούν τον λογαριασμό και τα προγράμματά σου.</p></div><Button variant="outline" disabled={!unread} onClick={() => void markAll()}><CheckCheck className="mr-2 h-4 w-4" />Όλα ως αναγνωσμένα</Button></section>
-      <Card><CardHeader className="gap-4 border-b"><div className="flex items-center justify-between gap-3"><div><CardTitle>Ιστορικό</CardTitle><CardDescription>{unread ? `${unread} νέες ειδοποιήσεις` : "Είσαι ενημερωμένος"}</CardDescription></div>{unread > 0 && <Badge>Νέες</Badge>}</div><div className="flex flex-wrap gap-2">{filters.map((item) => <Button key={item.value} size="sm" variant={filter === item.value ? "default" : "outline"} onClick={() => setFilter(item.value)}>{item.label}</Button>)}</div></CardHeader><CardContent className="p-0">
+      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><div className="mb-3 grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary"><Bell className="h-5 w-5" /></div><h1 className="text-2xl font-bold">Κέντρο ειδοποιήσεων</h1><p className="mt-1 text-sm text-muted-foreground">Πληρωμές, προγράμματα και ανακοινώσεις από την ομάδα σου.</p></div><Button variant="outline" disabled={!unread} onClick={() => void markAll()}><CheckCheck className="mr-2 h-4 w-4" />Όλα ως αναγνωσμένα</Button></section>
+      <Card><CardHeader className="gap-4 border-b"><div className="flex items-center justify-between gap-3"><div><CardTitle>Ιστορικό</CardTitle><CardDescription>{unread ? `${unread} νέες ειδοποιήσεις` : "Είσαι ενημερωμένος"}</CardDescription></div>{unread > 0 && <Badge>Νέες</Badge>}</div><Tabs value={filter} onValueChange={(value) => setFilter(value as FilterValue)}><TabsList className="h-auto max-w-full flex-wrap justify-start"><>{filters.map((item) => <TabsTrigger key={item.value} value={item.value}>{item.label}</TabsTrigger>)}</></TabsList></Tabs></CardHeader><CardContent className="p-0">
         {loading ? <div className="space-y-4 p-6">{Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className="h-20 w-full" />)}</div> : error ? <p className="p-6 text-sm text-destructive">{error}</p> : visible.length ? <div>{visible.map((item) => <NotificationRow key={item.id} item={item} onOpen={open} />)}</div> : <div className="p-14 text-center"><Inbox className="mx-auto h-9 w-9 text-muted-foreground" /><p className="mt-4 font-semibold">Δεν υπάρχουν ειδοποιήσεις</p><p className="mt-1 text-sm text-muted-foreground">Οι νέες ενημερώσεις από τον coach θα εμφανίζονται εδώ.</p></div>}
       </CardContent></Card>
     </main>

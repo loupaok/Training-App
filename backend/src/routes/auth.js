@@ -106,6 +106,7 @@ export async function ensureAuthSchema(connection) {
         'ALTER TABLE users ADD COLUMN approved_by INT NULL',
         'ALTER TABLE users ADD COLUMN profile_photo VARCHAR(255)',
         'ALTER TABLE users ADD COLUMN specializations TEXT',
+        'ALTER TABLE users ADD COLUMN permissions TEXT NULL',
         'ALTER TABLE users ADD COLUMN push_enabled TINYINT(1) NOT NULL DEFAULT 0',
         "ALTER TABLE users ADD COLUMN font_size ENUM('small', 'medium', 'large') NOT NULL DEFAULT 'medium'"
       ]) {
@@ -191,6 +192,7 @@ function buildUserResponse(user, onboardingCompleted = true) {
     fullName,
     profilePhoto: user.profile_photo || null,
     profileTitle: user.specializations || null,
+    permissions: (() => { try { const parsed = JSON.parse(user.permissions || '[]'); return Array.isArray(parsed) ? parsed : []; } catch { return []; } })(),
     pushEnabled: Boolean(user.push_enabled),
     fontSize: user.font_size || 'medium',
     onboardingCompleted
@@ -204,7 +206,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     await ensureAuthSchema(connection);
 
     const [rows] = await connection.query(
-      `SELECT id, email, role, status, full_name, first_name, last_name, profile_photo, specializations, push_enabled, font_size
+      `SELECT id, email, role, status, full_name, first_name, last_name, profile_photo, specializations, permissions, push_enabled, font_size
        FROM users
        WHERE id = ? AND is_active = 1`,
       [req.user.id]
@@ -308,7 +310,7 @@ router.post('/login', [
     const { email, password } = req.body;
 
     const [users] = await connection.query(
-      `SELECT id, email, password, role, status, full_name, first_name, last_name, profile_photo, specializations
+      `SELECT id, email, password, role, status, full_name, first_name, last_name, profile_photo, specializations, permissions
        FROM users
        WHERE email = ? AND is_active = 1`,
       [email]
@@ -396,7 +398,7 @@ router.put('/profile', authenticateToken, [
     }
 
     const [rows] = await connection.query(
-      `SELECT id, email, role, status, full_name, first_name, last_name, profile_photo, specializations, push_enabled, font_size
+      `SELECT id, email, role, status, full_name, first_name, last_name, profile_photo, specializations, permissions, push_enabled, font_size
        FROM users
        WHERE id = ?`,
       [req.user.id]
@@ -436,7 +438,7 @@ router.post('/profile-photo', authenticateToken, (req, res, next) => {
     await connection.query('UPDATE users SET profile_photo = ? WHERE id = ?', [url, req.user.id]);
 
     const [rows] = await connection.query(
-      `SELECT id, email, role, status, full_name, first_name, last_name, profile_photo, specializations, push_enabled, font_size
+      `SELECT id, email, role, status, full_name, first_name, last_name, profile_photo, specializations, permissions, push_enabled, font_size
        FROM users
        WHERE id = ?`,
       [req.user.id]

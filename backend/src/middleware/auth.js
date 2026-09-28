@@ -21,6 +21,20 @@ function wantsHtml(req) {
   return req.accepts(['html', 'json']) === 'html';
 }
 
+function parsePermissions(value) {
+  if (Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed) ? parsed.filter((item) => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+export function hasPermission(user, permission) {
+  return user?.role === 'admin' || Boolean(user?.permissions?.includes(permission));
+}
+
 export const isAuthenticated = async (req, res, next) => {
   const token = getRequestToken(req);
 
@@ -40,7 +54,8 @@ export const isAuthenticated = async (req, res, next) => {
       'ALTER TABLE users ADD COLUMN approved_at TIMESTAMP NULL',
       'ALTER TABLE users ADD COLUMN approved_by INT NULL',
       'ALTER TABLE users ADD COLUMN first_name VARCHAR(100)',
-      'ALTER TABLE users ADD COLUMN last_name VARCHAR(100)'
+      'ALTER TABLE users ADD COLUMN last_name VARCHAR(100)',
+      'ALTER TABLE users ADD COLUMN permissions TEXT NULL'
     ]) {
       try {
         await connection.query(statement);
@@ -50,7 +65,7 @@ export const isAuthenticated = async (req, res, next) => {
     }
 
     const [rows] = await connection.query(
-      `SELECT id, email, role, is_active,
+      `SELECT id, email, role, is_active, permissions,
               COALESCE(status, CASE WHEN role IN ('admin', 'coach') THEN 'active' ELSE 'pending_payment' END) AS status
        FROM users
        WHERE id = ?`,
@@ -71,6 +86,7 @@ export const isAuthenticated = async (req, res, next) => {
       email: rows[0].email,
       role: rows[0].role,
       status: rows[0].status,
+      permissions: parsePermissions(rows[0].permissions),
     };
     next();
   } catch {
@@ -114,6 +130,16 @@ export const authorizeRole = (roles) => {
       return [role];
     });
     if (!req.user || !normalizedRoles.includes(req.user.role)) {
+      return res.status(403).json({ message: 'Insufficient permissions' });
+    }
+    next();
+  };
+};
+
+export const authorizeRoleOrPermission = (roles, permission) => {
+  return (req, res, next) => {
+    const normalizedRoles = roles.flatMap((role) => (role === 'coach' || role === 'admin' ? ['coach', 'admin'] : [role]));
+    if (!req.user || (!normalizedRoles.includes(req.user.role) && !hasPermission(req.user, permission))) {
       return res.status(403).json({ message: 'Insufficient permissions' });
     }
     next();

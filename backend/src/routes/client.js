@@ -6,6 +6,7 @@ import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
 import { ensureWeeklyUpdateSchema } from './weekly-updates.js';
 import { notifyCoaches } from './clients.js';
+import { registerWeeklyUpdatePhotos } from './media.js';
 import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { updateNotificationEmail } from '../lib/email-templates.js';
 
@@ -184,7 +185,7 @@ router.get('/dashboard', async (req, res) => {
     }
     const clientId = req.user.id;
     const [users] = await connection.query(
-      `SELECT u.full_name, c.weight_kg
+      `SELECT u.full_name, c.weight_kg, c.is_demo, c.demo_updates_enabled
        FROM users u
        LEFT JOIN clients c ON c.user_id = u.id
        WHERE u.id = ?`,
@@ -207,6 +208,7 @@ router.get('/dashboard', async (req, res) => {
     }
     const schedule = schedules[0] || null;
     const subscription = subscriptions[0] || null;
+    const demoUpdatesEnabled = Boolean(users[0]?.is_demo && users[0]?.demo_updates_enabled);
     const todayIsUpdateDay = schedule ? Number(schedule.day_of_week) === new Date().getDay() : false;
     const alreadySubmittedThisWeek = updates.some((update) => today(new Date(update.weekStart)) === currentWeekStart());
     const lastUpdate = updates[0] || null;
@@ -214,8 +216,8 @@ router.get('/dashboard', async (req, res) => {
     const ratings = [lastUpdate?.trainingRating, lastUpdate?.nutritionRating, lastUpdate?.generalRating].filter(Number.isFinite);
     const averageRating = ratings.length ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length : null;
     res.json({
-      client: { firstName: String(users[0]?.full_name || '').trim().split(/\s+/)[0] || 'Client', currentWeight: lastWeightUpdate?.weight ?? users[0]?.weight_kg ?? null, subscriptionStatus: subscription?.status || null, daysRemaining: subscription?.days_remaining ?? null, planName: subscription?.plan_name || null, subscriptionStartDate: subscription?.start_date || null, subscriptionEndDate: subscription?.end_date || null },
-      todayIsUpdateDay, alreadySubmittedThisWeek, nextUpdateDate: schedule?.next_due_date || nextScheduledDate(schedule?.day_of_week), streak: streakFor(updates), updatesCount: updates.length,
+      client: { firstName: String(users[0]?.full_name || '').trim().split(/\s+/)[0] || 'Client', currentWeight: lastWeightUpdate?.weight ?? users[0]?.weight_kg ?? null, subscriptionStatus: subscription?.status || null, daysRemaining: subscription?.days_remaining ?? null, planName: subscription?.plan_name || null, subscriptionStartDate: subscription?.start_date || null, subscriptionEndDate: subscription?.end_date || null, demoUpdatesEnabled },
+      todayIsUpdateDay: demoUpdatesEnabled || todayIsUpdateDay, alreadySubmittedThisWeek: demoUpdatesEnabled ? false : alreadySubmittedThisWeek, nextUpdateDate: schedule?.next_due_date || nextScheduledDate(schedule?.day_of_week), streak: streakFor(updates), updatesCount: updates.length,
       lastUpdate: lastUpdate ? { submittedAt: lastUpdate.submittedAt, averageRating } : null,
       lastWeightUpdate: lastWeightUpdate ? { submittedAt: lastWeightUpdate.submittedAt } : null,
       trainingPlan: training ? { id: training.id, title: training.title } : null, nutritionPlan: nutrition ? { id: nutrition.id, title: nutrition.title } : null,
@@ -228,10 +230,12 @@ router.get('/update-status', async (req, res) => {
   try {
     await ensureWeeklyUpdateSchema(connection);
     const [schedules] = await connection.query('SELECT day_of_week, next_due_date FROM update_schedule WHERE client_id = ? ORDER BY updated_at DESC LIMIT 1', [req.user.id]);
+    const [clients] = await connection.query('SELECT is_demo, demo_updates_enabled FROM clients WHERE user_id = ? LIMIT 1', [req.user.id]);
     const [updates] = await connection.query('SELECT submitted_at FROM weekly_updates WHERE client_id = ? AND week_start = ? LIMIT 1', [req.user.id, currentWeekStart()]);
     const schedule = schedules[0] || null;
+    const demoUpdatesEnabled = Boolean(clients[0]?.is_demo && clients[0]?.demo_updates_enabled);
     const todayIsUpdateDay = schedule ? Number(schedule.day_of_week) === new Date().getDay() : false;
-    res.json({ canSubmit: todayIsUpdateDay && !updates.length, todayIsUpdateDay, alreadySubmittedThisWeek: Boolean(updates.length), nextUpdateDate: schedule?.next_due_date || nextScheduledDate(schedule?.day_of_week), lastSubmission: updates[0]?.submitted_at || null });
+    res.json({ canSubmit: demoUpdatesEnabled || (todayIsUpdateDay && !updates.length), todayIsUpdateDay: demoUpdatesEnabled || todayIsUpdateDay, alreadySubmittedThisWeek: demoUpdatesEnabled ? false : Boolean(updates.length), nextUpdateDate: schedule?.next_due_date || nextScheduledDate(schedule?.day_of_week), lastSubmission: updates[0]?.submitted_at || null });
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
 });
 
@@ -546,11 +550,13 @@ router.post('/updates/submit', upload.array('files', 5), async (req, res) => {
     let fileQuestionIds;
     try { answers = JSON.parse(req.body.answers || '[]'); } catch { return res.status(400).json({ message: 'Invalid answers' }); }
     try { fileQuestionIds = JSON.parse(req.body.fileQuestionIds || '[]'); } catch { return res.status(400).json({ message: 'Invalid files' }); }
+    const [[demoClient]] = await connection.query('SELECT is_demo, demo_updates_enabled FROM clients WHERE user_id = ? LIMIT 1', [req.user.id]);
+    const demoUpdatesEnabled = Boolean(demoClient?.is_demo && demoClient?.demo_updates_enabled);
     const [schedules] = await connection.query('SELECT day_of_week FROM update_schedule WHERE client_id = ? ORDER BY updated_at DESC LIMIT 1', [req.user.id]);
-    if (!schedules.length || Number(schedules[0].day_of_week) !== new Date().getDay()) return res.status(403).json({ message: 'Updates are available on the scheduled day only.' });
+    if (!demoUpdatesEnabled && (!schedules.length || Number(schedules[0].day_of_week) !== new Date().getDay())) return res.status(403).json({ message: 'Updates are available on the scheduled day only.' });
     const weekStart = currentWeekStart();
     const [existing] = await connection.query('SELECT id FROM weekly_updates WHERE client_id = ? AND week_start = ?', [req.user.id, weekStart]);
-    if (existing.length) return res.status(400).json({ message: 'You have already submitted an update this week.' });
+    if (!demoUpdatesEnabled && existing.length) return res.status(400).json({ message: 'You have already submitted an update this week.' });
     const [questions] = await connection.query('SELECT id, type, is_required FROM update_questions WHERE is_active = 1');
     const answered = new Set(answers.filter((answer) => String(answer?.answer ?? '').trim()).map((answer) => Number(answer.questionId)));
     const uploadedForQuestion = new Set(fileQuestionIds.map(Number));
@@ -568,12 +574,17 @@ router.post('/updates/submit', upload.array('files', 5), async (req, res) => {
     }
     if (req.files?.length) await connection.query('INSERT INTO weekly_update_files (update_id, question_id, file_url, file_type, original_name) VALUES ?', [req.files.map((file, index) => [result.insertId, Number(fileQuestionIds[index]) || null, file.path.replace(/\\/g, '/'), file.mimetype === 'application/pdf' ? 'pdf' : 'photo', file.originalname])]);
     await connection.commit();
+    try {
+      await registerWeeklyUpdatePhotos(connection, req.user.id);
+    } catch (mediaError) {
+      console.error('Weekly update media-library sync failed:', mediaError);
+    }
     const [users] = await connection.query('SELECT full_name, email FROM users WHERE id = ?', [req.user.id]);
     const clientName = users[0]?.full_name || users[0]?.email || 'Client';
     try {
-      await notifyCoaches(connection, { clientId: req.user.id, type: 'new_update', title: 'New weekly update', body: `${clientName} submitted a new update.`, linkUrl: `/coach/updates?id=${result.insertId}` });
+      await notifyCoaches(connection, { clientId: req.user.id, type: 'new_update', title: 'New weekly update', body: `${clientName} submitted a new update.`, linkUrl: `/coach/updates/${result.insertId}` });
       const [coaches] = await connection.query("SELECT email FROM users WHERE role IN ('coach', 'admin') AND is_active = 1");
-      const url = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/coach/updates?id=${result.insertId}`;
+      const url = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/coach/updates/${result.insertId}`;
       const template = await getEmailTemplate('update_notification', { clientName, updateUrl: url }, connection) || updateNotificationEmail(clientName, '', '', '', url);
       coaches.forEach((coach) => sendMail({ to: coach.email, ...template }).catch((error) => console.error('Email failed', error)));
     } catch (error) { console.error('Coach notification failed', error); }

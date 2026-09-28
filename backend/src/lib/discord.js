@@ -1,74 +1,77 @@
-const DISCORD_API = 'https://discord.com/api/v10';
+import { getDiscordConfig } from './discord-settings.js';
 
-function guildId() {
-  return process.env.DISCORD_GUILD_ID;
+const DISCORD_API = 'https://discord.com/api/v10';
+let cachedActiveRoleId = null;
+let cachedRoleConfigKey = null;
+
+export function clearDiscordRoleCache() {
+  cachedActiveRoleId = null;
+  cachedRoleConfigKey = null;
 }
 
-function botHeaders() {
-  return {
-    Authorization: `Bot ${process.env.DISCORD_BOT_TOKEN}`,
-    'Content-Type': 'application/json',
-  };
+async function getConfiguredGuildId() {
+  const config = await getDiscordConfig();
+  if (!config.enabled || !config.guildId) throw new Error('Discord integration is not configured.');
+  return config.guildId;
 }
 
 export async function botRequest(method, endpoint, data) {
+  const config = await getDiscordConfig();
+  if (!config.enabled || !config.botToken || !config.guildId) throw new Error('Discord integration is not configured.');
   const response = await fetch(`${DISCORD_API}${endpoint}`, {
     method,
-    headers: botHeaders(),
+    headers: {
+      Authorization: `Bot ${config.botToken}`,
+      'Content-Type': 'application/json',
+    },
     body: data ? JSON.stringify(data) : undefined,
   });
   if (response.status === 204) return null;
   const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message = body?.message || `Discord bot request failed (${response.status})`;
-    throw new Error(message);
-  }
+  if (!response.ok) throw new Error(body?.message || `Discord bot request failed (${response.status})`);
   return body;
 }
 
 export async function getGuildRoles() {
-  return botRequest('GET', `/guilds/${guildId()}/roles`);
+  return botRequest('GET', `/guilds/${await getConfiguredGuildId()}/roles`);
 }
 
 export async function addMemberToGuild(discordId, accessToken) {
-  return botRequest('PUT', `/guilds/${guildId()}/members/${discordId}`, { access_token: accessToken });
+  return botRequest('PUT', `/guilds/${await getConfiguredGuildId()}/members/${discordId}`, { access_token: accessToken });
 }
 
 export async function addRole(discordId, roleId) {
-  return botRequest('PUT', `/guilds/${guildId()}/members/${discordId}/roles/${roleId}`);
+  return botRequest('PUT', `/guilds/${await getConfiguredGuildId()}/members/${discordId}/roles/${roleId}`);
 }
 
 export async function removeRole(discordId, roleId) {
-  return botRequest('DELETE', `/guilds/${guildId()}/members/${discordId}/roles/${roleId}`);
+  return botRequest('DELETE', `/guilds/${await getConfiguredGuildId()}/members/${discordId}/roles/${roleId}`);
 }
 
 export async function kickMember(discordId) {
-  return botRequest('DELETE', `/guilds/${guildId()}/members/${discordId}`);
+  return botRequest('DELETE', `/guilds/${await getConfiguredGuildId()}/members/${discordId}`);
 }
 
 export async function getGuildMember(discordId) {
   try {
-    return await botRequest('GET', `/guilds/${guildId()}/members/${discordId}`);
+    return await botRequest('GET', `/guilds/${await getConfiguredGuildId()}/members/${discordId}`);
   } catch (error) {
     if (error.message?.includes('Unknown Member')) return null;
     throw error;
   }
 }
 
-const ACTIVE_ROLE_NAME = 'Ενεργό Μέλος';
-let cachedActiveRoleId = null;
-
-// Best-effort, cached lookup — never throws. A missing/renamed role or an
-// unreachable Discord API should degrade the integration, not crash callers.
 export async function getActiveRoleId({ forceRefresh = false } = {}) {
-  if (cachedActiveRoleId && !forceRefresh) return cachedActiveRoleId;
+  const config = await getDiscordConfig();
+  if (config.activeRoleId) return config.activeRoleId;
+  const configKey = `${config.guildId}:${config.activeRoleName}`;
+  if (cachedActiveRoleId && cachedRoleConfigKey === configKey && !forceRefresh) return cachedActiveRoleId;
   try {
     const roles = await getGuildRoles();
-    const role = roles?.find((r) => r.name === ACTIVE_ROLE_NAME);
+    const role = roles?.find((item) => item.name === config.activeRoleName);
     cachedActiveRoleId = role?.id || null;
-    if (!cachedActiveRoleId) {
-      console.error(`Discord role "${ACTIVE_ROLE_NAME}" not found on the configured server.`);
-    }
+    cachedRoleConfigKey = configKey;
+    if (!cachedActiveRoleId) console.error(`Discord role "${config.activeRoleName}" not found on the configured server.`);
     return cachedActiveRoleId;
   } catch (error) {
     console.error('Discord getActiveRoleId failed:', error.message);
@@ -76,15 +79,15 @@ export async function getActiveRoleId({ forceRefresh = false } = {}) {
   }
 }
 
-// OAuth2 — exchanges the authorization code Discord redirected back with for
-// a user access token. Form-encoded per Discord's token endpoint requirements.
 export async function exchangeCodeForToken(code) {
+  const config = await getDiscordConfig();
+  if (!config.enabled || !config.clientId || !config.clientSecret || !config.redirectUri) throw new Error('Discord OAuth is not configured.');
   const params = new URLSearchParams({
-    client_id: process.env.DISCORD_CLIENT_ID,
-    client_secret: process.env.DISCORD_CLIENT_SECRET,
+    client_id: config.clientId,
+    client_secret: config.clientSecret,
     grant_type: 'authorization_code',
     code,
-    redirect_uri: process.env.DISCORD_REDIRECT_URI,
+    redirect_uri: config.redirectUri,
   });
   const response = await fetch(`${DISCORD_API}/oauth2/token`, {
     method: 'POST',
@@ -92,27 +95,23 @@ export async function exchangeCodeForToken(code) {
     body: params,
   });
   const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(body?.error_description || body?.error || `Discord token exchange failed (${response.status})`);
-  }
+  if (!response.ok) throw new Error(body?.error_description || body?.error || `Discord token exchange failed (${response.status})`);
   return body;
 }
 
 export async function getDiscordUser(accessToken) {
-  const response = await fetch(`${DISCORD_API}/users/@me`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const response = await fetch(`${DISCORD_API}/users/@me`, { headers: { Authorization: `Bearer ${accessToken}` } });
   const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(body?.message || `Discord user lookup failed (${response.status})`);
-  }
+  if (!response.ok) throw new Error(body?.message || `Discord user lookup failed (${response.status})`);
   return body;
 }
 
-export function buildAuthorizeUrl() {
+export async function buildAuthorizeUrl() {
+  const config = await getDiscordConfig();
+  if (!config.enabled || !config.clientId || !config.redirectUri) throw new Error('Discord OAuth is not configured.');
   const params = new URLSearchParams({
-    client_id: process.env.DISCORD_CLIENT_ID,
-    redirect_uri: process.env.DISCORD_REDIRECT_URI,
+    client_id: config.clientId,
+    redirect_uri: config.redirectUri,
     response_type: 'code',
     scope: 'identify guilds.join',
   });

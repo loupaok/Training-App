@@ -52,7 +52,6 @@ const defaultMenuItems = [
   'foods',
   'exercise-media',
   'analytics',
-  'changelog',
   'notifications',
   'settings',
   'management',

@@ -8,9 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Trash2, Undo2 } from "lucide-react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 
@@ -21,15 +23,20 @@ interface AdminUser {
   role: string;
   is_active?: boolean;
   specializations?: string;
+  permissions?: string[];
   [key: string]: unknown;
+}
+
+interface TrashedAdminUser extends AdminUser {
+  deleted_at?: string;
+  deleted_by_name?: string;
 }
 
 interface AdminStats {
   admins?: number;
   moderators?: number;
   coaches?: number;
-  clients?: number;
-  totalUsers?: number;
+  totalTeamMembers?: number;
   [key: string]: unknown;
 }
 
@@ -39,20 +46,14 @@ interface AdminForm {
   password: string;
   role: string;
   specializations: string;
+  permissions: string[];
 }
 
 const roleOptions = [
-  { value: "admin", label: "Admin / Coach", description: "Ο βασικός coach/admin. Βλέπει και διαχειρίζεται τα πάντα." },
-  { value: "moderator", label: "Moderator", description: "Βλέπει επιλεγμένες ενότητες. Τα permissions θα τα εξειδικεύσουμε μετά." },
-  { value: "coach", label: "Coach", description: "Διαχειρίζεται τους δικούς του πελάτες." },
+  { value: "admin", label: "Admin", description: "Πλήρης πρόσβαση σε όλη την πλατφόρμα." },
+  { value: "moderator", label: "Moderator", description: "Βλέπει πελάτες και updates. Παίρνει έξτρα πρόσβαση μόνο όταν τη χρειάζεται." },
+  { value: "coach", label: "Coach", description: "Διαχειρίζεται πελάτες, προγράμματα, updates και καθημερινή επικοινωνία." },
 ];
-
-const roleLabels: Record<string, string> = {
-  admin: "Admin / Coach",
-  moderator: "Moderator",
-  coach: "Coach",
-  client: "Client",
-};
 
 const emptyForm: AdminForm = {
   fullName: "",
@@ -60,7 +61,15 @@ const emptyForm: AdminForm = {
   password: "",
   role: "moderator",
   specializations: "",
+  permissions: [],
 };
+
+const permissionOptions = [
+  { value: "messages", label: "Μηνύματα", description: "Προβολή και απάντηση σε συνομιλίες πελατών." },
+  { value: "view_payments", label: "Πληρωμές", description: "Προβολή ιστορικού πληρωμών πελατών." },
+  { value: "approve_payments", label: "Εγκρίσεις πληρωμών", description: "Έγκριση ή απόρριψη τραπεζικών πληρωμών." },
+  { value: "send_announcements", label: "Ανακοινώσεις", description: "Αποστολή ανακοινώσεων σε πελάτες ή coaches." },
+];
 
 function AdminDashboardContent() {
   const { user, logout } = useAuth();
@@ -77,6 +86,12 @@ function AdminDashboardContent() {
   const [resetConfirm, setResetConfirm] = useState("");
   const [resetSaving, setResetSaving] = useState(false);
   const [resetError, setResetError] = useState("");
+  const [permissionTarget, setPermissionTarget] = useState<AdminUser | null>(null);
+  const [permissionDraft, setPermissionDraft] = useState<string[]>([]);
+  const [trashedUsers, setTrashedUsers] = useState<TrashedAdminUser[]>([]);
+  const [showTrash, setShowTrash] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null);
+  const [permanentTarget, setPermanentTarget] = useState<TrashedAdminUser | null>(null);
 
   useEffect(() => {
     fetchData();
@@ -101,6 +116,48 @@ function AdminDashboardContent() {
     return users.filter((row) => row.role === roleFilter);
   }, [roleFilter, users]);
 
+  const loadTrash = async () => {
+    try {
+      setTrashedUsers(await api.get<TrashedAdminUser[]>("/admin/users/trash"));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν φορτώθηκε ο κάδος χρηστών.");
+    }
+  };
+
+  const moveToTrash = async () => {
+    if (!deleteTarget) return;
+    try {
+      await api.delete(`/admin/users/${deleteTarget.id}`);
+      setDeleteTarget(null);
+      setMessage("Ο χρήστης μεταφέρθηκε στον Κάδο.");
+      await Promise.all([fetchData(), loadTrash()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν έγινε διαγραφή χρήστη.");
+    }
+  };
+
+  const restoreUser = async (targetUser: TrashedAdminUser) => {
+    try {
+      await api.put(`/admin/users/${targetUser.id}/restore`);
+      setMessage("Ο χρήστης επαναφέρθηκε.");
+      await Promise.all([fetchData(), loadTrash()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν έγινε επαναφορά χρήστη.");
+    }
+  };
+
+  const permanentlyDeleteUser = async () => {
+    if (!permanentTarget) return;
+    try {
+      await api.delete(`/admin/users/${permanentTarget.id}/permanent`);
+      setPermanentTarget(null);
+      setMessage("Ο χρήστης διαγράφηκε οριστικά.");
+      await loadTrash();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν έγινε οριστική διαγραφή χρήστη.");
+    }
+  };
+
   const handleAddUser = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
@@ -113,6 +170,7 @@ function AdminDashboardContent() {
         password: formData.password,
         role: formData.role,
         specializations: formData.specializations,
+        permissions: formData.permissions,
       });
 
       setMessage("Ο χρήστης δημιουργήθηκε.");
@@ -142,6 +200,21 @@ function AdminDashboardContent() {
     setResetPassword("");
     setResetConfirm("");
     setResetError("");
+  };
+
+  const openPermissionsDialog = (targetUser: AdminUser) => {
+    setPermissionTarget(targetUser);
+    setPermissionDraft(targetUser.permissions || []);
+  };
+
+  const togglePermission = (permission: string, checked: boolean) => {
+    setPermissionDraft((current) => checked ? [...new Set([...current, permission])] : current.filter((item) => item !== permission));
+  };
+
+  const savePermissions = async () => {
+    if (!permissionTarget) return;
+    await updateUser(permissionTarget, { permissions: permissionDraft });
+    setPermissionTarget(null);
   };
 
   const submitResetPassword = async (event: FormEvent<HTMLFormElement>) => {
@@ -187,12 +260,11 @@ function AdminDashboardContent() {
       {message && <Alert tone="green">{message}</Alert>}
 
       {stats && (
-        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-5">
+        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-4">
           <StatCard title="Admins" value={stats.admins || 0} />
           <StatCard title="Moderators" value={stats.moderators || 0} />
           <StatCard title="Coaches" value={stats.coaches || 0} />
-          <StatCard title="Clients" value={stats.clients || 0} />
-          <StatCard title="Total Users" value={stats.totalUsers || 0} />
+          <StatCard title="Σύνολο Ομάδας" value={stats.totalTeamMembers || 0} />
         </div>
       )}
 
@@ -241,6 +313,24 @@ function AdminDashboardContent() {
             <FormField label="Specializations / σημείωση">
               <Input value={formData.specializations} onChange={(event) => setFormData({ ...formData, specializations: event.target.value })} />
             </FormField>
+            {formData.role !== "admin" && <div className="rounded-lg border border-slate-200 bg-white p-4 md:col-span-2 dark:border-slate-700 dark:bg-slate-900">
+              <p className="font-semibold">Επιπλέον δικαιώματα</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Προαιρετικά. Ο Admin έχει πάντα πλήρη πρόσβαση.</p>
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {permissionOptions.map((permission) => (
+                  <label key={permission.value} className="flex cursor-pointer items-start gap-3 rounded-md border border-slate-200 p-3 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+                    <Checkbox
+                      checked={formData.permissions.includes(permission.value)}
+                      onCheckedChange={(checked) => setFormData((current) => ({
+                        ...current,
+                        permissions: checked ? [...new Set([...current.permissions, permission.value])] : current.permissions.filter((item) => item !== permission.value),
+                      }))}
+                    />
+                    <span><span className="block text-sm font-medium">{permission.label}</span><span className="block text-xs text-slate-500 dark:text-slate-400">{permission.description}</span></span>
+                  </label>
+                ))}
+              </div>
+            </div>}
             <div className="md:col-span-2">
               <Button type="submit" className="bg-slate-950 px-5 py-3 font-bold text-white hover:bg-slate-800">
                 Δημιουργία Χρήστη
@@ -262,8 +352,12 @@ function AdminDashboardContent() {
       <section className="rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-center justify-between border-b border-slate-200 p-6 dark:border-slate-800">
           <h2 className="text-xl font-bold">Όλοι οι χρήστες</h2>
+          <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => { setShowTrash((current) => !current); if (!showTrash) void loadTrash(); }}>
+            <Trash2 className="mr-2 h-4 w-4" /> Κάδος
+          </Button>
           <Select
-            items={[{ value: "all", label: "Όλοι οι χρήστες" }, ...roleOptions, { value: "client", label: "Client" }]}
+            items={[{ value: "all", label: "Όλοι οι χρήστες" }, ...roleOptions]}
             value={roleFilter}
             onValueChange={(value) => value && setRoleFilter(value)}
           >
@@ -277,9 +371,9 @@ function AdminDashboardContent() {
                   {role.label}
                 </SelectItem>
               ))}
-              <SelectItem value="client">Client</SelectItem>
             </SelectContent>
           </Select>
+          </div>
         </div>
 
         <Table>
@@ -307,24 +401,18 @@ function AdminDashboardContent() {
                   <TableCell className="px-5 py-4 font-bold">{row.full_name}</TableCell>
                   <TableCell className="px-5 py-4 text-slate-600 dark:text-slate-400">{row.email}</TableCell>
                   <TableCell className="px-5 py-4">
-                    {row.role === "client" ? (
-                      <Badge variant="outline" className="font-bold">
-                        {roleLabels[row.role] || row.role}
-                      </Badge>
-                    ) : (
-                      <Select items={roleOptions} value={row.role} onValueChange={(value) => value && updateUser(row, { role: value })}>
-                        <SelectTrigger className="h-10 font-bold">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {roleOptions.map((role) => (
-                            <SelectItem key={role.value} value={role.value}>
-                              {role.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
+                    <Select items={roleOptions} value={row.role} onValueChange={(value) => value && updateUser(row, { role: value })}>
+                      <SelectTrigger className="h-10 font-bold">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {roleOptions.map((role) => (
+                          <SelectItem key={role.value} value={role.value}>
+                            {role.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </TableCell>
                   <TableCell className="px-5 py-4">
                     <Badge className={row.is_active ? "bg-green-50 text-green-700 dark:bg-green-500/10 dark:text-green-400" : "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400"}>
@@ -344,6 +432,14 @@ function AdminDashboardContent() {
                       <Button variant="outline" className="font-bold text-slate-700 dark:text-slate-200" onClick={() => openResetDialog(row)}>
                         Reset Password
                       </Button>
+                      <Button variant="outline" className="font-bold text-destructive hover:border-destructive hover:bg-destructive hover:text-white" onClick={() => setDeleteTarget(row)} disabled={row.id === user?.id}>
+                        <Trash2 className="mr-2 h-4 w-4" /> Διαγραφή
+                      </Button>
+                      {row.role !== "admin" && (
+                        <Button variant="outline" className="font-bold text-slate-700 dark:text-slate-200" onClick={() => openPermissionsDialog(row)}>
+                          Πρόσβαση
+                        </Button>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>
@@ -358,6 +454,27 @@ function AdminDashboardContent() {
           </TableBody>
         </Table>
       </section>
+
+      {showTrash && (
+        <section className="mt-6 overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center justify-between border-b p-5"><div><h2 className="text-lg font-bold">Κάδος χρηστών</h2><p className="text-sm text-muted-foreground">Επαναφορά ή οριστική διαγραφή χρηστών.</p></div><Badge variant="secondary">{trashedUsers.length}</Badge></div>
+          <Table>
+            <TableHeader><TableRow><TableHead>Χρήστης</TableHead><TableHead>Ρόλος</TableHead><TableHead>Διαγράφηκε</TableHead><TableHead>Από</TableHead><TableHead className="text-right">Ενέργειες</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {trashedUsers.map((row) => <TableRow key={row.id}><TableCell><p className="font-medium">{row.full_name || "-"}</p><p className="text-sm text-muted-foreground">{row.email}</p></TableCell><TableCell><Badge variant="outline">{roleOptions.find((role) => role.value === row.role)?.label || row.role}</Badge></TableCell><TableCell>{row.deleted_at ? new Intl.DateTimeFormat("el-GR", { dateStyle: "medium", timeStyle: "short" }).format(new Date(row.deleted_at)) : "-"}</TableCell><TableCell>{row.deleted_by_name || "-"}</TableCell><TableCell><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={() => void restoreUser(row)}><Undo2 className="mr-2 h-4 w-4" />Επαναφορά</Button><Button size="sm" variant="outline" className="text-destructive" onClick={() => setPermanentTarget(row)}><Trash2 className="mr-2 h-4 w-4" />Μόνιμη διαγραφή</Button></div></TableCell></TableRow>)}
+              {!trashedUsers.length && <TableRow><TableCell colSpan={5} className="py-12 text-center text-muted-foreground">Ο κάδος είναι άδειος.</TableCell></TableRow>}
+            </TableBody>
+          </Table>
+        </section>
+      )}
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Μεταφορά στον Κάδο;</DialogTitle><DialogDescription>Ο χρήστης {deleteTarget?.full_name || deleteTarget?.email} θα απενεργοποιηθεί και θα μπορεί να επαναφερθεί από τον Κάδο.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setDeleteTarget(null)}>Ακύρωση</Button><Button variant="destructive" onClick={() => void moveToTrash()}>Μεταφορά στον Κάδο</Button></DialogFooter></DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(permanentTarget)} onOpenChange={(open) => !open && setPermanentTarget(null)}>
+        <DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Οριστική διαγραφή;</DialogTitle><DialogDescription>Αυτή η ενέργεια δεν αναιρείται. Ο χρήστης και τα δεδομένα του θα διαγραφούν οριστικά.</DialogDescription></DialogHeader><DialogFooter><Button variant="outline" onClick={() => setPermanentTarget(null)}>Ακύρωση</Button><Button variant="destructive" onClick={() => void permanentlyDeleteUser()}>Μόνιμη διαγραφή</Button></DialogFooter></DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(resetTarget)} onOpenChange={(open) => !open && setResetTarget(null)}>
         <DialogContent className="sm:max-w-md">
@@ -399,6 +516,26 @@ function AdminDashboardContent() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(permissionTarget)} onOpenChange={(open) => !open && setPermissionTarget(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Δικαιώματα πρόσβασης</DialogTitle>
+            <DialogDescription>Επιπλέον πρόσβαση για τον χρήστη {permissionTarget?.full_name || permissionTarget?.email}.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {permissionOptions.map((permission) => (
+              <label key={permission.value} className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 hover:bg-muted/50">
+                <Checkbox checked={permissionDraft.includes(permission.value)} onCheckedChange={(checked) => togglePermission(permission.value, Boolean(checked))} />
+                <span><span className="block text-sm font-medium">{permission.label}</span><span className="block text-xs text-muted-foreground">{permission.description}</span></span>
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPermissionTarget(null)}>Ακύρωση</Button>
+            <Button onClick={() => void savePermissions()}>Αποθήκευση</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </CoachShell>

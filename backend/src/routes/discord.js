@@ -11,6 +11,7 @@ import {
   getActiveRoleId,
   getGuildMember,
 } from '../lib/discord.js';
+import { getDiscordConfig } from '../lib/discord-settings.js';
 
 const router = express.Router();
 router.use(authenticateToken, authorizeRole(['client']));
@@ -42,8 +43,12 @@ async function hasActiveSubscription(connection, clientId) {
 
 // Visited via a real browser navigation (not fetch) so the accessToken cookie
 // rides along — Discord's own page has to load in the top-level window.
-router.get('/auth', (req, res) => {
-  res.redirect(buildAuthorizeUrl());
+router.get('/auth', async (req, res) => {
+  try {
+    res.redirect(await buildAuthorizeUrl());
+  } catch (error) {
+    res.status(503).json({ message: error.message || 'Discord OAuth is not configured.' });
+  }
 });
 
 router.get('/callback', async (req, res) => {
@@ -98,7 +103,8 @@ router.get('/status', async (req, res) => {
     const [rows] = await connection.query('SELECT discord_id, discord_username FROM users WHERE id = ?', [req.user.id]);
     const user = rows[0];
 
-    const guildUrl = `https://discord.com/channels/${process.env.DISCORD_GUILD_ID}`;
+    const { guildId } = await getDiscordConfig();
+    const guildUrl = guildId ? `https://discord.com/channels/${guildId}` : null;
 
     if (!user?.discord_id) {
       return res.json({ connected: false, discordUsername: null, hasRole: false, subscriptionActive, guildUrl });

@@ -5,7 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
-import { authorizeRole } from '../middleware/auth.js';
+import { authorizeRole, authorizeRoleOrPermission } from '../middleware/auth.js';
 import { getVapidPublicKey, sendPushToUser, sendPushToUsers } from '../lib/webPush.js';
 import { insertTrainingPlanDays } from './trainingPlans.js';
 import { insertNutritionPlanMeals } from './nutritionPlans.js';
@@ -14,10 +14,29 @@ import { ensureClientActivityLogSchema, logClientActivity } from '../lib/client-
 import { ensureQuestionnaireSchema, syncUpdateDayQuestionnaireAnswer } from './questionnaire.js';
 import { awardPoints } from './points.js';
 import { ensureDiscordSchema } from './discord.js';
-import { removeRole, getActiveRoleId } from '../lib/discord.js';
+import { addRole, getActiveRoleId, removeRole } from '../lib/discord.js';
 
 const router = express.Router();
 const activeMessageTypers = new Map();
+
+async function syncDiscordSubscriptionRole(connection, clientId) {
+  const [[user]] = await connection.query('SELECT discord_id FROM users WHERE id = ? LIMIT 1', [clientId]);
+  if (!user?.discord_id) return { connected: false, active: false };
+
+  const [[subscription]] = await connection.query(
+    `SELECT id FROM subscriptions
+     WHERE client_id = ? AND status IN ('active', 'expiring_soon')
+       AND start_date <= CURDATE() AND end_date >= CURDATE()
+     LIMIT 1`,
+    [clientId]
+  );
+  const roleId = await getActiveRoleId();
+  if (!roleId) return { connected: true, active: Boolean(subscription), roleUpdated: false };
+
+  if (subscription) await addRole(user.discord_id, roleId);
+  else await removeRole(user.discord_id, roleId);
+  return { connected: true, active: Boolean(subscription), roleUpdated: true };
+}
 
 function setMessageTyping(clientId, typer) {
   if (!typer.isTyping) {
@@ -1482,10 +1501,8 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
                 END AS is_expiring_soon,
                 CASE
                   WHEN u.is_active = 0 THEN 'inactive'
-                  WHEN u.status = 'active' THEN 'active'
-                  WHEN u.status = 'expired' THEN 'inactive'
                   WHEN u.status = 'pending_payment' THEN 'pending'
-                  WHEN lp.status = 'completed' AND (s.status IS NULL OR s.status IN ('active', 'expiring_soon')) THEN 'active'
+                  WHEN s.status IN ('active', 'expiring_soon') THEN 'active'
                   WHEN lp.status = 'pending' THEN 'pending'
                   ELSE 'inactive'
                 END AS client_status_key
@@ -1550,10 +1567,8 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
                   ELSE 0
                 END AS is_expiring_soon,
                 CASE
-                  WHEN u.status = 'active' THEN 'active'
-                  WHEN u.status = 'expired' THEN 'inactive'
                   WHEN u.status = 'pending_payment' THEN 'pending'
-                  WHEN lp.status = 'completed' AND (s.status IS NULL OR s.status IN ('active', 'expiring_soon')) THEN 'active'
+                  WHEN s.status IN ('active', 'expiring_soon') THEN 'active'
                   WHEN lp.status = 'pending' THEN 'pending'
                   ELSE 'inactive'
                 END AS client_status_key
@@ -2023,7 +2038,6 @@ router.get('/:id/weekly-updates', authorizeRole(['coach', 'admin', 'moderator'])
        ORDER BY wu.submitted_at DESC, wuq.sort_order ASC`,
       [clientId]
     );
-
     const updatesById = new Map();
     for (const row of answerRows) {
       if (!updatesById.has(row.id)) {
@@ -2119,7 +2133,7 @@ router.get('/:id/workouts', authorizeRole(['coach', 'admin', 'moderator']), asyn
   }
 });
 
-router.get('/:id/payments', authorizeRole(['coach', 'admin']), async (req, res) => {
+router.get('/:id/payments', authorizeRoleOrPermission(['coach', 'admin'], 'view_payments'), async (req, res) => {
   const connection = await pool.getConnection();
   try {
     const clientId = Number(req.params.id);
@@ -2200,10 +2214,13 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
               DATEDIFF(end_date, CURDATE()) AS days_remaining
        FROM subscriptions
        WHERE client_id = ?
-         AND status IN ('active', 'expiring_soon')
-         AND start_date <= CURDATE()
-         AND end_date >= CURDATE()
-       ORDER BY end_date DESC
+         AND (
+           (status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE())
+           OR status = 'expired'
+         )
+       ORDER BY
+         CASE WHEN status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE() THEN 0 ELSE 1 END,
+         end_date DESC
        LIMIT 1`,
       [req.params.id]
     );
@@ -2461,6 +2478,11 @@ router.post('/:id/payments', authorizeRole(['coach', 'admin']), [
     });
 
     await connection.commit();
+    try {
+      await syncDiscordSubscriptionRole(connection, clientId);
+    } catch (discordError) {
+      console.error('Discord role sync after manual payment failed:', discordError.message);
+    }
     if (plan?.id) await awardPoints(connection, { clientId, planId: plan.id, paymentId: paymentResult.insertId });
     res.status(201).json({ message: 'Payment and subscription recorded', id: paymentResult.insertId, subscriptionId });
   } catch (error) {
@@ -2509,11 +2531,11 @@ router.delete('/:id/payments/:paymentId', authorizeRole(['coach', 'admin']), asy
 // GET/POST /clients/me/messages — client-side view/send for their own thread
 // (declared before the /:id/messages wildcard routes below so "me" is never
 // captured as an :id value)
-router.get('/messages/inbox', authorizeRole(['coach', 'admin']), async (req, res) => {
+router.get('/messages/inbox', authorizeRoleOrPermission(['coach', 'admin'], 'messages'), async (req, res) => {
   const connection = await pool.getConnection();
   try {
     await ensureMessagesSchema(connection);
-    const isAdmin = req.user.role === 'admin';
+    const isAssignedCoach = req.user.role === 'coach';
     const [rows] = await connection.query(
       `SELECT u.id AS client_id, u.full_name AS client_name, u.email AS client_email, u.profile_photo,
               MAX(m.created_at) AS last_message_at,
@@ -2522,11 +2544,11 @@ router.get('/messages/inbox', authorizeRole(['coach', 'admin']), async (req, res
        FROM coach_clients cc
        INNER JOIN users u ON u.id = cc.client_id AND u.role = 'client'
        LEFT JOIN messages m ON m.client_id = u.id
-       ${isAdmin ? '' : 'WHERE cc.coach_id = ?'}
+       ${isAssignedCoach ? 'WHERE cc.coach_id = ?' : ''}
        GROUP BY u.id, u.full_name, u.email, u.profile_photo
        HAVING last_message_at IS NOT NULL
        ORDER BY unread_count DESC, last_message_at DESC`,
-      isAdmin ? [] : [req.user.id]
+      isAssignedCoach ? [req.user.id] : []
     );
     res.json(rows.map((row) => ({ ...row, unread_count: Number(row.unread_count || 0) })));
   } catch (error) {
@@ -2670,7 +2692,7 @@ router.post('/me/messages', authorizeRole(['client']), [
 });
 
 // GET/POST /clients/:id/messages — coach-side view/send for one client's thread
-router.get('/:id/messages', authorizeRole(['coach', 'admin']), async (req, res) => {
+router.get('/:id/messages', authorizeRoleOrPermission(['coach', 'admin'], 'messages'), async (req, res) => {
   const connection = await pool.getConnection();
   try {
     await ensureMessagesSchema(connection);
@@ -2691,7 +2713,7 @@ router.get('/:id/messages', authorizeRole(['coach', 'admin']), async (req, res) 
   }
 });
 
-router.get('/:id/messages/unread-count', authorizeRole(['coach', 'admin']), async (req, res) => {
+router.get('/:id/messages/unread-count', authorizeRoleOrPermission(['coach', 'admin'], 'messages'), async (req, res) => {
   const connection = await pool.getConnection();
   try {
     await ensureMessagesSchema(connection);
@@ -2708,7 +2730,7 @@ router.get('/:id/messages/unread-count', authorizeRole(['coach', 'admin']), asyn
   }
 });
 
-router.post('/:id/messages/typing', authorizeRole(['coach', 'admin']), (req, res) => {
+router.post('/:id/messages/typing', authorizeRoleOrPermission(['coach', 'admin'], 'messages'), (req, res) => {
   setMessageTyping(req.params.id, {
     role: 'coach',
     name: String(req.body?.name || 'Ο coach').trim().slice(0, 100),
@@ -2717,11 +2739,11 @@ router.post('/:id/messages/typing', authorizeRole(['coach', 'admin']), (req, res
   res.json({ ok: true });
 });
 
-router.get('/:id/messages/typing', authorizeRole(['coach', 'admin']), (req, res) => {
+router.get('/:id/messages/typing', authorizeRoleOrPermission(['coach', 'admin'], 'messages'), (req, res) => {
   res.json({ typer: getMessageTyper(req.params.id, 'client') });
 });
 
-router.post('/:id/messages', authorizeRole(['coach', 'admin']), [
+router.post('/:id/messages', authorizeRoleOrPermission(['coach', 'admin'], 'messages'), [
   body('message').isString().notEmpty()
 ], async (req, res) => {
   const errors = validationResult(req);
@@ -3037,7 +3059,7 @@ router.post('/demo', authorizeRole(['coach', 'admin']), async (req, res) => {
 });
 
 // POST /clients/:id/approve-payment — manual bank transfer approval
-router.post('/:id/approve-payment', authorizeRole(['coach', 'admin']), async (req, res) => {
+router.post('/:id/approve-payment', authorizeRoleOrPermission(['coach', 'admin'], 'approve_payments'), async (req, res) => {
   const connection = await pool.getConnection();
 
   try {
@@ -3143,6 +3165,11 @@ router.post('/:id/approve-payment', authorizeRole(['coach', 'admin']), async (re
     });
 
     await connection.commit();
+    try {
+      await syncDiscordSubscriptionRole(connection, clientId);
+    } catch (discordError) {
+      console.error('Discord role sync after payment approval failed:', discordError.message);
+    }
     if (payments[0].plan_id) await awardPoints(connection, { clientId, planId: payments[0].plan_id, paymentId: payments[0].id });
     connection.release();
 
@@ -3161,7 +3188,7 @@ router.post('/:id/approve-payment', authorizeRole(['coach', 'admin']), async (re
 });
 
 // PUT /clients/:id — update client profile
-router.post('/:id/reject-payment', authorizeRole(['coach', 'admin']), async (req, res) => {
+router.post('/:id/reject-payment', authorizeRoleOrPermission(['coach', 'admin'], 'approve_payments'), async (req, res) => {
   const connection = await pool.getConnection();
 
   try {
@@ -3265,8 +3292,9 @@ router.put('/:id/demo-mode', authorizeRole(['coach', 'admin']), [
   try {
     await ensureClientDetailColumns(connection);
     const [rows] = await connection.query(
-      `SELECT c.is_demo, cc.coach_id
+      `SELECT c.is_demo, cc.coach_id, u.discord_id
        FROM clients c
+       INNER JOIN users u ON u.id = c.user_id
        LEFT JOIN coach_clients cc ON cc.client_id = c.user_id
        WHERE c.user_id = ? LIMIT 1`,
       [req.params.id]
@@ -3279,6 +3307,88 @@ router.put('/:id/demo-mode', authorizeRole(['coach', 'admin']), [
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Could not update demo mode.' });
+  } finally {
+    connection.release();
+  }
+});
+
+// Demo-only control for testing the expired-subscription experience without
+// affecting any real client account.
+router.post('/:id/demo-subscription/expire', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureClientDetailColumns(connection);
+    await ensureClientActivityLogSchema(connection);
+    const clientId = Number(req.params.id);
+    const [rows] = await connection.query(
+      `SELECT c.is_demo, cc.coach_id, u.discord_id
+       FROM clients c
+       INNER JOIN users u ON u.id = c.user_id
+       LEFT JOIN coach_clients cc ON cc.client_id = c.user_id
+       WHERE c.user_id = ? LIMIT 1`,
+      [clientId]
+    );
+    if (!rows.length || !rows[0].is_demo) return res.status(404).json({ message: 'Demo client not found.' });
+    if (req.user.role === 'coach' && Number(rows[0].coach_id) !== Number(req.user.id)) return res.status(403).json({ message: 'Access denied.' });
+
+    const [result] = await connection.query(
+      `UPDATE subscriptions
+       SET status = 'expired', end_date = DATE_SUB(CURDATE(), INTERVAL 1 DAY)
+       WHERE client_id = ? AND status IN ('active', 'expiring_soon')
+         AND start_date <= CURDATE() AND end_date >= CURDATE()`,
+      [clientId]
+    );
+    await connection.query(
+      'UPDATE users SET status = "expired" WHERE id = ? AND role = "client"',
+      [clientId]
+    );
+    let discordRoleRemoved = false;
+    if (rows[0].discord_id) {
+      try {
+        const roleId = await getActiveRoleId();
+        if (roleId) {
+          await removeRole(rows[0].discord_id, roleId);
+          discordRoleRemoved = true;
+        }
+      } catch (discordError) {
+        console.error('Demo subscription Discord role removal failed:', discordError.message);
+      }
+    }
+
+    await logClientActivity(connection, {
+      clientId,
+      action: result.affectedRows ? 'Demo subscription expired' : 'Demo Discord access synced',
+      performedBy: req.user.id,
+      details: result.affectedRows ? 'Expired manually for subscription-state testing.' : 'Removed active Discord role for expired demo subscription.',
+    });
+    res.json({ success: true, expired: Boolean(result.affectedRows), discordRoleRemoved, message: result.affectedRows ? 'Demo subscription is now expired.' : 'Demo Discord access was synced.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Could not expire demo subscription.' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.post('/:id/demo-subscription/sync-discord', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const clientId = Number(req.params.id);
+    const [rows] = await connection.query(
+      `SELECT c.is_demo, cc.coach_id
+       FROM clients c
+       LEFT JOIN coach_clients cc ON cc.client_id = c.user_id
+       WHERE c.user_id = ? LIMIT 1`,
+      [clientId]
+    );
+    if (!rows.length || !rows[0].is_demo) return res.status(404).json({ message: 'Demo client not found.' });
+    if (req.user.role === 'coach' && Number(rows[0].coach_id) !== Number(req.user.id)) return res.status(403).json({ message: 'Access denied.' });
+
+    const result = await syncDiscordSubscriptionRole(connection, clientId);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Demo Discord access sync failed:', error);
+    res.status(500).json({ message: 'Could not sync demo Discord access.' });
   } finally {
     connection.release();
   }

@@ -4,7 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getAuthRedirect, useAuth } from "@/lib/auth/auth-context";
 
-export type ProtectedRouteAllow = "coach" | "client-active" | "client-pending" | "client-expired";
+export type ProtectedRouteAllow = "coach" | "client-active" | "client-pending" | "client-expired" | "client-billing";
 
 function LoadingScreen() {
   return (
@@ -29,6 +29,7 @@ export function ProtectedRoute({ children, allow }: { children: ReactNode; allow
     }
     if (allow === "coach" && !["coach", "admin", "moderator"].includes(user.role)) return getAuthRedirect(user);
     if (allow === "client-active" && user.role === "client" && user.status !== "active") return getAuthRedirect(user);
+    if (allow === "client-billing" && user.role !== "client") return getAuthRedirect(user);
     if (allow === "client-pending" && !(user.role === "client" && user.status === "pending_payment")) {
       return getAuthRedirect(user);
     }

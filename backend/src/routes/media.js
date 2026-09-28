@@ -88,7 +88,62 @@ async function ensureMediaCategories(connection) {
   return {};
 }
 
-export { ensureMediaCategories };
+async function registerWeeklyUpdatePhotos(connection, clientId) {
+  await ensureMediaCategories(connection);
+
+  const [photos] = await connection.query(
+    `SELECT wuf.file_url, wuf.original_name, wu.submitted_at, u.full_name, u.email
+     FROM weekly_update_files wuf
+     INNER JOIN weekly_updates wu ON wu.id = wuf.update_id
+     INNER JOIN users u ON u.id = wu.client_id
+     WHERE wu.client_id = ? AND wuf.file_type = 'photo'
+     ORDER BY wu.submitted_at DESC, wuf.id DESC`,
+    [clientId]
+  );
+  if (!photos.length) return 0;
+
+  let [[updatesFolder]] = await connection.query(
+    'SELECT id FROM media_folders WHERE parent_id IS NULL AND LOWER(name) = LOWER(?) LIMIT 1',
+    ['Updates']
+  );
+  if (!updatesFolder) {
+    const [created] = await connection.query('INSERT INTO media_folders (name, parent_id) VALUES (?, NULL)', ['Updates']);
+    updatesFolder = { id: created.insertId };
+  }
+
+  const clientName = String(photos[0].full_name || photos[0].email || `Client ${clientId}`).trim().slice(0, 220);
+  let [[clientFolder]] = await connection.query(
+    'SELECT id FROM media_folders WHERE parent_id = ? AND name = ? LIMIT 1',
+    [updatesFolder.id, clientName]
+  );
+  if (!clientFolder) {
+    const [created] = await connection.query(
+      'INSERT INTO media_folders (name, parent_id) VALUES (?, ?)',
+      [clientName, updatesFolder.id]
+    );
+    clientFolder = { id: created.insertId };
+  }
+
+  for (const photo of photos) {
+    const url = String(photo.file_url || '').startsWith('/') ? photo.file_url : `/${photo.file_url}`;
+    if (!url || url === '/') continue;
+    const date = new Date(photo.submitted_at).toISOString().slice(0, 10);
+    const filename = photo.original_name || path.basename(url);
+    const title = `${clientName} - Update ${date} - ${filename}`.slice(0, 255);
+    await connection.query(
+      `INSERT INTO media_assets (title, asset_type, url, source, folder_id)
+       SELECT ?, 'photo', ?, 'weekly_update', ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM media_assets WHERE source = 'weekly_update' AND url = ?
+       )`,
+      [title, url, clientFolder.id, url]
+    );
+  }
+
+  return photos.length;
+}
+
+export { ensureMediaCategories, registerWeeklyUpdatePhotos };
 
 router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
@@ -377,8 +432,12 @@ router.delete('/:kind/:id', authorizeRole(['coach', 'admin']), async (req, res) 
       return res.json({ message: 'Exercise image removed' });
     }
 
-    const [[asset]] = await connection.query('SELECT url FROM media_assets WHERE id = ?', [id]);
+    const [[asset]] = await connection.query('SELECT url, source FROM media_assets WHERE id = ?', [id]);
     await connection.query('DELETE FROM media_assets WHERE id = ?', [id]);
+    if (asset?.source === 'weekly_update') {
+      const withoutLeadingSlash = asset.url.replace(/^\//, '');
+      await connection.query('DELETE FROM weekly_update_files WHERE file_url IN (?, ?)', [asset.url, withoutLeadingSlash]);
+    }
     connection.release();
 
     if (asset?.url?.startsWith('/uploads/media/')) {
