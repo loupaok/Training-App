@@ -108,7 +108,7 @@ function ManualNotificationsContent() {
   if (user?.role !== "admin") return <div className="grid min-h-screen place-items-center bg-muted/30"><p className="text-sm text-muted-foreground">Δεν έχεις δικαίωμα πρόσβασης.</p></div>;
 
   return <CoachShell title="Ανακοινώσεις" user={user} logout={logout}>
-    <main className="mx-auto max-w-6xl space-y-6">
+    <main className="mx-auto max-w-4xl space-y-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div><div className="mb-3 grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary"><Megaphone className="h-5 w-5" /></div><h1 className="text-2xl font-bold">Ανακοινώσεις</h1><p className="mt-1 text-sm text-muted-foreground">Στείλε ενημέρωση στη σωστή ομάδα και κράτησε ιστορικό των αποστολών.</p></div>
         <div className="flex gap-3"><Metric icon={Bell} label="Αποστολές" value={items.length} /><Metric icon={Users} label="Παραδόσεις" value={sentTotal} /></div>

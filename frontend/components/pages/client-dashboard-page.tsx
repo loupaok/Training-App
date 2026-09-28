@@ -304,7 +304,7 @@ function ClientDashboardContent() {
 
   return (
     <ClientShell user={user} logout={logout} paymentApproved={subscriptionActive} active="dashboard">
-      <main className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
+      <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
         <div>
           <h1 className="text-2xl font-bold">Γεια σου, {dashboard?.client.firstName || ""}!</h1>
           <p className="text-sm text-muted-foreground">Η προσωπική σου προπόνηση, διατροφή και πρόοδος σε ένα μέρος.</p>

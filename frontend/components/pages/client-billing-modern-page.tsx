@@ -94,7 +94,7 @@ function ClientBillingModernContent() {
   const copyIban = async () => { if (bankDetails?.iban) await navigator.clipboard.writeText(bankDetails.iban) }
 
   return <ClientShell title="Συνδρομή & Πληρωμές" user={user} logout={logout} paymentApproved={user?.status === "active"} active="billing">
-    <main className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
+    <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
       <div><h1 className="text-2xl font-bold">Συνδρομή & Πληρωμές</h1><p className="mt-1 text-sm text-muted-foreground">Διαχειρίσου το πλάνο σου και δες το ιστορικό των πληρωμών σου.</p></div>
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
       {message && <Alert><CheckCircle2 className="h-4 w-4" /><AlertDescription>{message}</AlertDescription></Alert>}

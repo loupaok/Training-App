@@ -134,7 +134,7 @@ function ClientProgressContent() {
   const paymentApproved = user?.status === "active"
 
   return <ClientShell title="Progress" user={user} logout={logout} paymentApproved={paymentApproved} active="progress">
-    <main className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
+    <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
       <div><h1 className="text-2xl font-bold">Η πρόοδός μου</h1><p className="mt-1 text-sm text-muted-foreground">Οι μετρήσεις, τα check-ins και οι προπονήσεις σου σε ένα μέρος.</p></div>
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
       {loading ? <div className="space-y-6"><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">{Array.from({ length: 6 }, (_, index) => <Skeleton key={index} className="h-36" />)}</div><Skeleton className="h-80" /></div> : <>

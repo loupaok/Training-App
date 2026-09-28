@@ -482,7 +482,7 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
       {loading ? (
         <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Φόρτωση...</p>
       ) : exercise && editForm ? (
-        <div className="mx-auto max-w-3xl pb-8">
+        <div className="mx-auto max-w-4xl pb-8">
           {/* TOP — two columns */}
           <div className="grid grid-cols-1 gap-8 sm:grid-cols-[35%_1fr]">
             {/* LEFT — image + gallery */}

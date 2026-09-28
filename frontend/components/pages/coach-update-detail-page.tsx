@@ -50,7 +50,7 @@ function CoachUpdateDetailContent({ updateId }: { updateId: string }) {
   const visibleAnswers = update?.answers.filter((answer) => answer.standard_key !== "weight_kg") || [];
 
   return <CoachShell title="Update πελάτη" user={user} logout={logout}>
-    <main className="mx-auto max-w-5xl space-y-6 p-4 sm:p-6">
+    <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
       <Button nativeButton={false} render={<Link href="/coach/updates" />} variant="ghost" className="-ml-2"><ArrowLeft className="mr-2 h-4 w-4" />Πίσω στα Updates</Button>
       {loading && <div className="space-y-4"><div className="h-28 animate-pulse rounded-xl bg-muted" /><div className="h-64 animate-pulse rounded-xl bg-muted" /></div>}
       {error && <Card className="border-destructive/30"><CardContent className="p-5 text-destructive">{error}</CardContent></Card>}

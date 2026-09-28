@@ -85,7 +85,7 @@ function MenuSettingsContent() {
   };
 
   return <CoachShell title="Διαμόρφωση Μενού" user={user} logout={logout}>
-    <main className="mx-auto max-w-3xl space-y-6 pb-8">
+    <main className="mx-auto max-w-4xl space-y-6 pb-8">
       <header><h1 className="text-3xl font-bold">Διαμόρφωση Μενού</h1><p className="mt-2 text-sm text-muted-foreground">Σύρε τα στοιχεία για να αλλάξεις τη σειρά εμφάνισης.</p></header>
       <Card>
         <CardHeader><CardTitle>Σειρά στοιχείων</CardTitle><CardDescription>Οι Ρυθμίσεις και η Διαχείριση μετακινούνται ως ενιαίες ομάδες.</CardDescription></CardHeader>

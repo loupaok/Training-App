@@ -89,7 +89,7 @@ function CoachUpdatesContent() {
   const thisWeekCount = updates.filter((item) => item.week_start === weekStart()).length;
 
   return <CoachShell title="Updates" user={user} logout={logout}>
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-4"><div><h1 className="text-2xl font-bold">Εβδομαδιαία Updates</h1><p className="mt-1 text-sm text-muted-foreground">Δες τι χρειάζεται προσοχή και άνοιξε κάθε αναφορά για λεπτομέρειες.</p></div>{stats.totalUnread > 0 && <Badge className="h-auto rounded-full px-3 py-1">{stats.totalUnread} αδιάβαστα</Badge>}</header>
       <div className="grid gap-3 sm:grid-cols-3"><StatCard label="Αδιάβαστα" value={String(stats.totalUnread)} icon={ClipboardList} /><StatCard label="Αυτή την εβδομάδα" value={String(thisWeekCount)} icon={CheckCircle2} /><StatCard label="Αναμένονται" value={String(stats.pendingClients.length)} icon={AlertTriangle} /></div>
       {stats.pendingClients.length > 0 && <Card className="border-amber-200 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20"><CardContent className="flex flex-wrap items-center gap-3 p-4"><AlertTriangle className="h-4 w-4 shrink-0 text-amber-700" /><p className="mr-auto text-sm font-medium">{stats.pendingClients.length} πελάτες δεν έχουν στείλει update αυτή την εβδομάδα.</p><div className="flex flex-wrap gap-2">{stats.pendingClients.slice(0, 4).map((client) => <Button key={client.id} nativeButton={false} render={<Link href={`/clients/${client.id}`} />} size="sm" variant="outline" className="bg-background">{client.fullName || client.email}</Button>)}</div></CardContent></Card>}

@@ -97,7 +97,7 @@ function ClientPendingContent() {
 
   return (
     <ClientShell title="Εκκρεμής Πληρωμή" user={user} logout={logout} paymentApproved={false} active="dashboard">
-      <div className="mx-auto max-w-3xl space-y-6">
+      <div className="mx-auto max-w-4xl space-y-6">
         <section className="rounded-xl border border-amber-100 bg-amber-50 p-7 shadow-sm dark:border-amber-900 dark:bg-amber-950/30">
           <div className="flex items-start gap-5">
             <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-amber-200 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">

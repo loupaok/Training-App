@@ -58,7 +58,7 @@ function NotificationsContent() {
   }
 
   return <CoachShell title="Ειδοποιήσεις" user={user} logout={logout}>
-    <main className="mx-auto max-w-5xl space-y-6">
+    <main className="mx-auto max-w-4xl space-y-6">
       <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div><div className="mb-3 grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary"><Bell className="h-5 w-5" /></div><h1 className="text-2xl font-bold">Κέντρο ειδοποιήσεων</h1><p className="mt-1 text-sm text-muted-foreground">Ιστορικό ενεργειών, πληρωμών, updates και ανακοινώσεων.</p></div>
         <Button variant="outline" disabled={!unread} onClick={() => void markAll()}><CheckCheck className="mr-2 h-4 w-4" />Όλα ως αναγνωσμένα</Button>

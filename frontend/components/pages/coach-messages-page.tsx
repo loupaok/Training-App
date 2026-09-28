@@ -90,7 +90,7 @@ function CoachMessagesContent() {
   }
 
   return <CoachShell title="Μηνύματα" user={user} logout={logout}>
-    <div className="mx-auto max-w-5xl space-y-4">
+    <div className="mx-auto max-w-4xl space-y-4">
       <div><h1 className="text-2xl font-bold">Μηνύματα</h1><p className="mt-1 text-sm text-muted-foreground">Όλες οι συνομιλίες με τους πελάτες σου σε ένα σημείο.</p></div>
       <Card className="overflow-hidden p-0"><div className="grid min-h-[32rem] lg:grid-cols-[15rem_minmax(0,1fr)]">
         <aside className="border-b lg:border-b-0 lg:border-r"><CardHeader className="border-b px-3 py-3"><CardTitle className="text-sm">Συνομιλίες</CardTitle><CardDescription>{inbox.reduce((total, item) => total + item.unread_count, 0)} μη αναγνωσμένα</CardDescription></CardHeader><ScrollArea className="h-[14rem] lg:h-[26rem]"><div className="p-1.5">{loading ? <p className="p-3 text-sm text-muted-foreground">Φόρτωση...</p> : inbox.map((item) => <button key={item.client_id} type="button" onClick={() => setSelectedId(item.client_id)} className={`flex w-full items-center gap-2 rounded-md p-2.5 text-left transition-colors ${selectedId === item.client_id ? "bg-primary/10" : "hover:bg-muted/60"}`}><Avatar className="h-8 w-8"><AvatarImage src={resolveMediaUrl(item.profile_photo)} /><AvatarFallback>{initials(item.client_name)}</AvatarFallback></Avatar><span className="min-w-0 flex-1"><span className="flex items-center gap-1.5"><span className="truncate text-sm font-medium">{item.client_name}</span>{item.unread_count > 0 && <Badge className="ml-auto rounded-full px-1.5 text-[10px]">{item.unread_count}</Badge>}</span><span className="mt-0.5 block truncate text-xs text-muted-foreground">{item.last_message || ""}</span></span></button>)}</div></ScrollArea></aside>
