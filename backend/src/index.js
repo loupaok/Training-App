@@ -28,6 +28,7 @@ import weeklyUpdateRoutes from './routes/weekly-updates.js';
 import settingsRoutes from './routes/settings.js';
 import pointsRoutes from './routes/points.js';
 import discordRoutes from './routes/discord.js';
+import analyticsRoutes from './routes/analytics.js';
 import discordSettingsRoutes from './routes/discord-settings.js';
 import { authenticateToken, isClient, isCoach } from './middleware/auth.js';
 
@@ -107,6 +108,7 @@ app.use('/api/updates', authenticateToken, weeklyUpdateRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/points', pointsRoutes);
 app.use('/api/discord', discordRoutes);
+app.use('/api/analytics', analyticsRoutes);
 app.use('/api/discord-settings', discordSettingsRoutes);
 
 // Health check
