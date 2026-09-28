@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { BarChart } from "@tremor/react";
 import { Users, UserCheck, Clock, UserX, Download } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { CoachShell } from "@/components/shell/coach-shell";
 import { UserAvatar } from "@/components/shared/user-avatar";
@@ -78,21 +77,7 @@ function CoachDashboardContent() {
           </div>
         </div>
 
-        <Tabs defaultValue="overview" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="analytics" disabled>
-              Analytics
-            </TabsTrigger>
-            <TabsTrigger value="reports" disabled>
-              Reports
-            </TabsTrigger>
-            <TabsTrigger value="notifications" disabled>
-              Notifications
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="overview" className="space-y-4">
+        <div className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {stats.map((stat) => (
                 <Card key={stat.label}>
@@ -149,9 +134,7 @@ function CoachDashboardContent() {
                 </CardContent>
               </Card>
             </div>
-
-          </TabsContent>
-        </Tabs>
+        </div>
       </div>
     </CoachShell>
   );
