@@ -137,8 +137,8 @@ function ClientProgressContent() {
     <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
       <div><h1 className="text-2xl font-bold">Η πρόοδός μου</h1><p className="mt-1 text-sm text-muted-foreground">Οι μετρήσεις, τα check-ins και οι προπονήσεις σου σε ένα μέρος.</p></div>
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
-      {loading ? <div className="space-y-6"><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">{Array.from({ length: 6 }, (_, index) => <Skeleton key={index} className="h-36" />)}</div><Skeleton className="h-80" /></div> : <>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+      {loading ? <div className="space-y-6"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{Array.from({ length: 6 }, (_, index) => <Skeleton key={index} className="h-36" />)}</div><Skeleton className="h-80" /></div> : <>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard label="Τρέχον βάρος" value={currentWeight !== null ? `${currentWeight.toLocaleString("el-GR")} kg` : "-"} detail={weightChange === null ? "Πρόσθεσε check-in με βάρος" : `${weightChange > 0 ? "+" : ""}${weightChange.toLocaleString("el-GR", { maximumFractionDigits: 1 })} kg από την αρχή`} icon={Scale} trend={weightChange === null ? undefined : weightChange <= 0 ? "down" : "up"} />
           <StatCard label="Αρχικό βάρος" value={startWeight !== null ? `${startWeight.toLocaleString("el-GR")} kg` : "-"} detail="Από την εγγραφή σου" icon={Scale} />
           <StatCard label="Στόχος" value={data?.fitnessGoal || "-"} detail={targetWeight === null ? "Από την εγγραφή σου" : remainingToTarget === 0 ? `Βάρος στόχου: ${targetWeight.toLocaleString("el-GR")} kg` : `${remainingToTarget?.toLocaleString("el-GR", { maximumFractionDigits: 1 })} kg έως τα ${targetWeight.toLocaleString("el-GR")} kg`} icon={Target} />
