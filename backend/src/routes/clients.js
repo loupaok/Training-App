@@ -14,6 +14,7 @@ import { ensureClientActivityLogSchema, logClientActivity } from '../lib/client-
 import { ensureQuestionnaireSchema, syncUpdateDayQuestionnaireAnswer } from './questionnaire.js';
 import { awardPoints } from './points.js';
 import { ensureDiscordSchema } from './discord.js';
+import { removeRole, getActiveRoleId } from '../lib/discord.js';
 
 const router = express.Router();
 const activeMessageTypers = new Map();
@@ -3379,8 +3380,24 @@ router.put('/:id', authorizeRole(['coach', 'admin', 'moderator']), [
       });
     }
 
+    const justDeactivated = isActive !== undefined && Boolean(rows[0].is_active) !== Boolean(isActive) && !isActive;
+    let discordIdToRevoke = null;
+    if (justDeactivated) {
+      const [discordRows] = await connection.query('SELECT discord_id FROM users WHERE id = ?', [clientId]);
+      discordIdToRevoke = discordRows[0]?.discord_id || null;
+    }
+
     await connection.commit();
     connection.release();
+
+    if (discordIdToRevoke) {
+      try {
+        const roleId = await getActiveRoleId();
+        if (roleId) await removeRole(discordIdToRevoke, roleId);
+      } catch (error) {
+        console.error('Discord role removal on deactivate failed:', error.message);
+      }
+    }
 
     res.json({ message: 'Client updated successfully' });
   } catch (error) {

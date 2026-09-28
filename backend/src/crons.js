@@ -279,11 +279,11 @@ async function runDiscordRoleSync() {
     connection = await pool.getConnection();
     const [rows] = await connection.query(`
       SELECT u.id, u.discord_id,
-        EXISTS(
+        (u.is_active = 1 AND EXISTS(
           SELECT 1 FROM subscriptions s
           WHERE s.client_id = u.id AND s.status IN ('active', 'expiring_soon')
             AND s.start_date <= CURDATE() AND s.end_date >= CURDATE()
-        ) AS is_active
+        )) AS is_active
       FROM users u
       WHERE u.discord_id IS NOT NULL
     `);
