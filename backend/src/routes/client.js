@@ -580,9 +580,9 @@ router.post('/updates/submit', upload.array('files', 5), async (req, res) => {
       console.error('Weekly update media-library sync failed:', mediaError);
     }
     const [users] = await connection.query('SELECT full_name, email FROM users WHERE id = ?', [req.user.id]);
-    const clientName = users[0]?.full_name || users[0]?.email || 'Client';
+    const clientName = users[0]?.full_name || users[0]?.email || 'Πελάτης';
     try {
-      await notifyCoaches(connection, { clientId: req.user.id, type: 'new_update', title: 'New weekly update', body: `${clientName} submitted a new update.`, linkUrl: `/coach/updates/${result.insertId}` });
+      await notifyCoaches(connection, { clientId: req.user.id, type: 'new_update', title: 'Νέο εβδομαδιαίο update', body: `${clientName} υπέβαλε το εβδομαδιαίο update του.`, linkUrl: `/coach/updates/${result.insertId}` });
       const [coaches] = await connection.query("SELECT email FROM users WHERE role IN ('coach', 'admin') AND is_active = 1");
       const url = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/coach/updates/${result.insertId}`;
       const template = await getEmailTemplate('update_notification', { clientName, updateUrl: url }, connection) || updateNotificationEmail(clientName, '', '', '', url);
