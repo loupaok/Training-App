@@ -27,14 +27,19 @@ function CoachProfileContent() {
   const { user, logout, updateUser } = useAuth();
   const { fontSize, setFontSize } = useFontSize();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [form, setForm] = useState({ fullName: "", profileTitle: "" });
+  const [form, setForm] = useState({ firstName: "", lastName: "", profileTitle: "" });
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
-    setForm({ fullName: user?.fullName || "", profileTitle: user?.profileTitle || "" });
+    const nameParts = (user?.fullName || "").trim().split(/\s+/).filter(Boolean);
+    setForm({
+      firstName: nameParts[0] || "",
+      lastName: nameParts.slice(1).join(" "),
+      profileTitle: user?.profileTitle || "",
+    });
   }, [user?.fullName, user?.profileTitle]);
 
   const saveProfile = async (event: FormEvent) => {
@@ -44,7 +49,8 @@ function CoachProfileContent() {
     setMessage("");
 
     try {
-      const data = await api.put<{ user: AuthUser }>("/auth/profile", form);
+      const fullName = [form.firstName.trim(), form.lastName.trim()].filter(Boolean).join(" ");
+      const data = await api.put<{ user: AuthUser }>("/auth/profile", { ...form, fullName });
       updateUser({ ...(user as AuthUser), ...data.user });
       setMessage("Το προφίλ ενημερώθηκε.");
     } catch (err) {
@@ -125,14 +131,25 @@ function CoachProfileContent() {
             </CardHeader>
             <CardContent>
               <form onSubmit={saveProfile} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="fullName">Όνομα και επίθετο</Label>
-                  <Input
-                    id="fullName"
-                    value={form.fullName}
-                    onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))}
-                    required
-                  />
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="firstName">Όνομα</Label>
+                    <Input
+                      id="firstName"
+                      value={form.firstName}
+                      onChange={(event) => setForm((current) => ({ ...current, firstName: event.target.value }))}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="lastName">Επώνυμο</Label>
+                    <Input
+                      id="lastName"
+                      value={form.lastName}
+                      onChange={(event) => setForm((current) => ({ ...current, lastName: event.target.value }))}
+                      required
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>

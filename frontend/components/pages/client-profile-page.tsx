@@ -52,6 +52,8 @@ interface ProfileData {
 
 interface ProfileForm {
   fullName: string;
+  firstName: string;
+  lastName: string;
   email: string;
   phone: string;
   gender: string;
@@ -96,6 +98,14 @@ function calculateAge(dateOfBirth?: string): number | string {
   return age;
 }
 
+const normalizeGender = (value?: string | null) => {
+  const normalized = String(value || "").trim().toLocaleLowerCase("el-GR")
+  if (["male", "άνδρας", "ανδρας"].includes(normalized)) return "male"
+  if (["female", "γυναίκα", "γυναικα"].includes(normalized)) return "female"
+  if (["other", "άλλο", "αλλο"].includes(normalized)) return "other"
+  return ""
+}
+
 function normalizeSocialLinks(rows: { platform?: string; url?: string }[] = []): SocialLink[] {
   return socialPlatforms.map((platform) => {
     const existing = rows.find((item) => item.platform?.toLowerCase() === platform.toLowerCase());
@@ -106,6 +116,8 @@ function normalizeSocialLinks(rows: { platform?: string; url?: string }[] = []):
 function emptyForm(): ProfileForm {
   return {
     fullName: "",
+    firstName: "",
+    lastName: "",
     email: "",
     phone: "",
     gender: "",
@@ -133,12 +145,14 @@ function TextField({
   onChange,
   type = "text",
   required = false,
+  disabled = false,
 }: {
   label: string;
   value: string | number;
   onChange: (value: string) => void;
   type?: string;
   required?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <div>
@@ -148,7 +162,8 @@ function TextField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         required={required}
-        className="mt-2"
+        disabled={disabled}
+        className="mt-2 disabled:cursor-not-allowed disabled:bg-muted"
       />
     </div>
   );
@@ -231,11 +246,14 @@ function ClientProfileContent() {
       .then(([data, dashboard]) => {
         setPaymentApproved(Boolean(dashboard?.paymentApproved));
         setProfile(data);
+        const [firstName = "", ...lastNameParts] = (data.fullName || "").trim().split(/\s+/).filter(Boolean);
         setForm({
           fullName: data.fullName || "",
+          firstName,
+          lastName: lastNameParts.join(" "),
           email: data.email || "",
           phone: data.phone || "",
-          gender: data.gender || "",
+          gender: normalizeGender(data.gender),
           dateOfBirth: toDateInput(data.dateOfBirth),
           heightCm: data.heightCm || "",
           weightKg: data.weightKg || "",
@@ -279,7 +297,9 @@ function ClientProfileContent() {
     setMessage("");
 
     try {
-      const data = await api.put<{ user: AuthUser }>("/clients/me/profile", form);
+      const fullName = [form.firstName.trim(), form.lastName.trim()].filter(Boolean).join(" ");
+      const data = await api.put<{ user: AuthUser }>("/clients/me/profile", { ...form, fullName });
+      setForm((current) => ({ ...current, fullName }));
       if (user) updateUser({ ...user, ...data.user, profilePhoto: currentProfilePhoto ?? undefined });
       setMessage("Το προφίλ ενημερώθηκε.");
     } catch (err) {
@@ -372,7 +392,7 @@ function ClientProfileContent() {
                     />
                   ) : (
                     <div className="grid h-24 w-24 place-items-center rounded-full bg-slate-900 text-2xl font-bold text-white dark:bg-red-600">
-                      {(form.fullName || form.email || "CL").slice(0, 2).toUpperCase()}
+                      {([form.firstName, form.lastName].filter(Boolean).join(" ") || form.email || "CL").slice(0, 2).toUpperCase()}
                     </div>
                   )}
                   <div>
@@ -418,12 +438,13 @@ function ClientProfileContent() {
             </CardHeader>
             <CardContent>
               <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-                <TextField label="Όνομα & Επώνυμο" value={form.fullName} onChange={(value) => updateField("fullName", value)} required />
-                <TextField label="Email" type="email" value={form.email} onChange={(value) => updateField("email", value)} required />
+                <TextField label="Όνομα" value={form.firstName} onChange={(value) => updateField("firstName", value)} required />
+                <TextField label="Επώνυμο" value={form.lastName} onChange={(value) => updateField("lastName", value)} required />
+                <TextField label="Email" type="email" value={form.email} onChange={(value) => updateField("email", value)} required disabled={Boolean(profile?.email)} />
                 <TextField label="Τηλέφωνο" value={form.phone} onChange={(value) => updateField("phone", value)} />
-                <TextField label="Ημερομηνία γέννησης" type="date" value={form.dateOfBirth} onChange={(value) => updateField("dateOfBirth", value)} />
+                <TextField label="Ημερομηνία γέννησης" type="date" value={form.dateOfBirth} onChange={(value) => updateField("dateOfBirth", value)} disabled={Boolean(profile?.dateOfBirth)} />
                 <ReadOnlyField label="Ηλικία" value={age ? `${age} ετών` : "Υπολογίζεται από τη γέννηση"} />
-                <SelectField label="Φύλο" value={form.gender} onChange={(value) => updateField("gender", value)} options={["Άνδρας", "Γυναίκα", "Άλλο"]} />
+                <SelectField label="Φύλο" value={form.gender} onChange={(value) => updateField("gender", value)} options={[["male", "Άνδρας"], ["female", "Γυναίκα"], ["other", "Άλλο"]]} />
                 <TextField label="Ύψος σε cm" value={form.heightCm} onChange={(value) => updateField("heightCm", value)} />
                 <TextField label="Βάρος σε kg" value={form.weightKg} onChange={(value) => updateField("weightKg", value)} />
                 <SelectField

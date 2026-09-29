@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { BrandingProvider } from "@/contexts/BrandingContext";
 import { AuthProvider } from "@/lib/auth/auth-context";
 import { FontSizeProvider } from "@/components/shell/font-size-context";
+import { OfflineSupport } from "@/components/offline/offline-support";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
@@ -15,6 +16,7 @@ export function Providers({ children }: { children: ReactNode }) {
         <BrandingProvider>
           <FontSizeProvider>
             <TooltipProvider>
+              <OfflineSupport />
               {children}
               <Toaster />
             </TooltipProvider>

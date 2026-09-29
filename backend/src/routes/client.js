@@ -46,9 +46,11 @@ export async function ensureWorkoutSchema(connection) {
       total_volume_kg DECIMAL(10,2) DEFAULT 0,
       notes TEXT NULL,
       workout_feeling VARCHAR(20) NULL,
+      offline_sync_id VARCHAR(80) NULL,
       FOREIGN KEY (client_id) REFERENCES users(id),
       INDEX idx_workout_client_completed (client_id, completed_at),
-      INDEX idx_workout_plan_day (training_plan_id, day_number)
+      INDEX idx_workout_plan_day (training_plan_id, day_number),
+      UNIQUE KEY unique_offline_workout (client_id, offline_sync_id)
     )
   `);
   await connection.query(`
@@ -68,6 +70,8 @@ export async function ensureWorkoutSchema(connection) {
     )
   `);
   await connection.query("ALTER TABLE workout_logs ADD COLUMN IF NOT EXISTS workout_feeling VARCHAR(20) NULL");
+  await connection.query("ALTER TABLE workout_logs ADD COLUMN IF NOT EXISTS offline_sync_id VARCHAR(80) NULL");
+  await connection.query("CREATE UNIQUE INDEX IF NOT EXISTS unique_offline_workout ON workout_logs (client_id, offline_sync_id)");
   await connection.query("ALTER TABLE workout_set_logs ADD COLUMN IF NOT EXISTS set_type VARCHAR(20) NOT NULL DEFAULT 'normal'");
 }
 
@@ -259,14 +263,19 @@ router.post('/workout/start', async (req, res) => {
     const trainingPlanId = Number(req.body.trainingPlanId);
     const dayNumber = Number(req.body.dayNumber);
     const dayName = String(req.body.dayName || '').trim().slice(0, 150);
+    const offlineSyncId = String(req.body.offlineSyncId || '').trim().slice(0, 80) || null;
     if (!Number.isInteger(trainingPlanId) || !Number.isInteger(dayNumber) || dayNumber < 1) {
       return res.status(400).json({ message: 'Invalid workout details.' });
     }
     const [plans] = await connection.query("SELECT id FROM training_plans WHERE id = ? AND client_id = ? AND status = 'active'", [trainingPlanId, req.user.id]);
     if (!plans.length) return res.status(404).json({ message: 'Training plan not found.' });
+    if (offlineSyncId) {
+      const [[existing]] = await connection.query('SELECT id FROM workout_logs WHERE client_id = ? AND offline_sync_id = ? LIMIT 1', [req.user.id, offlineSyncId]);
+      if (existing) return res.status(201).json({ workoutLogId: existing.id, resumed: true });
+    }
     const [result] = await connection.query(
-      'INSERT INTO workout_logs (client_id, training_plan_id, day_number, day_name, started_at) VALUES (?, ?, ?, ?, NOW())',
-      [req.user.id, trainingPlanId, dayNumber, dayName || null]
+      'INSERT INTO workout_logs (client_id, training_plan_id, day_number, day_name, started_at, offline_sync_id) VALUES (?, ?, ?, ?, NOW(), ?)',
+      [req.user.id, trainingPlanId, dayNumber, dayName || null, offlineSyncId]
     );
     res.status(201).json({ workoutLogId: result.insertId });
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
@@ -312,6 +321,7 @@ router.post('/workout/complete', async (req, res) => {
     const totalVolumeKg = Math.max(0, Number(req.body.totalVolumeKg) || 0);
     const notes = String(req.body.notes || '').trim() || null;
     const workoutFeeling = String(req.body.workoutFeeling || '').trim().toLowerCase() || null;
+    const offlineSyncId = String(req.body.offlineSyncId || '').trim().slice(0, 80) || null;
     if (workoutFeeling && !['easy', 'good', 'hard', 'pr'].includes(workoutFeeling)) {
       return res.status(400).json({ message: 'Invalid workout feeling.' });
     }
@@ -320,7 +330,13 @@ router.post('/workout/complete', async (req, res) => {
        WHERE id = ? AND client_id = ? AND completed_at IS NULL`,
       [durationSeconds, totalSetsCompleted, totalVolumeKg, notes, workoutFeeling, workoutLogId, req.user.id]
     );
-    if (!result.affectedRows) return res.status(404).json({ message: 'Active workout not found.' });
+    if (!result.affectedRows) {
+      if (offlineSyncId) {
+        const [[existing]] = await connection.query('SELECT id FROM workout_logs WHERE id = ? AND client_id = ? AND offline_sync_id = ? AND completed_at IS NOT NULL LIMIT 1', [workoutLogId, req.user.id, offlineSyncId]);
+        if (existing) return res.json({ success: true, alreadyCompleted: true, summary: { durationSeconds, totalSetsCompleted, totalVolumeKg } });
+      }
+      return res.status(404).json({ message: 'Active workout not found.' });
+    }
     res.json({ success: true, summary: { durationSeconds, totalSetsCompleted, totalVolumeKg } });
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
 });

@@ -80,7 +80,8 @@ interface TrashedClient {
 }
 
 const emptyClientForm = {
-  fullName: "",
+  firstName: "",
+  lastName: "",
   email: "",
   password: "",
   phone: "",
@@ -313,8 +314,9 @@ function ClientsContent() {
     setClientMessage("");
 
     try {
+      const fullName = [clientForm.firstName.trim(), clientForm.lastName.trim()].filter(Boolean).join(" ");
       await api.post("/clients", {
-        fullName: clientForm.fullName,
+        fullName,
         email: clientForm.email,
         password: clientForm.password,
         phone: clientForm.phone,
@@ -690,8 +692,12 @@ function ClientsContent() {
           <form onSubmit={handleManualClientSubmit}>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Ονοματεπώνυμο</Label>
-                <Input value={clientForm.fullName} onChange={(event) => setClientForm({ ...clientForm, fullName: event.target.value })} required />
+                <Label>Όνομα</Label>
+                <Input value={clientForm.firstName} onChange={(event) => setClientForm({ ...clientForm, firstName: event.target.value })} required />
+              </div>
+              <div className="space-y-2">
+                <Label>Επώνυμο</Label>
+                <Input value={clientForm.lastName} onChange={(event) => setClientForm({ ...clientForm, lastName: event.target.value })} required />
               </div>
               <div className="space-y-2">
                 <Label>Email</Label>

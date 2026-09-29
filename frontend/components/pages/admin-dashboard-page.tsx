@@ -41,7 +41,8 @@ interface AdminStats {
 }
 
 interface AdminForm {
-  fullName: string;
+  firstName: string;
+  lastName: string;
   email: string;
   password: string;
   role: string;
@@ -56,7 +57,8 @@ const roleOptions = [
 ];
 
 const emptyForm: AdminForm = {
-  fullName: "",
+  firstName: "",
+  lastName: "",
   email: "",
   password: "",
   role: "moderator",
@@ -164,8 +166,9 @@ function AdminDashboardContent() {
     setMessage("");
 
     try {
+      const fullName = [formData.firstName.trim(), formData.lastName.trim()].filter(Boolean).join(" ");
       await api.post("/admin/users", {
-        fullName: formData.fullName,
+        fullName,
         email: formData.email,
         password: formData.password,
         role: formData.role,
@@ -281,8 +284,11 @@ function AdminDashboardContent() {
 
         {showAddUser && (
           <form onSubmit={handleAddUser} className="grid grid-cols-1 gap-4 bg-slate-50 p-6 md:grid-cols-2 dark:bg-slate-800">
-            <FormField label="Ονοματεπώνυμο">
-              <Input value={formData.fullName} onChange={(event) => setFormData({ ...formData, fullName: event.target.value })} required />
+            <FormField label="Όνομα">
+              <Input value={formData.firstName} onChange={(event) => setFormData({ ...formData, firstName: event.target.value })} required />
+            </FormField>
+            <FormField label="Επώνυμο">
+              <Input value={formData.lastName} onChange={(event) => setFormData({ ...formData, lastName: event.target.value })} required />
             </FormField>
             <FormField label="Email">
               <Input type="email" value={formData.email} onChange={(event) => setFormData({ ...formData, email: event.target.value })} required />

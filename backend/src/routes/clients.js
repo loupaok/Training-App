@@ -1126,9 +1126,29 @@ router.put('/me/profile', authorizeRole(['client']), [
       return res.status(400).json({ message: 'Email already registered' });
     }
 
+    const [[existingUser]] = await connection.query('SELECT email FROM users WHERE id = ? LIMIT 1', [req.user.id]);
+    if (existingUser?.email && String(email).trim().toLowerCase() !== String(existingUser.email).trim().toLowerCase()) {
+      await connection.rollback();
+      connection.release();
+      return res.status(403).json({ message: 'Το email μπορεί να αλλάξει μόνο από Coach ή Admin.' });
+    }
+
+    const [[existingClient]] = await connection.query(
+      "SELECT DATE_FORMAT(date_of_birth, '%Y-%m-%d') AS date_of_birth FROM clients WHERE user_id = ? LIMIT 1",
+      [req.user.id]
+    );
+    const storedDateOfBirth = existingClient?.date_of_birth || null;
+    const requestedDateOfBirth = dateOfBirth ? String(dateOfBirth).slice(0, 10) : null;
+    if (storedDateOfBirth && requestedDateOfBirth !== storedDateOfBirth) {
+      await connection.rollback();
+      connection.release();
+      return res.status(403).json({ message: 'Η ημερομηνία γέννησης μπορεί να αλλάξει μόνο από Coach ή Admin.' });
+    }
+    const lockedDateOfBirth = storedDateOfBirth || requestedDateOfBirth;
+
     const parsedHeightCm = parseDecimalText(heightCm);
     const parsedWeightKg = parseDecimalText(weightKg);
-    const calculatedAge = calculateAge(dateOfBirth);
+    const calculatedAge = calculateAge(lockedDateOfBirth);
 
     await connection.query(
       'UPDATE users SET full_name = ?, email = ? WHERE id = ?',
@@ -1146,7 +1166,7 @@ router.put('/me/profile', authorizeRole(['client']), [
          weight_kg = VALUES(weight_kg),
          fitness_goal = VALUES(fitness_goal),
          medical_notes = VALUES(medical_notes)`,
-      [req.user.id, phone || null, gender || null, dateOfBirth || null, parsedHeightCm, parsedWeightKg, goal || null, [healthProblem, injuries].filter(Boolean).join('\n\n') || null]
+      [req.user.id, phone || null, gender || null, lockedDateOfBirth, parsedHeightCm, parsedWeightKg, goal || null, [healthProblem, injuries].filter(Boolean).join('\n\n') || null]
     );
 
     await connection.query(
@@ -1176,7 +1196,7 @@ router.put('/me/profile', authorizeRole(['client']), [
         req.user.id,
         goal || null,
         injuries || null,
-        dateOfBirth || null,
+        lockedDateOfBirth,
         calculatedAge,
         parsedHeightCm,
         parsedWeightKg,

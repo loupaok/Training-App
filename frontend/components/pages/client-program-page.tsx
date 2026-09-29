@@ -25,6 +25,8 @@ import { Switch } from "@/components/ui/switch"
 import { useAuth } from "@/lib/auth/auth-context"
 import { api } from "@/lib/api/client"
 import { resolveMediaUrl } from "@/lib/media"
+import { cacheOfflineData, createOfflineWorkoutId, isOnline, queueOfflineWorkout, readOfflineData, syncOfflineWorkouts } from "@/lib/offline-client"
+import { toast } from "sonner"
 
 type Exercise = { id: number; exercise_id?: number | null; exercise_name?: string; name?: string; sets?: string; reps?: string; rest_seconds?: string | number | null; notes?: string | null; image_url?: string | null; muscle_group?: string | null; equipment?: string | null; video_url?: string | null; instructions?: string | null }
 type TrainingDay = { id: number; day_of_week: number; title?: string | null; name?: string; exercises: Exercise[] }
@@ -48,6 +50,7 @@ function getDayTitle(day: TrainingDay, index: number): string {
   return unique.length ? unique.slice(0, 3).join(" & ") : `Ημέρα ${index + 1}`
 }
 type Dashboard = { client?: { subscriptionStatus?: string | null }; unreadNotifications?: number }
+type ProgramOfflineCache = { training: TrainingPlan; workoutHistory: WorkoutLog[]; dashboard: Dashboard }
 type WorkoutSettings = { weightUnit: "kg" | "lbs"; defaultRest: number; autoRest: boolean; soundEnabled: boolean }
 
 const dateFormat = new Intl.DateTimeFormat("el-GR", { day: "numeric", month: "short", year: "numeric" })
@@ -109,6 +112,7 @@ function ClientProgramContent() {
   const [phase, setPhase] = useState<"overview" | "list" | "details" | "workout" | "complete" | "recap">("list")
   const [selectedDay, setSelectedDay] = useState<number | null>(null)
   const [workoutLogId, setWorkoutLogId] = useState<number | null>(null)
+  const [offlineWorkoutId, setOfflineWorkoutId] = useState<string | null>(null)
   const [dayIndex, setDayIndex] = useState(0)
   const [sets, setSets] = useState<Record<string, SetState>>({})
   const [setTypes, setSetTypes] = useState<Record<string, SetType>>({})
@@ -135,10 +139,12 @@ function ClientProgramContent() {
   const [draftRestored, setDraftRestored] = useState(false)
 
   const load = useCallback(async () => {
+    if (!user?.id) { setLoading(false); return }
     setLoading(true); setError("")
     try {
       const [training, workoutHistory, dashboard] = await Promise.all([api.get<TrainingPlan>("/client/training-plan"), api.get<WorkoutLog[]>("/client/workout/history"), api.get<Dashboard>("/client/dashboard")])
       setPlan(training); setHistory(workoutHistory); setPaymentApproved(dashboard.client?.subscriptionStatus === "active"); setUnreadNotifications(dashboard.unreadNotifications || 0)
+      cacheOfflineData<ProgramOfflineCache>(user.id, "training", { training, workoutHistory, dashboard })
       if (training?.days?.length) {
         const entries = await Promise.all(training.days.map(async (_, index) => {
           try {
@@ -148,9 +154,15 @@ function ClientProgramContent() {
         }))
         setLastVolumeByDay(Object.fromEntries(entries))
       }
-    } catch (caughtError) { setError(caughtError instanceof Error ? caughtError.message : "Δεν φορτώθηκε το πρόγραμμα προπόνησης.") } finally { setLoading(false) }
-    api.get<{ totalVolumeKg: number }>("/client/workout/total-volume").then((result) => setTotalVolumeKg(result.totalVolumeKg)).catch(() => {})
-  }, [])
+    } catch (caughtError) {
+      const cached = readOfflineData<ProgramOfflineCache>(user.id, "training")
+      if (cached) {
+        setPlan(cached.training); setHistory(cached.workoutHistory); setPaymentApproved(cached.dashboard.client?.subscriptionStatus === "active"); setUnreadNotifications(cached.dashboard.unreadNotifications || 0)
+        setError("Είσαι εκτός σύνδεσης. Εμφανίζεται η τελευταία αποθηκευμένη προπόνηση.")
+      } else setError(caughtError instanceof Error ? caughtError.message : "Δεν φορτώθηκε το πρόγραμμα προπόνησης.")
+    } finally { setLoading(false) }
+    if (isOnline()) api.get<{ totalVolumeKg: number }>("/client/workout/total-volume").then((result) => setTotalVolumeKg(result.totalVolumeKg)).catch(() => {})
+  }, [user?.id])
 
   const openDayDetails = (index: number, planId: number) => {
     setSelectedDay(index); setPhase("details"); setLastDayVolume(null)
@@ -175,6 +187,7 @@ function ClientProgramContent() {
         if (parsed.phase === "workout" || parsed.phase === "complete") {
           setDayIndex(parsed.dayIndex ?? 0)
           setWorkoutLogId(parsed.workoutLogId ?? null)
+          setOfflineWorkoutId(parsed.offlineWorkoutId ?? null)
           setSets(parsed.sets || {})
           setSetTypes(parsed.setTypes || {})
           setPreviousSets(parsed.previousSets || {})
@@ -198,12 +211,12 @@ function ClientProgramContent() {
   useEffect(() => {
     if (!draftRestored) return
     if (phase === "workout" || phase === "complete") {
-      window.sessionStorage.setItem(workoutDraftKey, JSON.stringify({ phase, dayIndex, workoutLogId, sets, setTypes, previousSets, personalBests, extraSets, elapsedSeconds, summaryNotes, workoutFeeling }))
+      window.sessionStorage.setItem(workoutDraftKey, JSON.stringify({ phase, dayIndex, workoutLogId, offlineWorkoutId, sets, setTypes, previousSets, personalBests, extraSets, elapsedSeconds, summaryNotes, workoutFeeling }))
     } else {
       window.sessionStorage.removeItem(workoutDraftKey)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftRestored, phase, dayIndex, workoutLogId, sets, setTypes, previousSets, personalBests, extraSets, elapsedSeconds, summaryNotes, workoutFeeling])
+  }, [draftRestored, phase, dayIndex, workoutLogId, offlineWorkoutId, sets, setTypes, previousSets, personalBests, extraSets, elapsedSeconds, summaryNotes, workoutFeeling])
 
   const rawDays = plan?.days || []
   const days = rawDays.map((currentDay, index) => ({ ...currentDay, title: getDayTitle(currentDay, index), name: getDayTitle(currentDay, index) }))
@@ -232,6 +245,16 @@ function ClientProgramContent() {
 
   const startWorkout = async (index: number) => {
     if (!plan || !days[index]) return
+    if (!isOnline()) {
+      const selectedDay = days[index]
+      const initial: Record<string, SetState> = {}
+      selectedDay.exercises.forEach((exercise) => Array.from({ length: baseSetCount(exercise) }, (_, setIndex) => setIndex + 1).forEach((setNumber) => {
+        initial[setKey(exercise, setNumber)] = { weight: 0, reps: plannedReps(exercise), completed: false }
+      }))
+      setSets(initial); setSetTypes({}); setPreviousSets({}); setPersonalBests({}); setExtraSets({}); setFocusSet(null); setWorkoutLogId(null); setOfflineWorkoutId(createOfflineWorkoutId()); setDayIndex(index); setElapsedSeconds(0); setRestLeft(0); setRestTotal(0); setRestExerciseName(null); setWorkoutFeeling(null); setPhase("workout")
+      toast.message("Η προπόνηση καταγράφεται offline και θα συγχρονιστεί όταν επανέλθει η σύνδεση.")
+      return
+    }
     try {
       const selectedDay = days[index]
       const result = await api.post<{ workoutLogId: number }>("/client/workout/start", { trainingPlanId: plan.id, dayNumber: index + 1, dayName: getDayTitle(selectedDay, index) })
@@ -243,7 +266,7 @@ function ClientProgramContent() {
         initial[setKey(exercise, setNumber)] = { ...value, completed: false }
         if (prior) previous[setKey(exercise, setNumber)] = value
       }))
-      setSets(initial); setSetTypes({}); setPreviousSets(previous); setExtraSets({}); setFocusSet(null); setWorkoutLogId(result.workoutLogId); setDayIndex(index); setElapsedSeconds(0); setRestLeft(0); setRestTotal(0); setRestExerciseName(null); setWorkoutFeeling(null); setPhase("workout")
+      setSets(initial); setSetTypes({}); setPreviousSets(previous); setExtraSets({}); setFocusSet(null); setWorkoutLogId(result.workoutLogId); setOfflineWorkoutId(null); setDayIndex(index); setElapsedSeconds(0); setRestLeft(0); setRestTotal(0); setRestExerciseName(null); setWorkoutFeeling(null); setPhase("workout")
       void loadPersonalBests(selectedDay.exercises)
     } catch (caughtError) { setError(caughtError instanceof Error ? caughtError.message : "Δεν ξεκίνησε η προπόνηση.") }
   }
@@ -256,7 +279,12 @@ function ClientProgramContent() {
   const toggleSet = async (exercise: Exercise, setNumber: number, completed: boolean) => {
     const key = setKey(exercise, setNumber); const state = sets[key] || { weight: 0, reps: plannedReps(exercise), completed: false }
     if (!completed) { setSets((current) => ({ ...current, [key]: { ...state, completed: false } })); return }
-    if (!workoutLogId) return
+    if (!workoutLogId && !offlineWorkoutId) return
+    if (offlineWorkoutId) {
+      setSets((current) => ({ ...current, [key]: { ...state, completed: true } })); playSound("tick", settings.soundEnabled)
+      if (settings.autoRest) startRest(exercise)
+      return
+    }
     try {
       await api.post("/client/workout/log-set", { workoutLogId, exerciseName: displayName(exercise), exerciseId: exercise.exercise_id || null, setNumber, targetReps: plannedReps(exercise), repsCompleted: state.reps, weightKg: state.weight, setType: setTypes[key] || "normal" })
       setSets((current) => ({ ...current, [key]: { ...state, completed: true } })); playSound("tick", settings.soundEnabled)
@@ -265,10 +293,21 @@ function ClientProgramContent() {
   }
   const cancelWorkout = async () => {
     if (workoutLogId) { try { await api.post("/client/workout/cancel", { workoutLogId }) } catch { /* The local workout still closes after a transient failure. */ } }
-    setWorkoutLogId(null); setRestLeft(0); setRestExerciseName(null); setExitOpen(false); setPhase("list")
+    setWorkoutLogId(null); setOfflineWorkoutId(null); setRestLeft(0); setRestExerciseName(null); setExitOpen(false); setPhase("list")
   }
   const saveWorkout = async () => {
-    if (!workoutLogId) return
+    if (!workoutLogId && !offlineWorkoutId) return
+    if (offlineWorkoutId && user && day) {
+      const offlineSets = allSets.flatMap(({ exercise, setNumber }) => {
+        const state = sets[setKey(exercise, setNumber)]
+        return state?.completed ? [{ exerciseName: displayName(exercise), exerciseId: exercise.exercise_id || null, setNumber, targetReps: plannedReps(exercise), repsCompleted: state.reps, weightKg: state.weight, setType: setTypes[setKey(exercise, setNumber)] || "normal" }] : []
+      })
+      queueOfflineWorkout({ id: offlineWorkoutId, clientId: user.id, trainingPlanId: plan!.id, dayNumber: dayIndex + 1, dayName: getDayTitle(day, dayIndex), durationSeconds: elapsedSeconds, totalSetsCompleted: completedSets, totalVolumeKg: totalVolume, notes: summaryNotes, workoutFeeling, sets: offlineSets, createdAt: new Date().toISOString() })
+      const synced = await syncOfflineWorkouts(user.id)
+      setOfflineWorkoutId(null); setWorkoutLogId(null); setSummaryNotes(""); setPhase("recap")
+      toast.success(synced ? "Η προπόνηση συγχρονίστηκε." : "Η προπόνηση αποθηκεύτηκε στη συσκευή και θα συγχρονιστεί αυτόματα.")
+      return
+    }
     setSaving(true)
     try {
       await api.post("/client/workout/complete", { workoutLogId, durationSeconds: elapsedSeconds, totalSetsCompleted: completedSets, totalVolumeKg: totalVolume, notes: summaryNotes, workoutFeeling })

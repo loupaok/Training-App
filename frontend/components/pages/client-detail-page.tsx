@@ -936,10 +936,10 @@ function ClientHeader({
                 </Badge>
               )}
             </div>
-            <div className="mt-1 truncate text-sm text-slate-500 dark:text-slate-400">
+            <div className="mt-1 truncate text-sm text-muted-foreground">
               {client.email || "-"} · {client.phone || "-"}
             </div>
-            <div className="mt-1 text-xs font-semibold text-slate-400 dark:text-slate-500">
+            <div className="mt-1 text-xs font-medium text-muted-foreground">
               {memberMonths >= 1 ? `Μέλος από ${memberMonths} μήνες` : "Μέλος από <1 μήνα"}
             </div>
           </div>
@@ -949,7 +949,7 @@ function ClientHeader({
           {sparklineData.length > 1 ? (
             <SparkLineChart className="h-14 w-full" data={sparklineData} index="date" categories={["Βάρος"]} colors={["blue"]} />
           ) : (
-            <div className="text-xs font-semibold text-slate-400 dark:text-slate-500">Χωρίς αρκετά δεδομένα για γράφημα.</div>
+            <div className="text-xs font-medium text-muted-foreground">Χωρίς αρκετά δεδομένα για γράφημα.</div>
           )}
         </div>
 
@@ -1110,6 +1110,8 @@ function StatChip({ icon: Icon, label, value }: { icon: LucideIcon; label: strin
 
 interface ClientDetailsForm {
   fullName: string;
+  firstName: string;
+  lastName: string;
   email: string;
   phone: string;
   dateOfBirth: string;
@@ -1124,9 +1126,17 @@ interface ClientDetailsForm {
   coachNotes: string;
 }
 
+function splitFullName(fullName: string) {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  return { firstName: parts[0] || "", lastName: parts.slice(1).join(" ") };
+}
+
 function toDetailsForm(client: ClientRecord): ClientDetailsForm {
+  const { firstName, lastName } = splitFullName(client.full_name || "");
   return {
     fullName: client.full_name || "",
+    firstName,
+    lastName,
     email: client.email || "",
     phone: client.phone || "",
     dateOfBirth: formatDateOfBirth(client.date_of_birth),
@@ -1421,7 +1431,9 @@ function OverviewTab({
         return;
       }
 
-      await api.put(`/clients/${clientId}/details`, { ...form, dateOfBirth: normalizedDateOfBirth });
+      const fullName = [form.firstName.trim(), form.lastName.trim()].filter(Boolean).join(" ");
+      await api.put(`/clients/${clientId}/details`, { ...form, fullName, dateOfBirth: normalizedDateOfBirth });
+      setForm((current) => ({ ...current, fullName }));
       setSaveMessage("Τα στοιχεία αποθηκεύτηκαν.");
       onUpdated();
     } catch (err) {
@@ -1508,7 +1520,10 @@ function OverviewTab({
     contact: (
       <InfoCard title="Στοιχεία Επικοινωνίας">
         <div className="space-y-3">
-          <EditField label="Όνομα" value={form.fullName} onChange={(value) => updateField("fullName", value)} disabled={!canEdit} />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <EditField label="Όνομα" value={form.firstName} onChange={(value) => updateField("firstName", value)} disabled={!canEdit} />
+            <EditField label="Επώνυμο" value={form.lastName} onChange={(value) => updateField("lastName", value)} disabled={!canEdit} />
+          </div>
           <EditField label="Email" type="email" value={form.email} onChange={(value) => updateField("email", value)} disabled={!canEdit} />
           <EditField label="Τηλέφωνο" value={form.phone} onChange={(value) => updateField("phone", value)} disabled={!canEdit} />
           <DateOfBirthField
@@ -1517,7 +1532,7 @@ function OverviewTab({
             disabled={!canEdit}
           />
           <div>
-            <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Φύλο</Label>
+            <Label>Φύλο</Label>
             <Select
               items={[
                 { value: "male", label: "Άνδρας" },
@@ -1527,7 +1542,7 @@ function OverviewTab({
               value={form.gender}
               onValueChange={(value) => updateField("gender", value ?? "")}
             >
-              <SelectTrigger className="mt-1 h-10 w-full text-sm font-semibold" disabled={!canEdit}>
+              <SelectTrigger className="mt-2 h-11 w-full text-sm" disabled={!canEdit}>
                 <SelectValue placeholder="Επιλογή" />
               </SelectTrigger>
               <SelectContent>
@@ -2124,13 +2139,13 @@ function EditField({
 }) {
   return (
     <div>
-      <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">{label}</Label>
+      <Label>{label}</Label>
       <Input
         type={type}
         inputMode={inputMode}
         maxLength={inputMode === "numeric" ? 10 : undefined}
         placeholder={placeholder}
-        className="mt-1 h-10 text-sm font-semibold"
+        className="mt-2 h-11 text-sm"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         disabled={disabled}
@@ -2155,8 +2170,8 @@ function DateOfBirthField({
 
   return (
     <div>
-      <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Ημερομηνία γέννησης</Label>
-      <div className="relative mt-1">
+      <Label>Ημερομηνία γέννησης</Label>
+      <div className="relative mt-2">
         <CalendarDays className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-slate-400" />
         <Input
           type="text"
@@ -2164,7 +2179,7 @@ function DateOfBirthField({
           autoComplete="bday"
           maxLength={10}
           placeholder="dd/mm/yyyy"
-          className="h-10 pl-10 pr-11 text-sm font-semibold"
+          className="h-11 pl-10 pr-11 text-sm"
           value={value}
           onChange={(event) => onChange(formatDateTyping(event.target.value))}
           disabled={disabled}

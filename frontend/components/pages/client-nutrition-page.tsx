@@ -18,12 +18,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { api } from "@/lib/api/client"
 import { useAuth } from "@/lib/auth/auth-context"
 import { resolveMediaUrl } from "@/lib/media"
+import { cacheOfflineData, readOfflineData } from "@/lib/offline-client"
 import { toast } from "sonner"
 
 type NutritionFood = { id?: number; name: string; food_image?: string | null; food_image_url?: string | null; image_url?: string | null; imageUrl?: string | null; amount?: string | null; quantity?: string | null; calories?: number | string | null; protein_g?: number | string | null; carbs_g?: number | string | null; fat_g?: number | string | null }
 type NutritionMeal = { id?: number; name: string; title?: string | null; notes?: string | null; time?: string | null; day_of_week?: number | null; foods: NutritionFood[] }
 type NutritionPlan = { id: number; title: string; notes?: string | null; daily_calories?: number | string | null; protein_g?: number | string | null; carbs_g?: number | string | null; fat_g?: number | string | null; meals: NutritionMeal[] } | null
 type Dashboard = { client?: { subscriptionStatus?: string | null }; unreadNotifications?: number }
+type NutritionOfflineCache = { nutrition: NutritionPlan; dashboard: Dashboard }
 type MacroTotals = { calories: number; protein: number; carbs: number; fats: number }
 type ShoppingItem = { key: string; name: string; quantity: number | null; unit: string; imageUrl?: string | null }
 type FoodEquivalent = { id: number; name: string; imageUrl?: string | null; quantityG: number; calories: number; proteinG: number; carbsG: number; fatsG: number }
@@ -283,18 +285,37 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
         </DialogContent>
       </Dialog>
 
-      <Card className="border-border bg-card shadow-sm">
-        <CardContent className="p-6">
+      <Accordion className="lg:hidden">
+        <AccordionItem value="daily-summary" className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <AccordionTrigger className="px-4 py-3 hover:bg-muted/30 hover:no-underline">
+            <span className="flex min-w-0 flex-1 items-center justify-between gap-3 pr-2"><span className="font-semibold">Ημέρα - Σύνολο</span><span className="shrink-0 text-sm font-semibold text-foreground">{Math.round(totals.calories).toLocaleString("el-GR")} kcal</span></span>
+          </AccordionTrigger>
+          <AccordionContent className="border-t border-border/60 px-4 pb-4 pt-4">
+            <div className="space-y-5">
+              <div className="flex justify-center"><CalorieRing calories={totals.calories} /></div>
+              <div className="space-y-4">
+                <MacroProgress label="Πρωτεΐνη" value={totals.protein} calories={proteinCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-blue-100 [&_[data-slot=progress-indicator]]:bg-blue-500" />
+                <MacroProgress label="Υδατάνθρακες" value={totals.carbs} calories={carbsCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-amber-100 [&_[data-slot=progress-indicator]]:bg-amber-500" />
+                <MacroProgress label="Λίπος" value={totals.fats} calories={fatCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-pink-100 [&_[data-slot=progress-indicator]]:bg-pink-500" />
+              </div>
+              <div className="rounded-xl bg-emerald-50 p-4 dark:bg-emerald-950/20"><p className="text-sm text-muted-foreground">Ημερήσιο σύνολο</p><p className="mt-1 text-xl font-bold">{Math.round(totals.calories).toLocaleString("el-GR")} kcal</p></div>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+
+      <Card className="hidden border-border bg-card shadow-sm lg:block">
+        <CardContent className="p-8">
           <h2 className="mb-5 text-2xl font-bold">Ημέρα - Σύνολο</h2>
-          <div className="grid gap-6 lg:grid-cols-[12rem_minmax(0,1fr)_17rem] lg:items-center">
+          <div className="grid grid-cols-[10rem_minmax(0,1fr)_15rem] items-center gap-6 xl:grid-cols-[12rem_minmax(0,1fr)_17rem]">
             <div className="flex justify-center">
               <CalorieRing calories={totals.calories} />
             </div>
 
-            <div className="grid gap-6 sm:grid-cols-3 sm:divide-x sm:divide-border">
-              <div className="sm:pr-6"><MacroProgress label="Πρωτεΐνη" value={totals.protein} calories={proteinCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-blue-100 [&_[data-slot=progress-indicator]]:bg-blue-500" /></div>
-              <div className="sm:px-6"><MacroProgress label="Υδατάνθρακες" value={totals.carbs} calories={carbsCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-amber-100 [&_[data-slot=progress-indicator]]:bg-amber-500" /></div>
-              <div className="sm:pl-6"><MacroProgress label="Λίπος" value={totals.fats} calories={fatCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-pink-100 [&_[data-slot=progress-indicator]]:bg-pink-500" /></div>
+            <div className="grid grid-cols-3 divide-x divide-border">
+              <div className="pr-5"><MacroProgress label="Πρωτεΐνη" value={totals.protein} calories={proteinCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-blue-100 [&_[data-slot=progress-indicator]]:bg-blue-500" /></div>
+              <div className="px-5"><MacroProgress label="Υδατάνθρακες" value={totals.carbs} calories={carbsCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-amber-100 [&_[data-slot=progress-indicator]]:bg-amber-500" /></div>
+              <div className="pl-5"><MacroProgress label="Λίπος" value={totals.fats} calories={fatCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-pink-100 [&_[data-slot=progress-indicator]]:bg-pink-500" /></div>
             </div>
 
             <div className="rounded-xl bg-emerald-50 p-5 dark:bg-emerald-950/20">
@@ -361,7 +382,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
 
                 <AccordionContent className="border-t border-border/60 px-4 pb-4 pt-3">
                   {meal.notes && <p className="mb-3 text-sm italic text-muted-foreground">{meal.notes}</p>}
-                  <Table className="min-w-[560px]">
+                  <div className="overflow-x-auto"><Table className="min-w-[560px]">
                     <TableBody className="[&_tr]:border-border/40">
                       {meal.foods.map((food, foodIndex) => {
                         const quantity = parseQuantity(food.quantity ?? food.amount)
@@ -403,7 +424,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
                         )
                       })}
                     </TableBody>
-                  </Table>
+                  </Table></div>
                 </AccordionContent>
               </AccordionItem>
             )
@@ -517,11 +538,18 @@ function ClientNutritionContent() {
   const [error, setError] = useState("")
 
   useEffect(() => {
+    if (!user?.id) { setLoading(false); return }
     Promise.all([api.get<NutritionPlan>("/client/nutrition-plan"), api.get<Dashboard>("/client/dashboard")])
-      .then(([nutrition, dashboard]) => { setPlan(nutrition); setPaymentApproved(dashboard.client?.subscriptionStatus === "active"); setUnreadNotifications(dashboard.unreadNotifications || 0) })
-      .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Δεν φορτώθηκε το πλάνο διατροφής."))
+      .then(([nutrition, dashboard]) => { setPlan(nutrition); setPaymentApproved(dashboard.client?.subscriptionStatus === "active"); setUnreadNotifications(dashboard.unreadNotifications || 0); cacheOfflineData<NutritionOfflineCache>(user.id, "nutrition", { nutrition, dashboard }) })
+      .catch((loadError) => {
+        const cached = readOfflineData<NutritionOfflineCache>(user.id, "nutrition")
+        if (cached) {
+          setPlan(cached.nutrition); setPaymentApproved(cached.dashboard.client?.subscriptionStatus === "active"); setUnreadNotifications(cached.dashboard.unreadNotifications || 0)
+          setError("Είσαι εκτός σύνδεσης. Εμφανίζεται το τελευταίο αποθηκευμένο πλάνο διατροφής.")
+        } else setError(loadError instanceof Error ? loadError.message : "Δεν φορτώθηκε το πλάνο διατροφής.")
+      })
       .finally(() => setLoading(false))
-  }, [])
+  }, [user?.id])
 
   return <ClientShell title="Διατροφή" user={user} logout={logout} paymentApproved={paymentApproved} unreadNotifications={unreadNotifications} active="nutrition"><main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6"><div><h1 className="text-2xl font-bold">Πλάνο Διατροφής</h1><p className="mt-1 text-sm text-muted-foreground">Το καθημερινό σου διατροφικό πλάνο και η λίστα αγορών.</p></div>{error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}{loading ? <p className="text-muted-foreground">Φόρτωση...</p> : plan ? <ClientNutritionView plan={plan} /> : <Card><CardContent className="py-12 text-center text-muted-foreground">Δεν υπάρχει διαθέσιμο πλάνο διατροφής.</CardContent></Card>}</main></ClientShell>
 }

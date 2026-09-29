@@ -45,7 +45,7 @@ function Filter({ label, wide = false }: { label: string; wide?: boolean }) {
   return (
     <Button
       variant="outline"
-      className={`h-12 justify-between rounded-lg border-slate-200 px-5 text-sm font-semibold text-slate-700 shadow-sm ${wide ? "w-[250px]" : "w-[220px]"}`}
+      className={`h-12 w-full justify-between rounded-lg border-slate-200 px-5 text-sm font-semibold text-slate-700 shadow-sm sm:w-auto ${wide ? "sm:w-[250px]" : "sm:w-[220px]"}`}
     >
       {label}
       <ChevronDown className="h-4 w-4" />
@@ -69,7 +69,7 @@ function ClientUpdatesContent() {
 
   return (
     <CoachShell title="Updates Πελατών" user={user} logout={logout}>
-      <div className="mb-7 flex items-start justify-between">
+      <div className="mb-7 flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <div className="mb-7 flex items-center gap-3 text-sm">
             <Link href="/dashboard" className="font-semibold text-blue-600">
@@ -84,17 +84,17 @@ function ClientUpdatesContent() {
           <p className="mt-2 text-base text-slate-600">Ενημερώσεις που έχουν υποβληθεί από τους πελάτες σας.</p>
         </div>
 
-        <div className="mt-16 flex items-center gap-4">
+        <div className="grid w-full gap-3 sm:grid-cols-2 xl:w-auto xl:grid-cols-3">
           <Filter label="Κατάσταση: Νέα" />
           <Filter label="Πελάτης: Όλοι" />
-          <Button variant="outline" className="h-12 w-[270px] justify-start gap-3 rounded-lg border-slate-200 px-5 text-sm font-semibold text-slate-700 shadow-sm">
+          <Button variant="outline" className="h-12 w-full justify-start gap-3 rounded-lg border-slate-200 px-5 text-sm font-semibold text-slate-700 shadow-sm xl:w-[270px]">
             <Calendar className="h-4 w-4" />
             18/05/2024 - 18/05/2024
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-5">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {stats.map((stat) => (
           <Card key={stat.label} className="p-6">
             <div className="flex items-center gap-5">
@@ -111,8 +111,8 @@ function ClientUpdatesContent() {
         ))}
       </div>
 
-      <div className="mt-7 grid grid-cols-12 gap-5">
-        <Card className="col-span-8 overflow-hidden">
+      <div className="mt-7 grid gap-5 xl:grid-cols-12">
+        <Card className="overflow-hidden xl:col-span-8">
           <PaginationControls
             totalItems={updates.length}
             pageSize={pageSize}
@@ -122,6 +122,7 @@ function ClientUpdatesContent() {
             itemLabel="updates"
             variant="summary"
           />
+          <div className="overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="h-16 text-left text-sm font-bold">
@@ -177,6 +178,7 @@ function ClientUpdatesContent() {
               )}
             </TableBody>
           </Table>
+          </div>
 
           <PaginationControls
             totalItems={updates.length}
@@ -189,7 +191,7 @@ function ClientUpdatesContent() {
           />
         </Card>
 
-        <Card className="col-span-4 p-6">
+        <Card className="p-6 xl:col-span-4">
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold">Λεπτομέρειες Update</h3>
             <Button variant="ghost" size="icon-sm" className="text-slate-700 hover:text-red-600">
