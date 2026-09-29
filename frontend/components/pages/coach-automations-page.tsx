@@ -25,6 +25,7 @@ type CronKey = "update_reminder" | "subscription_expiry" | "subscription_status"
 type CronSetting = { jobKey: CronKey; jobName: string; description: string; hour: number; minute: number; isActive: boolean; lastRun: string | null };
 type TemplateKey = "update_reminder" | "registration" | "subscription_expiry" | "update_notification";
 type EmailTemplate = { key: TemplateKey; name: string; subject: string; body: string; variables: string[] };
+type SmtpSettings = { host: string; port: number; secure: boolean; username: string; password: string; fromEmail: string; fromName: string; hasPassword: boolean; updatedAt: string | null };
 
 const cronPresentation = {
   update_reminder: { Icon: Bell, iconClass: "bg-blue-500/10 text-blue-600" },
@@ -78,6 +79,64 @@ function CronCard({ job, saving, onChange, onSave }: { job: CronSetting; saving:
   return <Card><CardHeader className="flex items-center gap-4 sm:flex-row"><div className={`grid size-10 place-items-center rounded-full ${presentation.iconClass}`}><JobIcon className="size-5" /></div><div className="flex-1"><CardTitle>{job.jobName}</CardTitle><CardDescription className="mt-1">{job.description}</CardDescription></div><Switch checked={job.isActive} onCheckedChange={(isActive) => onChange(job.jobKey, { isActive })} aria-label={`Ενεργοποίηση ${job.jobName}`} /></CardHeader><CardContent><Separator /><div className="flex flex-wrap items-center gap-3 pt-3"><span className="text-sm font-medium">Ώρα εκτέλεσης:</span><Select value={String(job.hour).padStart(2, "0")} onValueChange={(hour) => onChange(job.jobKey, { hour: Number(hour) })}><SelectTrigger className="w-20"><SelectValue /></SelectTrigger><SelectContent>{hours.map((hour) => <SelectItem key={hour} value={hour}>{hour}</SelectItem>)}</SelectContent></Select><span className="text-muted-foreground">:</span><Select value={String(job.minute).padStart(2, "0")} onValueChange={(minute) => onChange(job.jobKey, { minute: Number(minute) })}><SelectTrigger className="w-20"><SelectValue /></SelectTrigger><SelectContent>{minutes.map((minute) => <SelectItem key={minute} value={minute}>{minute}</SelectItem>)}</SelectContent></Select></div><div className="flex flex-wrap items-center justify-between gap-3 pt-3"><p className="flex items-center gap-2 text-sm text-muted-foreground"><span className={`size-2 rounded-full ${job.lastRun ? "bg-green-500" : "bg-muted-foreground/50"}`} />{job.lastRun ? `Τελευταία: ${relativeTime(job.lastRun)}` : "Δεν έχει τρέξει ακόμα"}</p><Button variant="outline" size="sm" onClick={() => onSave(job)} disabled={saving}>{saving ? "Αποθήκευση..." : "Αποθήκευση"}</Button></div></CardContent></Card>;
 }
 
+function SmtpSettingsCard() {
+  const [settings, setSettings] = useState<SmtpSettings>({ host: "smtp.office365.com", port: 587, secure: false, username: "", password: "", fromEmail: "", fromName: "", hasPassword: false, updatedAt: null });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get<Omit<SmtpSettings, "password">>("/settings/smtp")
+      .then((data) => setSettings((current) => ({ ...current, ...data, password: "" })))
+      .catch((error) => toast.error(getErrorMessage(error)))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const update = <K extends keyof SmtpSettings>(key: K, value: SmtpSettings[K]) => setSettings((current) => ({ ...current, [key]: value }));
+  const save = async () => {
+    setSaving(true);
+    try {
+      const saved = await api.put<Omit<SmtpSettings, "password">>("/settings/smtp", {
+        host: settings.host,
+        port: Number(settings.port),
+        secure: settings.secure,
+        username: settings.username,
+        password: settings.password,
+        fromEmail: settings.fromEmail,
+        fromName: settings.fromName,
+      });
+      setSettings((current) => ({ ...current, ...saved, password: "" }));
+      toast.success("Οι ρυθμίσεις SMTP αποθηκεύτηκαν.");
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return <Card className="overflow-hidden border-border shadow-sm">
+    <CardHeader className="border-b bg-muted/30"><CardTitle className="flex items-center gap-2 text-lg"><Mail className="size-5 text-primary" />Ρύθμιση SMTP</CardTitle><CardDescription>Η αποστολή email χρησιμοποιεί αυτές τις ρυθμίσεις αμέσως μετά την αποθήκευση.</CardDescription></CardHeader>
+    <CardContent className="p-5 sm:p-6">
+      {loading ? <Skeleton className="h-52 w-full" /> : <div className="space-y-5">
+        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_8rem]">
+          <div className="space-y-2"><Label htmlFor="smtp-host">SMTP Host</Label><Input id="smtp-host" value={settings.host} onChange={(event) => update("host", event.target.value)} placeholder="smtp.office365.com" /></div>
+          <div className="space-y-2"><Label htmlFor="smtp-port">Port</Label><Input id="smtp-port" type="number" min="1" max="65535" value={settings.port} onChange={(event) => update("port", Number(event.target.value))} /></div>
+        </div>
+        <div className="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-4 py-3"><div><p className="text-sm font-medium">SSL / TLS</p><p className="text-xs text-muted-foreground">Ενεργοποίησέ το για SMTPS, συνήθως στη θύρα 465.</p></div><Switch checked={settings.secure} onCheckedChange={(value) => update("secure", value)} aria-label="SSL ή TLS" /></div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2"><Label htmlFor="smtp-user">Username</Label><Input id="smtp-user" autoComplete="username" value={settings.username} onChange={(event) => update("username", event.target.value)} placeholder="email@example.com" /></div>
+          <div className="space-y-2"><Label htmlFor="smtp-password">Password</Label><Input id="smtp-password" type="password" autoComplete="new-password" value={settings.password} onChange={(event) => update("password", event.target.value)} placeholder={settings.hasPassword ? "Αποθηκευμένος κωδικός" : "SMTP password"} /></div>
+        </div>
+        <Separator />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2"><Label htmlFor="smtp-from-email">From email</Label><Input id="smtp-from-email" type="email" value={settings.fromEmail} onChange={(event) => update("fromEmail", event.target.value)} placeholder="email@example.com" /></div>
+          <div className="space-y-2"><Label htmlFor="smtp-from-name">Όνομα αποστολέα</Label><Input id="smtp-from-name" value={settings.fromName} onChange={(event) => update("fromName", event.target.value)} placeholder="Το όνομα της επιχείρησής σου" /></div>
+        </div>
+        <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-muted-foreground">Ο κωδικός αποθηκεύεται κρυπτογραφημένος και δεν εμφανίζεται ξανά.</p><Button type="button" onClick={() => void save()} disabled={saving}>{saving ? "Αποθήκευση..." : "Αποθήκευση SMTP"}</Button></div>
+      </div>}
+    </CardContent>
+  </Card>;
+}
+
 function EmailsTab() {
   const [templates, setTemplates] = useState<EmailTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,7 +151,7 @@ function EmailsTab() {
   const copyVariable = async (variable: string) => { try { await navigator.clipboard.writeText(variable); toast.success("Αντιγράφηκε!"); } catch { toast.error("Δεν έγινε η αντιγραφή."); } };
   return <div className="space-y-6">
     <div><h2 className="text-2xl font-bold">Emails &amp; Templates</h2><p className="mt-2 text-sm text-muted-foreground">Διαχείριση αυτόματων email της εφαρμογής.</p></div>
-    <Card className="bg-muted/60"><CardContent className="gap-3"><div className="flex items-center gap-2 font-medium"><Mail className="size-4" /> Ρύθμιση SMTP</div><p className="text-sm text-muted-foreground">Για να αποστέλλονται τα emails, συμπλήρωσε τα παρακάτω στο αρχείο <code>backend/.env</code>:</p><pre className="overflow-x-auto rounded-md border bg-background p-3 font-mono text-xs leading-6">SMTP_HOST=smtp.office365.com{"\n"}SMTP_PORT=587{"\n"}SMTP_USER=your@email.com{"\n"}SMTP_PASS=your_password{"\n"}EMAIL_FROM=your@email.com</pre></CardContent></Card>
+    <SmtpSettingsCard />
     {loading && <SkeletonList count={4} height="h-20" />}
     {error && <Card><CardContent className="text-destructive">Δεν φορτώθηκαν τα templates: {error}</CardContent></Card>}
     <div className="space-y-4">{templates.map((template) => <TemplateCard key={template.key} template={template} testEmail={testEmails[template.key] || ""} saving={saving === template.key} testing={testing === template.key} onChange={updateTemplate} onTestEmailChange={(value) => setTestEmails((items) => ({ ...items, [template.key]: value }))} onSave={saveTemplate} onTest={sendTest} onCopy={copyVariable} />)}</div>

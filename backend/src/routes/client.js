@@ -185,7 +185,8 @@ router.get('/dashboard', async (req, res) => {
     }
     const clientId = req.user.id;
     const [users] = await connection.query(
-      `SELECT u.full_name, c.weight_kg, c.is_demo, c.demo_updates_enabled
+      `SELECT u.full_name, c.weight_kg, c.is_demo, c.demo_updates_enabled,
+              CASE WHEN MONTH(c.date_of_birth) = MONTH(CURDATE()) AND DAY(c.date_of_birth) = DAY(CURDATE()) THEN 1 ELSE 0 END AS birthday_today
        FROM users u
        LEFT JOIN clients c ON c.user_id = u.id
        WHERE u.id = ?`,
@@ -216,7 +217,7 @@ router.get('/dashboard', async (req, res) => {
     const ratings = [lastUpdate?.trainingRating, lastUpdate?.nutritionRating, lastUpdate?.generalRating].filter(Number.isFinite);
     const averageRating = ratings.length ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length : null;
     res.json({
-      client: { firstName: String(users[0]?.full_name || '').trim().split(/\s+/)[0] || 'Client', currentWeight: lastWeightUpdate?.weight ?? users[0]?.weight_kg ?? null, subscriptionStatus: subscription?.status || null, daysRemaining: subscription?.days_remaining ?? null, planName: subscription?.plan_name || null, subscriptionStartDate: subscription?.start_date || null, subscriptionEndDate: subscription?.end_date || null, demoUpdatesEnabled },
+      client: { firstName: String(users[0]?.full_name || '').trim().split(/\s+/)[0] || 'Client', currentWeight: lastWeightUpdate?.weight ?? users[0]?.weight_kg ?? null, subscriptionStatus: subscription?.status || null, daysRemaining: subscription?.days_remaining ?? null, planName: subscription?.plan_name || null, subscriptionStartDate: subscription?.start_date || null, subscriptionEndDate: subscription?.end_date || null, demoUpdatesEnabled, birthdayToday: Boolean(users[0]?.birthday_today) },
       todayIsUpdateDay: demoUpdatesEnabled || todayIsUpdateDay, alreadySubmittedThisWeek: demoUpdatesEnabled ? false : alreadySubmittedThisWeek, nextUpdateDate: schedule?.next_due_date || nextScheduledDate(schedule?.day_of_week), streak: streakFor(updates), updatesCount: updates.length,
       lastUpdate: lastUpdate ? { submittedAt: lastUpdate.submittedAt, averageRating } : null,
       lastWeightUpdate: lastWeightUpdate ? { submittedAt: lastWeightUpdate.submittedAt } : null,

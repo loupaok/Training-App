@@ -15,6 +15,7 @@ import {
   Send,
   Sparkles,
   Target,
+  Gift,
   Upload,
   ImagePlus,
   Paperclip,
@@ -68,6 +69,7 @@ type DashboardData = {
     planName: string | null
     subscriptionStartDate?: string | null
     subscriptionEndDate?: string | null
+    birthdayToday?: boolean
   }
   todayIsUpdateDay: boolean
   alreadySubmittedThisWeek: boolean
@@ -166,6 +168,7 @@ function ModernOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpdate }
   const progressColor = remainingRatio > 0.5 ? "[&_[data-slot=progress-indicator]]:bg-emerald-500" : remainingRatio >= 0.2 ? "[&_[data-slot=progress-indicator]]:bg-amber-500" : "[&_[data-slot=progress-indicator]]:bg-red-500"
 
   return <div className="space-y-6">
+    {client?.birthdayToday && <Alert className="border-primary/30 bg-primary/5"><Gift className="h-4 w-4 text-primary" /><AlertTitle>Χρόνια πολλά, {client.firstName}!</AlertTitle><AlertDescription>Σου ευχόμαστε μια όμορφη και δυνατή νέα χρονιά.</AlertDescription></Alert>}
     <section className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm">
       <div className="absolute inset-y-0 left-0 w-1 bg-primary" />
       <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_15rem] lg:items-center">
@@ -197,6 +200,37 @@ function ModernOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpdate }
 function ActivityRow({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) { return <div className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"><span className="grid h-9 w-9 place-items-center rounded-lg bg-muted">{icon}</span><div className="min-w-0"><p className="text-sm font-medium">{title}</p><p className="truncate text-xs text-muted-foreground">{detail}</p></div></div> }
 function ScaleIcon() { return <Dumbbell className="h-4 w-4 text-primary" /> }
 
+function BirthdayCelebration({ firstName, onClose }: { firstName: string; onClose: () => void }) {
+  const colors = ["bg-primary", "bg-amber-400", "bg-sky-400", "bg-emerald-400", "bg-rose-400"]
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-foreground/20 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="birthday-title">
+      <style>{`@keyframes birthday-confetti { 0% { opacity: 0; transform: translateY(-14vh) rotate(0deg) scale(.7); } 12% { opacity: 1; } 78% { opacity: 1; } 100% { opacity: 0; transform: translateY(82vh) rotate(450deg) scale(1); } } @keyframes birthday-card { 0% { opacity: 0; transform: translateY(18px) scale(.96); } 100% { opacity: 1; transform: translateY(0) scale(1); } }`}</style>
+      {Array.from({ length: 18 }, (_, index) => (
+        <span
+          key={index}
+          aria-hidden="true"
+          className={`pointer-events-none absolute h-2.5 w-1.5 rounded-sm ${colors[index % colors.length]}`}
+          style={{ left: `${7 + ((index * 23) % 86)}%`, animation: `birthday-confetti ${1.25 + (index % 4) * 0.16}s cubic-bezier(.2,.8,.3,1) ${((index * 67) % 360) / 1000}s forwards` }}
+        />
+      ))}
+      <Card className="relative w-full max-w-[23rem] overflow-hidden rounded-2xl border-primary/25 bg-card text-center shadow-2xl" style={{ animation: "birthday-card 280ms cubic-bezier(.2,.8,.3,1) both" }}>
+        <CardContent className="p-0">
+          <div className="border-b border-primary/10 bg-primary/5 px-7 pb-5 pt-7">
+            <span className="mx-auto grid h-16 w-16 place-items-center rounded-full border border-primary/20 bg-background shadow-sm"><Gift className="h-8 w-8 text-primary" /></span>
+            <div className="mt-4 flex items-center justify-center gap-1.5 text-xs font-semibold text-primary"><Sparkles className="h-3.5 w-3.5" /> Μια ξεχωριστή μέρα</div>
+          </div>
+          <div className="px-7 pb-7 pt-5">
+            <h2 id="birthday-title" className="text-2xl font-bold tracking-normal">Χρόνια πολλά, {firstName}!</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">Σου ευχόμαστε υγεία, χαρά και μια χρονιά γεμάτη πρόοδο.</p>
+            <Button type="button" className="mt-6 h-11 w-full" onClick={onClose}>Συνέχεια <ArrowRight className="ml-2 h-4 w-4" /></Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
 function ClientDashboardContent() {
   const { user, logout } = useAuth()
   const [dashboard, setDashboard] = useState<DashboardData | null>(null)
@@ -212,6 +246,7 @@ function ClientDashboardContent() {
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState("")
+  const [showBirthdayCelebration, setShowBirthdayCelebration] = useState(false)
 
   const loadDashboard = async () => {
     setLoading(true)
@@ -238,6 +273,20 @@ function ClientDashboardContent() {
   }
 
   useEffect(() => { void loadDashboard() }, [])
+
+  useEffect(() => {
+    if (!dashboard?.client.birthdayToday || !user?.id) return
+
+    const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Athens" })
+    const storageKey = `birthday-celebration:v2:${user.id}:${todayKey}`
+    try {
+      if (window.localStorage.getItem(storageKey)) return
+      window.localStorage.setItem(storageKey, "shown")
+      setShowBirthdayCelebration(true)
+    } catch {
+      setShowBirthdayCelebration(true)
+    }
+  }, [dashboard?.client.birthdayToday, user?.id])
   const chartData = useMemo(() => updates
     .map((update) => {
       return update.weight ? { date: formatDate(update.submittedAt), weight: Number(update.weight) } : null
@@ -304,6 +353,7 @@ function ClientDashboardContent() {
 
   return (
     <ClientShell user={user} logout={logout} paymentApproved={subscriptionActive} active="dashboard">
+      {showBirthdayCelebration && <BirthdayCelebration firstName={dashboard?.client.firstName || ""} onClose={() => setShowBirthdayCelebration(false)} />}
       <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
         <div>
           <h1 className="text-2xl font-bold">Γεια σου, {dashboard?.client.firstName || ""}!</h1>

@@ -3,6 +3,7 @@ import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authenticateToken, authorizeRole } from '../middleware/auth.js';
 import { sendMail } from '../lib/mailer.js';
+import { ensureSmtpSettingsSchema, getSmtpSettingsForAdmin, saveSmtpSettings } from '../lib/smtp-settings.js';
 
 const router = express.Router();
 
@@ -281,6 +282,41 @@ router.get('/email-templates', async (_req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.get('/smtp', async (_req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    res.json(await getSmtpSettingsForAdmin(connection));
+  } catch (error) {
+    console.error('SMTP settings load failed:', error);
+    res.status(500).json({ message: 'Could not load SMTP settings.' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.put('/smtp', [
+  body('host').trim().notEmpty().isLength({ max: 255 }),
+  body('port').isInt({ min: 1, max: 65535 }),
+  body('secure').isBoolean(),
+  body('username').trim().isLength({ max: 255 }),
+  body('password').optional().isString().isLength({ max: 2000 }),
+  body('fromEmail').trim().isEmail().isLength({ max: 255 }),
+  body('fromName').trim().isLength({ max: 255 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  const connection = await pool.getConnection();
+  try {
+    await ensureSmtpSettingsSchema(connection);
+    res.json(await saveSmtpSettings(connection, req.body, req.user.id));
+  } catch (error) {
+    console.error('SMTP settings save failed:', error);
+    res.status(500).json({ message: 'Could not save SMTP settings.' });
   } finally {
     connection.release();
   }

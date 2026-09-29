@@ -292,6 +292,100 @@ async function runSubscriptionExpiry() {
 // ─── CRON 6 ──────────────────────────────────────────────────────────────────
 // Daily 00:00 — reconcile the Discord "Ενεργό Μέλος" role against subscription
 // status for every client who has connected Discord.
+// Daily 09:05 Athens — notify the assigned coach and active admins about
+// client birthdays. Deliveries are recorded per recipient and year so a
+// restart or repeated cron execution never creates duplicate reminders.
+export async function runBirthdayNotifications() {
+  console.log('[CRON] Running birthday notifications...');
+  let connection;
+
+  try {
+    connection = await pool.getConnection();
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS birthday_notification_deliveries (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        client_id INT NOT NULL,
+        recipient_user_id INT NOT NULL,
+        birthday_year SMALLINT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_birthday_delivery (client_id, recipient_user_id, birthday_year),
+        FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (recipient_user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    const athensParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Europe/Athens',
+      month: 'numeric',
+      day: 'numeric',
+      year: 'numeric',
+    }).formatToParts(new Date());
+    const part = (type) => Number(athensParts.find((item) => item.type === type)?.value);
+    const month = part('month');
+    const day = part('day');
+    const year = part('year');
+
+    const [birthdayClients] = await connection.query(
+      `SELECT u.id, u.full_name, u.email
+       FROM users u
+       INNER JOIN clients c ON c.user_id = u.id
+       WHERE u.role = 'client'
+         AND u.is_active = 1
+         AND c.deleted_at IS NULL
+         AND c.date_of_birth IS NOT NULL
+         AND MONTH(c.date_of_birth) = ?
+         AND DAY(c.date_of_birth) = ?`,
+      [month, day]
+    );
+
+    const { notifyUser } = await import('./routes/clients.js');
+    let delivered = 0;
+
+    for (const client of birthdayClients) {
+      const [recipients] = await connection.query(
+        `SELECT DISTINCT recipient_id
+         FROM (
+           SELECT cc.coach_id AS recipient_id
+           FROM coach_clients cc
+           INNER JOIN users coach ON coach.id = cc.coach_id
+           WHERE cc.client_id = ? AND cc.status = 'active' AND coach.is_active = 1
+           UNION
+           SELECT id AS recipient_id FROM users WHERE role = 'admin' AND is_active = 1
+         ) recipients`,
+        [client.id]
+      );
+
+      for (const recipient of recipients) {
+        const [result] = await connection.query(
+          `INSERT IGNORE INTO birthday_notification_deliveries
+           (client_id, recipient_user_id, birthday_year)
+           VALUES (?, ?, ?)`,
+          [client.id, recipient.recipient_id, year]
+        );
+        if (!result.affectedRows) continue;
+
+        const clientName = client.full_name || client.email || 'Πελάτης';
+        await notifyUser(connection, recipient.recipient_id, {
+          clientId: client.id,
+          type: 'client_birthday',
+          title: 'Γενέθλια πελάτη σήμερα',
+          body: `Ο/Η ${clientName} έχει γενέθλια σήμερα.`,
+          linkUrl: `/clients/${client.id}`,
+        });
+        delivered += 1;
+      }
+    }
+
+    console.log(`[CRON] Birthday notifications — clients: ${birthdayClients.length}, delivered: ${delivered}`);
+  } catch (error) {
+    console.error('[CRON] Birthday notifications failed:', error.message);
+  } finally {
+    connection?.release();
+  }
+}
+
+cron.schedule('5 9 * * *', () => { void runBirthdayNotifications(); }, { timezone: 'Europe/Athens' });
+
 async function runDiscordRoleSync() {
   console.log('[CRON] Running Discord role sync...');
   let connection;

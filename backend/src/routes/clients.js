@@ -430,6 +430,24 @@ function calculateAge(dateOfBirth) {
   return age;
 }
 
+function normalizeDateOfBirth(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const raw = String(value).trim();
+  const greekMatch = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const day = greekMatch?.[1] || isoMatch?.[3];
+  const month = greekMatch?.[2] || isoMatch?.[2];
+  const year = greekMatch?.[3] || isoMatch?.[1];
+  if (!day || !month || !year) return null;
+
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() !== Number(month) - 1 || date.getUTCDate() !== Number(day)) {
+    return null;
+  }
+
+  return `${year}-${month}-${day}`;
+}
+
 function parseDecimalText(value) {
   if (value === undefined || value === null || value === '') return null;
   const parsed = Number.parseFloat(String(value).replace(',', '.').replace(/[^\d.]/g, ''));
@@ -1651,7 +1669,7 @@ router.get('/admin/notifications', authorizeRole(['coach', 'admin', 'moderator']
        FROM notifications n
        LEFT JOIN users u ON u.id = n.client_id
        WHERE n.user_id = ?
-         ${recentOnly ? 'AND n.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)' : ''}
+         ${recentOnly ? 'AND (n.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) OR n.read_at IS NULL)' : ''}
        ORDER BY n.created_at DESC
        LIMIT ${recentOnly ? 10 : 100}`,
       [req.user.id]
@@ -1737,7 +1755,7 @@ router.get('/me/notifications', authorizeRole(['client']), async (req, res) => {
     const recentOnly = req.query.recent === 'true';
     const [notificationRows] = await connection.query(
       `SELECT * FROM notifications
-       WHERE user_id = ? ${recentOnly ? 'AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)' : ''}
+       WHERE user_id = ? ${recentOnly ? 'AND (created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) OR read_at IS NULL)' : ''}
        ORDER BY created_at DESC LIMIT ${recentOnly ? 10 : 100}`,
       [req.user.id]
     );
@@ -2170,7 +2188,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
       `SELECT u.id, u.email, u.full_name, u.profile_photo, u.bio, u.is_active,
               u.status AS user_status, u.created_at, u.last_seen_at,
               u.discord_id AS discord_oauth_id, u.discord_username AS discord_oauth_username,
-              c.date_of_birth, c.gender, c.phone, c.height_cm, c.weight_kg, c.target_weight_kg, c.is_demo, c.demo_updates_enabled,
+              DATE_FORMAT(c.date_of_birth, '%Y-%m-%d') AS date_of_birth, c.gender, c.phone, c.height_cm, c.weight_kg, c.target_weight_kg, c.is_demo, c.demo_updates_enabled,
               c.fitness_goal, c.medical_notes, c.coach_notes, c.discord_id,
               c.emergency_contact_name, c.emergency_contact_phone, c.deleted_at, c.deleted_by,
               cc.status AS coaching_status, cc.coach_id
@@ -2312,6 +2330,14 @@ router.put('/:id/details', authorizeRole(['coach', 'admin', 'moderator']), [
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
+  }
+
+  if (req.body.dateOfBirth !== undefined) {
+    const normalizedDateOfBirth = normalizeDateOfBirth(req.body.dateOfBirth);
+    if (req.body.dateOfBirth !== '' && req.body.dateOfBirth !== null && !normalizedDateOfBirth) {
+      return res.status(400).json({ message: 'Date of birth must use dd/mm/yyyy or yyyy-mm-dd.' });
+    }
+    req.body.dateOfBirth = normalizedDateOfBirth;
   }
 
   const connection = await pool.getConnection();

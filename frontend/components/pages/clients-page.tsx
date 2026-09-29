@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Search, X, Mail, Ban, Trash2, Undo2 } from "lucide-react";
+import { Search, X, Mail, Ban, Trash2, Undo2, ChevronRight, Users, UserRoundCheck, Clock3, CircleDollarSign, ClipboardCheck, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -182,7 +182,6 @@ function ClientsContent() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [programFilter, setProgramFilter] = useState("all");
   const [sortBy, setSortBy] = useState("newest");
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
@@ -257,8 +256,7 @@ function ClientsContent() {
       const matchesSearch =
         !searchTerm || [client.name, client.email, client.program, client.status].join(" ").toLowerCase().includes(searchTerm);
       const matchesStatus = statusFilter === "all" || client.statusKey === statusFilter;
-      const matchesProgram = programFilter === "all" || client.programKey === programFilter;
-      return matchesSearch && matchesStatus && matchesProgram;
+      return matchesSearch && matchesStatus;
     });
 
     return [...results].sort((a, b) => {
@@ -267,15 +265,7 @@ function ClientsContent() {
       if (sortBy === "lastUpdate") return new Date(b.lastUpdateAtRaw).getTime() - new Date(a.lastUpdateAtRaw).getTime();
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
-  }, [clientRows, programFilter, debouncedSearch, sortBy, statusFilter]);
-
-  const programOptions = useMemo(() => {
-    const seen = new Map<string, string>();
-    clientRows.forEach((client) => {
-      if (!seen.has(client.programKey)) seen.set(client.programKey, client.program);
-    });
-    return [{ value: "all", label: "Στόχος: Όλοι" }, ...Array.from(seen.entries()).map(([value, label]) => ({ value, label }))];
-  }, [clientRows]);
+  }, [clientRows, debouncedSearch, sortBy, statusFilter]);
 
   const paginatedClients = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
@@ -296,7 +286,7 @@ function ClientsContent() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, statusFilter, programFilter, sortBy]);
+  }, [debouncedSearch, statusFilter, sortBy]);
 
   useEffect(() => {
     const totalPages = Math.max(1, Math.ceil(filteredClients.length / pageSize));
@@ -311,10 +301,11 @@ function ClientsContent() {
   const resetFilters = () => {
     setSearch("");
     setStatusFilter("all");
-    setProgramFilter("all");
     setSortBy("newest");
     setCurrentPage(1);
   };
+
+  const hasActiveFilters = Boolean(search.trim()) || statusFilter !== "all" || sortBy !== "newest";
 
   const handleManualClientSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -408,18 +399,17 @@ function ClientsContent() {
 
   return (
     <CoachShell title="Πελάτες" user={user} logout={logout}>
-      <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="mx-auto max-w-7xl space-y-6">
+      <header className="flex flex-col gap-4 border-b pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-3xl font-bold">Πελάτες</h2>
-          <div className="mt-3 flex items-center gap-3 text-base">
-            <Link href="/dashboard" className="font-semibold text-blue-600 hover:text-blue-700">
-              Dashboard
-            </Link>
-            <span className="text-slate-400 dark:text-slate-500">›</span>
-            <span className="text-slate-600 dark:text-slate-400">Πελάτες</span>
-          </div>
+          <h1 className="text-2xl font-bold sm:text-3xl">Πελάτες</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Παρακολούθησε συνδρομές, updates και την πρόοδο κάθε πελάτη.</p>
         </div>
-      </div>
+        <Button nativeButton={false} render={<Link href="/coach/updates" />} variant="outline" className="self-start sm:self-auto">
+          <ClipboardCheck className="mr-2 h-4 w-4" />
+          Updates
+        </Button>
+      </header>
 
       <Tabs
         value={clientListTab}
@@ -428,9 +418,9 @@ function ClientsContent() {
           setSelectedIds(new Set());
         }}
       >
-        <TabsList>
-          <TabsTrigger value="active">Ενεργοί</TabsTrigger>
-          <TabsTrigger value="trash" className="gap-2">
+        <TabsList className="h-auto gap-1 rounded-xl border border-border bg-card p-1.5 shadow-sm">
+          <TabsTrigger value="active" className="rounded-lg px-4 py-2 text-sm font-semibold data-active:bg-primary data-active:text-primary-foreground data-active:shadow-sm">Ενεργοί</TabsTrigger>
+          <TabsTrigger value="trash" className="gap-2 rounded-lg px-4 py-2 text-sm font-semibold data-active:bg-primary data-active:text-primary-foreground data-active:shadow-sm">
             Κάδος
             <Trash2 className="h-4 w-4" />
             {trashedClients.length > 0 && <Badge className="ml-1">{trashedClients.length}</Badge>}
@@ -449,6 +439,7 @@ function ClientsContent() {
           value={stats.total}
           note="πελάτες"
           tone="text-slate-900 dark:text-slate-50"
+          icon={Users}
           active={statusFilter === "all"}
           onClick={() => setStatusFilter("all")}
         />
@@ -457,6 +448,7 @@ function ClientsContent() {
           value={stats.active}
           note={`${stats.activePct}%`}
           tone="text-emerald-600 dark:text-emerald-400"
+          icon={UserRoundCheck}
           active={statusFilter === "active"}
           onClick={() => toggleStatusCard("active")}
         />
@@ -465,6 +457,7 @@ function ClientsContent() {
           value={stats.expiring}
           note="εντός 7 ημερών"
           tone="text-orange-600 dark:text-orange-400"
+          icon={Clock3}
           active={statusFilter === "expiring"}
           onClick={() => toggleStatusCard("expiring")}
         />
@@ -473,13 +466,15 @@ function ClientsContent() {
           value={stats.pending}
           note="προς έγκριση"
           tone="text-amber-600 dark:text-amber-400"
+          icon={CircleDollarSign}
           active={statusFilter === "pending"}
           onClick={() => toggleStatusCard("pending")}
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex h-9 min-w-[180px] flex-1 items-center gap-2 rounded-md border border-slate-200 px-2.5 dark:border-slate-800">
+      <Card className="overflow-hidden rounded-xl border-border bg-card shadow-sm">
+      <CardContent className="grid gap-2 p-3 md:grid-cols-[minmax(0,1fr)_11rem_11rem_auto]">
+        <div className="flex h-10 min-w-0 items-center gap-2 rounded-lg border border-input bg-background px-3 transition-colors focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/15">
           <Search className="h-4 w-4 shrink-0 text-slate-400" />
           <Input
             type="search"
@@ -501,7 +496,7 @@ function ClientsContent() {
           value={statusFilter}
           onValueChange={(value) => setStatusFilter(value ?? "all")}
         >
-          <SelectTrigger size="sm" className="w-auto shrink-0 font-semibold">
+          <SelectTrigger size="sm" className="h-10 w-full font-semibold">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -510,19 +505,6 @@ function ClientsContent() {
             <SelectItem value="expiring">Λήγουν</SelectItem>
             <SelectItem value="inactive">Έληξε</SelectItem>
             <SelectItem value="pending">Εκκρεμής έγκριση</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select items={programOptions} value={programFilter} onValueChange={(value) => setProgramFilter(value ?? "all")}>
-          <SelectTrigger size="sm" className="w-auto shrink-0 font-semibold">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {programOptions.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
           </SelectContent>
         </Select>
 
@@ -536,7 +518,7 @@ function ClientsContent() {
           value={sortBy}
           onValueChange={(value) => setSortBy(value ?? "newest")}
         >
-          <SelectTrigger size="sm" className="w-auto shrink-0 font-semibold">
+          <SelectTrigger size="sm" className="h-10 w-full font-semibold">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -547,10 +529,9 @@ function ClientsContent() {
           </SelectContent>
         </Select>
 
-        <Button variant="outline" size="sm" onClick={resetFilters} className="shrink-0 font-bold">
-          Reset
-        </Button>
-      </div>
+        {hasActiveFilters && <Button variant="ghost" size="sm" onClick={resetFilters} className="h-10 shrink-0 font-semibold text-muted-foreground hover:text-foreground">Καθαρισμός</Button>}
+      </CardContent>
+      </Card>
 
       <div className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <PaginationControls
@@ -564,9 +545,16 @@ function ClientsContent() {
         />
       </div>
 
-      <section className="mt-5 overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <Table>
-          <TableHeader>
+      <section className="mt-5 overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+        <div className="flex flex-col gap-3 border-b px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold">Κατάλογος πελατών</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">Όλοι οι πελάτες που αντιστοιχούν στα ενεργά φίλτρα.</p>
+          </div>
+          <Badge variant="secondary" className="w-fit rounded-md px-2.5 py-1 text-xs font-semibold">{filteredClients.length} πελάτες</Badge>
+        </div>
+        <Table className="hidden w-full md:table">
+          <TableHeader className="bg-muted/40">
             <TableRow className="h-[72px]">
               <TableHead className="w-12 px-4">
                 <Checkbox
@@ -585,7 +573,7 @@ function ClientsContent() {
           </TableHeader>
           <TableBody>
             {paginatedClients.map((client) => (
-              <TableRow key={client.id} className="h-[104px]">
+              <TableRow key={client.id} className="h-[96px] transition-colors hover:bg-muted/35">
                 <TableCell className="px-4">
                   <Checkbox
                     checked={selectedIds.has(client.id)}
@@ -644,6 +632,42 @@ function ClientsContent() {
             )}
           </TableBody>
         </Table>
+
+        <div className="divide-y md:hidden">
+          {paginatedClients.map((client) => (
+            <div key={client.id} className="flex gap-3 p-4 transition-colors active:bg-muted/40">
+              <Checkbox
+                className="mt-1 shrink-0"
+                checked={selectedIds.has(client.id)}
+                onCheckedChange={(checked) => toggleSelected(client.id, Boolean(checked))}
+                aria-label={`Επιλογή ${client.name}`}
+              />
+              <Link href={`/clients/${client.id}`} className="min-w-0 flex-1">
+                <div className="flex items-start gap-3">
+                  <UserAvatar initials={client.initials} tone={client.tone} photoUrl={client.profilePhoto} size="h-11 w-11" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-semibold">{client.name}</p>
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${client.isOnline ? "bg-emerald-500" : "bg-muted-foreground/50"}`} />
+                    </div>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">{client.email}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <Badge className={`h-auto rounded-md px-2 py-0.5 text-[11px] font-semibold ${client.statusStyle}`}>{client.status}</Badge>
+                      <span className="text-xs text-muted-foreground">{client.currentWeight}</span>
+                      <span className="text-xs text-muted-foreground">Update: {client.nextUpdate}</span>
+                    </div>
+                  </div>
+                  <ChevronRight className="mt-3 h-4 w-4 shrink-0 text-muted-foreground" />
+                </div>
+              </Link>
+            </div>
+          ))}
+          {!paginatedClients.length && (
+            <div className="px-5 py-12 text-center text-sm font-medium text-muted-foreground">
+              {loadingClients ? "Φόρτωση πελατών..." : "Δεν υπάρχουν πελάτες με αυτά τα φίλτρα."}
+            </div>
+          )}
+        </div>
 
         <PaginationControls
           totalItems={filteredClients.length}
@@ -818,6 +842,7 @@ function ClientsContent() {
           />
         </TabsContent>
       </Tabs>
+      </div>
     </CoachShell>
   );
 }
@@ -1045,6 +1070,7 @@ function StatFilterCard({
   value,
   note,
   tone,
+  icon: Icon,
   active,
   onClick,
 }: {
@@ -1052,6 +1078,7 @@ function StatFilterCard({
   value: number;
   note: string;
   tone: string;
+  icon: LucideIcon;
   active: boolean;
   onClick: () => void;
 }) {
@@ -1064,14 +1091,21 @@ function StatFilterCard({
         if (event.key === "Enter") onClick();
       }}
       className={cn(
-        "cursor-pointer p-5 transition-colors hover:border-slate-300 dark:hover:border-slate-700",
-        active && "border-red-500 ring-1 ring-red-500 dark:border-red-500",
+        "cursor-pointer border-border p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/45 hover:bg-muted/20 hover:shadow-md",
+        active && "border-primary bg-primary/[0.03] ring-1 ring-primary",
       )}
     >
-      <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">{label}</div>
-      <div className="mt-1 flex items-baseline gap-2">
-        <span className={cn("text-3xl font-bold", tone)}>{value}</span>
-        <span className="text-sm text-slate-400 dark:text-slate-500">{note}</span>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">{label}</div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className={cn("text-3xl font-bold tabular-nums", tone)}>{value}</span>
+            <span className="text-sm text-slate-400 dark:text-slate-500">{note}</span>
+          </div>
+        </div>
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+          <Icon className="h-5 w-5" />
+        </span>
       </div>
     </Card>
   );

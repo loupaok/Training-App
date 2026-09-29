@@ -1,15 +1,5 @@
 import nodemailer from 'nodemailer';
-
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST || 'smtp.office365.com',
-  port: parseInt(process.env.SMTP_PORT) || 587,
-  secure: process.env.SMTP_SECURE === 'true',
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  },
-  tls: { ciphers: 'SSLv3' }
-});
+import { getRuntimeSmtpSettings } from './smtp-settings.js';
 
 function interpolateTemplate(value, variables) {
   return String(value || '').replace(/\{\{(\w+)\}\}/g, (_, key) => String(variables?.[key] ?? ''));
@@ -73,13 +63,21 @@ export async function sendMail(arg1, arg2, arg3) {
     ? arg1
     : { to: arg1, subject: arg2, html: arg3 };
 
-  if (!process.env.SMTP_USER) {
+  const smtp = await getRuntimeSmtpSettings();
+  if (!smtp.username || !smtp.password) {
     console.warn('Email not configured - skipping');
     return { skipped: true };
   }
 
-  const from = process.env.EMAIL_FROM || process.env.SMTP_USER;
-  const fromName = process.env.EMAIL_FROM_NAME;
+  const transporter = nodemailer.createTransport({
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    auth: { user: smtp.username, pass: smtp.password },
+    tls: { ciphers: 'SSLv3' },
+  });
+  const from = smtp.fromEmail || smtp.username;
+  const fromName = smtp.fromName;
   await transporter.sendMail({
     from: fromName ? `"${fromName}" <${from}>` : from,
     to,

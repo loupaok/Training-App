@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, ChevronLeft, ChevronRight, Clock, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, X, FileText, Target } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Clock, Gift, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, X, FileText, Target, type LucideIcon } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -42,6 +43,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { AreaChart, SparkLineChart, ProgressBar } from "@tremor/react";
 import {
   Table,
@@ -53,7 +56,6 @@ import {
 } from "@/components/ui/table";
 import { type PlanHistoryRow } from "@/components/shared/plan-editor-ui";
 import {
-  TrainingPlanEditor,
   normalizeTrainingPlan,
   defaultTrainingPlan,
   type TrainingPlanState,
@@ -61,7 +63,6 @@ import {
   type LibraryExercise,
 } from "@/components/shared/training-plan-editor";
 import {
-  NutritionPlanEditor,
   normalizeNutritionPlan,
   defaultNutritionPlan,
   type NutritionPlanState,
@@ -69,6 +70,16 @@ import {
   type LibraryFood,
 } from "@/components/shared/nutrition-plan-editor";
 import { AssignTemplateDialog } from "@/components/shared/assign-template-dialog";
+
+const TrainingPlanEditor = dynamic(
+  () => import("@/components/shared/training-plan-editor").then((module) => module.TrainingPlanEditor),
+  { loading: () => <div className="h-64 animate-pulse rounded-xl border border-border bg-muted/40" /> },
+);
+
+const NutritionPlanEditor = dynamic(
+  () => import("@/components/shared/nutrition-plan-editor").then((module) => module.NutritionPlanEditor),
+  { loading: () => <div className="h-64 animate-pulse rounded-xl border border-border bg-muted/40" /> },
+);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -435,6 +446,10 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlanState>(defaultNutritionPlan);
   const [trainingHistory, setTrainingHistory] = useState<PlanHistoryRow[]>([]);
   const [nutritionHistory, setNutritionHistory] = useState<PlanHistoryRow[]>([]);
+  const [trainingResourcesLoaded, setTrainingResourcesLoaded] = useState(false);
+  const [nutritionResourcesLoaded, setNutritionResourcesLoaded] = useState(false);
+  const [trainingResourcesLoading, setTrainingResourcesLoading] = useState(false);
+  const [nutritionResourcesLoading, setNutritionResourcesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [savingTraining, setSavingTraining] = useState(false);
   const [savingNutrition, setSavingNutrition] = useState(false);
@@ -450,20 +465,14 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
   const loadClientDetail = () => {
     setLoading(true);
     setError("");
+    setTrainingResourcesLoaded(false);
+    setNutritionResourcesLoaded(false);
     Promise.all([
       api.get<ClientRecord>(`/clients/${clientId}`),
-      api.get<LibraryExercise[]>("/exercises").catch(() => []),
-      api.get<{ items: LibraryFood[] }>("/foods?limit=500").catch(() => ({ items: [] })),
-      api.get<RawTrainingPlan>(`/training-plans/${clientId}/full`).catch(() => ({ days: [] })),
-      api.get<RawNutritionPlan>(`/nutrition-plans/${clientId}/full`).catch(() => ({ meals: [] })),
       api.get<{ unread?: number }>(`/clients/${clientId}/messages/unread-count`).catch(() => ({ unread: 0 })),
     ])
-      .then(([clientData, exerciseRows, foodsResponse, trainingData, nutritionData, messageCount]) => {
+      .then(([clientData, messageCount]) => {
         setClient(clientData);
-        setExercises(Array.isArray(exerciseRows) ? exerciseRows : []);
-        setFoods(Array.isArray(foodsResponse?.items) ? foodsResponse.items : []);
-        setTrainingPlan(normalizeTrainingPlan(trainingData));
-        setNutritionPlan(normalizeNutritionPlan(nutritionData));
         setUnreadMessages(Number(messageCount.unread || 0));
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Δεν φορτώθηκε ο πελάτης."))
@@ -479,23 +488,58 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
     if (searchParams.get("tab") === "messages") setActiveTab("messages");
   }, [searchParams]);
 
-  const loadPlanHistory = () => {
-    api
-      .get<PlanHistoryRow[]>(`/training-plans/${clientId}`)
-      .then(setTrainingHistory)
-      .catch(() => setTrainingHistory([]));
-    api
-      .get<PlanHistoryRow[]>(`/nutrition-plans/${clientId}`)
-      .then(setNutritionHistory)
-      .catch(() => setNutritionHistory([]));
+  useEffect(() => {
+    const notificationId = Number(searchParams.get("birthdayNotification"));
+    if (!Number.isInteger(notificationId) || notificationId <= 0) return;
+
+    void api.post(`/clients/notifications/${notificationId}/read`).finally(() => {
+      const nextParams = new URLSearchParams(searchParams.toString());
+      nextParams.delete("birthdayNotification");
+      const query = nextParams.toString();
+      router.replace(`/clients/${clientId}${query ? `?${query}` : ""}`);
+    });
+  }, [clientId, router, searchParams]);
+
+  const loadTrainingResources = () => {
+    if (trainingResourcesLoaded || trainingResourcesLoading) return;
+    setTrainingResourcesLoading(true);
+    Promise.all([
+      api.get<LibraryExercise[]>("/exercises").catch(() => []),
+      api.get<RawTrainingPlan>(`/training-plans/${clientId}/full`).catch(() => ({ days: [] })),
+      api.get<PlanHistoryRow[]>(`/training-plans/${clientId}`).catch(() => []),
+    ])
+      .then(([exerciseRows, trainingData, history]) => {
+        setExercises(Array.isArray(exerciseRows) ? exerciseRows : []);
+        setTrainingPlan(normalizeTrainingPlan(trainingData));
+        setTrainingHistory(history);
+        setTrainingResourcesLoaded(true);
+      })
+      .finally(() => setTrainingResourcesLoading(false));
   };
 
-  // Re-fetch whenever a save/create-new/assign-template finishes (saving flips back to
-  // false) so history reflects the just-archived plan without a full page reload.
+  const loadNutritionResources = () => {
+    if (nutritionResourcesLoaded || nutritionResourcesLoading) return;
+    setNutritionResourcesLoading(true);
+    Promise.all([
+      api.get<{ items: LibraryFood[] }>("/foods?limit=500").catch(() => ({ items: [] })),
+      api.get<RawNutritionPlan>(`/nutrition-plans/${clientId}/full`).catch(() => ({ meals: [] })),
+      api.get<PlanHistoryRow[]>(`/nutrition-plans/${clientId}`).catch(() => []),
+    ])
+      .then(([foodsResponse, nutritionData, history]) => {
+        setFoods(Array.isArray(foodsResponse?.items) ? foodsResponse.items : []);
+        setNutritionPlan(normalizeNutritionPlan(nutritionData));
+        setNutritionHistory(history);
+        setNutritionResourcesLoaded(true);
+      })
+      .finally(() => setNutritionResourcesLoading(false));
+  };
+
   useEffect(() => {
-    loadPlanHistory();
+    if (activeTab === "training") loadTrainingResources();
+    if (activeTab === "nutrition") loadNutritionResources();
+    // Loading is intentionally tab-driven to keep the client profile interactive.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientId, savingTraining, savingNutrition]);
+  }, [activeTab, clientId, trainingResourcesLoaded, nutritionResourcesLoaded]);
 
   const onboarding = client?.onboarding || {};
   const displayName = client?.full_name || client?.email || "Πελάτης";
@@ -514,6 +558,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
       setError(err instanceof Error ? err.message : "Δεν δημιουργήθηκε νέο πρόγραμμα.");
     } finally {
       setSavingTraining(false);
+      setTrainingResourcesLoaded(false);
     }
   };
 
@@ -529,6 +574,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
       setError(err instanceof Error ? err.message : "Δεν αποθηκεύτηκε το πρόγραμμα προπόνησης.");
     } finally {
       setSavingTraining(false);
+      setTrainingResourcesLoaded(false);
     }
   };
 
@@ -544,6 +590,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
       setError(err instanceof Error ? err.message : "Δεν αποθηκεύτηκε το πρόγραμμα διατροφής.");
     } finally {
       setSavingNutrition(false);
+      setNutritionResourcesLoaded(false);
     }
   };
 
@@ -560,6 +607,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
       setError(err instanceof Error ? err.message : "Δεν δημιουργήθηκε νέο πρόγραμμα.");
     } finally {
       setSavingNutrition(false);
+      setNutritionResourcesLoaded(false);
     }
   };
 
@@ -657,14 +705,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
 
   return (
     <CoachShell title="Καρτέλα Πελάτη" user={user} logout={logout}>
-      <div className="mb-6 flex flex-wrap items-center gap-3 text-sm font-bold">
-        <Link href="/dashboard" className="text-blue-600 hover:text-blue-700">Dashboard</Link>
-        <span className="text-slate-400 dark:text-slate-500">/</span>
-        <Link href="/clients" className="text-blue-600 hover:text-blue-700">Πελάτες</Link>
-        <span className="text-slate-400 dark:text-slate-500">/</span>
-        <span className="text-slate-500 dark:text-slate-400">{displayName}</span>
-      </div>
-
+      <div className="mx-auto max-w-7xl space-y-6">
       {!loading && client?.deleted_at && (
         <Alert variant="destructive" className="mb-4 border-destructive bg-destructive text-white [&_[data-slot=alert-description]]:text-white/90">
           <AlertTriangle className="h-4 w-4" />
@@ -707,14 +748,24 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
             deleting={deleting}
           />
 
+          {isBirthdayToday(client.date_of_birth) && (
+            <Alert className="border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-100">
+              <Gift className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
+              <AlertTitle>Γενέθλια σήμερα</AlertTitle>
+              <AlertDescription>
+                Ο/Η {displayName || "πελάτης"} έχει γενέθλια σήμερα.
+              </AlertDescription>
+            </Alert>
+          )}
+
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <Card className="p-2">
-              <TabsList className="h-auto flex-wrap justify-start gap-2 bg-transparent p-0">
+            <Card className="overflow-hidden rounded-xl border-border bg-card shadow-sm">
+              <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-none bg-muted/70 p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 {tabs.map((tab) => (
                   <TabsTrigger
                     key={tab.id}
                     value={tab.id}
-                    className="h-11 rounded-md px-5 text-sm font-bold text-slate-600 data-active:bg-red-600 data-active:text-white data-active:shadow-sm hover:bg-slate-100 hover:text-slate-950 dark:data-active:bg-red-600 dark:data-active:text-white"
+                    className="h-10 shrink-0 rounded-md px-4 text-sm font-semibold text-muted-foreground transition-colors data-active:bg-primary data-active:text-primary-foreground data-active:shadow-sm hover:bg-primary/10 hover:text-primary sm:px-5"
                   >
                     {tab.label}
                     {tab.id === "messages" && unreadMessages > 0 && <Badge className="ml-2 rounded-full px-1.5 text-[10px]">{unreadMessages}</Badge>}
@@ -723,7 +774,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
               </TabsList>
             </Card>
 
-            <TabsContent value="overview" className="mt-6">
+            {activeTab === "overview" && <TabsContent value="overview" className="mt-6">
               <OverviewTab
                 client={client}
                 clientId={clientId}
@@ -737,13 +788,13 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 resettingPassword={resettingPassword}
                 canResetPassword={user?.role === "admin"}
               />
-            </TabsContent>
+            </TabsContent>}
 
-            <TabsContent value="progress" className="mt-6">
+            {activeTab === "progress" && <TabsContent value="progress" className="mt-6">
               <ProgressTab client={client} />
-            </TabsContent>
+            </TabsContent>}
 
-            <TabsContent value="training" className="mt-6 space-y-4">
+            {activeTab === "training" && <TabsContent value="training" className="mt-6 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <Badge variant="outline" className="h-auto gap-2 px-3 py-1.5 text-sm font-bold">
                   <Sparkles className="h-3.5 w-3.5" />
@@ -754,7 +805,6 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                   clientId={clientId}
                   onAssigned={() => {
                     loadClientDetail();
-                    loadPlanHistory();
                   }}
                 />
               </div>
@@ -767,9 +817,9 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 saving={savingTraining}
                 history={trainingHistory}
               />
-            </TabsContent>
+            </TabsContent>}
 
-            <TabsContent value="nutrition" className="mt-6 space-y-4">
+            {activeTab === "nutrition" && <TabsContent value="nutrition" className="mt-6 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <Badge variant="outline" className="h-auto gap-2 px-3 py-1.5 text-sm font-bold">
                   <Sparkles className="h-3.5 w-3.5" />
@@ -780,7 +830,6 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                   clientId={clientId}
                   onAssigned={() => {
                     loadClientDetail();
-                    loadPlanHistory();
                   }}
                 />
               </div>
@@ -793,9 +842,9 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 saving={savingNutrition}
                 history={nutritionHistory}
               />
-            </TabsContent>
+            </TabsContent>}
 
-            <TabsContent value="payments" className="mt-6">
+            {activeTab === "payments" && <TabsContent value="payments" className="mt-6">
               <PaymentsTab
                 client={client}
                 clientId={clientId}
@@ -805,22 +854,23 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 rejectingPaymentId={rejectingPaymentId}
                 onUpdated={loadClientDetail}
               />
-            </TabsContent>
+            </TabsContent>}
 
-            <TabsContent value="points" className="mt-6">
+            {activeTab === "points" && <TabsContent value="points" className="mt-6">
               <PointsTab clientId={clientId} />
-            </TabsContent>
+            </TabsContent>}
 
-            <TabsContent value="messages" className="mt-6">
+            {activeTab === "messages" && <TabsContent value="messages" className="mt-6">
               <MessagesTab clientId={clientId} onRead={() => setUnreadMessages(0)} />
-            </TabsContent>
+            </TabsContent>}
 
-            <TabsContent value="activity" className="mt-6">
+            {activeTab === "activity" && <TabsContent value="activity" className="mt-6">
               <ActivityLogTab clientId={clientId} active={activeTab === "activity"} />
-            </TabsContent>
+            </TabsContent>}
           </Tabs>
         </div>
       )}
+      </div>
     </CoachShell>
   );
 }
@@ -871,7 +921,8 @@ function ClientHeader({
   const updatesCount = client.weeklyUpdates?.length || 0;
 
   return (
-    <Card className="p-6">
+    <Card className="overflow-hidden rounded-xl border-border bg-card shadow-sm">
+      <div className="p-5 sm:p-6">
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_auto] lg:items-center">
         <div className="flex items-center gap-4">
           <UserAvatar initials={getInitials(displayName)} photoUrl={client.profile_photo} size="h-16 w-16" />
@@ -894,7 +945,7 @@ function ClientHeader({
           </div>
         </div>
 
-        <div className="min-w-0">
+        <div className="min-w-0 rounded-lg border border-border bg-muted/20 p-3">
           {sparklineData.length > 1 ? (
             <SparkLineChart className="h-14 w-full" data={sparklineData} index="date" categories={["Βάρος"]} colors={["blue"]} />
           ) : (
@@ -902,15 +953,15 @@ function ClientHeader({
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2 lg:justify-end">
-          <StatChip icon="⚖️" value={client.weight_kg ? `${client.weight_kg}kg` : "-"} />
-          <StatChip icon="📅" value={`${memberDays} μέρες`} />
-          <StatChip icon="📋" value={`${updatesCount}${updatesCount >= 12 ? "+" : ""} updates`} />
-          <StatChip icon="💬" value={client.discord_oauth_username ? `${client.discord_oauth_username} ✅` : "Μη συνδεδεμένος"} />
+        <div className="grid grid-cols-2 gap-2 lg:w-[21rem]">
+          <StatChip icon={Target} label="Βάρος" value={client.weight_kg ? `${client.weight_kg}kg` : "-"} />
+          <StatChip icon={Clock} label="Μέλος" value={`${memberDays} μέρες`} />
+          <StatChip icon={FileText} label="Updates" value={`${updatesCount}${updatesCount >= 12 ? "+" : ""}`} />
+          <StatChip icon={Link2} label="Discord" value={client.discord_oauth_username || "Μη συνδεδεμένος"} />
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2 border-t pt-3">
+      <div className="mt-5 flex flex-wrap gap-2 border-t border-border pt-4">
         {canManageStatus && isActive && (
           <Button type="button" variant="outline" onClick={() => setDeactivateOpen(true)} className="border-destructive text-destructive hover:bg-destructive hover:text-white">
             Απενεργοποίηση
@@ -926,6 +977,8 @@ function ClientHeader({
             Διαγραφή
           </Button>
         )}
+      </div>
+
       </div>
 
       <AlertDialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
@@ -1041,11 +1094,16 @@ function ResetPasswordDialog({
   );
 }
 
-function StatChip({ icon, value }: { icon: string; value: string }) {
+function StatChip({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
-    <div className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200">
-      <span>{icon}</span>
-      <span>{value}</span>
+    <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-muted/35 p-2.5">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background text-foreground">
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[11px] font-medium text-muted-foreground">{label}</span>
+        <span className="block truncate text-xs font-semibold text-foreground">{value}</span>
+      </span>
     </div>
   );
 }
@@ -1071,7 +1129,7 @@ function toDetailsForm(client: ClientRecord): ClientDetailsForm {
     fullName: client.full_name || "",
     email: client.email || "",
     phone: client.phone || "",
-    dateOfBirth: client.date_of_birth ? String(client.date_of_birth).slice(0, 10) : "",
+    dateOfBirth: formatDateOfBirth(client.date_of_birth),
     gender: client.gender || "",
     heightCm: client.height_cm !== undefined && client.height_cm !== null ? String(client.height_cm) : "",
     weightKg: client.weight_kg !== undefined && client.weight_kg !== null ? String(client.weight_kg) : "",
@@ -1185,6 +1243,43 @@ function formatGreekPaymentDate(value?: string | null): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
   return date.toLocaleString("el-GR", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function isBirthdayToday(value?: string | null): boolean {
+  const match = String(value ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return false;
+
+  const today = new Date();
+  return Number(match[2]) === today.getMonth() + 1 && Number(match[3]) === today.getDate();
+}
+
+function formatDateOfBirth(value?: string | null): string {
+  const match = String(value ?? "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : "";
+}
+
+function formatDateTyping(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+}
+
+function dateOfBirthToIso(value: string): string | null {
+  const match = value.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return null;
+
+  const [, day, month, year] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+  if (
+    date.getUTCFullYear() !== Number(year) ||
+    date.getUTCMonth() !== Number(month) - 1 ||
+    date.getUTCDate() !== Number(day)
+  ) {
+    return null;
+  }
+
+  return `${year}-${month}-${day}`;
 }
 
 function euroAmount(value?: number | string | null): string {
@@ -1320,7 +1415,13 @@ function OverviewTab({
     setSaveMessage("");
     setSaveError("");
     try {
-      await api.put(`/clients/${clientId}/details`, form);
+      const normalizedDateOfBirth = form.dateOfBirth.trim() ? dateOfBirthToIso(form.dateOfBirth) : "";
+      if (form.dateOfBirth.trim() && !normalizedDateOfBirth) {
+        setSaveError("Η ημερομηνία γέννησης πρέπει να είναι σε μορφή dd/mm/yyyy.");
+        return;
+      }
+
+      await api.put(`/clients/${clientId}/details`, { ...form, dateOfBirth: normalizedDateOfBirth });
       setSaveMessage("Τα στοιχεία αποθηκεύτηκαν.");
       onUpdated();
     } catch (err) {
@@ -1410,7 +1511,11 @@ function OverviewTab({
           <EditField label="Όνομα" value={form.fullName} onChange={(value) => updateField("fullName", value)} disabled={!canEdit} />
           <EditField label="Email" type="email" value={form.email} onChange={(value) => updateField("email", value)} disabled={!canEdit} />
           <EditField label="Τηλέφωνο" value={form.phone} onChange={(value) => updateField("phone", value)} disabled={!canEdit} />
-          <EditField label="Ημερομηνία γέννησης" type="date" value={form.dateOfBirth} onChange={(value) => updateField("dateOfBirth", value)} disabled={!canEdit} />
+          <DateOfBirthField
+            value={form.dateOfBirth}
+            onChange={(value) => updateField("dateOfBirth", value)}
+            disabled={!canEdit}
+          />
           <div>
             <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Φύλο</Label>
             <Select
@@ -2005,18 +2110,96 @@ function EditField({
   value,
   onChange,
   type = "text",
+  placeholder,
+  inputMode,
   disabled = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   type?: string;
+  placeholder?: string;
+  inputMode?: "numeric" | "decimal" | "text" | "tel" | "email" | "url" | "search" | "none";
   disabled?: boolean;
 }) {
   return (
     <div>
       <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">{label}</Label>
-      <Input type={type} className="mt-1 h-10 text-sm font-semibold" value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled} />
+      <Input
+        type={type}
+        inputMode={inputMode}
+        maxLength={inputMode === "numeric" ? 10 : undefined}
+        placeholder={placeholder}
+        className="mt-1 h-10 text-sm font-semibold"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+      />
+    </div>
+  );
+}
+
+function DateOfBirthField({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const isoDate = dateOfBirthToIso(value);
+  const selectedDate = isoDate
+    ? new Date(Number(isoDate.slice(0, 4)), Number(isoDate.slice(5, 7)) - 1, Number(isoDate.slice(8, 10)))
+    : undefined;
+
+  return (
+    <div>
+      <Label className="text-xs font-bold text-slate-500 dark:text-slate-400">Ημερομηνία γέννησης</Label>
+      <div className="relative mt-1">
+        <CalendarDays className="pointer-events-none absolute left-3 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        <Input
+          type="text"
+          inputMode="numeric"
+          autoComplete="bday"
+          maxLength={10}
+          placeholder="dd/mm/yyyy"
+          className="h-10 pl-10 pr-11 text-sm font-semibold"
+          value={value}
+          onChange={(event) => onChange(formatDateTyping(event.target.value))}
+          disabled={disabled}
+        />
+        <Popover>
+          <PopoverTrigger
+            disabled={disabled}
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Άνοιγμα ημερολογίου"
+                className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-500 hover:text-primary"
+              />
+            }
+          >
+            <CalendarDays className="h-4 w-4" />
+          </PopoverTrigger>
+          <PopoverContent className="w-auto p-0" align="end">
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              defaultMonth={selectedDate || new Date(1995, 0)}
+              captionLayout="dropdown"
+              startMonth={new Date(1920, 0)}
+              endMonth={new Date()}
+              onSelect={(date) => {
+                if (!date) return;
+                onChange(`${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`);
+              }}
+            />
+          </PopoverContent>
+        </Popover>
+      </div>
     </div>
   );
 }
@@ -2664,9 +2847,11 @@ function StateBox({ text }: { text: string }) {
 
 function InfoCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <Card className="p-6">
-      <h2 className="text-xl font-bold">{title}</h2>
-      <div className="mt-5 space-y-4">{children}</div>
+    <Card className="overflow-hidden rounded-xl border-border bg-card shadow-sm">
+      <CardHeader className="border-b bg-muted/20 px-5 py-4 sm:px-6">
+        <CardTitle className="text-base font-semibold sm:text-lg">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4 p-5 sm:p-6">{children}</CardContent>
     </Card>
   );
 }
