@@ -80,6 +80,7 @@ function NutritionTemplatesContent() {
 
   return (
     <CoachShell title="Πρότυπα Διατροφής" user={user} logout={logout}>
+      <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold dark:text-slate-50">Πρότυπα Διατροφής</h1>
@@ -142,6 +143,7 @@ function NutritionTemplatesContent() {
         {!loading && !templates.length && (
           <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Δεν υπάρχουν πρότυπα διατροφής ακόμα.</p>
         )}
+      </div>
       </div>
 
       <Dialog open={Boolean(previewId)} onOpenChange={(open) => !open && setPreviewId(null)}>

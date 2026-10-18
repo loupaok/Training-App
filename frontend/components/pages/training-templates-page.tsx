@@ -85,6 +85,7 @@ function TrainingTemplatesContent() {
 
   return (
     <CoachShell title="Πρότυπα Προπόνησης" user={user} logout={logout}>
+      <div className="mx-auto max-w-4xl">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold dark:text-slate-50">Πρότυπα Προπόνησης</h1>
@@ -145,6 +146,7 @@ function TrainingTemplatesContent() {
         {!loading && !templates.length && (
           <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Δεν υπάρχουν πρότυπα προπόνησης ακόμα.</p>
         )}
+      </div>
       </div>
 
       <Dialog open={Boolean(previewId)} onOpenChange={(open) => !open && setPreviewId(null)}>
