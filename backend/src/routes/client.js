@@ -9,6 +9,7 @@ import { notifyCoaches } from './clients.js';
 import { registerWeeklyUpdatePhotos } from './media.js';
 import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { updateNotificationEmail } from '../lib/email-templates.js';
+import { ensureCycleSchema } from './cycles.js';
 
 const router = express.Router();
 router.use(authorizeRole(['client']));
@@ -611,6 +612,51 @@ router.post('/updates/submit', upload.array('files', 5), async (req, res) => {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   } finally { connection.release(); }
+});
+
+router.get('/cycle', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureCycleSchema(connection);
+    const [plans] = await connection.query(
+      `SELECT id FROM nutrition_plans WHERE client_id = ? AND status = 'active'
+       ORDER BY updated_at DESC, created_at DESC LIMIT 1`,
+      [req.user.id]
+    );
+    if (!plans.length) return res.json({ protocol: null });
+
+    const [protocolRows] = await connection.query(
+      'SELECT * FROM cycle_protocols WHERE nutrition_plan_id = ? AND is_active = 1',
+      [plans[0].id]
+    );
+    if (!protocolRows.length) return res.json({ protocol: null });
+
+    const protocol = protocolRows[0];
+    const [compounds] = await connection.query(
+      'SELECT id, name, dose, unit, frequency, start_week, end_week, sort_order FROM cycle_compounds WHERE protocol_id = ? ORDER BY sort_order, id',
+      [protocol.id]
+    );
+
+    // coach_notes/coach_id are never sent to the client.
+    res.json({
+      protocol: {
+        id: protocol.id,
+        totalWeeks: protocol.total_weeks,
+        currentWeek: protocol.current_week,
+        pctProtocol: protocol.pct_protocol,
+        pctStartWeek: protocol.pct_start_week,
+        estrogenControl: protocol.estrogen_control,
+        organSupport: protocol.organ_support,
+        clientNotes: protocol.client_notes,
+        compounds,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
 });
 
 export default router;

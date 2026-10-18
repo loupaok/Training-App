@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "re
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Clock, Gift, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, X, FileText, Target, type LucideIcon } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Clock, Gift, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, Plus, X, FileText, Target, type LucideIcon } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -311,6 +311,7 @@ const tabs = [
   { id: "progress", label: "Πρόοδος" },
   { id: "training", label: "Πρόγραμμα Προπόνησης" },
   { id: "nutrition", label: "Πρόγραμμα Διατροφής" },
+  { id: "cycle", label: "Cycle" },
   { id: "payments", label: "Πληρωμές" },
   { id: "points", label: "Πόντοι" },
   { id: "messages", label: "Μηνύματα" },
@@ -842,6 +843,10 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 saving={savingNutrition}
                 history={nutritionHistory}
               />
+            </TabsContent>}
+
+            {activeTab === "cycle" && <TabsContent value="cycle" className="mt-6">
+              <CycleTab clientId={clientId} />
             </TabsContent>}
 
             {activeTab === "payments" && <TabsContent value="payments" className="mt-6">
@@ -2951,6 +2956,277 @@ type PointsTransaction = {
 };
 
 type ClientPointsData = { totalPoints: number; usedPoints: number; availablePoints: number; transactions: PointsTransaction[] };
+
+type CycleCompoundRow = { name: string; dose: string; unit: string; frequency: string; startWeek: string; endWeek: string };
+
+type CycleResponse = {
+  nutritionPlanId: number | null;
+  nutritionPlanTitle: string | null;
+  protocol: {
+    is_active: number | boolean;
+    total_weeks: number;
+    current_week: number;
+    pct_protocol: string | null;
+    pct_start_week: number | null;
+    estrogen_control: string | null;
+    organ_support: string | null;
+    coach_notes: string | null;
+    client_notes: string | null;
+    compounds: Array<{ name: string; dose: number; unit: string; frequency: string | null; start_week: number; end_week: number | null }>;
+  } | null;
+};
+
+const cycleUnits = ["mg", "ml", "IU", "mcg"];
+
+function emptyCycleRow(): CycleCompoundRow {
+  return { name: "", dose: "", unit: "mg", frequency: "", startWeek: "1", endWeek: "" };
+}
+
+function CycleTab({ clientId }: { clientId: string }) {
+  const [nutritionPlanId, setNutritionPlanId] = useState<number | null>(null);
+  const [hasProtocol, setHasProtocol] = useState(false);
+  const [isActive, setIsActive] = useState(false);
+  const [totalWeeks, setTotalWeeks] = useState("12");
+  const [currentWeek, setCurrentWeek] = useState("1");
+  const [pctProtocol, setPctProtocol] = useState("");
+  const [pctStartWeek, setPctStartWeek] = useState("");
+  const [estrogenControl, setEstrogenControl] = useState("");
+  const [organSupport, setOrganSupport] = useState("");
+  const [coachNotes, setCoachNotes] = useState("");
+  const [clientNotes, setClientNotes] = useState("");
+  const [compounds, setCompounds] = useState<CycleCompoundRow[]>([emptyCycleRow()]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const load = () => {
+    setLoading(true);
+    setError("");
+    api
+      .get<CycleResponse>(`/cycles/${clientId}`)
+      .then((result) => {
+        setNutritionPlanId(result.nutritionPlanId);
+        const protocol = result.protocol;
+        setHasProtocol(Boolean(protocol));
+        if (protocol) {
+          setIsActive(Boolean(protocol.is_active));
+          setTotalWeeks(String(protocol.total_weeks ?? 12));
+          setCurrentWeek(String(protocol.current_week ?? 1));
+          setPctProtocol(protocol.pct_protocol || "");
+          setPctStartWeek(protocol.pct_start_week != null ? String(protocol.pct_start_week) : "");
+          setEstrogenControl(protocol.estrogen_control || "");
+          setOrganSupport(protocol.organ_support || "");
+          setCoachNotes(protocol.coach_notes || "");
+          setClientNotes(protocol.client_notes || "");
+          setCompounds(
+            protocol.compounds.length
+              ? protocol.compounds.map((c) => ({
+                  name: c.name,
+                  dose: String(c.dose),
+                  unit: c.unit,
+                  frequency: c.frequency || "",
+                  startWeek: String(c.start_week ?? 1),
+                  endWeek: c.end_week != null ? String(c.end_week) : "",
+                }))
+              : [emptyCycleRow()]
+          );
+        }
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : "Δεν φορτώθηκε το cycle."))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(load, [clientId]);
+
+  const updateCompound = (index: number, field: keyof CycleCompoundRow, value: string) => {
+    setCompounds((current) => current.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+  };
+
+  const addCompound = () => setCompounds((current) => [...current, emptyCycleRow()]);
+  const removeCompound = (index: number) => setCompounds((current) => current.filter((_, i) => i !== index));
+
+  const save = async () => {
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      await api.put(`/cycles/${clientId}`, {
+        isActive,
+        totalWeeks: Number(totalWeeks) || 12,
+        currentWeek: Number(currentWeek) || 1,
+        pctProtocol: pctProtocol || null,
+        pctStartWeek: pctStartWeek ? Number(pctStartWeek) : null,
+        estrogenControl: estrogenControl || null,
+        organSupport: organSupport || null,
+        coachNotes: coachNotes || null,
+        clientNotes: clientNotes || null,
+        compounds: compounds
+          .filter((row) => row.name.trim() && row.dose !== "")
+          .map((row) => ({
+            name: row.name.trim(),
+            dose: Number(row.dose),
+            unit: row.unit,
+            frequency: row.frequency || null,
+            startWeek: Number(row.startWeek) || 1,
+            endWeek: row.endWeek ? Number(row.endWeek) : null,
+          })),
+      });
+      setMessage("Το cycle αποθηκεύτηκε.");
+      load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν αποθηκεύτηκε το cycle.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeProtocol = async () => {
+    setDeleting(true);
+    setError("");
+    try {
+      await api.delete(`/cycles/${clientId}`);
+      setMessage("Το cycle διαγράφηκε.");
+      setHasProtocol(false);
+      setIsActive(false);
+      setTotalWeeks("12");
+      setCurrentWeek("1");
+      setPctProtocol("");
+      setPctStartWeek("");
+      setEstrogenControl("");
+      setOrganSupport("");
+      setCoachNotes("");
+      setClientNotes("");
+      setCompounds([emptyCycleRow()]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν διαγράφηκε το cycle.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <Card className="p-6">
+        <ActivityLogSkeleton />
+      </Card>
+    );
+  }
+
+  if (!nutritionPlanId) {
+    return (
+      <Card className="p-6">
+        <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+          Ο πελάτης δεν έχει ενεργό πλάνο διατροφής ακόμα. Δημιούργησε πρώτα ένα πλάνο διατροφής στο tab «Πρόγραμμα Διατροφής» για να μπορείς να συνδέσεις ένα cycle.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">{error}</div>}
+      {message && <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200">{message}</div>}
+
+      <Card className="p-6">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-lg">Στοιχεία Cycle</CardTitle>
+          <div className="flex items-center gap-2">
+            <Label className="text-sm font-bold text-slate-700 dark:text-slate-200">Ενεργό (ορατό στον πελάτη)</Label>
+            <Switch checked={isActive} onCheckedChange={(checked) => setIsActive(checked === true)} />
+          </div>
+        </div>
+        <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+            Σύνολο εβδομάδων
+            <Input type="number" min={1} value={totalWeeks} onChange={(e) => setTotalWeeks(e.target.value)} />
+          </Label>
+          <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+            Τρέχουσα εβδομάδα
+            <Input type="number" min={1} value={currentWeek} onChange={(e) => setCurrentWeek(e.target.value)} />
+          </Label>
+          <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+            PCT Protocol
+            <Input value={pctProtocol} onChange={(e) => setPctProtocol(e.target.value)} placeholder="π.χ. Nolvadex + Clomid" />
+          </Label>
+          <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+            PCT από εβδομάδα
+            <Input type="number" min={1} value={pctStartWeek} onChange={(e) => setPctStartWeek(e.target.value)} />
+          </Label>
+          <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200 sm:col-span-2">
+            Estrogen Control
+            <Input value={estrogenControl} onChange={(e) => setEstrogenControl(e.target.value)} placeholder="π.χ. Anastrozole 0.5mg EOD" />
+          </Label>
+          <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200 sm:col-span-2">
+            Organ Support
+            <Input value={organSupport} onChange={(e) => setOrganSupport(e.target.value)} placeholder="π.χ. TUDCA + NAC" />
+          </Label>
+        </div>
+      </Card>
+
+      <Card className="overflow-hidden p-0">
+        <CardHeader className="flex flex-row items-center justify-between border-b border-border px-6 py-5">
+          <CardTitle className="text-lg font-semibold">Ουσίες</CardTitle>
+          <Button type="button" size="sm" variant="outline" onClick={addCompound} className="gap-1">
+            <Plus className="h-4 w-4" />
+            Προσθήκη
+          </Button>
+        </CardHeader>
+        <CardContent className="space-y-3 p-6">
+          {compounds.map((row, index) => (
+            <div key={index} className="grid grid-cols-2 gap-2 rounded-lg border border-border p-3 sm:grid-cols-6">
+              <Input className="sm:col-span-2" placeholder="Όνομα (π.χ. Testosterone Enanthate)" value={row.name} onChange={(e) => updateCompound(index, "name", e.target.value)} />
+              <Input type="number" placeholder="Δόση" value={row.dose} onChange={(e) => updateCompound(index, "dose", e.target.value)} />
+              <Select items={cycleUnits.map((u) => ({ value: u, label: u }))} value={row.unit} onValueChange={(v) => v && updateCompound(index, "unit", v)}>
+                <SelectTrigger className="h-9 w-full text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {cycleUnits.map((u) => (
+                    <SelectItem key={u} value={u}>
+                      {u}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input placeholder="Συχνότητα (π.χ. EOD)" value={row.frequency} onChange={(e) => updateCompound(index, "frequency", e.target.value)} />
+              <div className="flex items-center gap-1">
+                <Input type="number" placeholder="Από εβδ." value={row.startWeek} onChange={(e) => updateCompound(index, "startWeek", e.target.value)} />
+                <Input type="number" placeholder="Έως εβδ." value={row.endWeek} onChange={(e) => updateCompound(index, "endWeek", e.target.value)} />
+                <Button type="button" variant="ghost" size="icon-sm" onClick={() => removeCompound(index)} aria-label="Αφαίρεση">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card className="p-6">
+        <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+          Σημειώσεις Coach <span className="font-normal text-slate-400">(ΔΕΝ τις βλέπει ο πελάτης)</span>
+          <Textarea value={coachNotes} onChange={(e) => setCoachNotes(e.target.value)} rows={3} />
+        </Label>
+        <Label className="mt-4 flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+          Σημειώσεις για τον πελάτη <span className="font-normal text-slate-400">(ορατές στον πελάτη)</span>
+          <Textarea value={clientNotes} onChange={(e) => setClientNotes(e.target.value)} rows={3} />
+        </Label>
+      </Card>
+
+      <div className="flex flex-wrap gap-3">
+        <Button onClick={save} disabled={saving} className="font-bold">
+          {saving ? "Αποθήκευση..." : "Αποθήκευση"}
+        </Button>
+        {hasProtocol && (
+          <Button onClick={removeProtocol} disabled={deleting} variant="outline" className="font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30">
+            {deleting ? "Διαγραφή..." : "Διαγραφή Cycle"}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const pointsTypeMeta: Record<string, { label: string; dotClass: string }> = {
   earned: { label: "Αυτόματη πίστωση", dotClass: "bg-emerald-500" },
