@@ -20,6 +20,7 @@ import { useAuth } from "@/lib/auth/auth-context"
 import { resolveMediaUrl } from "@/lib/media"
 import { cacheOfflineData, readOfflineData } from "@/lib/offline-client"
 import { toast } from "sonner"
+import { ClientCycleCard } from "@/components/client/client-cycle-card"
 
 type NutritionFood = { id?: number; name: string; food_image?: string | null; food_image_url?: string | null; image_url?: string | null; imageUrl?: string | null; amount?: string | null; quantity?: string | null; calories?: number | string | null; protein_g?: number | string | null; carbs_g?: number | string | null; fat_g?: number | string | null }
 type NutritionMeal = { id?: number; name: string; title?: string | null; notes?: string | null; time?: string | null; day_of_week?: number | null; foods: NutritionFood[] }
@@ -333,6 +334,8 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
           </div>
         </CardContent>
       </Card>
+
+      <ClientCycleCard />
 
       <section className="min-w-0">
         <div className="mb-4 flex items-center justify-between gap-4">

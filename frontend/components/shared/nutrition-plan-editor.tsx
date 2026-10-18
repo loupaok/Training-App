@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -67,6 +67,7 @@ export interface MealEntry {
 }
 
 export interface NutritionPlanState {
+  id?: number | string;
   title: string;
   description: string;
   dailyCalories: string | number;
@@ -157,6 +158,7 @@ export function normalizeNutritionPlan(plan?: RawNutritionPlan | null): Nutritio
   if (!plan?.id && !plan?.meals?.length) return base;
 
   return {
+    id: plan.id,
     title: plan.title || base.title,
     description: plan.description || "",
     dailyCalories: plan.daily_calories || "",
@@ -259,6 +261,7 @@ export function NutritionPlanEditor({
   onCreateNew,
   saving,
   history = [],
+  afterMeals,
   title = "Πρόγραμμα Διατροφής",
   subtitle = "Ένα ενεργό πρόγραμμα διατροφής για τον πελάτη. Το ανανεώνει μόνο ο admin όταν χρειαστεί.",
 }: {
@@ -269,6 +272,7 @@ export function NutritionPlanEditor({
   onCreateNew?: () => void;
   saving: boolean;
   history?: PlanHistoryRow[];
+  afterMeals?: ReactNode;
   title?: string;
   subtitle?: string;
 }) {
@@ -669,6 +673,7 @@ export function NutritionPlanEditor({
           Προσθήκη γεύματος
         </Button>
 
+        {afterMeals}
         <PlanHistory rows={history} countLabel={(row) => (row.daily_calories ? `${row.daily_calories} kcal` : "-")} />
       </div>
         </ResizablePanel>

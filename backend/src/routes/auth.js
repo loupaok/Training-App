@@ -108,6 +108,7 @@ export async function ensureAuthSchema(connection) {
         'ALTER TABLE users ADD COLUMN specializations TEXT',
         'ALTER TABLE users ADD COLUMN permissions TEXT NULL',
         'ALTER TABLE users ADD COLUMN push_enabled TINYINT(1) NOT NULL DEFAULT 0',
+        'ALTER TABLE users ADD COLUMN push_token VARCHAR(255) DEFAULT NULL',
         "ALTER TABLE users ADD COLUMN font_size ENUM('small', 'medium', 'large') NOT NULL DEFAULT 'medium'"
       ]) {
         try {

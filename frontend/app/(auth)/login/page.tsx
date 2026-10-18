@@ -55,12 +55,12 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="mt-8 space-y-5">
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" autoComplete="email" placeholder="Email Address" value={email} onChange={(event) => setEmail(event.target.value)} required className="h-13 rounded-lg border-slate-300 px-4 focus-visible:border-primary" />
+            <Input id="email" type="email" autoComplete="email" placeholder="Email Address" value={email} onChange={(event) => setEmail(event.target.value)} required className="h-13 rounded-lg border-slate-300 bg-white px-4 text-slate-900 placeholder:text-slate-400 focus-visible:border-primary dark:bg-white dark:text-slate-900" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="password">Κωδικός</Label>
             <div className="relative">
-              <Input id="password" type={showPassword ? "text" : "password"} autoComplete="current-password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} required className="h-13 rounded-lg border-slate-300 px-4 pr-12 focus-visible:border-primary" />
+              <Input id="password" type={showPassword ? "text" : "password"} autoComplete="current-password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} required className="h-13 rounded-lg border-slate-300 bg-white px-4 pr-12 text-slate-900 placeholder:text-slate-400 focus-visible:border-primary dark:bg-white dark:text-slate-900" />
               <Button type="button" variant="ghost" size="icon" onClick={() => setShowPassword((current) => !current)} className="absolute right-1 top-1/2 -translate-y-1/2" aria-label={showPassword ? "Απόκρυψη κωδικού" : "Εμφάνιση κωδικού"}>{showPassword ? <EyeOff /> : <Eye />}</Button>
             </div>
           </div>

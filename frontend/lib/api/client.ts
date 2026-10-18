@@ -1,4 +1,6 @@
-export const API_BASE_URL = "/api";
+import { getNativePreference, nativeStorageKeys } from "@/lib/native/preferences";
+
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
 
 export interface ApiRequestOptions extends RequestInit {
   headers?: Record<string, string>;
@@ -7,7 +9,7 @@ export interface ApiRequestOptions extends RequestInit {
 class ApiError extends Error {}
 
 async function request<T = unknown>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
-  const token = typeof window !== "undefined" ? window.localStorage.getItem("token") : null;
+  const token = await getNativePreference(nativeStorageKeys.accessToken);
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...options.headers,
@@ -50,12 +52,19 @@ export const api = {
     });
   },
 
+  patch<T = unknown>(endpoint: string, data?: unknown): Promise<T> {
+    return request<T>(endpoint, {
+      method: "PATCH",
+      body: JSON.stringify(data ?? {}),
+    });
+  },
+
   delete<T = unknown>(endpoint: string): Promise<T> {
     return request<T>(endpoint, { method: "DELETE" });
   },
 
   async upload<T = unknown>(endpoint: string, formData: FormData, method: "POST" | "PUT" = "POST"): Promise<T> {
-    const token = typeof window !== "undefined" ? window.localStorage.getItem("token") : null;
+    const token = await getNativePreference(nativeStorageKeys.accessToken);
     const headers: Record<string, string> = {};
 
     if (token) {

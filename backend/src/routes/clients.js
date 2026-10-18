@@ -7,6 +7,7 @@ import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole, authorizeRoleOrPermission } from '../middleware/auth.js';
 import { getVapidPublicKey, sendPushToUser, sendPushToUsers } from '../lib/webPush.js';
+import { sendPushNotification } from '../utils/sendPushNotification.js';
 import { insertTrainingPlanDays } from './trainingPlans.js';
 import { insertNutritionPlanMeals } from './nutritionPlans.js';
 import { getFullTrainingTemplate, getFullNutritionTemplate } from './templates.js';
@@ -687,6 +688,13 @@ export async function notifyUser(connection, userId, notification) {
     });
   } catch (error) {
     console.error('Push notification failed:', error.message);
+  }
+
+  try {
+    const [[user]] = await connection.query('SELECT push_token FROM users WHERE id = ? LIMIT 1', [userId]);
+    await sendPushNotification(user?.push_token, notification.title, notification.body || '');
+  } catch (error) {
+    console.error('Native push notification failed:', error.message);
   }
 }
 

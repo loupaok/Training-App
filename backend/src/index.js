@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import mysql from 'mysql2/promise';
 import authRoutes from './routes/auth.js';
+import userRoutes from './routes/users.js';
 import coachRoutes from './routes/coaches.js';
 import clientRoutes from './routes/clients.js';
 import adminRoutes from './routes/admin.js';
@@ -30,6 +31,8 @@ import pointsRoutes from './routes/points.js';
 import discordRoutes from './routes/discord.js';
 import analyticsRoutes from './routes/analytics.js';
 import cycleRoutes from './routes/cycles.js';
+import nutritionCycleRoutes from './routes/nutrition-cycle.js';
+import clientNutritionCycleRoutes from './routes/client-nutrition-cycle.js';
 import discordSettingsRoutes from './routes/discord-settings.js';
 import { authenticateToken, isClient, isCoach } from './middleware/auth.js';
 
@@ -80,12 +83,14 @@ testConnection();
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/coaches', authenticateToken, isCoach, coachRoutes);
 app.use('/api/clients', authenticateToken, clientRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/subscriptions', authenticateToken, subscriptionRoutes);
 app.use('/api/progress', authenticateToken, progressRoutes);
 app.use('/api/training-plans', authenticateToken, trainingPlanRoutes);
+app.use('/api/nutrition-plans', authenticateToken, nutritionCycleRoutes);
 app.use('/api/nutrition-plans', authenticateToken, nutritionPlanRoutes);
 app.use('/api/reps', authenticateToken, repsRoutes);
 app.use('/api/exercises', authenticateToken, exerciseRoutes);
@@ -94,6 +99,7 @@ app.use('/api/media', authenticateToken, mediaFoodRoutes);
 app.use('/api/media', authenticateToken, mediaRoutes);
 app.use('/api/client-dashboard', authenticateToken, isClient, clientDashboardRoutes);
 app.use('/api/client', authenticateToken, clientAppRoutes);
+app.use('/api/my/nutrition', authenticateToken, clientNutritionCycleRoutes);
 // No blanket auth here — GET / is public (pricing page), everything else is
 // gated per-route inside pricingPlans.js with authenticateToken + authorizeRole.
 app.use('/api/pricing-plans', pricingPlanRoutes);

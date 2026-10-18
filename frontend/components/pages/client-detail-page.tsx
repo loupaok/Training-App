@@ -70,6 +70,7 @@ import {
   type LibraryFood,
 } from "@/components/shared/nutrition-plan-editor";
 import { AssignTemplateDialog } from "@/components/shared/assign-template-dialog";
+import { CycleProtocolPanel } from "@/components/shared/cycle-protocol-panel";
 
 const TrainingPlanEditor = dynamic(
   () => import("@/components/shared/training-plan-editor").then((module) => module.TrainingPlanEditor),
@@ -311,7 +312,7 @@ const tabs = [
   { id: "progress", label: "Πρόοδος" },
   { id: "training", label: "Πρόγραμμα Προπόνησης" },
   { id: "nutrition", label: "Πρόγραμμα Διατροφής" },
-  { id: "cycle", label: "Cycle" },
+  { id: "cycle", label: "Cycle Protocol" },
   { id: "payments", label: "Πληρωμές" },
   { id: "points", label: "Πόντοι" },
   { id: "messages", label: "Μηνύματα" },
@@ -537,7 +538,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
 
   useEffect(() => {
     if (activeTab === "training") loadTrainingResources();
-    if (activeTab === "nutrition") loadNutritionResources();
+    if (activeTab === "nutrition" || activeTab === "cycle") loadNutritionResources();
     // Loading is intentionally tab-driven to keep the client profile interactive.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, clientId, trainingResourcesLoaded, nutritionResourcesLoaded]);
@@ -846,7 +847,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
             </TabsContent>}
 
             {activeTab === "cycle" && <TabsContent value="cycle" className="mt-6">
-              <CycleTab clientId={clientId} />
+              {nutritionResourcesLoading ? <Card className="p-6"><p className="text-sm text-muted-foreground">Φόρτωση προγράμματος διατροφής...</p></Card> : nutritionPlan.id ? <CycleProtocolPanel planId={Number(nutritionPlan.id)} clientId={clientId} /> : <Card className="p-6"><p className="text-sm text-muted-foreground">Δημιούργησε πρώτα ένα πρόγραμμα διατροφής για να ορίσεις Cycle Protocol.</p></Card>}
             </TabsContent>}
 
             {activeTab === "payments" && <TabsContent value="payments" className="mt-6">
