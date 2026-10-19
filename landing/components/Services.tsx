@@ -1,0 +1,74 @@
+import { CheckCircle } from "./icons";
+import { FadeIn } from "./FadeIn";
+import type { getSiteContent, getPackages } from "@/lib/keystatic/reader";
+
+type ServicesIntro = Awaited<ReturnType<typeof getSiteContent>>["servicesIntro"];
+type Packages = Awaited<ReturnType<typeof getPackages>>;
+
+export function Services({ intro, packages }: { intro: ServicesIntro; packages: Packages }) {
+  return (
+    <section id="services" className="py-24 sm:py-32">
+      <div className="container-x">
+        <FadeIn className="mx-auto max-w-2xl text-center">
+          <p className="text-xs font-bold uppercase tracking-wide text-lime-700 dark:text-lime">{intro?.eyebrow || "Πακέτα"}</p>
+          <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
+            {intro?.heading || "Διάλεξε το πλάνο που ταιριάζει σε σένα"}
+          </h2>
+          {intro?.subheading && <p className="mt-4 text-navy-600 dark:text-white/70">{intro.subheading}</p>}
+        </FadeIn>
+
+        {packages.length ? (
+          <div className="mt-16 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {packages.map((pkg, index) => (
+              <FadeIn key={pkg.slug} delay={index * 0.08}>
+                <div
+                  className={`flex h-full flex-col rounded-3xl border p-8 transition-transform hover:-translate-y-1 ${
+                    pkg.highlighted
+                      ? "border-lime bg-navy-900 text-white shadow-2xl shadow-lime/10"
+                      : "border-navy-100 bg-white dark:border-white/10 dark:bg-white/5"
+                  }`}
+                >
+                  {pkg.highlighted && (
+                    <span className="mb-4 inline-flex w-fit items-center rounded-full bg-lime px-3 py-1 text-xs font-bold text-navy-900">
+                      Προτεινόμενο
+                    </span>
+                  )}
+                  <h3 className={`text-xl font-extrabold ${pkg.highlighted ? "text-white" : "text-navy-900 dark:text-white"}`}>{pkg.title}</h3>
+                  <p className={`mt-4 flex items-baseline gap-1 ${pkg.highlighted ? "text-white" : "text-navy-900 dark:text-white"}`}>
+                    <span className="text-4xl font-extrabold">{pkg.price}</span>
+                    {pkg.period && <span className="text-sm font-semibold opacity-60">{pkg.period}</span>}
+                  </p>
+                  {pkg.description && (
+                    <p className={`mt-3 text-sm ${pkg.highlighted ? "text-white/70" : "text-navy-600 dark:text-white/70"}`}>{pkg.description}</p>
+                  )}
+                  {pkg.features?.length ? (
+                    <ul className="mt-6 space-y-3">
+                      {pkg.features.map((feature, i) => (
+                        <li key={i} className={`flex items-start gap-2.5 text-sm ${pkg.highlighted ? "text-white/90" : "text-navy-700 dark:text-white/80"}`}>
+                          <CheckCircle className={`mt-0.5 h-4 w-4 shrink-0 ${pkg.highlighted ? "text-lime" : "text-lime-600"}`} />
+                          {feature}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <a
+                    href="#contact"
+                    className={`mt-8 inline-flex items-center justify-center rounded-full px-5 py-3 text-sm font-bold transition-colors ${
+                      pkg.highlighted
+                        ? "bg-lime text-navy-900 hover:bg-lime-400"
+                        : "bg-navy-900 text-white hover:bg-navy-700 dark:bg-white dark:text-navy-900"
+                    }`}
+                  >
+                    Ξεκίνα τώρα
+                  </a>
+                </div>
+              </FadeIn>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-16 text-center text-sm text-navy-400">Τα πακέτα θα εμφανιστούν εδώ μόλις προστεθούν από το /keystatic.</p>
+        )}
+      </div>
+    </section>
+  );
+}

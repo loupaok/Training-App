@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+:root.dark {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: auto;
+}
+
+body {
+  @apply bg-white text-navy-900 dark:bg-navy-900 dark:text-white;
+}
+
+::selection {
+  @apply bg-lime text-navy-900;
+}
+
+.container-x {
+  @apply mx-auto w-full max-w-7xl px-5 sm:px-8 lg:px-10;
+}
+
+.lenis.lenis-smooth {
+  scroll-behavior: auto;
+}
+
+.lenis.lenis-smooth iframe {
+  pointer-events: none;
+}
