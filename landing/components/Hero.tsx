@@ -7,9 +7,29 @@ import type { getSiteContent } from "@/lib/keystatic/reader";
 
 type HeroContent = Awaited<ReturnType<typeof getSiteContent>>["hero"];
 
+function WorkoutCard({ hero, className = "" }: { hero: HeroContent; className?: string }) {
+  return (
+    <div className={className}>
+      <div className="ml-auto max-w-[260px] rounded-2xl bg-white p-4 text-navy-900 shadow-2xl">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-navy-400">{hero?.workoutDayLabel || "ΣΗΜΕΡΑ · ΗΜΕΡΑ 3"}</p>
+        <p className="mt-1 text-base font-extrabold">{hero?.workoutTitle || "Lower Body — Deadlift"}</p>
+        <p className="mt-0.5 text-xs text-navy-500">{hero?.workoutMeta || "5 ασκήσεις · 60 λεπτά"}</p>
+        <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-navy-100">
+          <div className="h-full w-2/3 rounded-full bg-navy-900" />
+        </div>
+      </div>
+      <div className="ml-auto mt-3 flex max-w-[260px] items-center gap-1.5 rounded-full bg-lime px-4 py-2 text-xs font-bold text-navy-900 shadow-lg">
+        <Star className="h-3.5 w-3.5" filled />
+        {hero?.workoutPoints || "+[X] πόντοι · Συνδρομή Οκτωβρίου"}
+      </div>
+    </div>
+  );
+}
+
 export function Hero({ hero }: { hero: HeroContent }) {
   return (
-    <section className="relative overflow-hidden bg-navy-900 pb-16 pt-36 text-white sm:pb-0 sm:pt-40">
+    <section className="relative overflow-hidden bg-navy-900 text-white">
+      {/* Full-height photo panel, desktop/tablet only — the mobile layout gets its own inline photo below */}
       <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[52%] sm:block">
         {hero?.backgroundImage && (
           <Image src={hero.backgroundImage} alt="" fill priority className="object-cover" sizes="52vw" />
@@ -18,7 +38,7 @@ export function Hero({ hero }: { hero: HeroContent }) {
         <div className="absolute -right-10 bottom-0 top-0 w-20 -skew-x-[16deg] bg-lime/90" />
       </div>
 
-      <div className="container-x relative grid gap-12 sm:grid-cols-2 sm:pb-20">
+      <div className="container-x relative grid gap-10 pb-12 pt-36 sm:grid-cols-2 sm:gap-12 sm:pb-20 sm:pt-40">
         <div className="relative z-10 sm:py-10">
           <motion.p
             initial={{ opacity: 0, y: 16 }}
@@ -34,7 +54,7 @@ export function Hero({ hero }: { hero: HeroContent }) {
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.1 }}
-            className="mt-6 text-5xl font-black uppercase leading-[0.95] tracking-tight sm:text-6xl lg:text-7xl"
+            className="mt-6 text-5xl font-black uppercase leading-[0.95] tracking-tight lg:text-6xl xl:text-7xl"
           >
             <span className="block">{hero?.headingLine1 || "Η ΣΥΝΕΠΕΙΑ"}</span>
             <span className="block">{hero?.headingLine2 || "ΦΕΡΝΕΙ"}</span>
@@ -86,30 +106,23 @@ export function Hero({ hero }: { hero: HeroContent }) {
           </motion.div>
         </div>
 
-        <div className="relative block aspect-[4/5] sm:hidden">
+        {/* Mobile-only photo, with the workout card overlaid directly on it */}
+        <div className="relative -mx-5 aspect-[4/5] overflow-hidden sm:hidden">
           {hero?.backgroundImage && (
             <Image src={hero.backgroundImage} alt="" fill className="object-cover" sizes="100vw" />
           )}
+          <div className="absolute inset-0 bg-gradient-to-t from-navy-900/80 via-transparent to-transparent" />
+          <WorkoutCard hero={hero} className="absolute inset-x-4 bottom-4" />
         </div>
 
+        {/* Desktop/tablet workout card, anchored over the full-height photo panel */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.3 }}
-          className="relative z-10 order-first sm:order-none sm:col-start-2 sm:row-start-1 sm:self-end sm:pb-16"
+          className="relative z-10 hidden sm:col-start-2 sm:row-start-1 sm:flex sm:h-full sm:flex-col sm:justify-end sm:pb-16"
         >
-          <div className="ml-auto max-w-[260px] rounded-2xl bg-white p-4 text-navy-900 shadow-2xl">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-navy-400">{hero?.workoutDayLabel || "ΣΗΜΕΡΑ · ΗΜΕΡΑ 3"}</p>
-            <p className="mt-1 text-base font-extrabold">{hero?.workoutTitle || "Lower Body — Deadlift"}</p>
-            <p className="mt-0.5 text-xs text-navy-500">{hero?.workoutMeta || "5 ασκήσεις · 60 λεπτά"}</p>
-            <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-navy-100">
-              <div className="h-full w-2/3 rounded-full bg-navy-900" />
-            </div>
-          </div>
-          <div className="ml-auto mt-3 flex max-w-[260px] items-center gap-1.5 rounded-full bg-lime px-4 py-2 text-xs font-bold text-navy-900 shadow-lg">
-            <Star className="h-3.5 w-3.5" filled />
-            {hero?.workoutPoints || "+[X] πόντοι · Συνδρομή Οκτωβρίου"}
-          </div>
+          <WorkoutCard hero={hero} />
         </motion.div>
       </div>
     </section>
