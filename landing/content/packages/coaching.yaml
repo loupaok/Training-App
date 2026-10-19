@@ -1,0 +1,11 @@
+title: Coaching
+price: "[ΤΙΜΗ]€"
+period: /μήνα
+description: ""
+features:
+  - Μοναδικό πλάνο προπόνησης
+  - Μοναδικό πλάνο διατροφής
+  - Εβδομαδιαία check-ins
+highlighted: true
+badgeLabel: Δημοφιλέστερο
+order: 2

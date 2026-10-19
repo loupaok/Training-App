@@ -1,0 +1,37 @@
+eyebrow: ΣΥΣΤΗΜΑ ΠΟΝΤΩΝ
+titleLine1: ΜΕΝΕΙΣ.
+titleLine2: ΚΕΡΔΙΖΕΙΣ.
+description: >-
+  Κάθε πληρωμή σου στο SP Team σού δίνει πόντους. Τους μαζεύεις στο
+  πορτοφόλι σου και τους εξαργυρώνεις σε έκπτωση στην επόμενη πληρωμή, 1:1
+  κλήσεις ή δώρα.
+baseRateValue: "1€ = [X] pts"
+baseRateLabel: Σε κάθε μηνιαία πληρωμή
+bonusItems:
+  - value: "+[X] bonus"
+    label: Πακέτο 3 μηνών
+  - value: "+[X] bonus"
+    label: Πακέτο 6 μηνών
+  - value: "+[X] bonus"
+    label: Ανανέωση χωρίς διακοπή
+walletHeading: Το πορτοφόλι σου
+availablePointsLabel: Διαθέσιμοι πόντοι
+availablePoints: "[X] pts"
+pointsToNextLabel: "Ακόμα [X] pts για έκπτωση στην επόμενη πληρωμή"
+historyItems:
+  - title: Συνδρομή Οκτωβρίου
+    subtitle: 01/10 · Coaching
+    amount: "+[X]"
+  - title: Bonus ανανέωσης
+    subtitle: 01/10 · 3ος συνεχόμενος μήνας
+    amount: "+[X]"
+  - title: Συνδρομή Σεπτεμβρίου
+    subtitle: 01/09 · Coaching
+    amount: "+[X]"
+redemptionOptions:
+  - value: "[X] pts"
+    label: Έκπτωση στον επόμενο μήνα
+  - value: "[X] pts"
+    label: "1:1 βιντεοκλήση"
+  - value: "[X] pts"
+    label: SP Team merch

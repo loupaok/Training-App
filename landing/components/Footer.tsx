@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Instagram, Facebook, TikTok, Youtube } from "./icons";
 import type { getSiteContent } from "@/lib/keystatic/reader";
@@ -16,8 +17,14 @@ export function Footer({ settings }: { settings: Settings }) {
     <footer className="border-t border-navy-100 bg-white py-12 dark:border-white/10 dark:bg-navy-900">
       <div className="container-x flex flex-col items-center justify-between gap-6 sm:flex-row">
         <div className="flex items-center gap-2">
-          <span className="grid h-9 w-9 place-items-center rounded-full bg-navy text-xs font-extrabold text-lime">SP</span>
-          <span className="text-sm font-bold">{settings?.siteName || "SP Team"}</span>
+          {settings?.logoBlack || settings?.logoWhite ? (
+            <>
+              {settings?.logoWhite && <Image src={settings.logoWhite} alt={settings?.siteName || "SP Team"} width={100} height={28} className="hidden h-6 w-auto dark:block" />}
+              {settings?.logoBlack && <Image src={settings.logoBlack} alt={settings?.siteName || "SP Team"} width={100} height={28} className="h-6 w-auto dark:hidden" />}
+            </>
+          ) : (
+            <span className="grid h-9 w-9 place-items-center rounded-full bg-navy text-xs font-extrabold text-lime">SP</span>
+          )}
         </div>
 
         <nav className="flex flex-wrap items-center justify-center gap-6">

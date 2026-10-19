@@ -1,0 +1,28 @@
+heading: Φτιαγμένο από ειδικούς
+description: >-
+  Κάθε πρόγραμμα γράφεται από πιστοποιημένο coach, με βάση τους στόχους, τον
+  χρόνο και τον εξοπλισμό σου.
+tags:
+  - Δύναμη
+  - Απώλεια λίπους
+  - Μυϊκή μάζα
+  - Home workouts
+gallery:
+  - /uploads/seed-gallery-00.jpg
+  - /uploads/seed-gallery-02.jpg
+  - /uploads/seed-gallery-03.jpg
+  - /uploads/seed-gallery-04.jpg
+  - /uploads/seed-gallery-05.jpg
+  - /uploads/seed-gallery-06.jpg
+  - /uploads/seed-gallery-07.jpg
+  - /uploads/seed-gallery-08.jpg
+  - /uploads/seed-gallery-09.jpg
+  - /uploads/seed-gallery-10.jpg
+  - /uploads/seed-gallery-11.jpg
+discordHeading: Ποτέ δεν προπονείσαι μόνος
+discordDescription: >-
+  Ο coach σου κάνει check-in κάθε εβδομάδα, βλέπει την πρόοδό σου και σε
+  κρατά συνεπή — όλα μέσα από το Discord.
+coachChatMessage: "Coach: «Τέλειο set! Συνέχισε έτσι»"
+discordBackImage: /uploads/seed-discord-back.jpg
+discordFrontImage: /uploads/seed-discord-front.jpg

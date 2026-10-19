@@ -7,7 +7,7 @@ type Packages = Awaited<ReturnType<typeof getPackages>>;
 
 export function Services({ intro, packages }: { intro: ServicesIntro; packages: Packages }) {
   return (
-    <section id="services" className="py-24 sm:py-32">
+    <section id="pricing" className="bg-navy-50 py-20 dark:bg-navy-950 sm:py-28">
       <div className="container-x">
         <FadeIn className="mx-auto max-w-2xl text-center">
           <p className="text-xs font-bold uppercase tracking-wide text-lime-700 dark:text-lime">{intro?.eyebrow || "Πακέτα"}</p>
@@ -22,18 +22,20 @@ export function Services({ intro, packages }: { intro: ServicesIntro; packages: 
             {packages.map((pkg, index) => (
               <FadeIn key={pkg.slug} delay={index * 0.08}>
                 <div
-                  className={`flex h-full flex-col rounded-3xl border p-8 transition-transform hover:-translate-y-1 ${
+                  className={`flex h-full flex-col rounded-2xl p-8 transition-transform hover:-translate-y-1 ${
                     pkg.highlighted
-                      ? "border-lime bg-navy-900 text-white shadow-2xl shadow-lime/10"
-                      : "border-navy-100 bg-white dark:border-white/10 dark:bg-white/5"
+                      ? "bg-navy-950 text-white shadow-2xl"
+                      : "bg-white dark:bg-white/5"
                   }`}
                 >
-                  {pkg.highlighted && (
-                    <span className="mb-4 inline-flex w-fit items-center rounded-full bg-lime px-3 py-1 text-xs font-bold text-navy-900">
-                      Προτεινόμενο
-                    </span>
-                  )}
-                  <h3 className={`text-xl font-extrabold ${pkg.highlighted ? "text-white" : "text-navy-900 dark:text-white"}`}>{pkg.title}</h3>
+                  <div className="flex items-center justify-between">
+                    <h3 className={`text-lg font-extrabold ${pkg.highlighted ? "text-white" : "text-navy-900 dark:text-white"}`}>{pkg.title}</h3>
+                    {pkg.highlighted && pkg.badgeLabel && (
+                      <span className="inline-flex items-center rounded-full bg-lime px-3 py-1 text-xs font-bold text-navy-900">
+                        {pkg.badgeLabel}
+                      </span>
+                    )}
+                  </div>
                   <p className={`mt-4 flex items-baseline gap-1 ${pkg.highlighted ? "text-white" : "text-navy-900 dark:text-white"}`}>
                     <span className="text-4xl font-extrabold">{pkg.price}</span>
                     {pkg.period && <span className="text-sm font-semibold opacity-60">{pkg.period}</span>}

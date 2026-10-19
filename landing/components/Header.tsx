@@ -22,31 +22,55 @@ export function Header({ settings }: { settings: Settings }) {
   }, []);
 
   const navLinks = settings?.navLinks || [];
+  const logoLight = settings?.logoWhite;
+  const logoDark = settings?.logoBlack;
 
   return (
     <header
-      className={`fixed inset-x-0 top-0 z-50 transition-all duration-300 ${
+      className={`fixed inset-x-0 top-9 z-50 transition-all duration-300 ${
         scrolled
-          ? "border-b border-navy-100/60 bg-white/80 backdrop-blur-lg dark:border-white/10 dark:bg-navy-900/80"
+          ? "border-b border-navy-100/60 bg-white/90 backdrop-blur-lg dark:border-white/10 dark:bg-navy-950/90"
           : "bg-transparent"
       }`}
     >
       <div className="container-x flex h-20 items-center justify-between">
-        <Link href="/" className="flex items-center gap-3">
-          {settings?.logo ? (
-            <Image src={settings.logo} alt={settings?.siteName || "SP Team"} width={40} height={40} className="h-10 w-10 rounded-full object-cover" />
+        <Link href="/" className="flex items-center gap-2">
+          {logoLight || logoDark ? (
+            <>
+              {logoLight && (
+                <Image
+                  src={logoLight}
+                  alt={settings?.siteName || "SP Team"}
+                  width={120}
+                  height={32}
+                  className={`h-8 w-auto ${scrolled ? "hidden dark:block" : "block"}`}
+                  priority
+                />
+              )}
+              {logoDark && (
+                <Image
+                  src={logoDark}
+                  alt={settings?.siteName || "SP Team"}
+                  width={120}
+                  height={32}
+                  className={`h-8 w-auto ${scrolled ? "block dark:hidden" : "hidden"}`}
+                  priority
+                />
+              )}
+            </>
           ) : (
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-navy text-sm font-extrabold text-lime">SP</span>
+            <span className="grid h-10 w-10 place-items-center rounded-full bg-lime text-sm font-extrabold text-navy-900">SP</span>
           )}
-          <span className="text-lg font-extrabold tracking-tight">{settings?.siteName || "SP Team"}</span>
         </Link>
 
-        <nav className="hidden items-center gap-8 lg:flex">
+        <nav className="hidden items-center gap-7 lg:flex">
           {navLinks.map((link) => (
             <a
               key={link.href}
               href={link.href}
-              className="text-sm font-semibold text-navy-700 transition-colors hover:text-lime-700 dark:text-white/80 dark:hover:text-lime"
+              className={`text-sm font-semibold transition-colors hover:text-lime ${
+                scrolled ? "text-navy-700 dark:text-white/80" : "text-white/90"
+              }`}
             >
               {link.label}
             </a>
@@ -54,22 +78,32 @@ export function Header({ settings }: { settings: Settings }) {
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
-          <ThemeToggle />
+          <ThemeToggle inverted={!scrolled} />
           <a
-            href="#contact"
+            href={settings?.loginHref || "/login"}
+            className={`text-sm font-semibold transition-colors hover:text-lime ${
+              scrolled ? "text-navy-700 dark:text-white/80" : "text-white/90"
+            }`}
+          >
+            {settings?.loginLabel || "Σύνδεση"}
+          </a>
+          <a
+            href={settings?.ctaHref || "#pricing"}
             className="rounded-full bg-lime px-5 py-2.5 text-sm font-bold text-navy-900 shadow-sm shadow-lime/30 transition-transform hover:-translate-y-0.5"
           >
-            Κλείσε Ραντεβού
+            {settings?.ctaLabel || "Ξεκίνα"}
           </a>
         </div>
 
         <div className="flex items-center gap-2 lg:hidden">
-          <ThemeToggle />
+          <ThemeToggle inverted={!scrolled} />
           <button
             type="button"
             aria-label="Μενού"
             onClick={() => setOpen((v) => !v)}
-            className="grid h-10 w-10 place-items-center rounded-full border border-navy-200 dark:border-white/15"
+            className={`grid h-10 w-10 place-items-center rounded-full border ${
+              scrolled ? "border-navy-200 text-navy-900 dark:border-white/15 dark:text-white" : "border-white/30 text-white"
+            }`}
           >
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -97,11 +131,11 @@ export function Header({ settings }: { settings: Settings }) {
                 </a>
               ))}
               <a
-                href="#contact"
+                href={settings?.ctaHref || "#pricing"}
                 onClick={() => setOpen(false)}
                 className="mt-2 rounded-full bg-lime px-5 py-3 text-center text-sm font-bold text-navy-900"
               >
-                Κλείσε Ραντεβού
+                {settings?.ctaLabel || "Ξεκίνα"}
               </a>
             </div>
           </motion.nav>

@@ -7,17 +7,18 @@ const config: Config = {
     extend: {
       colors: {
         navy: {
-          DEFAULT: "#0d1f3c",
-          50: "#eef1f6",
-          100: "#d4dbe8",
-          200: "#a9b7d1",
-          300: "#7e93ba",
-          400: "#536fa3",
-          500: "#2f4f87",
-          600: "#1c3763",
-          700: "#152a4c",
-          800: "#0d1f3c",
-          900: "#070f1e",
+          DEFAULT: "#0b0b0b",
+          50: "#f5f5f5",
+          100: "#e6e6e6",
+          200: "#cccccc",
+          300: "#a3a3a3",
+          400: "#737373",
+          500: "#525252",
+          600: "#3a3a3a",
+          700: "#262626",
+          800: "#171717",
+          900: "#0b0b0b",
+          950: "#000000",
         },
         lime: {
           DEFAULT: "#B1F90C",
@@ -43,6 +44,10 @@ const config: Config = {
         "fade-up": {
           "0%": { opacity: "0", transform: "translateY(16px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        ticker: {
+          "0%": { transform: "translateX(0)" },
+          "100%": { transform: "translateX(-50%)" },
         },
       },
       animation: {

@@ -1,0 +1,11 @@
+title: Basic
+price: "[ΤΙΜΗ]€"
+period: /μήνα
+description: ""
+features:
+  - Γενικά προγράμματα
+  - Επικοινωνία μέσω Discord
+  - Πόντοι από κάθε πληρωμή
+highlighted: false
+badgeLabel: ""
+order: 1

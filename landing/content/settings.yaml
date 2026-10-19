@@ -1,0 +1,37 @@
+siteName: SP Team
+logoBlack: /uploads/seed-logo-black.svg
+logoWhite: /uploads/seed-logo-white.svg
+tagline: Consistency creates results
+tickerItems:
+  - ΚΑΘΕ ΠΛΗΡΩΜΗ = ΠΟΝΤΟΙ
+  - CONSISTENCY CREATES RESULTS
+  - ΜΟΝΑΔΙΚΟ ΠΛΑΝΟ ΠΡΟΠΟΝΗΣΗΣ & ΔΙΑΤΡΟΦΗΣ
+  - ΕΞΑΡΓΥΡΩΣΕ ΣΕ ΕΚΠΤΩΣΕΙΣ & ΔΩΡΑ
+navLinks:
+  - label: Ο Coach
+    href: "#coach"
+  - label: Coaching
+    href: "#coaching"
+  - label: Το πλάνο σου
+    href: "#plan"
+  - label: Πόντοι
+    href: "#points"
+  - label: Αποτελέσματα
+    href: "#testimonials"
+  - label: Τιμές
+    href: "#pricing"
+loginLabel: Σύνδεση
+loginHref: /login
+ctaLabel: Ξεκίνα
+ctaHref: "#pricing"
+phone: ""
+email: ""
+address: ""
+socialLinks:
+  - platform: instagram
+    url: "https://instagram.com"
+  - platform: youtube
+    url: "https://youtube.com"
+footerText: © 2026 SP Team. Με επιφύλαξη παντός δικαιώματος.
+seoTitle: SP Team — Personal Coaching
+seoDescription: Η συνέπεια φέρνει αποτέλεσμα — προσωπικό coaching, πλάνο προπόνησης & διατροφής από την ομάδα SP Team.

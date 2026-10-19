@@ -4,32 +4,54 @@ import keystaticConfig from "../../keystatic.config";
 export const reader = createReader(process.cwd(), keystaticConfig);
 
 export async function getSiteContent() {
-  const [settings, hero, servicesIntro, coachesIntro, testimonialsIntro, contact] = await Promise.all([
+  const [
+    settings,
+    hero,
+    featuresStrip,
+    expertsSection,
+    coachProfile,
+    directWorkSection,
+    planSection,
+    allInOneSection,
+    pointsSection,
+    servicesIntro,
+    testimonialsIntro,
+    contact,
+  ] = await Promise.all([
     reader.singletons.settings.read(),
     reader.singletons.hero.read(),
+    reader.singletons.featuresStrip.read(),
+    reader.singletons.expertsSection.read(),
+    reader.singletons.coachProfile.read(),
+    reader.singletons.directWorkSection.read(),
+    reader.singletons.planSection.read(),
+    reader.singletons.allInOneSection.read(),
+    reader.singletons.pointsSection.read(),
     reader.singletons.servicesIntro.read(),
-    reader.singletons.coachesIntro.read(),
     reader.singletons.testimonialsIntro.read(),
     reader.singletons.contact.read(),
   ]);
 
-  return { settings, hero, servicesIntro, coachesIntro, testimonialsIntro, contact };
+  return {
+    settings,
+    hero,
+    featuresStrip,
+    expertsSection,
+    coachProfile,
+    directWorkSection,
+    planSection,
+    allInOneSection,
+    pointsSection,
+    servicesIntro,
+    testimonialsIntro,
+    contact,
+  };
 }
 
 export async function getPackages() {
   const slugs = await reader.collections.packages.list();
   const entries = await Promise.all(
     slugs.map(async (slug) => ({ slug, ...(await reader.collections.packages.read(slug)) }))
-  );
-  return entries
-    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-}
-
-export async function getCoaches() {
-  const slugs = await reader.collections.coaches.list();
-  const entries = await Promise.all(
-    slugs.map(async (slug) => ({ slug, ...(await reader.collections.coaches.read(slug)) }))
   );
   return entries
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
