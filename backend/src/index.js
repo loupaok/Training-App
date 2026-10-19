@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
 import dotenv from 'dotenv';
 import mysql from 'mysql2/promise';
 import authRoutes from './routes/auth.js';
@@ -40,17 +42,73 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+if (process.env.TRUST_PROXY) {
+  app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
+}
+const configuredOrigins = new Set([
+  ...(process.env.CORS_ORIGINS || process.env.FRONTEND_URL || 'http://localhost:3000')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+  // Native Capacitor web views do not use a normal HTTPS browser origin.
+  'capacitor://localhost',
+  'ionic://localhost',
+]);
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.API_RATE_LIMIT_MAX || 600),
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { message: 'Too many requests. Please try again later.' },
+});
+
+const authenticationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.AUTH_RATE_LIMIT_MAX || 10),
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  message: { message: 'Too many authentication attempts. Please try again later.' },
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.UPLOAD_RATE_LIMIT_MAX || 40),
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  skip: (req) => !req.is('multipart/form-data'),
+  message: { message: 'Too many uploads. Please try again later.' },
+});
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin(origin, callback) {
+    // Requests without an Origin header include native apps and server-to-server jobs.
+    if (!origin || configuredOrigins.has(origin)) return callback(null, true);
+    return callback(null, false);
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
+app.use('/api', apiLimiter);
+app.use(['/api/auth/login', '/api/register'], authenticationLimiter);
+app.use('/api', uploadLimiter);
+const bodyLimit = process.env.JSON_BODY_LIMIT || '1mb';
+app.use(express.json({ limit: bodyLimit }));
+app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
 
 // Serve uploaded files
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static('uploads', {
+  setHeaders(res) {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+  },
+}));
 
 // Database connection pool
 export const pool = mysql.createPool({

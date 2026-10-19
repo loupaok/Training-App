@@ -70,6 +70,11 @@ npm install
 npm run dev
 ```
 
+Before the first run, copy `backend/.env.example` to `backend/.env` and
+`frontend/.env.example` to `frontend/.env.local`, then fill in only the values
+needed for your environment. Real environment files and production credentials
+must never be committed.
+
 Frontend → [http://localhost:3000](http://localhost:3000)
 Backend  → [http://localhost:5000](http://localhost:5000)
 Moible   →  http://192.168.1.4:3000/login
@@ -85,7 +90,6 @@ DB_PASSWORD=
 DB_NAME=coach_management
 
 JWT_SECRET=your_secret
-JWT_REFRESH_SECRET=your_secret
 
 SMTP_HOST=smtp.office365.com
 SMTP_PORT=587
@@ -97,6 +101,25 @@ BANK_IBAN=
 BANK_NAME=
 BANK_BENEFICIARY=
 ```
+
+For all supported configuration values, security limits, Discord, Firebase, and
+backup options, use [`backend/.env.example`](backend/.env.example). Browser-safe
+frontend settings are documented in [`frontend/.env.example`](frontend/.env.example).
+
+### Backups
+
+From `backend`, create a database plus uploads backup:
+
+```bash
+npm run backup
+npm run backup:verify -- backups/<timestamp>
+```
+
+Set `DB_DUMP_BIN` if `mysqldump` is not on the server PATH. With XAMPP on
+Windows it is commonly `C:\xampp\mysql\bin\mysqldump.exe`. Schedule the backup
+command daily and keep encrypted copies away from the application server. See
+[the production launch checklist](PRODUCTION_LAUNCH_CHECKLIST.md) for the
+required restore test and release checks.
 
 ### Native push notifications
 

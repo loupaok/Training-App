@@ -34,8 +34,8 @@ async function request<T = unknown>(endpoint: string, options: ApiRequestOptions
 }
 
 export const api = {
-  get<T = unknown>(endpoint: string): Promise<T> {
-    return request<T>(endpoint);
+  get<T = unknown>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
+    return request<T>(endpoint, options);
   },
 
   post<T = unknown>(endpoint: string, data?: unknown): Promise<T> {

@@ -2,6 +2,9 @@
 .env
 .env.local
 .env.*.local
+*.key
+*service-account*.json
+firebase-credentials*.json
 
 # Dependencies
 node_modules/
@@ -34,6 +37,8 @@ Thumbs.db
 # Uploads
 backend/uploads/*
 !backend/uploads/.gitkeep
+backend/backups/
+backups/
 
 # Testing
 coverage/

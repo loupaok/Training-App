@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Activity } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,7 +11,33 @@ type Cycle = { total_weeks: number; current_week: number; client_notes?: string 
 
 export function ClientCycleCard() {
   const [cycle, setCycle] = useState<Cycle | null>(null);
-  useEffect(() => { api.get<{ cycle: Cycle | null }>("/my/nutrition/cycle").then((result) => setCycle(result.cycle)).catch(() => setCycle(null)); }, []);
+  const loadCycle = useCallback(async () => {
+    try {
+      const result = await api.get<{ cycle: Cycle | null }>("/my/nutrition/cycle", { cache: "no-store" });
+      setCycle(result.cycle);
+    } catch {
+      // Keep the last valid protocol visible during a transient network error.
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCycle();
+
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void loadCycle();
+    };
+
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    const refreshInterval = window.setInterval(loadCycle, 60_000);
+
+    return () => {
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.clearInterval(refreshInterval);
+    };
+  }, [loadCycle]);
+
   if (!cycle) return null;
   const totalWeeks = Math.max(1, Number(cycle.total_weeks) || 1);
   const currentWeek = Math.min(totalWeeks, Math.max(1, Number(cycle.current_week) || 1));

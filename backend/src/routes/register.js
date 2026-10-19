@@ -13,6 +13,7 @@ import { ensurePricingPlansSchema } from './pricingPlans.js';
 import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { registrationEmail } from '../lib/email-templates.js';
 import { logClientActivity } from '../lib/client-activity-log.js';
+import { optimizeImageBufferToFile, optimizeUploadedImages } from '../utils/image-optimization.js';
 
 // Registration-time intake photos/PDF. The user doesn't exist yet when the
 // upload arrives, so files are buffered in memory and only written to
@@ -272,6 +273,11 @@ router.post('/register/progress/files', authenticateToken, authorizeRole(['clien
   const connection = await pool.getConnection();
   try {
     await ensureClientIntakeFilesSchema(connection);
+    try {
+      await optimizeUploadedImages(req.files?.photos || []);
+    } catch {
+      return res.status(400).json({ message: 'One of the uploaded photos is invalid.' });
+    }
     const uploaded = [...(req.files?.photos || []), ...(req.files?.pdf || [])];
     if (!uploaded.length) return res.json({ files: [] });
     await connection.query('DELETE FROM client_intake_files WHERE client_id = ?', [req.user.id]);
@@ -308,6 +314,7 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
   body('fitnessGoal').optional({ nullable: true }).isString(),
   body('plan_id').isInt(),
   body('payment_method').isIn(['bank', 'stripe']),
+  body('privacyConsent').equals('true').withMessage('Privacy policy acceptance is required'),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -418,8 +425,8 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     await connection.beginTransaction();
 
     const [userResult] = await connection.query(
-      `INSERT INTO users (email, password, full_name, first_name, last_name, role, status, payment_method)
-       VALUES (?, ?, ?, ?, ?, 'client', 'pending_payment', ?)`,
+      `INSERT INTO users (email, password, full_name, first_name, last_name, role, status, payment_method, privacy_accepted_at, terms_accepted_at)
+       VALUES (?, ?, ?, ?, ?, 'client', 'pending_payment', ?, NOW(), NOW())`,
       [email, hashedPassword, fullName, firstName, lastName, paymentMethod === 'stripe' ? 'stripe' : 'bank']
     );
     const userId = userResult.insertId;
@@ -558,12 +565,15 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
       fs.mkdirSync(dir, { recursive: true });
       const fileRows = [];
       for (const file of [...uploadedPhotos, ...uploadedPdf]) {
-        const ext = path.extname(file.originalname);
-        const filename = `${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`;
-        fs.writeFileSync(path.join(dir, filename), file.buffer);
+        const filename = `${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname)}`;
+        const optimizedPhotoPath = file.fieldname === 'photos'
+          ? await optimizeImageBufferToFile(file, dir, filename)
+          : null;
+        const savedPath = optimizedPhotoPath || path.join(dir, filename);
+        if (!optimizedPhotoPath) fs.writeFileSync(savedPath, file.buffer);
         fileRows.push([
           userId,
-          path.join(dir, filename).replace(/\\/g, '/'),
+          savedPath.replace(/\\/g, '/'),
           file.fieldname === 'pdf' ? 'pdf' : 'photo',
           file.originalname,
         ]);

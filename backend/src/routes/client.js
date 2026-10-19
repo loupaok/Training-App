@@ -10,6 +10,7 @@ import { registerWeeklyUpdatePhotos } from './media.js';
 import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { updateNotificationEmail } from '../lib/email-templates.js';
 import { ensureCycleSchema } from './cycles.js';
+import { optimizeUploadedImages } from '../utils/image-optimization.js';
 
 const router = express.Router();
 router.use(authorizeRole(['client']));
@@ -583,6 +584,11 @@ router.post('/updates/submit', upload.array('files', 5), async (req, res) => {
     const photos = (req.files || []).filter((file) => file.mimetype !== 'application/pdf');
     const pdfs = (req.files || []).filter((file) => file.mimetype === 'application/pdf');
     if (photos.length > 4 || pdfs.length > 1) return res.status(400).json({ message: 'Up to 4 photos and 1 PDF are allowed.' });
+    try {
+      await optimizeUploadedImages(photos);
+    } catch {
+      return res.status(400).json({ message: 'One of the uploaded photos is invalid.' });
+    }
     await connection.beginTransaction();
     const [result] = await connection.query('INSERT INTO weekly_updates (client_id, week_start, is_read) VALUES (?, ?, 0)', [req.user.id, weekStart]);
     for (const answer of answers) {

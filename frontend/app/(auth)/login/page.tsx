@@ -48,7 +48,6 @@ export default function LoginPage() {
           ) : (
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-slate-100 text-slate-700"><LockKeyhole className="h-6 w-6" /></div>
           )}
-          <p className="mt-4 text-sm font-semibold text-slate-600">{branding.appName}</p>
           <h1 className="mt-8 text-3xl font-bold text-slate-900">Καλώς ήρθες πίσω</h1>
           <p className="mt-3 text-sm text-slate-600">Συνδέσου για να συνεχίσεις το ταξίδι σου.</p>
         </div>

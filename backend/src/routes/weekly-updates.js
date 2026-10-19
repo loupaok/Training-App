@@ -9,6 +9,7 @@ import { notifyCoaches } from './clients.js';
 import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { updateNotificationEmail } from '../lib/email-templates.js';
 import { registerWeeklyUpdatePhotos } from './media.js';
+import { optimizeUploadedImages } from '../utils/image-optimization.js';
 
 const router = express.Router();
 
@@ -574,6 +575,13 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
     if (missing.length) {
       connection.release();
       return res.status(400).json({ message: 'Λείπουν υποχρεωτικές απαντήσεις.', missingQuestionIds: missing });
+    }
+
+    try {
+      await optimizeUploadedImages((req.files || []).filter((file) => file.mimetype !== 'application/pdf'));
+    } catch {
+      connection.release();
+      return res.status(400).json({ message: 'Μία από τις φωτογραφίες δεν είναι έγκυρη.' });
     }
 
     await connection.beginTransaction();

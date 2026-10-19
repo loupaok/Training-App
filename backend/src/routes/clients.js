@@ -16,6 +16,7 @@ import { ensureQuestionnaireSchema, syncUpdateDayQuestionnaireAnswer } from './q
 import { awardPoints } from './points.js';
 import { ensureDiscordSchema } from './discord.js';
 import { addRole, getActiveRoleId, removeRole } from '../lib/discord.js';
+import { optimizeUploadedImage, optimizeUploadedImages } from '../utils/image-optimization.js';
 
 const router = express.Router();
 const activeMessageTypers = new Map();
@@ -761,6 +762,12 @@ router.post('/me/onboarding', authorizeRole(['client']), (req, res, next) => {
     next();
   });
 }, async (req, res) => {
+  try {
+    await optimizeUploadedImages(['frontPhoto', 'sidePhoto', 'backPhoto'].flatMap((field) => req.files?.[field] || []));
+  } catch (error) {
+    return res.status(400).json({ message: 'One of the uploaded photos is invalid.' });
+  }
+
   const {
     fullName,
     email,
@@ -1265,6 +1272,12 @@ router.post('/me/profile-photo', authorizeRole(['client']), (req, res, next) => 
 }, async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: 'Profile photo required' });
+  }
+
+  try {
+    await optimizeUploadedImage(req.file, { maxWidth: 800, quality: 84 });
+  } catch (error) {
+    return res.status(400).json({ message: 'Invalid profile image' });
   }
 
   const url = `/uploads/media/${req.file.filename}`;

@@ -5,6 +5,7 @@ import fs from 'fs';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
+import { optimizeUploadedImage, optimizeUploadedImages } from '../utils/image-optimization.js';
 import { ensureMediaCategories } from './media.js';
 
 const router = express.Router();
@@ -275,6 +276,7 @@ router.put('/photos/:photoId/file', authorizeRole(['coach', 'admin']), loadProgr
   }
 
   try {
+    await optimizeUploadedImage(req.file);
     const connection = await pool.getConnection();
     const newUrl = req.file.path.replace(/\\/g, '/');
     await connection.query('UPDATE progress_photos SET photo_url = ? WHERE id = ?', [newUrl, req.params.photoId]);
@@ -302,6 +304,7 @@ router.post('/:progressId/photos', authorizeRole(['coach', 'admin']), (req, res,
   }
 
   try {
+    await optimizeUploadedImages(req.files);
     const connection = await pool.getConnection();
 
     const [rows] = await connection.query(

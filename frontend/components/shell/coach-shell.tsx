@@ -43,7 +43,11 @@ export function CoachShell({
       <CoachSidebar user={user} logout={logout} collapsed={collapsed} onToggle={toggle} />
       <div className={cn("flex min-w-0 flex-1 flex-col transition-[padding] duration-200 lg:pl-56", collapsed && "lg:pl-16")}>
         <AppHeader title={title} user={user} logout={logout} />
-        <main className="min-w-0 flex-1 bg-muted/30 p-4 pb-28 sm:p-6 sm:pb-28 lg:p-6">{children}</main>
+        <main className="min-w-0 flex-1 bg-muted/30 p-4 pb-28 sm:p-6 sm:pb-28 lg:p-6">
+          <div data-coach-page-content className="mx-auto w-full max-w-(--container-7xl)">
+            {children}
+          </div>
+        </main>
       </div>
       <CoachBottomNav user={user} />
     </div>

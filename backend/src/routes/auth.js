@@ -8,6 +8,7 @@ import multer from 'multer';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { optimizeUploadedImage } from '../utils/image-optimization.js';
 
 const router = express.Router();
 const isProduction = process.env.NODE_ENV === 'production';
@@ -109,6 +110,8 @@ export async function ensureAuthSchema(connection) {
         'ALTER TABLE users ADD COLUMN permissions TEXT NULL',
         'ALTER TABLE users ADD COLUMN push_enabled TINYINT(1) NOT NULL DEFAULT 0',
         'ALTER TABLE users ADD COLUMN push_token VARCHAR(255) DEFAULT NULL',
+        'ALTER TABLE users ADD COLUMN privacy_accepted_at TIMESTAMP NULL',
+        'ALTER TABLE users ADD COLUMN terms_accepted_at TIMESTAMP NULL',
         "ALTER TABLE users ADD COLUMN font_size ENUM('small', 'medium', 'large') NOT NULL DEFAULT 'medium'"
       ]) {
         try {
@@ -429,6 +432,12 @@ router.post('/profile-photo', authenticateToken, (req, res, next) => {
 }, async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: 'Profile photo required' });
+  }
+
+  try {
+    await optimizeUploadedImage(req.file, { maxWidth: 800, quality: 84 });
+  } catch (error) {
+    return res.status(400).json({ message: 'Invalid profile image' });
   }
 
   const url = `/uploads/media/${req.file.filename}`;

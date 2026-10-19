@@ -259,6 +259,7 @@ function RegisterWizardContent() {
   const [savingStep, setSavingStep] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [editingFromConfirmation, setEditingFromConfirmation] = useState(false);
+  const [legalAccepted, setLegalAccepted] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
 
   useEffect(() => {
@@ -492,6 +493,10 @@ function RegisterWizardContent() {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!legalAccepted) {
+      setStepError("Χρειάζεται να αποδεχθείς τους Όρους και την Πολιτική Απορρήτου.");
+      return;
+    }
     const message = validateRegistration();
     if (message) {
       setStepError(message);
@@ -522,6 +527,7 @@ function RegisterWizardContent() {
     if (bodyGoal.targetWeight) formData.append("targetWeightKg", bodyGoal.targetWeight);
     formData.append("plan_id", String(Number(selectedPlanId)));
     formData.append("payment_method", paymentMethod);
+    formData.append("privacyConsent", "true");
     formData.append("answers", JSON.stringify(answersPayload));
     intakePhotos.forEach((file) => formData.append("photos", file));
     if (intakePdf) formData.append("pdf", intakePdf);
@@ -616,6 +622,13 @@ function RegisterWizardContent() {
             )}
             {stepIndex === 6 && (
               <ConfirmationStep account={account} bodyGoal={bodyGoal} questions={questions} answers={answers} selectedPlan={selectedPlan} paymentMethod={paymentMethod} onEdit={(index) => { setEditingFromConfirmation(true); setStepIndex(index); }} />
+            )}
+
+            {stepIndex === steps.length - 1 && (
+              <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                <Checkbox checked={legalAccepted} onCheckedChange={(checked) => setLegalAccepted(Boolean(checked))} className="mt-1" />
+                <span>Αποδέχομαι τους <Link href="/terms" target="_blank" className="font-semibold text-primary hover:underline">Όρους Χρήσης</Link> και την <Link href="/privacy" target="_blank" className="font-semibold text-primary hover:underline">Πολιτική Απορρήτου</Link>, συμπεριλαμβανομένης της επεξεργασίας των στοιχείων και των φωτογραφιών προόδου που επιλέγω να υποβάλω.</span>
+              </label>
             )}
 
             <div className="mt-8 flex items-center justify-between gap-3 border-t border-slate-200 pt-5">
