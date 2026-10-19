@@ -1,54 +1,67 @@
-import { CheckCircle } from "./icons";
+import { CheckCircle, X } from "./icons";
 import { FadeIn } from "./FadeIn";
-import type { getSiteContent, getPackages } from "@/lib/keystatic/reader";
+import type { getSiteContent } from "@/lib/keystatic/reader";
+import { formatPrice, type PricingPlan } from "@/lib/pricing";
 
 type ServicesIntro = Awaited<ReturnType<typeof getSiteContent>>["servicesIntro"];
-type Packages = Awaited<ReturnType<typeof getPackages>>;
 
-export function Services({ intro, packages }: { intro: ServicesIntro; packages: Packages }) {
+export function Services({ intro, plans }: { intro: ServicesIntro; plans: PricingPlan[] }) {
   return (
     <section id="pricing" className="bg-navy-50 py-20 dark:bg-navy-950 sm:py-28">
       <div className="container-x">
         <FadeIn className="mx-auto max-w-2xl text-center">
-          <p className="text-xs font-bold uppercase tracking-wide text-lime-700 dark:text-lime">{intro?.eyebrow || "Πακέτα"}</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-lime-700 dark:text-lime">{intro?.eyebrow || "Τιμές"}</p>
           <h2 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
-            {intro?.heading || "Διάλεξε το πλάνο που ταιριάζει σε σένα"}
+            {intro?.heading || "Απλές τιμές, χωρίς δέσμευση"}
           </h2>
           {intro?.subheading && <p className="mt-4 text-navy-600 dark:text-white/70">{intro.subheading}</p>}
         </FadeIn>
 
-        {packages.length ? (
-          <div className="mt-16 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {packages.map((pkg, index) => (
-              <FadeIn key={pkg.slug} delay={index * 0.08}>
+        {plans.length ? (
+          <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {plans.map((plan, index) => (
+              <FadeIn key={plan.slug} delay={index * 0.08}>
                 <div
                   className={`flex h-full flex-col rounded-2xl p-8 transition-transform hover:-translate-y-1 ${
-                    pkg.highlighted
-                      ? "bg-navy-950 text-white shadow-2xl"
-                      : "bg-white dark:bg-white/5"
+                    plan.isPopular ? "bg-navy-950 text-white shadow-2xl" : "bg-white dark:bg-white/5"
                   }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <h3 className={`text-lg font-extrabold ${pkg.highlighted ? "text-white" : "text-navy-900 dark:text-white"}`}>{pkg.title}</h3>
-                    {pkg.highlighted && pkg.badgeLabel && (
-                      <span className="inline-flex items-center rounded-full bg-lime px-3 py-1 text-xs font-bold text-navy-900">
-                        {pkg.badgeLabel}
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className={`text-lg font-extrabold ${plan.isPopular ? "text-white" : "text-navy-900 dark:text-white"}`}>{plan.name}</h3>
+                    {plan.badge && (
+                      <span className="inline-flex shrink-0 items-center rounded-full bg-lime px-3 py-1 text-xs font-bold text-navy-900">
+                        {plan.badge}
                       </span>
                     )}
                   </div>
-                  <p className={`mt-4 flex items-baseline gap-1 ${pkg.highlighted ? "text-white" : "text-navy-900 dark:text-white"}`}>
-                    <span className="text-4xl font-extrabold">{pkg.price}</span>
-                    {pkg.period && <span className="text-sm font-semibold opacity-60">{pkg.period}</span>}
+                  <p className={`mt-4 flex items-baseline gap-1 ${plan.isPopular ? "text-white" : "text-navy-900 dark:text-white"}`}>
+                    <span className="text-4xl font-extrabold">{formatPrice(plan)}</span>
+                    {plan.period && <span className="text-sm font-semibold opacity-60">/{plan.period}</span>}
                   </p>
-                  {pkg.description && (
-                    <p className={`mt-3 text-sm ${pkg.highlighted ? "text-white/70" : "text-navy-600 dark:text-white/70"}`}>{pkg.description}</p>
+                  {plan.description && (
+                    <p className={`mt-3 text-sm ${plan.isPopular ? "text-white/70" : "text-navy-600 dark:text-white/70"}`}>{plan.description}</p>
                   )}
-                  {pkg.features?.length ? (
+                  {plan.features?.length ? (
                     <ul className="mt-6 space-y-3">
-                      {pkg.features.map((feature, i) => (
-                        <li key={i} className={`flex items-start gap-2.5 text-sm ${pkg.highlighted ? "text-white/90" : "text-navy-700 dark:text-white/80"}`}>
-                          <CheckCircle className={`mt-0.5 h-4 w-4 shrink-0 ${pkg.highlighted ? "text-lime" : "text-lime-600"}`} />
-                          {feature}
+                      {plan.features.map((feature, i) => (
+                        <li
+                          key={i}
+                          className={`flex items-start gap-2.5 text-sm ${
+                            feature.included
+                              ? plan.isPopular
+                                ? "text-white/90"
+                                : "text-navy-700 dark:text-white/80"
+                              : plan.isPopular
+                                ? "text-white/30 line-through"
+                                : "text-navy-300 line-through dark:text-white/30"
+                          }`}
+                        >
+                          {feature.included ? (
+                            <CheckCircle className={`mt-0.5 h-4 w-4 shrink-0 ${plan.isPopular ? "text-lime" : "text-lime-600"}`} />
+                          ) : (
+                            <X className="mt-0.5 h-4 w-4 shrink-0" />
+                          )}
+                          {feature.text}
                         </li>
                       ))}
                     </ul>
@@ -56,7 +69,7 @@ export function Services({ intro, packages }: { intro: ServicesIntro; packages: 
                   <a
                     href="#contact"
                     className={`mt-8 inline-flex items-center justify-center rounded-full px-5 py-3 text-sm font-bold transition-colors ${
-                      pkg.highlighted
+                      plan.isPopular
                         ? "bg-lime text-navy-900 hover:bg-lime-400"
                         : "bg-navy-900 text-white hover:bg-navy-700 dark:bg-white dark:text-navy-900"
                     }`}
@@ -68,7 +81,9 @@ export function Services({ intro, packages }: { intro: ServicesIntro; packages: 
             ))}
           </div>
         ) : (
-          <p className="mt-16 text-center text-sm text-navy-400">Τα πακέτα θα εμφανιστούν εδώ μόλις προστεθούν από το /keystatic.</p>
+          <p className="mt-16 text-center text-sm text-navy-400">
+            Τα πακέτα δεν είναι διαθέσιμα αυτή τη στιγμή. Βεβαιώσου ότι η κύρια εφαρμογή (backend) τρέχει.
+          </p>
         )}
       </div>
     </section>

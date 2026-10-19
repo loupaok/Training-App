@@ -395,24 +395,6 @@ export default config({
     }),
   },
   collections: {
-    packages: collection({
-      label: "Πακέτα & Τιμές",
-      path: "content/packages/*",
-      slugField: "title",
-      schema: {
-        title: fields.slug({ name: { label: "Τίτλος πακέτου" } }),
-        price: fields.text({ label: "Τιμή (π.χ. [ΤΙΜΗ]€)" }),
-        period: fields.text({ label: "Περίοδος (π.χ. /μήνα)", defaultValue: "/μήνα" }),
-        description: fields.text({ label: "Σύντομη περιγραφή", multiline: true, validation: { isRequired: false } }),
-        features: fields.array(fields.text({ label: "Χαρακτηριστικό" }), {
-          label: "Χαρακτηριστικά πακέτου",
-          itemLabel: (props) => props.value || "Χαρακτηριστικό",
-        }),
-        highlighted: fields.checkbox({ label: "Προτεινόμενο πακέτο", defaultValue: false }),
-        badgeLabel: fields.text({ label: "Ετικέτα (π.χ. Δημοφιλέστερο)", defaultValue: "Δημοφιλέστερο", validation: { isRequired: false } }),
-        order: fields.integer({ label: "Σειρά εμφάνισης", defaultValue: 0 }),
-      },
-    }),
     testimonials: collection({
       label: "Testimonials",
       path: "content/testimonials/*",

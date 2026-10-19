@@ -1,39 +1,38 @@
 eyebrow: Ο COACH ΣΟΥ
-name: ΠΑΝΤΕΛΗΣ ΣΤΑΥΡΟΥΛΑΚΗΣ
+name: ΠΑΝΤΕΛΗΣ <style class=".text-lime">ΣΤΑΥΡΟΥΛΑΚΗΣ</style>
 subtitle: Αθλητής bodybuilding NPC Worldwide · 4 φορές πρωταθλητής · Ιδρυτής του SP Team
 bio: >-
-  Γεια, είμαι ο Παντελής. Από μικρός ζω για το bodybuilding και το fitness —
-  από τις πρώτες μου προπονήσεις μέχρι τη σκηνή των αγώνων. Έφτιαξα το SP
-  Team για να σου δώσω ό,τι δούλεψε για μένα, για τους αθλητές μου και για
-  τους πελάτες μου: ένα πλάνο φτιαγμένο για σένα και κάποιον που σε κρατά
-  συνεπή.
-photo: /uploads/seed-coach-profile.jpg
+  Γεια, είμαι ο Παντελής. Από μικρός ζω για το bodybuilding και το fitness — από
+  τις πρώτες μου προπονήσεις μέχρι τη σκηνή των αγώνων. Έφτιαξα το SP Team για
+  να σου δώσω ό,τι δούλεψε για μένα, για τους αθλητές μου και για τους πελάτες
+  μου: ένα πλάνο φτιαγμένο για σένα και κάποιον που σε κρατά συνεπή.
+photo: /uploads/photo.jpg
 competitorBadgeLabel: ΑΓΩΝΙΣΤΗΣ
 competitorOrg: NPC Worldwide
 competitorCategory: Bodybuilding · Heavyweight
 videoLabel: Δες το μήνυμά μου
 videoDuration: Βίντεο γνωριμίας · 1:20
 stats:
-  - value: "[X]+"
+  - value: '[X]+'
     label: Χρόνια εμπειρίας
-  - value: "[X]+"
+  - value: '[X]+'
     label: Πελάτες
   - value: 4×
     label: Πρωταθλητής
-  - value: "[X]K"
+  - value: '[X]K'
     label: Followers
 achievements:
-  - year: "2025"
+  - year: '2025'
     title: Mr. Κρήτη — αθλητές του SP Team
     result: 4 πρώτες θέσεις
-  - year: "2024"
+  - year: '2024'
     title: NPC Amateur Olympia, Πορτογαλία
     result: Συμμετοχή
-  - year: "2020"
+  - year: '2020'
     title: NPC Worldwide Romania Muscle Fest
     result: 2η θέση · Heavyweight
 ctaLabel: Δούλεψε μαζί μου
-instagram: "https://instagram.com"
-youtube: "https://youtube.com"
+instagram: https://instagram.com
+youtube: https://youtube.com
 quote: Δεν χρειάζεσαι motivation. Χρειάζεσαι συνέπεια.
 quoteAuthor: Παντελής Σταυρουλάκης, founder & head coach

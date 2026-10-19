@@ -48,16 +48,6 @@ export async function getSiteContent() {
   };
 }
 
-export async function getPackages() {
-  const slugs = await reader.collections.packages.list();
-  const entries = await Promise.all(
-    slugs.map(async (slug) => ({ slug, ...(await reader.collections.packages.read(slug)) }))
-  );
-  return entries
-    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-}
-
 export async function getTestimonials() {
   const slugs = await reader.collections.testimonials.list();
   const entries = await Promise.all(

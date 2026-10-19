@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { getSiteContent, getPackages, getTestimonials } from "@/lib/keystatic/reader";
+import { getSiteContent, getTestimonials } from "@/lib/keystatic/reader";
+import { getPricingPlans } from "@/lib/pricing";
 import { TickerBar } from "@/components/TickerBar";
 import { Header } from "@/components/Header";
 import { Hero } from "@/components/Hero";
@@ -43,9 +44,9 @@ export default async function HomePage() {
       testimonialsIntro,
       contact,
     },
-    packages,
+    plans,
     testimonials,
-  ] = await Promise.all([getSiteContent(), getPackages(), getTestimonials()]);
+  ] = await Promise.all([getSiteContent(), getPricingPlans(), getTestimonials()]);
 
   return (
     <>
@@ -55,7 +56,7 @@ export default async function HomePage() {
         phone={settings?.phone ?? undefined}
         email={settings?.email ?? undefined}
         address={settings?.address ?? undefined}
-        packages={packages.map((p) => ({ title: p.title, price: p.price, description: p.description }))}
+        packages={plans.map((p) => ({ title: p.name, price: `${p.price} ${p.currency}`, description: p.description }))}
       />
       <TickerBar items={settings?.tickerItems || []} />
       <Header settings={settings} />
@@ -69,7 +70,7 @@ export default async function HomePage() {
         <AllInOneSection allInOneSection={allInOneSection} />
         <PointsSection pointsSection={pointsSection} />
         <Testimonials intro={testimonialsIntro} testimonials={testimonials} />
-        <Services intro={servicesIntro} packages={packages} />
+        <Services intro={servicesIntro} plans={plans} />
         <Contact contact={contact} settings={settings} />
       </main>
       <Footer settings={settings} />
