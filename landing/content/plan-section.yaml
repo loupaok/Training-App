@@ -1,11 +1,10 @@
 heading: Ένα πλάνο 360° φτιαγμένο μόνο για σένα
 description: >-
   Η προπόνηση πιάνει όταν είναι φτιαγμένη για σένα. Ο coach σου σχεδιάζει
-  προπόνηση και διατροφή γύρω από τη ζωή σου — και τα προσαρμόζει κάθε
-  εβδομάδα.
+  προπόνηση και διατροφή γύρω από τη ζωή σου — και τα προσαρμόζει κάθε εβδομάδα.
 ctaLabel: Ξεκίνα
-backgroundImage: /uploads/seed-plan360-bg.jpg
-clientAvatar: /uploads/seed-maria-avatar.jpg
+backgroundImage: /uploads/backgroundImage.webp
+clientAvatar: /uploads/clientAvatar.jpg
 clientName: Μαρία
 clientSince: Μέλος · 12 εβδομάδες
 programme:
@@ -27,5 +26,5 @@ history:
   - Ελαφρύς πόνος μέσης
   - Επιστροφή μετά από διάλειμμα
 pointsNote:
-  - "[X] πόντοι διαθέσιμοι"
+  - '[X] πόντοι διαθέσιμοι'
   - Έκπτωση στην επόμενη πληρωμή

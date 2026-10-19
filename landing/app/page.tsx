@@ -4,18 +4,16 @@ import { getPricingPlans } from "@/lib/pricing";
 import { TickerBar } from "@/components/TickerBar";
 import { Header } from "@/components/Header";
 import { Hero } from "@/components/Hero";
-import { FeatureStrip } from "@/components/FeatureStrip";
-import { ExpertsSection } from "@/components/ExpertsSection";
 import { CoachProfile } from "@/components/CoachProfile";
 import { DirectWorkSection } from "@/components/DirectWorkSection";
 import { PlanSection } from "@/components/PlanSection";
-import { AllInOneSection } from "@/components/AllInOneSection";
 import { PointsSection } from "@/components/PointsSection";
 import { Testimonials } from "@/components/Testimonials";
 import { Services } from "@/components/Services";
-import { Contact } from "@/components/Contact";
 import { Footer } from "@/components/Footer";
 import { JsonLd } from "@/components/JsonLd";
+import { FaqSection } from "@/components/FaqSection";
+import { FinalCta } from "@/components/FinalCta";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3100";
 
@@ -33,16 +31,12 @@ export default async function HomePage() {
     {
       settings,
       hero,
-      featuresStrip,
-      expertsSection,
       coachProfile,
       directWorkSection,
       planSection,
-      allInOneSection,
       pointsSection,
       servicesIntro,
       testimonialsIntro,
-      contact,
     },
     plans,
     testimonials,
@@ -62,16 +56,14 @@ export default async function HomePage() {
       <Header settings={settings} />
       <main>
         <Hero hero={hero} />
-        <FeatureStrip featuresStrip={featuresStrip} />
-        <ExpertsSection expertsSection={expertsSection} />
         <CoachProfile coachProfile={coachProfile} />
         <DirectWorkSection directWorkSection={directWorkSection} />
         <PlanSection planSection={planSection} />
-        <AllInOneSection allInOneSection={allInOneSection} />
         <PointsSection pointsSection={pointsSection} />
         <Testimonials intro={testimonialsIntro} testimonials={testimonials} />
         <Services intro={servicesIntro} plans={plans} />
-        <Contact contact={contact} settings={settings} />
+        <FaqSection />
+        <FinalCta hero={hero} />
       </main>
       <Footer settings={settings} />
     </>

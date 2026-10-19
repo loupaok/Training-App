@@ -5,6 +5,11 @@ personal coaching — manage clients,
 training & nutrition plans,
 weekly updates, and payments.
 
+This repository also contains `landing/`, a completely separate
+Next.js marketing site for "SP Team" (see
+[Landing page (SP Team)](#landing-page-sp-team) below). It does not
+share code, dependencies, or a database with `frontend/`/`backend/`.
+
 ## Stack
 
 **Frontend**
@@ -66,6 +71,11 @@ npm run dev
 # Frontend (new terminal)
 
 cd frontend
+npm install
+npm run dev
+
+# Landing (new terminal)
+cd landing
 npm install
 npm run dev
 ```
@@ -195,6 +205,61 @@ URL: [http://localhost:3000/register](http://localhost:3000/register)
 | client    | Own dashboard, training plan,   |
 |           | nutrition plan, weekly updates, |
 |           | progress, payments              |
+
+---
+
+## Landing page (SP Team)
+
+A standalone Next.js 14 marketing site for "SP Team" personal
+coaching, in [`landing/`](landing/). It is a separate project with its
+own `package.json` and `node_modules` — it does not touch or depend on
+`frontend/` or `backend/`.
+
+**Stack:** Next.js 14 (App Router), TypeScript, Tailwind CSS, Framer
+Motion, Lenis (smooth scroll), React Hook Form + Zod (contact form),
+Keystatic CMS (local storage mode), next-sitemap.
+
+### Run it
+
+
+```
+
+- Site → [http://localhost:3100](http://localhost:3100)
+- Keystatic admin (edit content) → [http://localhost:3100/keystatic](http://localhost:3100/keystatic)
+
+The dev server runs on port 3100 so it can run alongside the main
+app's frontend (3000) and backend (5000) without conflicts.
+
+Before the first run, copy `landing/.env.local.example` to
+`landing/.env.local`. Key variables:
+
+```env
+NEXT_PUBLIC_SITE_URL=http://localhost:3100
+NEXT_PUBLIC_API_BASE_URL=http://localhost:5000/api
+```
+
+`NEXT_PUBLIC_API_BASE_URL` should point at the main app's backend
+(same one started above) if the landing site needs to call it. Set
+`CONTACT_SMTP_HOST` / `CONTACT_EMAIL_TO` if you want contact-form
+submissions emailed; otherwise they are just logged to the server
+console.
+
+### Editing content (Keystatic)
+
+All editable content — site settings, hero section, services intro,
+coaches, testimonials, contact info, and pricing packages — is managed
+through the admin panel at `/keystatic`, not by editing code. Content
+is saved as files under `landing/content/`. Images are uploaded to
+`landing/public/uploads/`; replacing an image automatically deletes
+the old file (a cleanup sweep runs after every save, and can also be
+run manually with `npm run cleanup-uploads`).
+
+
+```
+
+`npm run build` also runs `next-sitemap`, generating
+`public/sitemap.xml` and `public/robots.txt` (these are not present in
+`next dev`, only after a production build).
 
 ---
 

@@ -4,16 +4,16 @@ headingLine2: ΦΕΡΝΕΙ
 headingHighlight: ΑΠΟΤΕΛΕΣΜΑ.
 description: >-
   Ο δικός σου coach, ένα πλάνο προπόνησης και διατροφής μόνο για σένα, και
-  απευθείας επικοινωνία μαζί του στο Discord. Κάθε πληρωμή σου δίνει πόντους
-  για εκπτώσεις και δώρα.
+  απευθείας επικοινωνία μαζί του στο Discord. Κάθε πληρωμή σου δίνει πόντους για
+  εκπτώσεις και δώρα.
 ctaPrimaryLabel: Γίνε μέλος του Team
-ctaPrimaryHref: "#pricing"
+ctaPrimaryHref: '#pricing'
 ctaSecondaryLabel: Κάνε το quiz 1 λεπτού
-ctaSecondaryHref: "#contact"
-memberCountLabel: "[X]+ μέλη στο Team"
-ratingLabel: "★ [X]/5 από μέλη"
+ctaSecondaryHref: '#contact'
+memberCountLabel: '[X]+ μέλη στο Team'
+ratingLabel: ★ [X]/5 από μέλη
 workoutDayLabel: ΣΗΜΕΡΑ · ΗΜΕΡΑ 3
 workoutTitle: Lower Body — Deadlift
 workoutMeta: 5 ασκήσεις · 60 λεπτά
-workoutPoints: "+[X] πόντοι · Συνδρομή Οκτωβρίου"
-backgroundImage: /uploads/seed-hero-bg.jpg
+workoutPoints: +[X] πόντοι · Συνδρομή Οκτωβρίου
+backgroundImage: /uploads/backgroundImage.webp

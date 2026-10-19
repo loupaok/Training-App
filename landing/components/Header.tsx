@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "./icons";
-import { ThemeToggle } from "./ThemeToggle";
 import type { getSiteContent } from "@/lib/keystatic/reader";
 
 type Settings = Awaited<ReturnType<typeof getSiteContent>>["settings"];
@@ -28,36 +27,20 @@ export function Header({ settings }: { settings: Settings }) {
   return (
     <header
       className={`fixed inset-x-0 top-9 z-50 transition-all duration-300 ${
-        scrolled
-          ? "border-b border-navy-100/60 bg-white/90 backdrop-blur-lg dark:border-white/10 dark:bg-navy-950/90"
-          : "bg-transparent"
+        scrolled ? "border-b border-white/10 bg-[#0b0b0b]/95 backdrop-blur-lg" : "bg-transparent"
       }`}
     >
       <div className="container-x flex h-20 items-center justify-between">
         <Link href="/" className="flex items-center gap-2">
           {logoLight || logoDark ? (
-            <>
-              {logoLight && (
-                <Image
-                  src={logoLight}
-                  alt={settings?.siteName || "SP Team"}
-                  width={120}
-                  height={32}
-                  className={`h-8 w-auto ${scrolled ? "hidden dark:block" : "block"}`}
-                  priority
-                />
-              )}
-              {logoDark && (
-                <Image
-                  src={logoDark}
-                  alt={settings?.siteName || "SP Team"}
-                  width={120}
-                  height={32}
-                  className={`h-8 w-auto ${scrolled ? "block dark:hidden" : "hidden"}`}
-                  priority
-                />
-              )}
-            </>
+            <Image
+              src={logoLight || logoDark || ""}
+              alt={settings?.siteName || "SP Team"}
+              width={120}
+              height={32}
+              className="h-8 w-auto"
+              priority
+            />
           ) : (
             <span className="grid h-10 w-10 place-items-center rounded-full bg-lime text-sm font-extrabold text-navy-900">SP</span>
           )}
@@ -71,9 +54,7 @@ export function Header({ settings }: { settings: Settings }) {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.1 + i * 0.06 }}
-              className={`group relative text-sm font-semibold transition-colors hover:text-lime ${
-                scrolled ? "text-navy-700 dark:text-white/80" : "text-white/90"
-              }`}
+              className="group relative text-sm font-semibold text-white/90 transition-colors hover:text-lime"
             >
               {link.label}
               <span className="absolute -bottom-1 left-0 h-[2px] w-0 bg-lime transition-all duration-300 group-hover:w-full" />
@@ -82,12 +63,9 @@ export function Header({ settings }: { settings: Settings }) {
         </nav>
 
         <div className="hidden items-center gap-3 lg:flex">
-          <ThemeToggle inverted={!scrolled} />
           <a
             href={settings?.loginHref || "/login"}
-            className={`text-sm font-semibold transition-colors hover:text-lime ${
-              scrolled ? "text-navy-700 dark:text-white/80" : "text-white/90"
-            }`}
+            className="text-sm font-semibold text-white/90 transition-colors hover:text-lime"
           >
             {settings?.loginLabel || "Σύνδεση"}
           </a>
@@ -100,14 +78,11 @@ export function Header({ settings }: { settings: Settings }) {
         </div>
 
         <div className="flex items-center gap-2 lg:hidden">
-          <ThemeToggle inverted={!scrolled} />
           <button
             type="button"
             aria-label="Μενού"
             onClick={() => setOpen((v) => !v)}
-            className={`grid h-10 w-10 place-items-center rounded-full border ${
-              scrolled ? "border-navy-200 text-navy-900 dark:border-white/15 dark:text-white" : "border-white/30 text-white"
-            }`}
+            className="grid h-10 w-10 place-items-center rounded-full border border-white/30 text-white"
           >
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -121,7 +96,7 @@ export function Header({ settings }: { settings: Settings }) {
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.25 }}
-            className="overflow-hidden border-t border-navy-100 bg-white lg:hidden dark:border-white/10 dark:bg-navy-900"
+            className="overflow-hidden border-t border-white/10 bg-[#0b0b0b] lg:hidden"
           >
             <div className="container-x flex flex-col gap-1 py-4">
               {navLinks.map((link) => (
@@ -129,7 +104,7 @@ export function Header({ settings }: { settings: Settings }) {
                   key={link.href}
                   href={link.href}
                   onClick={() => setOpen(false)}
-                  className="rounded-lg px-3 py-3 text-base font-semibold text-navy-800 hover:bg-navy-50 dark:text-white dark:hover:bg-white/5"
+                  className="rounded-lg px-3 py-3 text-base font-semibold text-white hover:bg-white/5"
                 >
                   {link.label}
                 </a>
