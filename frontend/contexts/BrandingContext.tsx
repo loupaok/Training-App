@@ -22,6 +22,7 @@ export interface BrandingData {
   buttonHoverColor: string;
   buttonTextColor: string;
   logoUrl: string | null;
+  loginLogoUrl: string | null;
   faviconUrl: string | null;
   loginBackgroundUrl: string | null;
 }
@@ -35,6 +36,7 @@ const defaults: BrandingData = {
   buttonHoverColor: "#c0392b",
   buttonTextColor: "#ffffff",
   logoUrl: null,
+  loginLogoUrl: null,
   faviconUrl: null,
   loginBackgroundUrl: null,
 };

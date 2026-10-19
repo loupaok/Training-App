@@ -72,6 +72,8 @@ npm run dev
 
 Frontend → [http://localhost:3000](http://localhost:3000)
 Backend  → [http://localhost:5000](http://localhost:5000)
+Moible   →  http://192.168.1.4:3000/login
+
 
 Environment variables needed in
 backend/.env:
@@ -118,6 +120,10 @@ endpoint is used. The corresponding SQL migration is also available at
 The iOS and Android shells load the hosted application rather than a static
 export. Before building a native app, replace `https://yoursite.com` in
 `frontend/capacitor.config.ts` with the production HTTPS URL of this app.
+
+For local browser testing only, the current mobile URL is
+`http://192.168.1.4:3000/login`. Do not use this HTTP LAN URL as the
+production Capacitor `server.url`.
 
 The mobile client must also know the public API URL. Create `frontend/.env.local`
 or set the deployment environment variable:

@@ -5,6 +5,7 @@ import path from 'path';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
+import { removeUploadedFile, validateImageUpload } from '../utils/upload-security.js';
 
 const router = express.Router();
 const mediaUploadDir = path.join(process.cwd(), 'uploads', 'media');
@@ -20,10 +21,20 @@ const upload = multer({
     },
   }),
   fileFilter: (req, file, cb) => {
-    cb(null, /^image\/(jpeg|png|webp|gif|svg\+xml)$/.test(file.mimetype));
+    const extension = path.extname(file.originalname || '').toLowerCase();
+    const isAdminSvg = req.user?.role === 'admin' && extension === '.svg' && file.mimetype === 'image/svg+xml';
+    const isRaster = ['.jpg', '.jpeg', '.png'].includes(extension) && ['image/jpeg', 'image/png'].includes(file.mimetype);
+    cb(isAdminSvg || isRaster ? null : new Error('Only JPG and PNG images are allowed. SVG is restricted to administrators.'), isAdminSvg || isRaster);
   },
   limits: { fileSize: 8 * 1024 * 1024 },
 });
+
+function uploadSingleMedia(req, res, next) {
+  upload.single('file')(req, res, (error) => {
+    if (!error) return next();
+    return res.status(400).json({ message: error.code === 'LIMIT_FILE_SIZE' ? 'File is too large' : error.message || 'Upload failed' });
+  });
+}
 
 async function ensureMediaTable(connection) {
   await connection.query(`
@@ -289,9 +300,16 @@ router.delete('/folders/:id', authorizeRole(['coach', 'admin']), async (req, res
   }
 });
 
-router.post('/upload', authorizeRole(['coach', 'admin']), upload.single('file'), async (req, res) => {
+router.post('/upload', authorizeRole(['coach', 'admin']), uploadSingleMedia, async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: 'Media file required' });
+  }
+
+  try {
+    await validateImageUpload(req.file, { allowSvg: req.user.role === 'admin' });
+  } catch (error) {
+    await removeUploadedFile(req.file);
+    return res.status(400).json({ message: error.message || 'Invalid image file' });
   }
 
   const title = req.body.title || req.file.originalname || 'Media asset';
@@ -339,9 +357,16 @@ router.put('/assets/:id/folder', authorizeRole(['coach', 'admin']), [
 
 // PUT /assets/:id/file swaps the file for an existing media_asset (keeps the
 // same row/id, just points it at a newly uploaded image).
-router.put('/assets/:id/file', authorizeRole(['coach', 'admin']), upload.single('file'), async (req, res) => {
+router.put('/assets/:id/file', authorizeRole(['coach', 'admin']), uploadSingleMedia, async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ message: 'Image file required' });
+  }
+
+  try {
+    await validateImageUpload(req.file, { allowSvg: req.user.role === 'admin' });
+  } catch (error) {
+    await removeUploadedFile(req.file);
+    return res.status(400).json({ message: error.message || 'Invalid image file' });
   }
 
   try {

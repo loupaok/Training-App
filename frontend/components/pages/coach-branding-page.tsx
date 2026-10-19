@@ -26,6 +26,7 @@ const emptyBranding: Branding = {
   buttonHoverColor: "#c0392b",
   buttonTextColor: "#ffffff",
   logoUrl: null,
+  loginLogoUrl: null,
   faviconUrl: null,
   loginBackgroundUrl: null,
 };
@@ -78,12 +79,13 @@ function CoachBrandingContent() {
   const { user, logout } = useAuth();
   const { refreshBranding } = useBranding();
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const loginLogoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
   const loginBackgroundInputRef = useRef<HTMLInputElement>(null);
   const [branding, setBranding] = useState<Branding>(emptyBranding);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState<"logo" | "favicon" | "login-background" | null>(null);
+  const [uploading, setUploading] = useState<"logo" | "login-logo" | "favicon" | "login-background" | null>(null);
 
   useEffect(() => {
     api
@@ -123,7 +125,7 @@ function CoachBrandingContent() {
     }
   };
 
-  const uploadBrandImage = async (kind: "logo" | "favicon" | "login-background", event: ChangeEvent<HTMLInputElement>) => {
+  const uploadBrandImage = async (kind: "logo" | "login-logo" | "favicon" | "login-background", event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -133,7 +135,7 @@ function CoachBrandingContent() {
       formData.append("file", file);
       setBranding(await api.upload<Branding>(`/branding/${kind}`, formData));
       await refreshBranding();
-      toast.success(kind === "logo" ? "Το logo ανέβηκε." : kind === "favicon" ? "Το favicon ανέβηκε." : "Το background του login ανέβηκε.");
+      toast.success(kind === "logo" ? "Το logo ανέβηκε." : kind === "login-logo" ? "Το logo σύνδεσης ανέβηκε." : kind === "favicon" ? "Το favicon ανέβηκε." : "Το background του login ανέβηκε.");
     } catch (error) {
       toast.error(getErrorMessage(error, "Η μεταφόρτωση απέτυχε."));
     } finally {
@@ -143,6 +145,7 @@ function CoachBrandingContent() {
   };
 
   const validColor = isHexColor(branding.primaryColor);
+  const brandingImageAccept = user?.role === "admin" ? ".jpg,.jpeg,.png,.svg" : ".jpg,.jpeg,.png";
 
   return (
     <CoachShell title="Branding" user={user} logout={logout}>
@@ -197,7 +200,7 @@ function CoachBrandingContent() {
         <Card>
           <CardHeader>
             <CardTitle>Background Σύνδεσης</CardTitle>
-            <CardDescription>Προαιρετική εικόνα φόντου για τη σελίδα σύνδεσης. Προτεινόμενο: οριζόντια JPG, PNG ή WEBP, max 5MB.</CardDescription>
+            <CardDescription>Προαιρετική εικόνα φόντου για τη σελίδα σύνδεσης. Προτεινόμενο: οριζόντια JPG ή PNG, max 5MB.</CardDescription>
           </CardHeader>
           <CardContent className="gap-5">
             <BrandImagePreview url={branding.loginBackgroundUrl} type="login-background" />
@@ -205,7 +208,7 @@ function CoachBrandingContent() {
               {uploading === "login-background" ? <LoaderCircle className="animate-spin" /> : <Upload />}
               {uploading === "login-background" ? "Ανέβασμα..." : "Ανέβασε Background"}
             </Button>
-            <input ref={loginBackgroundInputRef} type="file" accept=".jpg,.jpeg,.png,.webp" onChange={(event) => uploadBrandImage("login-background", event)} className="hidden" />
+            <input ref={loginBackgroundInputRef} type="file" accept=".jpg,.jpeg,.png" onChange={(event) => uploadBrandImage("login-background", event)} className="hidden" />
           </CardContent>
         </Card>
 
@@ -227,7 +230,7 @@ function CoachBrandingContent() {
         <Card>
           <CardHeader>
             <CardTitle>Logo</CardTitle>
-            <CardDescription>Προτεινόμενο: PNG ή SVG, διαφανές φόντο, max 2MB.</CardDescription>
+            <CardDescription>Προτεινόμενο: PNG ή JPG, διαφανές φόντο όπου χρειάζεται, max 2MB. SVG επιτρέπεται μόνο σε Admin.</CardDescription>
           </CardHeader>
           <CardContent className="gap-5">
             <BrandImagePreview url={branding.logoUrl} type="logo" />
@@ -235,14 +238,29 @@ function CoachBrandingContent() {
               {uploading === "logo" ? <LoaderCircle className="animate-spin" /> : <Upload />}
               {uploading === "logo" ? "Ανέβασμα..." : "Ανέβασε Logo"}
             </Button>
-            <input ref={logoInputRef} type="file" accept=".jpg,.jpeg,.png,.svg,.webp" onChange={(event) => uploadBrandImage("logo", event)} className="hidden" />
+            <input ref={logoInputRef} type="file" accept={brandingImageAccept} onChange={(event) => uploadBrandImage("logo", event)} className="hidden" />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Logo Σύνδεσης</CardTitle>
+            <CardDescription>Προαιρετικό logo μόνο για το /login. Εμφανίζεται σε ανοιχτό πλαίσιο ώστε να διαβάζεται σωστά με κάθε background. SVG επιτρέπεται μόνο σε Admin.</CardDescription>
+          </CardHeader>
+          <CardContent className="gap-5">
+            <BrandImagePreview url={branding.loginLogoUrl} type="login-logo" />
+            <Button type="button" variant="outline" onClick={() => loginLogoInputRef.current?.click()} disabled={uploading !== null || loading}>
+              {uploading === "login-logo" ? <LoaderCircle className="animate-spin" /> : <Upload />}
+              {uploading === "login-logo" ? "Ανέβασμα..." : "Ανέβασε Logo Σύνδεσης"}
+            </Button>
+            <input ref={loginLogoInputRef} type="file" accept={brandingImageAccept} onChange={(event) => uploadBrandImage("login-logo", event)} className="hidden" />
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
             <CardTitle>Favicon</CardTitle>
-            <CardDescription>Προτεινόμενο: PNG 32x32 ή 64x64, max 512KB.</CardDescription>
+            <CardDescription>Προτεινόμενο: PNG 32x32 ή 64x64, max 512KB. SVG επιτρέπεται μόνο σε Admin.</CardDescription>
           </CardHeader>
           <CardContent className="gap-5">
             <BrandImagePreview url={branding.faviconUrl} type="favicon" />
@@ -250,7 +268,7 @@ function CoachBrandingContent() {
               {uploading === "favicon" ? <LoaderCircle className="animate-spin" /> : <Upload />}
               {uploading === "favicon" ? "Ανέβασμα..." : "Ανέβασε Favicon"}
             </Button>
-            <input ref={faviconInputRef} type="file" accept=".png,.ico,.svg" onChange={(event) => uploadBrandImage("favicon", event)} className="hidden" />
+            <input ref={faviconInputRef} type="file" accept={brandingImageAccept} onChange={(event) => uploadBrandImage("favicon", event)} className="hidden" />
           </CardContent>
         </Card>
 
@@ -304,20 +322,20 @@ function CoachBrandingContent() {
   );
 }
 
-function BrandImagePreview({ url, type }: { url: string | null; type: "logo" | "favicon" | "login-background" }) {
+function BrandImagePreview({ url, type }: { url: string | null; type: "logo" | "login-logo" | "favicon" | "login-background" }) {
   if (url) {
     return (
       <div className="flex min-h-20 items-center rounded-lg border bg-muted/30 p-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={resolveMediaUrl(url)} alt={type === "logo" ? "Current logo" : type === "favicon" ? "Current favicon" : "Current login background"} className={type === "logo" ? "max-h-16 max-w-full object-contain" : type === "favicon" ? "h-8 w-8 object-contain" : "max-h-48 w-full rounded-md object-cover"} />
+        <img src={resolveMediaUrl(url)} alt={type === "logo" ? "Current logo" : type === "login-logo" ? "Current login logo" : type === "favicon" ? "Current favicon" : "Current login background"} className={type === "logo" || type === "login-logo" ? "max-h-16 max-w-full rounded-md bg-white p-2 object-contain" : type === "favicon" ? "h-8 w-8 object-contain" : "max-h-48 w-full rounded-md object-cover"} />
       </div>
     );
   }
 
   return (
-    <div className={`flex items-center justify-center rounded-lg border border-dashed bg-muted/30 text-muted-foreground ${type === "logo" ? "min-h-20 gap-2" : type === "favicon" ? "h-12 w-12" : "min-h-36 gap-2"}`}>
+    <div className={`flex items-center justify-center rounded-lg border border-dashed bg-muted/30 text-muted-foreground ${type === "logo" || type === "login-logo" ? "min-h-20 gap-2" : type === "favicon" ? "h-12 w-12" : "min-h-36 gap-2"}`}>
       <ImageIcon className="h-5 w-5" />
-      {type !== "favicon" && <span className="text-sm">{type === "logo" ? "Δεν έχει οριστεί logo" : "Δεν έχει οριστεί background"}</span>}
+      {type !== "favicon" && <span className="text-sm">{type === "logo" ? "Δεν έχει οριστεί logo" : type === "login-logo" ? "Δεν έχει οριστεί logo σύνδεσης" : "Δεν έχει οριστεί background"}</span>}
     </div>
   );
 }

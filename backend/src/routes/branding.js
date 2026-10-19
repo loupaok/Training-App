@@ -5,6 +5,7 @@ import path from 'path';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authenticateToken, authorizeRole } from '../middleware/auth.js';
+import { removeUploadedFile, validateImageUpload } from '../utils/upload-security.js';
 
 const router = express.Router();
 const brandingDirectory = path.join(process.cwd(), 'uploads', 'media', 'branding');
@@ -33,7 +34,8 @@ export async function ensureBrandingSchema(connection) {
       ADD COLUMN IF NOT EXISTS button_color VARCHAR(7) DEFAULT '#e74c3c',
       ADD COLUMN IF NOT EXISTS button_hover_color VARCHAR(7) DEFAULT '#c0392b',
       ADD COLUMN IF NOT EXISTS button_text_color VARCHAR(7) DEFAULT '#ffffff',
-      ADD COLUMN IF NOT EXISTS login_background_url VARCHAR(255) NULL
+      ADD COLUMN IF NOT EXISTS login_background_url VARCHAR(255) NULL,
+      ADD COLUMN IF NOT EXISTS login_logo_url VARCHAR(255) NULL
   `);
 }
 
@@ -47,6 +49,7 @@ function normalizeBranding(row) {
     buttonHoverColor: row.button_hover_color,
     buttonTextColor: row.button_text_color,
     logoUrl: row.logo_url,
+    loginLogoUrl: row.login_logo_url,
     faviconUrl: row.favicon_url,
     loginBackgroundUrl: row.login_background_url,
   };
@@ -57,7 +60,7 @@ async function getBranding(connection) {
   return normalizeBranding(rows[0]);
 }
 
-function createUpload({ kind, maxSize, extensions, mimeTypes }) {
+function createUpload({ kind, maxSize, allowSvg = false }) {
   return multer({
     storage: multer.diskStorage({
       destination: brandingDirectory,
@@ -66,9 +69,17 @@ function createUpload({ kind, maxSize, extensions, mimeTypes }) {
         callback(null, `${kind}${extension}`);
       },
     }),
-    fileFilter: (_req, file, callback) => {
+    fileFilter: (req, file, callback) => {
       const extension = path.extname(file.originalname || '').toLowerCase();
-      if (!extensions.includes(extension) || !mimeTypes.includes(file.mimetype)) {
+      const isSvg = extension === '.svg';
+      const allowedExtensions = isSvg && allowSvg && req.user?.role === 'admin'
+        ? ['.svg']
+        : ['.jpg', '.jpeg', '.png'];
+      const allowedMimeTypes = isSvg && allowSvg && req.user?.role === 'admin'
+        ? ['image/svg+xml']
+        : ['image/jpeg', 'image/png'];
+
+      if (!allowedExtensions.includes(extension) || !allowedMimeTypes.includes(file.mimetype)) {
         callback(new Error('Unsupported branding image type'));
         return;
       }
@@ -91,20 +102,21 @@ function uploadSingle(upload) {
 const uploadLogo = uploadSingle(createUpload({
   kind: 'logo',
   maxSize: 2 * 1024 * 1024,
-  extensions: ['.jpg', '.jpeg', '.png', '.svg', '.webp'],
-  mimeTypes: ['image/jpeg', 'image/png', 'image/svg+xml', 'image/webp'],
+  allowSvg: true,
+}));
+const uploadLoginLogo = uploadSingle(createUpload({
+  kind: 'login-logo',
+  maxSize: 2 * 1024 * 1024,
+  allowSvg: true,
 }));
 const uploadFavicon = uploadSingle(createUpload({
   kind: 'favicon',
   maxSize: 512 * 1024,
-  extensions: ['.png', '.ico', '.svg'],
-  mimeTypes: ['image/png', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/svg+xml'],
+  allowSvg: true,
 }));
 const uploadLoginBackground = uploadSingle(createUpload({
   kind: 'login-background',
   maxSize: 5 * 1024 * 1024,
-  extensions: ['.jpg', '.jpeg', '.png', '.webp'],
-  mimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
 }));
 
 router.get('/', async (_req, res) => {
@@ -164,6 +176,13 @@ router.put('/', authenticateToken, authorizeRole(['coach']), [
 async function saveBrandImage(req, res, column) {
   if (!req.file) return res.status(400).json({ message: 'Branding image is required' });
 
+  try {
+    await validateImageUpload(req.file, { allowSvg: req.user.role === 'admin' });
+  } catch (error) {
+    await removeUploadedFile(req.file);
+    return res.status(400).json({ message: error.message || 'Invalid branding image' });
+  }
+
   let connection;
   try {
     connection = await pool.getConnection();
@@ -180,6 +199,7 @@ async function saveBrandImage(req, res, column) {
 }
 
 router.post('/logo', authenticateToken, authorizeRole(['coach']), uploadLogo, (req, res) => saveBrandImage(req, res, 'logo_url'));
+router.post('/login-logo', authenticateToken, authorizeRole(['coach']), uploadLoginLogo, (req, res) => saveBrandImage(req, res, 'login_logo_url'));
 router.post('/favicon', authenticateToken, authorizeRole(['coach']), uploadFavicon, (req, res) => saveBrandImage(req, res, 'favicon_url'));
 router.post('/login-background', authenticateToken, authorizeRole(['coach']), uploadLoginBackground, (req, res) => saveBrandImage(req, res, 'login_background_url'));
 

@@ -34,14 +34,17 @@ export default function LoginPage() {
   };
 
   const backgroundImage = branding.loginBackgroundUrl ? `url("${resolveMediaUrl(branding.loginBackgroundUrl)}")` : undefined;
+  const loginLogoUrl = branding.loginLogoUrl || branding.logoUrl;
 
   return (
     <main className="relative grid min-h-screen place-items-center overflow-hidden bg-slate-50 px-5 py-10" style={backgroundImage ? { backgroundImage, backgroundPosition: "center", backgroundSize: "cover" } : undefined}>
       {backgroundImage && <div className="absolute inset-0" style={{ backgroundColor: "color-mix(in oklab, #000000 45%, transparent)" }} />}
       <section className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white/95 p-8 shadow-2xl shadow-slate-900/15 sm:p-10">
         <div className="text-center">
-          {branding.logoUrl ? (
-            <img src={resolveMediaUrl(branding.logoUrl)} alt={branding.appName} className="mx-auto max-h-16 max-w-44 object-contain" />
+          {loginLogoUrl ? (
+            <div className="mx-auto inline-flex max-w-full items-center justify-center rounded-lg bg-white p-2 shadow-sm ring-1 ring-slate-200/80">
+              <img src={resolveMediaUrl(loginLogoUrl)} alt={branding.appName} className="max-h-16 max-w-44 object-contain" />
+            </div>
           ) : (
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-slate-100 text-slate-700"><LockKeyhole className="h-6 w-6" /></div>
           )}
