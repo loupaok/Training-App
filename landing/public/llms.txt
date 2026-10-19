@@ -12,8 +12,8 @@ Programs are tailored per client rather than templated.
 
 ## Key pages
 
-- / — Home page: overview, services/pricing packages, coach profiles, client
-  testimonials, and a contact form.
+- / — Home page: overview, services/pricing packages, coach profiles, and
+  client before/after transformations.
 
 ## Services
 
@@ -25,8 +25,7 @@ updated automatically when packages change.
 
 ## Contact
 
-Use the contact form on the home page (#contact section), or the phone/email
-listed in the site footer, to reach SP Team directly.
+Use the phone/email listed in the site footer to reach SP Team directly.
 
 ## Notes for AI crawlers
 

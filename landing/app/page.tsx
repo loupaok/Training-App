@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
-import { getSiteContent, getTestimonials } from "@/lib/keystatic/reader";
-import { getPricingPlans } from "@/lib/pricing";
+import { getSiteContent, getTestimonials, getPricingPlans } from "@/lib/keystatic/reader";
 import { TickerBar } from "@/components/TickerBar";
 import { Header } from "@/components/Header";
 import { Hero } from "@/components/Hero";
+import { FeatureStrip } from "@/components/FeatureStrip";
 import { CoachProfile } from "@/components/CoachProfile";
-import { DirectWorkSection } from "@/components/DirectWorkSection";
+import { PlatformSection } from "@/components/PlatformSection";
 import { PlanSection } from "@/components/PlanSection";
 import { PointsSection } from "@/components/PointsSection";
-import { Testimonials } from "@/components/Testimonials";
+import { BeforeAfter } from "@/components/BeforeAfter";
 import { Services } from "@/components/Services";
 import { Footer } from "@/components/Footer";
 import { JsonLd } from "@/components/JsonLd";
@@ -31,12 +31,15 @@ export default async function HomePage() {
     {
       settings,
       hero,
+      featuresStrip,
       coachProfile,
-      directWorkSection,
+      platformSection,
       planSection,
       pointsSection,
       servicesIntro,
       testimonialsIntro,
+      faqSection,
+      finalCta,
     },
     plans,
     testimonials,
@@ -51,19 +54,21 @@ export default async function HomePage() {
         email={settings?.email ?? undefined}
         address={settings?.address ?? undefined}
         packages={plans.map((p) => ({ title: p.name, price: `${p.price} ${p.currency}`, description: p.description }))}
+        faqs={faqSection?.items || []}
       />
       <TickerBar items={settings?.tickerItems || []} />
       <Header settings={settings} />
       <main>
         <Hero hero={hero} />
-        <CoachProfile coachProfile={coachProfile} />
-        <DirectWorkSection directWorkSection={directWorkSection} />
+        <FeatureStrip featuresStrip={featuresStrip} />
+        <CoachProfile coachProfile={coachProfile} settings={settings} />
+        <PlatformSection platformSection={platformSection} />
         <PlanSection planSection={planSection} />
         <PointsSection pointsSection={pointsSection} />
-        <Testimonials intro={testimonialsIntro} testimonials={testimonials} />
+        <BeforeAfter intro={testimonialsIntro} transformations={testimonials} />
         <Services intro={servicesIntro} plans={plans} />
-        <FaqSection />
-        <FinalCta hero={hero} />
+        <FaqSection faqSection={faqSection} />
+        <FinalCta finalCta={finalCta} />
       </main>
       <Footer settings={settings} />
     </>

@@ -8,8 +8,8 @@ function Column({ title, items, highlight = false }: { title: string; items: rea
   if (!items.length) return null;
   return (
     <div className={`rounded-xl p-5 ${highlight ? "bg-lime text-navy-900" : "bg-white/10 backdrop-blur-sm"}`}>
-      <p className="text-sm font-extrabold">{title}</p>
-      <ul className={`mt-2 space-y-1 text-sm ${highlight ? "text-navy-800" : "text-white/70"}`}>
+      <p className="text-label">{title}</p>
+      <ul className={`mt-2 space-y-1 text-xsmall ${highlight ? "text-navy-800" : "text-white/70"}`}>
         {items.map((item, i) => (
           <li key={i}>• {item}</li>
         ))}
@@ -22,15 +22,15 @@ export function PlanSection({ planSection }: { planSection: PlanSection }) {
   return (
     <section id="plan" className="relative overflow-hidden py-20 text-white sm:py-28">
       <div className="absolute inset-0 -z-10">
-        {planSection?.backgroundImage && <Image src={planSection.backgroundImage} alt="" fill className="object-cover" sizes="100vw" />}
+        {planSection?.sectionBackgroundImage && <Image src={planSection.sectionBackgroundImage} alt="" fill className="object-cover" sizes="100vw" />}
         <div className="absolute inset-0 bg-navy-950/85" />
       </div>
 
       <div className="container-x">
         <FadeIn className="max-w-xl">
-          <h2 className="text-3xl font-extrabold tracking-tight sm:text-4xl">{planSection?.heading || "Ένα πλάνο 360° φτιαγμένο μόνο για σένα"}</h2>
-          <p className="mt-4 text-white/70">{planSection?.description}</p>
-          <a href="#pricing" className="mt-6 inline-flex rounded-full bg-white px-6 py-3 text-sm font-bold text-navy-900">
+          <h2 className="text-h2l sm:text-h2l-d">{planSection?.heading || "Ένα πλάνο 360° φτιαγμένο μόνο για σένα"}</h2>
+          <p className="mt-4 text-body text-white/70">{planSection?.description}</p>
+          <a href="#pricing" className="btn-primary mt-6 bg-white text-navy-900">
             {planSection?.ctaLabel || "Ξεκίνα"}
           </a>
         </FadeIn>
@@ -41,8 +41,8 @@ export function PlanSection({ planSection }: { planSection: PlanSection }) {
               {planSection?.clientAvatar && <Image src={planSection.clientAvatar} alt={planSection?.clientName || ""} fill className="object-cover" sizes="44px" />}
             </span>
             <span>
-              <span className="block text-sm font-extrabold">{planSection?.clientName || "Μαρία"}</span>
-              <span className="block text-xs text-white/60">{planSection?.clientSince || "Μέλος · 12 εβδομάδες"}</span>
+              <span className="block text-xsmall font-extrabold">{planSection?.clientName || "Μαρία"}</span>
+              <span className="block text-label text-white/60">{planSection?.clientSince || "Μέλος · 12 εβδομάδες"}</span>
             </span>
           </div>
 

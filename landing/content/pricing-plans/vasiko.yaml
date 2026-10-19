@@ -1,0 +1,12 @@
+name: Βασικό
+price: 80
+period: Μηνιαίο
+features:
+  - text: Πρόγραμμα Προπόνησης
+    included: true
+  - text: Εβδομαδιαίο Check-in
+    included: true
+  - text: Παρακολούθηση Προόδου
+    included: true
+isPopular: false
+order: 4

@@ -1,0 +1,18 @@
+name: Pro
+badge: Πιο δημοφιλές
+description: Για όσους θέλουν σοβαρή καθοδήγηση και καλύτερα αποτελέσματα.
+price: 49
+period: 2 μήνες
+features:
+  - text: Προπονητικό πλάνο
+    included: true
+  - text: Διατροφικό πλάνο
+    included: true
+  - text: Παρακολούθηση προόδου
+    included: true
+  - text: Υποστήριξη μέσω μηνυμάτων
+    included: true
+  - text: 2 προσαρμογές πλάνου / μήνα
+    included: false
+isPopular: false
+order: 2

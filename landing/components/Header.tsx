@@ -54,7 +54,7 @@ export function Header({ settings }: { settings: Settings }) {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.1 + i * 0.06 }}
-              className="group relative text-sm font-semibold text-white/90 transition-colors hover:text-lime"
+              className="group relative text-navlink text-white/90 transition-colors hover:text-lime"
             >
               {link.label}
               <span className="absolute -bottom-1 left-0 h-[2px] w-0 bg-lime transition-all duration-300 group-hover:w-full" />
@@ -65,13 +65,13 @@ export function Header({ settings }: { settings: Settings }) {
         <div className="hidden items-center gap-3 lg:flex">
           <a
             href={settings?.loginHref || "/login"}
-            className="text-sm font-semibold text-white/90 transition-colors hover:text-lime"
+            className="text-navlink text-white/90 transition-colors hover:text-lime"
           >
             {settings?.loginLabel || "Σύνδεση"}
           </a>
           <a
             href={settings?.ctaHref || "#pricing"}
-            className="rounded-full bg-lime px-5 py-2.5 text-sm font-bold text-navy-900 shadow-sm shadow-lime/30 transition-transform hover:-translate-y-0.5"
+            className="btn-header bg-lime text-navy-900 shadow-sm shadow-lime/30 transition-transform hover:-translate-y-0.5"
           >
             {settings?.ctaLabel || "Ξεκίνα"}
           </a>
@@ -104,7 +104,7 @@ export function Header({ settings }: { settings: Settings }) {
                   key={link.href}
                   href={link.href}
                   onClick={() => setOpen(false)}
-                  className="rounded-lg px-3 py-3 text-base font-semibold text-white hover:bg-white/5"
+                  className="rounded-lg px-3 py-3 text-navlink text-white hover:bg-white/5"
                 >
                   {link.label}
                 </a>
@@ -112,7 +112,7 @@ export function Header({ settings }: { settings: Settings }) {
               <a
                 href={settings?.ctaHref || "#pricing"}
                 onClick={() => setOpen(false)}
-                className="mt-2 rounded-full bg-lime px-5 py-3 text-center text-sm font-bold text-navy-900"
+                className="btn-header mt-2 justify-center bg-lime text-center text-navy-900"
               >
                 {settings?.ctaLabel || "Ξεκίνα"}
               </a>

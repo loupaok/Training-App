@@ -35,7 +35,41 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ["var(--font-inter)", "ui-sans-serif", "system-ui", "sans-serif"],
+        sans: ["var(--font-commissioner)", "ui-sans-serif", "system-ui", "sans-serif"],
+      },
+      fontSize: {
+        // H1 — hero (mobile base, -d = desktop override via lg: variant)
+        h1: ["50px", { lineHeight: "0.92", letterSpacing: "-1.5px", fontWeight: "800" }],
+        "h1-d": ["104px", { lineHeight: "0.92", letterSpacing: "-3px", fontWeight: "800" }],
+        // H2 bold — brand titles
+        h2b: ["48px", { lineHeight: "0.92", letterSpacing: "-1px", fontWeight: "800" }],
+        "h2b-d": ["88px", { lineHeight: "0.92", letterSpacing: "-2px", fontWeight: "800" }],
+        // H2 light — section titles
+        h2l: ["34px", { lineHeight: "1.05", letterSpacing: "-1px", fontWeight: "300" }],
+        "h2l-d": ["64px", { lineHeight: "1.05", letterSpacing: "-2px", fontWeight: "300" }],
+        // H3 — card titles
+        h3: ["19px", { lineHeight: "1.3", fontWeight: "600" }],
+        "h3-d": ["20px", { lineHeight: "1.3", fontWeight: "600" }],
+        // Eyebrow — small label above titles
+        eyebrow: ["12px", { lineHeight: "1.2", letterSpacing: "4px", fontWeight: "700" }],
+        "eyebrow-d": ["14px", { lineHeight: "1.2", letterSpacing: "6px", fontWeight: "700" }],
+        // Lead — body large (hero subtitle)
+        lead: ["16px", { lineHeight: "1.55", fontWeight: "400" }],
+        "lead-d": ["20px", { lineHeight: "1.55", fontWeight: "400" }],
+        // Body
+        body: ["15px", { lineHeight: "1.6", fontWeight: "400" }],
+        "body-d": ["17px", { lineHeight: "1.6", fontWeight: "400" }],
+        // Small text — lists, pricing features
+        xsmall: ["14px", { lineHeight: "1.5", fontWeight: "400" }],
+        // Labels / captions
+        label: ["12px", { lineHeight: "1.3", fontWeight: "700" }],
+        // Stat numbers
+        stat: ["30px", { lineHeight: "1.1", fontWeight: "800" }],
+        // Prices
+        price: ["44px", { lineHeight: "1", letterSpacing: "-1.5px", fontWeight: "300" }],
+        "price-d": ["52px", { lineHeight: "1", letterSpacing: "-1.5px", fontWeight: "300" }],
+        // Nav links
+        navlink: ["15px", { lineHeight: "1.4", fontWeight: "500" }],
       },
       maxWidth: {
         "8xl": "90rem",

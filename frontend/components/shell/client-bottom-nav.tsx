@@ -20,7 +20,7 @@ export function ClientBottomNav({ paymentApproved, unreadNotifications = 0, unre
     <div className="mx-auto grid max-w-xl grid-cols-5 gap-1">
       {primaryItems.map((item) => <BottomItem key={item.key} item={item} active={isActivePath(pathname, item.path)} locked={Boolean(item.locked && !paymentApproved)} />)}
       <Sheet>
-        <SheetTrigger render={<button type="button" className={cn("relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors", moreActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground")} />}>
+        <SheetTrigger render={<button type="button" className={cn("relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors", moreActive ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground")} />}>
           <Menu className="h-5 w-5" />
           <span>Περισσότερα</span>
           {unreadNotifications + unreadMessages > 0 && <Badge className="absolute top-1 right-2 grid h-4 min-w-4 place-items-center rounded-full p-0 text-[9px]">{unreadNotifications + unreadMessages > 9 ? "9+" : unreadNotifications + unreadMessages}</Badge>}
@@ -39,14 +39,14 @@ export function ClientBottomNav({ paymentApproved, unreadNotifications = 0, unre
 
 function BottomItem({ item, active, locked }: { item: (typeof clientNavSections)[number]; active: boolean; locked: boolean }) {
   const Icon = item.icon
-  const className = cn("flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors", locked ? "cursor-not-allowed text-muted-foreground/45" : active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground")
+  const className = cn("flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors", locked ? "cursor-not-allowed text-muted-foreground/45" : active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground")
   if (!item.path || locked) return <span className={className}>{Icon && <Icon className="h-5 w-5" />}{locked ? <LockKeyhole className="-mt-5 h-3 w-3 translate-x-2 translate-y-1 rounded-full bg-background p-0.5" /> : null}<span className="truncate">{item.label}</span></span>
   return <Link href={item.path} className={className}>{Icon && <Icon className="h-5 w-5" />}<span className="truncate">{item.label}</span></Link>
 }
 
 function MoreItem({ item, active, locked, unreadNotifications }: { item: (typeof clientNavSections)[number]; active: boolean; locked: boolean; unreadNotifications: number }) {
   const Icon = item.icon
-  const className = cn("relative flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors", locked ? "cursor-not-allowed text-muted-foreground/45" : active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground")
+  const className = cn("relative flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors", locked ? "cursor-not-allowed text-muted-foreground/45" : active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground")
   const content = <>{Icon && <Icon className="h-5 w-5" />}{locked && <LockKeyhole className="h-3.5 w-3.5" />}<span className="flex-1">{item.label}</span>{unreadNotifications > 0 && <Badge className="rounded-full">{unreadNotifications}</Badge>}</>
   if (!item.path || locked) return <span className={className}>{content}</span>
   return <Link href={item.path} className={className}>{content}</Link>

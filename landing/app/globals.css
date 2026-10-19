@@ -26,6 +26,19 @@ body {
   @apply mx-auto w-full max-w-7xl px-5 sm:px-8 lg:px-10;
 }
 
+/* Typography system — button sizing (Commissioner) */
+.btn-primary {
+  @apply inline-flex h-14 items-center justify-center gap-2 rounded-full px-8 text-base font-extrabold sm:h-[60px];
+}
+
+.btn-secondary {
+  @apply inline-flex h-14 items-center justify-center gap-2 rounded-full px-8 text-[15px] font-bold sm:h-[60px];
+}
+
+.btn-header {
+  @apply inline-flex h-[46px] items-center justify-center gap-2 rounded-full px-5 text-sm font-extrabold;
+}
+
 .lenis.lenis-smooth {
   scroll-behavior: auto;
 }

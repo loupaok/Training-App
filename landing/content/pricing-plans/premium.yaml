@@ -1,0 +1,19 @@
+name: Premium
+badge: Δημοφιλές
+price: 120
+period: Μηνιαίο
+features:
+  - text: Πρόγραμμα Προπόνησης
+    included: true
+  - text: Εβδομαδιαίο Check-in
+    included: true
+  - text: Παρακολούθηση Προόδου
+    included: true
+  - text: Πρόγραμμα Διατροφής
+    included: true
+  - text: Άμεση Επικοινωνία
+    included: true
+  - text: Απεριόριστες Αλλαγές Πλάνου
+    included: true
+isPopular: true
+order: 5

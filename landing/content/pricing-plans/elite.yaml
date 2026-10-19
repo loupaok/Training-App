@@ -1,0 +1,17 @@
+name: Elite
+description: Για πλήρη παρακολούθηση, περισσότερη υποστήριξη και custom προσέγγιση.
+price: 79
+period: 4 μήνες
+features:
+  - text: Προπονητικό πλάνο
+    included: true
+  - text: Διατροφικό πλάνο
+    included: true
+  - text: Παρακολούθηση προόδου
+    included: true
+  - text: Προτεραιότητα στα μηνύματα
+    included: true
+  - text: Προσαρμογές πλάνου κάθε εβδομάδα
+    included: true
+isPopular: false
+order: 3

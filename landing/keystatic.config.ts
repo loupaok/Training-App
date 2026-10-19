@@ -96,7 +96,7 @@ export default config({
         ctaPrimaryLabel: fields.text({ label: "Κύριο κουμπί", defaultValue: "Γίνε μέλος του Team" }),
         ctaPrimaryHref: fields.text({ label: "Σύνδεσμος κύριου κουμπιού", defaultValue: "#pricing" }),
         ctaSecondaryLabel: fields.text({ label: "Δευτερεύον κουμπί", defaultValue: "Κάνε το quiz 1 λεπτού" }),
-        ctaSecondaryHref: fields.text({ label: "Σύνδεσμος δευτερεύοντος κουμπιού", defaultValue: "#contact" }),
+        ctaSecondaryHref: fields.text({ label: "Σύνδεσμος δευτερεύοντος κουμπιού", defaultValue: "#pricing" }),
         memberCountLabel: fields.text({ label: "Ένδειξη μελών", defaultValue: "[X]+ μέλη στο Team" }),
         ratingLabel: fields.text({ label: "Ένδειξη βαθμολογίας", defaultValue: "★ [X]/5 από μέλη" }),
         workoutDayLabel: fields.text({ label: "Κάρτα προπόνησης — ημέρα", defaultValue: "ΣΗΜΕΡΑ · ΗΜΕΡΑ 3" }),
@@ -122,41 +122,13 @@ export default config({
         ),
       },
     }),
-    expertsSection: singleton({
-      label: "Ενότητα 'Φτιαγμένο από ειδικούς'",
-      path: "content/experts-section",
-      schema: {
-        heading: fields.text({ label: "Τίτλος", defaultValue: "Φτιαγμένο από ειδικούς" }),
-        description: fields.text({
-          label: "Περιγραφή",
-          multiline: true,
-          defaultValue: "Κάθε πρόγραμμα γράφεται από πιστοποιημένο coach, με βάση τους στόχους, τον χρόνο και τον εξοπλισμό σου.",
-        }),
-        tags: fields.array(fields.text({ label: "Ετικέτα" }), {
-          label: "Ετικέτες",
-          itemLabel: (props) => props.value || "Ετικέτα",
-        }),
-        gallery: fields.array(imageField("Φωτογραφία"), {
-          label: "Φωτογραφίες (γκαλερί)",
-          itemLabel: () => "Φωτογραφία",
-        }),
-        discordHeading: fields.text({ label: "Τίτλος κάρτας Discord", defaultValue: "Ποτέ δεν προπονείσαι μόνος" }),
-        discordDescription: fields.text({
-          label: "Περιγραφή κάρτας Discord",
-          multiline: true,
-          defaultValue: "Ο coach σου κάνει check-in κάθε εβδομάδα, βλέπει την πρόοδό σου και σε κρατά συνεπή — όλα μέσα από το Discord.",
-        }),
-        coachChatMessage: fields.text({ label: "Μήνυμα coach (bubble)", defaultValue: "Coach: «Τέλειο set! Συνέχισε έτσι»" }),
-        discordBackImage: imageField("Φωτογραφία (πίσω)", "/uploads/seed-discord-back.jpg"),
-        discordFrontImage: imageField("Φωτογραφία (μπροστά)", "/uploads/seed-discord-front.jpg"),
-      },
-    }),
     coachProfile: singleton({
       label: "Προφίλ Coach",
       path: "content/coach-profile",
       schema: {
         eyebrow: fields.text({ label: "Μικρός τίτλος", defaultValue: "Ο COACH ΣΟΥ" }),
-        name: fields.text({ label: "Όνομα", defaultValue: "ΠΑΝΤΕΛΗΣ ΣΤΑΥΡΟΥΛΑΚΗΣ" }),
+        name: fields.text({ label: "Όνομα (άσπρο)", defaultValue: "ΠΑΝΤΕΛΗΣ" }),
+        nameHighlight: fields.text({ label: "Επώνυμο (λαχανί)", defaultValue: "ΣΤΑΥΡΟΥΛΑΚΗΣ" }),
         subtitle: fields.text({
           label: "Υπότιτλος",
           defaultValue: "Αθλητής bodybuilding NPC Worldwide · 4 φορές πρωταθλητής · Ιδρυτής του SP Team",
@@ -173,6 +145,11 @@ export default config({
         competitorCategory: fields.text({ label: "Κατηγορία", defaultValue: "Bodybuilding · Heavyweight" }),
         videoLabel: fields.text({ label: "Κείμενο βίντεο", defaultValue: "Δες το μήνυμά μου" }),
         videoDuration: fields.text({ label: "Διάρκεια βίντεο", defaultValue: "Βίντεο γνωριμίας · 1:20" }),
+        introVideoUrl: fields.url({
+          label: "Σύνδεσμος YouTube",
+          description: "Επικόλλησε ένα link YouTube — θα ανοίγει σε popup όταν πατηθεί το κουμπί του βίντεο.",
+          validation: { isRequired: false },
+        }),
         stats: fields.array(statField("[X]+", "Χρόνια εμπειρίας"), {
           label: "Στατιστικά",
           itemLabel: (props) => `${props.fields.value.value} ${props.fields.label.value}`,
@@ -191,37 +168,39 @@ export default config({
         ctaLabel: fields.text({ label: "Κείμενο κουμπιού", defaultValue: "Δούλεψε μαζί μου" }),
         instagram: fields.url({ label: "Instagram link", validation: { isRequired: false } }),
         youtube: fields.url({ label: "YouTube link", validation: { isRequired: false } }),
-        quote: fields.text({ label: "Απόφθεγμα", multiline: true, defaultValue: "Δεν χρειάζεσαι motivation. Χρειάζεσαι συνέπεια." }),
+        quote: fields.text({ label: "Απόφθεγμα", multiline: true, defaultValue: "Δεν χρειάζεσαι motivation. Χρειάζεσαι" }),
+        quoteHighlight: fields.text({ label: "Απόφθεγμα (λαχανί)", defaultValue: "συνέπεια." }),
         quoteAuthor: fields.text({ label: "Υπογραφή αποφθέγματος", defaultValue: "Παντελής Σταυρουλάκης, founder & head coach" }),
       },
     }),
-    directWorkSection: singleton({
-      label: "Ενότητα 'Δουλεύεις απευθείας'",
-      path: "content/direct-work-section",
+    platformSection: singleton({
+      label: "Ενότητα 'Η Πλατφόρμα'",
+      path: "content/platform-section",
       schema: {
-        heading: fields.text({ label: "Τίτλος", defaultValue: "Δουλεύεις απευθείας με τον Παντελή" }),
+        eyebrow: fields.text({ label: "Μικρός τίτλος", defaultValue: "Η ΠΛΑΤΦΟΡΜΑ" }),
+        heading: fields.text({ label: "Τίτλος", defaultValue: "Όλο σου το πρόγραμμα, στο κινητό σου" }),
         description: fields.text({
           label: "Περιγραφή",
           multiline: true,
-          defaultValue: "Όχι βοηθοί, όχι αυτόματα μηνύματα. Ο ίδιος βλέπει τα check-ins σου και σου απαντά στο Discord.",
+          defaultValue:
+            "Η σημερινή προπόνηση, τα macros, η πρόοδός σου και τα μηνύματα του Παντελή — οργανωμένα, ώστε να ξέρεις πάντα τι κάνεις σήμερα.",
         }),
-        phoneImage: imageField("Φωτογραφία στο κινητό", "/uploads/seed-phone-mockup.jpg"),
-        checkinLabel: fields.text({ label: "Ετικέτα κάρτας check-in", defaultValue: "ΕΒΔΟΜΑΔΙΑΙΟ CHECK-IN" }),
-        checkinStats: fields.array(statField("-0,6 kg", "Βάρος"), {
-          label: "Στατιστικά check-in",
-          itemLabel: (props) => `${props.fields.label.value}: ${props.fields.value.value}`,
-        }),
-        renewalBadge: fields.text({ label: "Ετικέτα ανανέωσης", defaultValue: "Συνδρομή ανανεώθηκε · +[X] πόντοι" }),
-        chatHeading: fields.text({ label: "Όνομα στο chat", defaultValue: "Coach Παντελής" }),
-        chatChannel: fields.text({ label: "Κανάλι", defaultValue: "# weekly-check-in" }),
-        chatMessage: fields.text({
-          label: "Μήνυμα coach",
-          multiline: true,
-          defaultValue: "Τρομερό squat σήμερα! Ανέβηκες 5kg από την περασμένη εβδομάδα — συνέχισε έτσι.",
-        }),
-        videoLabel: fields.text({ label: "Ετικέτα βίντεο", defaultValue: "Video feedback · 0:48" }),
-        discordLabel: fields.text({ label: "Τίτλος κάρτας Discord", defaultValue: "Μιλάτε στο Discord" }),
-        discordSub: fields.text({ label: "Υπότιτλος κάρτας Discord", defaultValue: "Μηνύματα, φωνητικά & video" }),
+        phone1Image: imageField("Φωτογραφία κινητού 1"),
+        phone1Label: fields.text({ label: "Ετικέτα κινητού 1", defaultValue: "Πλάνο διατροφής" }),
+        phone2Image: imageField("Φωτογραφία κινητού 2 (κεντρική)"),
+        phone2Label: fields.text({ label: "Ετικέτα κινητού 2", defaultValue: "Η προπόνησή μου" }),
+        phone3Image: imageField("Φωτογραφία κινητού 3"),
+        phone3Label: fields.text({ label: "Ετικέτα κινητού 3", defaultValue: "Πρόοδος & ρεκόρ" }),
+        features: fields.array(
+          fields.object({
+            title: fields.text({ label: "Τίτλος" }),
+            subtitle: fields.text({ label: "Υπότιτλος" }),
+          }),
+          {
+            label: "Χαρακτηριστικά",
+            itemLabel: (props) => props.fields.title.value || "Χαρακτηριστικό",
+          }
+        ),
       },
     }),
     planSection: singleton({
@@ -236,7 +215,7 @@ export default config({
             "Η προπόνηση πιάνει όταν είναι φτιαγμένη για σένα. Ο coach σου σχεδιάζει προπόνηση και διατροφή γύρω από τη ζωή σου — και τα προσαρμόζει κάθε εβδομάδα.",
         }),
         ctaLabel: fields.text({ label: "Κείμενο κουμπιού", defaultValue: "Ξεκίνα" }),
-        backgroundImage: imageField("Φωτογραφία φόντου", "/uploads/seed-plan360-bg.jpg"),
+        sectionBackgroundImage: imageField("Φωτογραφία φόντου", "/uploads/sectionBackgroundImage.webp"),
         clientAvatar: imageField("Avatar παραδείγματος", "/uploads/seed-maria-avatar.jpg"),
         clientName: fields.text({ label: "Όνομα παραδείγματος", defaultValue: "Μαρία" }),
         clientSince: fields.text({ label: "Υπότιτλος παραδείγματος", defaultValue: "Μέλος · 12 εβδομάδες" }),
@@ -369,42 +348,94 @@ export default config({
       },
     }),
     testimonialsIntro: singleton({
-      label: "Εισαγωγή Testimonials",
+      label: "Ενότητα 'Πριν & Μετά'",
       path: "content/testimonials-intro",
       schema: {
-        eyebrow: fields.text({ label: "Μικρός τίτλος", defaultValue: "Αποτελέσματα" }),
-        heading: fields.text({ label: "Τίτλος", defaultValue: "Τα μέλη μας βλέπουν αποτελέσματα" }),
+        eyebrow: fields.text({ label: "Μικρός τίτλος", defaultValue: "ΠΡΙΝ & ΜΕΤΑ" }),
+        heading: fields.text({ label: "Τίτλος", defaultValue: "Πραγματικοί άνθρωποι, πραγματικά αποτελέσματα" }),
         ratingLabel: fields.text({ label: "Ένδειξη βαθμολογίας", defaultValue: "★ [X]/5 από μέλη" }),
-        statLabel: fields.text({ label: "Ένδειξη στατιστικού", defaultValue: "[X]% λένε ότι είναι πιο συνεπείς μέσα σε 4 εβδομάδες" }),
-        ctaLabel: fields.text({ label: "Κείμενο κουμπιού", defaultValue: "Κάνε το quiz 1 λεπτού" }),
-        ctaHref: fields.text({ label: "Σύνδεσμος κουμπιού", defaultValue: "#contact" }),
+        statLabel: fields.text({ label: "Ένδειξη μεταμορφώσεων", defaultValue: "[X]+ μεταμορφώσεις με το SP Team" }),
+        ctaLabel: fields.text({ label: "Κείμενο κουμπιού", defaultValue: "Γίνε η επόμενη μεταμόρφωση" }),
+        ctaHref: fields.text({ label: "Σύνδεσμος κουμπιού", defaultValue: "#pricing" }),
       },
     }),
-    contact: singleton({
-      label: "Επικοινωνία",
-      path: "content/contact",
+    faqSection: singleton({
+      label: "Ενότητα 'Συχνές ερωτήσεις'",
+      path: "content/faq-section",
       schema: {
-        eyebrow: fields.text({ label: "Μικρός τίτλος", defaultValue: "Επικοινωνία" }),
-        heading: fields.text({ label: "Τίτλος", defaultValue: "Ξεκίνα το ταξίδι σου σήμερα" }),
-        subheading: fields.text({
-          label: "Υπότιτλος",
+        eyebrow: fields.text({ label: "Μικρός τίτλος", defaultValue: "FAQ" }),
+        heading: fields.text({ label: "Τίτλος", defaultValue: "Συχνές ερωτήσεις." }),
+        items: fields.array(
+          fields.object({
+            question: fields.text({ label: "Ερώτηση" }),
+            answer: fields.text({ label: "Απάντηση", multiline: true }),
+          }),
+          {
+            label: "Ερωτήσεις",
+            itemLabel: (props) => props.fields.question.value || "Ερώτηση",
+          }
+        ),
+      },
+    }),
+    finalCta: singleton({
+      label: "Ενότητα 'Τελικό CTA banner'",
+      path: "content/final-cta",
+      schema: {
+        eyebrow: fields.text({ label: "Μικρός τίτλος", defaultValue: "SP Team" }),
+        heading: fields.text({
+          label: "Τίτλος",
           multiline: true,
-          defaultValue: "Συμπλήρωσε τη φόρμα και θα επικοινωνήσουμε μαζί σου εντός 24 ωρών.",
+          defaultValue: "Η καλύτερη εκδοχή σου\nξεκινά σήμερα.",
         }),
+        bannerImage: imageField("Φωτογραφία φόντου", "/uploads/bannerImage.webp"),
+        ctaLabel: fields.text({ label: "Κείμενο κουμπιού", defaultValue: "Γίνε μέλος του Team" }),
+        ctaHref: fields.text({ label: "Σύνδεσμος κουμπιού", defaultValue: "#pricing" }),
       },
     }),
   },
   collections: {
+    pricingPlans: collection({
+      label: "Πακέτα & Τιμές",
+      path: "content/pricing-plans/*",
+      slugField: "name",
+      schema: {
+        name: fields.slug({ name: { label: "Όνομα πακέτου" } }),
+        photo: fields.image({
+          label: "Φωτογραφία",
+          directory: "public/uploads",
+          publicPath: "/uploads/",
+          validation: { isRequired: false },
+        }),
+        badge: fields.text({ label: "Ετικέτα (π.χ. 'Δημοφιλές')", validation: { isRequired: false } }),
+        description: fields.text({ label: "Περιγραφή", multiline: true, validation: { isRequired: false } }),
+        price: fields.number({ label: "Τιμή (€)", defaultValue: 0 }),
+        period: fields.text({ label: "Περίοδος (π.χ. 'μήνα')", defaultValue: "μήνα", validation: { isRequired: false } }),
+        features: fields.array(
+          fields.object({
+            text: fields.text({ label: "Χαρακτηριστικό" }),
+            included: fields.checkbox({ label: "Συμπεριλαμβάνεται", defaultValue: true }),
+          }),
+          {
+            label: "Χαρακτηριστικά",
+            itemLabel: (props) => props.fields.text.value || "Χαρακτηριστικό",
+          }
+        ),
+        isPopular: fields.checkbox({ label: "Δημοφιλές / προτεινόμενο πακέτο", defaultValue: false }),
+        order: fields.integer({ label: "Σειρά εμφάνισης", defaultValue: 0 }),
+      },
+    }),
     testimonials: collection({
-      label: "Testimonials",
+      label: "Πριν & Μετά",
       path: "content/testimonials/*",
       slugField: "name",
       schema: {
         name: fields.slug({ name: { label: "Όνομα πελάτη" } }),
-        role: fields.text({ label: "Υπότιτλος (π.χ. 'Μέλος εδώ και 6 μήνες')", validation: { isRequired: false } }),
-        photo: imageField("Φωτογραφία"),
+        role: fields.text({ label: "Πλάνο (π.χ. 'Coaching', 'Premium 1:1')", validation: { isRequired: false } }),
+        beforeImage: imageField("Φωτογραφία (ΠΡΙΝ)"),
+        afterImage: imageField("Φωτογραφία (ΜΕΤΑ)"),
+        statValue: fields.text({ label: "Αποτέλεσμα (π.χ. '−[X] KG', '+[X] KG ΜΥΩΝ', '−[X]% ΛΙΠΟΣ')" }),
+        weeksLabel: fields.text({ label: "Διάρκεια", defaultValue: "[X] εβδομάδες" }),
         quote: fields.text({ label: "Μαρτυρία", multiline: true }),
-        rating: fields.integer({ label: "Βαθμολογία (1-5)", defaultValue: 5, validation: { min: 1, max: 5 } }),
         order: fields.integer({ label: "Σειρά εμφάνισης", defaultValue: 0 }),
       },
     }),

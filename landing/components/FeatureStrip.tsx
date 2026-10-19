@@ -13,8 +13,8 @@ export function FeatureStrip({ featuresStrip }: { featuresStrip: FeaturesStrip }
           <div key={i} className="flex items-start gap-3">
             <span className="mt-1 h-6 w-1.5 shrink-0 -skew-x-12 bg-lime" aria-hidden />
             <div>
-              <p className="text-sm font-extrabold">{item.title}</p>
-              <p className="mt-0.5 text-xs text-white/60">{item.subtitle}</p>
+              <p className="text-h3">{item.title}</p>
+              <p className="mt-0.5 text-xsmall text-white/60">{item.subtitle}</p>
             </div>
           </div>
         ))}

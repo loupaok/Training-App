@@ -9,7 +9,7 @@ description: >-
 ctaPrimaryLabel: Γίνε μέλος του Team
 ctaPrimaryHref: '#pricing'
 ctaSecondaryLabel: Κάνε το quiz 1 λεπτού
-ctaSecondaryHref: '#contact'
+ctaSecondaryHref: '#pricing'
 memberCountLabel: '[X]+ μέλη στο Team'
 ratingLabel: ★ [X]/5 από μέλη
 workoutDayLabel: ΣΗΜΕΡΑ · ΗΜΕΡΑ 3

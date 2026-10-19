@@ -8,43 +8,43 @@ export async function getSiteContent() {
     settings,
     hero,
     featuresStrip,
-    expertsSection,
     coachProfile,
-    directWorkSection,
+    platformSection,
     planSection,
     allInOneSection,
     pointsSection,
     servicesIntro,
     testimonialsIntro,
-    contact,
+    faqSection,
+    finalCta,
   ] = await Promise.all([
     reader.singletons.settings.read(),
     reader.singletons.hero.read(),
     reader.singletons.featuresStrip.read(),
-    reader.singletons.expertsSection.read(),
     reader.singletons.coachProfile.read(),
-    reader.singletons.directWorkSection.read(),
+    reader.singletons.platformSection.read(),
     reader.singletons.planSection.read(),
     reader.singletons.allInOneSection.read(),
     reader.singletons.pointsSection.read(),
     reader.singletons.servicesIntro.read(),
     reader.singletons.testimonialsIntro.read(),
-    reader.singletons.contact.read(),
+    reader.singletons.faqSection.read(),
+    reader.singletons.finalCta.read(),
   ]);
 
   return {
     settings,
     hero,
     featuresStrip,
-    expertsSection,
     coachProfile,
-    directWorkSection,
+    platformSection,
     planSection,
     allInOneSection,
     pointsSection,
     servicesIntro,
     testimonialsIntro,
-    contact,
+    faqSection,
+    finalCta,
   };
 }
 
@@ -55,5 +55,16 @@ export async function getTestimonials() {
   );
   return entries
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+export async function getPricingPlans() {
+  const slugs = await reader.collections.pricingPlans.list();
+  const entries = await Promise.all(
+    slugs.map(async (slug) => ({ slug, ...(await reader.collections.pricingPlans.read(slug)) }))
+  );
+  return entries
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .map((entry) => ({ ...entry, currency: "EUR" }))
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }

@@ -12,22 +12,22 @@ export function PointsSection({ pointsSection }: { pointsSection: PointsSection 
     <section id="points" className="bg-lime py-20 text-navy-900 sm:py-28">
       <div className="container-x grid gap-12 lg:grid-cols-2 lg:items-start">
         <FadeIn>
-          <p className="text-xs font-extrabold uppercase tracking-[0.2em]">{pointsSection?.eyebrow || "ΣΥΣΤΗΜΑ ΠΟΝΤΩΝ"}</p>
-          <h2 className="mt-4 text-5xl font-black uppercase leading-[0.95] tracking-tight sm:text-6xl">
+          <p className="text-eyebrow uppercase sm:text-eyebrow-d">{pointsSection?.eyebrow || "ΣΥΣΤΗΜΑ ΠΟΝΤΩΝ"}</p>
+          <h2 className="mt-4 text-h2b italic uppercase sm:text-h2b-d">
             <span className="block">{pointsSection?.titleLine1 || "ΜΕΝΕΙΣ."}</span>
             <span className="block">{pointsSection?.titleLine2 || "ΚΕΡΔΙΖΕΙΣ."}</span>
           </h2>
-          <p className="mt-5 max-w-md text-navy-800/80">{pointsSection?.description}</p>
+          <p className="mt-5 max-w-md text-body text-navy-800/80">{pointsSection?.description}</p>
 
           <div className="mt-8 grid grid-cols-2 gap-3">
             <div className="rounded-xl bg-navy-900 p-4 text-white">
-              <p className="text-xl font-black">{pointsSection?.baseRateValue || "1€ = [X] pts"}</p>
-              <p className="mt-1 text-xs text-white/60">{pointsSection?.baseRateLabel}</p>
+              <p className="text-stat italic">{pointsSection?.baseRateValue || "1€ = [X] pts"}</p>
+              <p className="mt-1 text-xsmall text-white/60">{pointsSection?.baseRateLabel}</p>
             </div>
             {bonusItems.map((item, i) => (
               <div key={i} className="rounded-xl bg-navy-900 p-4 text-white">
-                <p className="text-xl font-black">{item.value}</p>
-                <p className="mt-1 text-xs text-white/60">{item.label}</p>
+                <p className="text-stat italic">{item.value}</p>
+                <p className="mt-1 text-xsmall text-white/60">{item.label}</p>
               </div>
             ))}
           </div>
@@ -36,26 +36,26 @@ export function PointsSection({ pointsSection }: { pointsSection: PointsSection 
         <FadeIn delay={0.1}>
           <div className="rounded-2xl bg-navy-950 p-6 text-white shadow-2xl">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-extrabold">{pointsSection?.walletHeading || "Το πορτοφόλι σου"}</p>
-              <span className="text-sm font-black">SP TEAM</span>
+              <p className="text-xsmall font-extrabold">{pointsSection?.walletHeading || "Το πορτοφόλι σου"}</p>
+              <span className="text-xsmall font-black">SP TEAM</span>
             </div>
 
             <div className="mt-5 rounded-xl bg-white/5 p-5">
-              <p className="text-xs text-white/50">{pointsSection?.availablePointsLabel || "Διαθέσιμοι πόντοι"}</p>
-              <p className="mt-1 text-4xl font-black text-lime">{pointsSection?.availablePoints || "[X] pts"}</p>
+              <p className="text-label text-white/50">{pointsSection?.availablePointsLabel || "Διαθέσιμοι πόντοι"}</p>
+              <p className="mt-1 text-stat italic text-lime">{pointsSection?.availablePoints || "[X] pts"}</p>
               <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                 <div className="h-full w-2/3 rounded-full bg-lime" />
               </div>
-              <p className="mt-3 text-xs text-white/50">{pointsSection?.pointsToNextLabel}</p>
+              <p className="mt-3 text-label text-white/50">{pointsSection?.pointsToNextLabel}</p>
             </div>
 
             {historyItems.length > 0 && (
               <div className="mt-4 divide-y divide-white/10">
                 {historyItems.map((item, i) => (
-                  <div key={i} className="flex items-center justify-between py-3 text-sm">
+                  <div key={i} className="flex items-center justify-between py-3 text-body">
                     <span>
                       <span className="block font-semibold">{item.title}</span>
-                      <span className="block text-xs text-white/40">{item.subtitle}</span>
+                      <span className="block text-label text-white/40">{item.subtitle}</span>
                     </span>
                     <span className="font-bold text-lime">{item.amount}</span>
                   </div>
@@ -67,8 +67,8 @@ export function PointsSection({ pointsSection }: { pointsSection: PointsSection 
               <div className="mt-4 grid grid-cols-3 gap-2">
                 {redemptionOptions.map((opt, i) => (
                   <div key={i} className="rounded-lg bg-white/5 p-3 text-center">
-                    <p className="text-xs font-semibold">{opt.label}</p>
-                    <p className="mt-1 text-xs text-white/50">{opt.value}</p>
+                    <p className="text-label font-semibold">{opt.label}</p>
+                    <p className="mt-1 text-label text-white/50">{opt.value}</p>
                   </div>
                 ))}
               </div>

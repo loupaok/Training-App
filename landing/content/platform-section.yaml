@@ -1,0 +1,20 @@
+eyebrow: Η ΠΛΑΤΦΟΡΜΑ
+heading: Όλο σου το πρόγραμμα, στο κινητό σου
+description: >-
+  Η σημερινή προπόνηση, τα macros, η πρόοδός σου και τα μηνύματα του Παντελή —
+  οργανωμένα, ώστε να ξέρεις πάντα τι κάνεις σήμερα.
+phone1Image: /uploads/phone1Image.png
+phone1Label: Πλάνο διατροφής
+phone2Image: /uploads/phone2Image.png
+phone2Label: Η προπόνησή μου
+phone3Image: /uploads/phone3Image.png
+phone3Label: Πρόοδος & ρεκόρ
+features:
+  - title: Προπόνηση βήμα-βήμα
+    subtitle: Sets, κιλά και βίντεο για κάθε άσκηση
+  - title: Macros σε πραγματικό χρόνο
+    subtitle: Βλέπεις τι έφαγες και τι μένει
+  - title: Πρόοδος σε γραφήματα
+    subtitle: Βάρος, μετρήσεις, φωτογραφίες
+  - title: Feedback από τον Παντελή
+    subtitle: Απαντήσεις και αλλαγές στο Discord

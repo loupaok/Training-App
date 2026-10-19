@@ -1,12 +1,16 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Inter } from "next/font/google";
+import { Commissioner } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { SmoothScrollProvider } from "@/components/SmoothScrollProvider";
 import { getSiteContent } from "@/lib/keystatic/reader";
 
-const inter = Inter({ subsets: ["latin", "latin-ext", "greek"], variable: "--font-inter" });
+const commissioner = Commissioner({
+  subsets: ["latin", "latin-ext", "greek"],
+  variable: "--font-commissioner",
+  weight: ["300", "400", "500", "600", "700", "800"],
+});
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3100";
 
@@ -41,7 +45,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="el" className={inter.variable} suppressHydrationWarning>
+    <html lang="el" className={commissioner.variable} suppressHydrationWarning>
       <body className="font-sans antialiased">
         <ThemeProvider>
           <SmoothScrollProvider>{children}</SmoothScrollProvider>

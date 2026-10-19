@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, LockKeyhole } from "lucide-react";
@@ -18,8 +18,12 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const { login, loading } = useAuth();
-  const { branding } = useBranding();
+  const { branding, refreshBranding } = useBranding();
   const router = useRouter();
+
+  useEffect(() => {
+    void refreshBranding().catch(() => undefined);
+  }, [refreshBranding]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -43,7 +47,7 @@ export default function LoginPage() {
         <div className="text-center">
           {loginLogoUrl ? (
             <div className="mx-auto inline-flex max-w-full items-center justify-center rounded-lg bg-white p-2 shadow-sm ring-1 ring-slate-200/80">
-              <img src={resolveMediaUrl(loginLogoUrl)} alt={branding.appName} className="max-h-16 max-w-44 object-contain" />
+              <img key={loginLogoUrl} src={resolveMediaUrl(loginLogoUrl)} alt={branding.appName} className="max-h-16 max-w-44 object-contain" />
             </div>
           ) : (
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-slate-100 text-slate-700"><LockKeyhole className="h-6 w-6" /></div>

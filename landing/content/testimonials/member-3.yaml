@@ -1,6 +1,8 @@
 name: "[Όνομα]"
-role: Μέλος εδώ και [X] μήνες
-photo: /uploads/seed-testimonial-3.jpg
-quote: "[Μαρτυρία πελάτη — τι άλλαξε στη ζωή του, 1–2 προτάσεις.]"
-rating: 5
+role: Coaching
+beforeImage: /uploads/seed-testimonial-3.jpg
+afterImage: /uploads/seed-testimonial-3.jpg
+statValue: "−[X]% ΛΙΠΟΣ"
+weeksLabel: "[X] εβδομάδες"
+quote: "[Μαρτυρία πελάτη — τι άλλαξε, 1–2 προτάσεις.]"
 order: 3

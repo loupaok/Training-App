@@ -184,6 +184,8 @@ URL: [http://localhost:3000/login](http://localhost:3000/login)
 Email: [admin@example.com](mailto:admin@example.com)
 Password: admin123
 
+spteam2026 
+
 **Client:**
 URL: [http://localhost:3000/login](http://localhost:3000/login)
 Email: (client email)

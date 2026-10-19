@@ -74,7 +74,7 @@ export function CoachBottomNav({ user }: { user: AuthUser | null }) {
       <div className={cn("mx-auto grid max-w-xl gap-1", primaryItems.length >= 4 ? "grid-cols-5" : primaryItems.length === 3 ? "grid-cols-4" : "grid-cols-3")}>
         {primaryItems.map((item) => <BottomItem key={item.key} item={item} active={isActivePath(pathname, item.path)} unread={unreadFor(item.key)} />)}
         <Sheet>
-          <SheetTrigger render={<button type="button" className={cn("relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors", moreActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground")} />}>
+          <SheetTrigger render={<button type="button" className={cn("relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors", moreActive ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground")} />}>
             <Menu className="h-5 w-5" />
             <span>Περισσότερα</span>
           </SheetTrigger>
@@ -96,7 +96,7 @@ export function CoachBottomNav({ user }: { user: AuthUser | null }) {
 function BottomItem({ item, active, unread }: { item: { key: string; label: string; path?: string; icon?: CoachNavSection["icon"] }; active: boolean; unread: number }) {
   const Icon = item.icon;
   return (
-    <Link href={item.path || "#"} className={cn("relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors", active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
+    <Link href={item.path || "#"} className={cn("relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors", active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
       {Icon && <Icon className="h-5 w-5" />}
       <span className="max-w-full truncate">{item.label}</span>
       {unread > 0 && <Badge className="absolute right-1 top-1 grid h-4 min-w-4 place-items-center rounded-full p-0 text-[9px]">{unread > 9 ? "9+" : unread}</Badge>}
@@ -107,7 +107,7 @@ function BottomItem({ item, active, unread }: { item: { key: string; label: stri
 function MoreItem({ item, active, unread }: { item: { key: string; label: string; path?: string; icon?: CoachNavSection["icon"] }; active: boolean; unread: number }) {
   const Icon = item.icon;
   return (
-    <Link href={item.path || "#"} className={cn("relative flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors", active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
+    <Link href={item.path || "#"} className={cn("relative flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors", active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
       {Icon && <Icon className="h-5 w-5" />}
       <span className="flex-1">{item.label}</span>
       {unread > 0 && <Badge className="rounded-full px-1.5 text-[10px]">{unread > 99 ? "99+" : unread}</Badge>}

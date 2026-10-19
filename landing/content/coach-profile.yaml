@@ -1,5 +1,6 @@
 eyebrow: Ο COACH ΣΟΥ
-name: ΠΑΝΤΕΛΗΣ <style class=".text-lime">ΣΤΑΥΡΟΥΛΑΚΗΣ</style>
+name: ΠΑΝΤΕΛΗΣ
+nameHighlight: ΣΤΑΥΡΟΥΛΑΚΗΣ
 subtitle: Αθλητής bodybuilding NPC Worldwide · 4 φορές πρωταθλητής · Ιδρυτής του SP Team
 bio: >-
   Γεια, είμαι ο Παντελής. Από μικρός ζω για το bodybuilding και το fitness — από
@@ -12,6 +13,7 @@ competitorOrg: NPC Worldwide
 competitorCategory: Bodybuilding · Heavyweight
 videoLabel: Δες το μήνυμά μου
 videoDuration: Βίντεο γνωριμίας · 1:20
+introVideoUrl: https://www.youtube.com/watch?v=nwtYYPCz-Jc&t=4s
 stats:
   - value: '[X]+'
     label: Χρόνια εμπειρίας
@@ -32,7 +34,8 @@ achievements:
     title: NPC Worldwide Romania Muscle Fest
     result: 2η θέση · Heavyweight
 ctaLabel: Δούλεψε μαζί μου
-instagram: https://instagram.com
-youtube: https://youtube.com
-quote: Δεν χρειάζεσαι motivation. Χρειάζεσαι συνέπεια.
+instagram: https://www.instagram.com/pantelisstavroulakis/
+youtube: https://www.youtube.com/@pantelisstavroulakis5456
+quote: Δεν χρειάζεσαι motivation. Χρειάζεσαι
+quoteHighlight: συνέπεια.
 quoteAuthor: Παντελής Σταυρουλάκης, founder & head coach
