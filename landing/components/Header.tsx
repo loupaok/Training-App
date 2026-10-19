@@ -64,16 +64,20 @@ export function Header({ settings }: { settings: Settings }) {
         </Link>
 
         <nav className="hidden items-center gap-7 lg:flex">
-          {navLinks.map((link) => (
-            <a
+          {navLinks.map((link, i) => (
+            <motion.a
               key={link.href}
               href={link.href}
-              className={`text-sm font-semibold transition-colors hover:text-lime ${
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: 0.1 + i * 0.06 }}
+              className={`group relative text-sm font-semibold transition-colors hover:text-lime ${
                 scrolled ? "text-navy-700 dark:text-white/80" : "text-white/90"
               }`}
             >
               {link.label}
-            </a>
+              <span className="absolute -bottom-1 left-0 h-[2px] w-0 bg-lime transition-all duration-300 group-hover:w-full" />
+            </motion.a>
           ))}
         </nav>
 
