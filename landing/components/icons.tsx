@@ -113,6 +113,33 @@ export function Youtube({ className }: IconProps) {
   );
 }
 
+export function Eye({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" className={base} />
+      <circle cx="12" cy="12" r="3" className={base} />
+    </svg>
+  );
+}
+
+export function EyeOff({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 7 11 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61C3.73 8.36 2 11 2 11s4 7 11 7a9.26 9.26 0 0 0 5.39-1.61M3 3l18 18" className={base} />
+      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" className={base} />
+    </svg>
+  );
+}
+
+export function Lock({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="11" width="16" height="10" rx="2" className={base} />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" className={base} />
+    </svg>
+  );
+}
+
 export function Play({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="currentColor" stroke="none">

@@ -2,5 +2,15 @@
 
 import { makePage } from "@keystatic/next/ui/app";
 import keystaticConfig from "../../../keystatic.config";
+import { LogoutButton } from "@/components/LogoutButton";
 
-export default makePage(keystaticConfig);
+const KeystaticPage = makePage(keystaticConfig);
+
+export default function Page() {
+  return (
+    <>
+      <KeystaticPage />
+      <LogoutButton />
+    </>
+  );
+}
