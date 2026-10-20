@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ThemeProvider } from "next-themes";
+import { ThemeProvider } from "@/components/shell/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BrandingProvider } from "@/contexts/BrandingContext";
@@ -11,7 +11,7 @@ import { OfflineSupport } from "@/components/offline/offline-support";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <ThemeProvider>
       <AuthProvider>
         <BrandingProvider>
           <FontSizeProvider>

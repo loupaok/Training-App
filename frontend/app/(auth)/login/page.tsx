@@ -17,12 +17,22 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [brandingVersion, setBrandingVersion] = useState<string | null>(null);
   const { login, loading } = useAuth();
   const { branding, refreshBranding } = useBranding();
   const router = useRouter();
 
   useEffect(() => {
-    void refreshBranding().catch(() => undefined);
+    let mounted = true;
+    void refreshBranding()
+      .catch(() => undefined)
+      .finally(() => {
+        if (mounted) setBrandingVersion(String(Date.now()));
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, [refreshBranding]);
 
   const handleSubmit = async (event: FormEvent) => {
@@ -37,17 +47,24 @@ export default function LoginPage() {
     }
   };
 
-  const backgroundImage = branding.loginBackgroundUrl ? `url("${resolveMediaUrl(branding.loginBackgroundUrl)}")` : undefined;
+  const versionedMediaUrl = (url: string | null) => {
+    if (!url || !brandingVersion) return "";
+    const resolvedUrl = resolveMediaUrl(url);
+    return `${resolvedUrl}${resolvedUrl.includes("?") ? "&" : "?"}v=${brandingVersion}`;
+  };
+  const backgroundUrl = versionedMediaUrl(branding.loginBackgroundUrl);
+  const backgroundImage = backgroundUrl ? `url("${backgroundUrl}")` : undefined;
   const loginLogoUrl = branding.loginLogoUrl || branding.logoUrl;
+  const logoUrl = versionedMediaUrl(loginLogoUrl);
 
   return (
     <main className="relative grid min-h-screen place-items-center overflow-hidden bg-slate-50 px-5 py-10" style={backgroundImage ? { backgroundImage, backgroundPosition: "center", backgroundSize: "cover" } : undefined}>
       {backgroundImage && <div className="absolute inset-0" style={{ backgroundColor: "color-mix(in oklab, #000000 45%, transparent)" }} />}
       <section className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white/95 p-8 shadow-2xl shadow-slate-900/15 sm:p-10">
         <div className="text-center">
-          {loginLogoUrl ? (
+          {logoUrl ? (
             <div className="mx-auto inline-flex max-w-full items-center justify-center rounded-lg bg-white p-2 shadow-sm ring-1 ring-slate-200/80">
-              <img key={loginLogoUrl} src={resolveMediaUrl(loginLogoUrl)} alt={branding.appName} className="max-h-16 max-w-44 object-contain" />
+              <img key={logoUrl} src={logoUrl} alt={branding.appName} className="max-h-16 max-w-44 object-contain" />
             </div>
           ) : (
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-slate-100 text-slate-700"><LockKeyhole className="h-6 w-6" /></div>

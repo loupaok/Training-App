@@ -54,41 +54,55 @@ share code, dependencies, or a database with `frontend/`/`backend/`.
 Prerequisites:
 
 - Node.js 18+
-- MySQL / MariaDB on port 3306
-- XAMPP (recommended for local)
+- XAMPP with **MySQL/MariaDB** running on port `3306`
 - Android Studio for Android builds
 - Xcode on macOS for iOS builds
 
-Install and start:
+### First-time setup
 
-```bash
-# Backend
+From the repository root, create the local environment files:
+
+```powershell
+Copy-Item backend\.env.example backend\.env
+Copy-Item frontend\.env.example frontend\.env.local
+Copy-Item landing\.env.local.example landing\.env.local
+```
+
+Start **MySQL** from the XAMPP Control Panel, then open three terminals in the
+repository root and run:
+
+```powershell
+# Terminal 1 - API
 
 cd backend
 npm install
 npm run dev
 
-# Frontend (new terminal)
+# Terminal 2 - main web app
 
 cd frontend
 npm install
 npm run dev
 
-# Landing (new terminal)
+# Terminal 3 - SP Team landing page
 cd landing
 npm install
-npm run dev
+npm run dev -- -p 3100
 ```
 
-Before the first run, copy `backend/.env.example` to `backend/.env` and
-`frontend/.env.example` to `frontend/.env.local`, then fill in only the values
-needed for your environment. Real environment files and production credentials
-must never be committed.
+Open:
 
-Frontend → [http://localhost:3000](http://localhost:3000)
-Backend  → [http://localhost:5000](http://localhost:5000)
-Moible   →  http://192.168.1.4:3000/login
+- Main web app: [http://localhost:3000](http://localhost:3000)
+- Login: [http://localhost:3000/login](http://localhost:3000/login)
+- Backend API: [http://localhost:5000](http://localhost:5000)
+- SP Team landing: [http://localhost:3100](http://localhost:3100)
+- Landing content admin: [http://localhost:3100/keystatic](http://localhost:3100/keystatic)
 
+For a phone on the same Wi-Fi, use `http://<your-LAN-IP>:3000/login`, for
+example `http://192.168.1.4:3000/login`. The backend CORS configuration must
+include that frontend origin.
+
+Real environment files and production credentials must never be committed.
 
 Environment variables needed in
 backend/.env:
@@ -221,19 +235,10 @@ own `package.json` and `node_modules` — it does not touch or depend on
 Motion, Lenis (smooth scroll), React Hook Form + Zod (contact form),
 Keystatic CMS (local storage mode), next-sitemap.
 
-### Run it
+### Landing configuration
 
-
-```
-
-- Site → [http://localhost:3100](http://localhost:3100)
-- Keystatic admin (edit content) → [http://localhost:3100/keystatic](http://localhost:3100/keystatic)
-
-The dev server runs on port 3100 so it can run alongside the main
-app's frontend (3000) and backend (5000) without conflicts.
-
-Before the first run, copy `landing/.env.local.example` to
-`landing/.env.local`. Key variables:
+The landing server runs on port `3100` alongside the main app (`3000`) and
+backend (`5000`). Its key variables are:
 
 ```env
 NEXT_PUBLIC_SITE_URL=http://localhost:3100
@@ -255,9 +260,6 @@ is saved as files under `landing/content/`. Images are uploaded to
 `landing/public/uploads/`; replacing an image automatically deletes
 the old file (a cleanup sweep runs after every save, and can also be
 run manually with `npm run cleanup-uploads`).
-
-
-```
 
 `npm run build` also runs `next-sitemap`, generating
 `public/sitemap.xml` and `public/robots.txt` (these are not present in

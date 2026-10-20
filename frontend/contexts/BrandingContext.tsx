@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useTheme } from "next-themes";
+import { useTheme } from "@/components/shell/theme-provider";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl } from "@/lib/media";
 
