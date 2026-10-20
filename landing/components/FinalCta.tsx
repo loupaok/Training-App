@@ -7,8 +7,8 @@ export function FinalCta({ finalCta }: { finalCta: FinalCta }) {
   const heading = finalCta?.heading || "Η καλύτερη εκδοχή σου\nξεκινά σήμερα.";
 
   return (
-    <section className="bg-[#f8f8f5] px-4 sm:px-6 lg:px-8">
-      <div className="relative mx-auto flex min-h-[520px] max-w-[1440px] items-center justify-center overflow-hidden rounded-t-[32px] text-center text-white">
+    <section className="bg-[#f8f8f5] sm:px-6 lg:px-8">
+      <div className="relative flex min-h-[520px] w-full items-center justify-center overflow-hidden rounded-t-[32px] text-center text-white sm:mx-auto sm:max-w-[1440px]">
         {finalCta?.bannerImage && (
           <Image src={finalCta.bannerImage} alt="" fill className="object-cover object-center" sizes="100vw" />
         )}

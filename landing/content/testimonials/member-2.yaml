@@ -1,8 +1,6 @@
-name: "[Όνομα]"
-role: Premium 1:1
-beforeImage: /uploads/seed-testimonial-2.jpg
-afterImage: /uploads/seed-testimonial-2.jpg
-statValue: "+[X] KG ΜΥΩΝ"
-weeksLabel: "[X] εβδομάδες"
-quote: "[Μαρτυρία πελάτη — τι άλλαξε, 1–2 προτάσεις.]"
+name: '[Όνομα]'
+photo: /uploads/member-2/photo.jpg
+statValue: +50 KG ΜΥΩΝ
+weeksLabel: 12 εβδομάδες
+quote: Πήρα το αποτέλεσμα που ήθελα, ευχαριστώ τον Παντελή.
 order: 2

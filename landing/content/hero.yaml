@@ -17,3 +17,6 @@ workoutTitle: Lower Body — Deadlift
 workoutMeta: 5 ασκήσεις · 60 λεπτά
 workoutPoints: +[X] πόντοι · Συνδρομή Οκτωβρίου
 backgroundImage: /uploads/backgroundImage.webp
+backgroundImageAlt: Προπόνηση με βάρη
+showWorkoutCard: true
+showMemberStats: true

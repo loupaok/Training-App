@@ -8,8 +8,13 @@ import { Menu, X } from "./icons";
 import type { getSiteContent } from "@/lib/keystatic/reader";
 
 type Settings = Awaited<ReturnType<typeof getSiteContent>>["settings"];
+type Branding = Awaited<ReturnType<typeof getSiteContent>>["branding"];
 
-export function Header({ settings }: { settings: Settings }) {
+function toHomeAnchor(href: string) {
+  return href.startsWith("#") ? `/${href}` : href;
+}
+
+export function Header({ settings, branding }: { settings: Settings; branding?: Branding }) {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -21,8 +26,8 @@ export function Header({ settings }: { settings: Settings }) {
   }, []);
 
   const navLinks = settings?.navLinks || [];
-  const logoLight = settings?.logoWhite;
-  const logoDark = settings?.logoBlack;
+  const logoLight = branding?.logoWhite;
+  const logoDark = branding?.logoBlack;
 
   return (
     <header
@@ -30,15 +35,15 @@ export function Header({ settings }: { settings: Settings }) {
         scrolled ? "border-b border-white/10 bg-[#0b0b0b]/95 backdrop-blur-lg" : "bg-transparent"
       }`}
     >
-      <div className="container-x flex h-20 items-center justify-between">
+      <div className="container-x flex h-16 items-center justify-between sm:h-20">
         <Link href="/" className="flex items-center gap-2">
           {logoLight || logoDark ? (
             <Image
               src={logoLight || logoDark || ""}
-              alt={settings?.siteName || "SP Team"}
+              alt={branding?.siteName || "SP Team"}
               width={120}
               height={32}
-              className="h-8 w-auto"
+              className="h-7 w-auto sm:h-8"
               priority
             />
           ) : (
@@ -50,7 +55,7 @@ export function Header({ settings }: { settings: Settings }) {
           {navLinks.map((link, i) => (
             <motion.a
               key={link.href}
-              href={link.href}
+              href={toHomeAnchor(link.href)}
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.4, delay: 0.1 + i * 0.06 }}
@@ -70,7 +75,7 @@ export function Header({ settings }: { settings: Settings }) {
             {settings?.loginLabel || "Σύνδεση"}
           </a>
           <a
-            href={settings?.ctaHref || "#pricing"}
+            href={toHomeAnchor(settings?.ctaHref || "#pricing")}
             className="btn-header bg-lime text-navy-900 shadow-sm shadow-lime/30 transition-transform hover:-translate-y-0.5"
           >
             {settings?.ctaLabel || "Ξεκίνα"}
@@ -78,11 +83,17 @@ export function Header({ settings }: { settings: Settings }) {
         </div>
 
         <div className="flex items-center gap-2 lg:hidden">
+          <a
+            href={settings?.loginHref || "/login"}
+            className="text-xs font-bold text-white transition-colors hover:text-lime"
+          >
+            {settings?.loginLabel || "Σύνδεση"}
+          </a>
           <button
             type="button"
             aria-label="Μενού"
             onClick={() => setOpen((v) => !v)}
-            className="grid h-10 w-10 place-items-center rounded-full border border-white/30 text-white"
+            className="grid h-9 w-9 place-items-center rounded-full border border-white/30 text-white"
           >
             {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -102,7 +113,7 @@ export function Header({ settings }: { settings: Settings }) {
               {navLinks.map((link) => (
                 <a
                   key={link.href}
-                  href={link.href}
+                  href={toHomeAnchor(link.href)}
                   onClick={() => setOpen(false)}
                   className="rounded-lg px-3 py-3 text-navlink text-white hover:bg-white/5"
                 >
@@ -110,7 +121,7 @@ export function Header({ settings }: { settings: Settings }) {
                 </a>
               ))}
               <a
-                href={settings?.ctaHref || "#pricing"}
+                href={toHomeAnchor(settings?.ctaHref || "#pricing")}
                 onClick={() => setOpen(false)}
                 className="btn-header mt-2 justify-center bg-lime text-center text-navy-900"
               >

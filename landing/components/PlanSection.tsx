@@ -20,13 +20,13 @@ function Column({ title, items, highlight = false }: { title: string; items: rea
 
 export function PlanSection({ planSection }: { planSection: PlanSection }) {
   return (
-    <section id="plan" className="relative overflow-hidden py-20 text-white sm:py-28">
+    <section id="plan" className="relative overflow-hidden py-12 text-white sm:py-28">
       <div className="absolute inset-0 -z-10">
         {planSection?.sectionBackgroundImage && <Image src={planSection.sectionBackgroundImage} alt="" fill className="object-cover" sizes="100vw" />}
         <div className="absolute inset-0 bg-navy-950/85" />
       </div>
 
-      <div className="container-x">
+      <div className="container-x rounded-[1.75rem] bg-black/25 px-5 py-8 backdrop-blur-[2px] sm:rounded-none sm:bg-transparent sm:px-8 sm:py-0 sm:backdrop-blur-none lg:px-10">
         <FadeIn className="max-w-xl">
           <h2 className="text-h2l sm:text-h2l-d">{planSection?.heading || "Ένα πλάνο 360° φτιαγμένο μόνο για σένα"}</h2>
           <p className="mt-4 text-body text-white/70">{planSection?.description}</p>
@@ -46,7 +46,7 @@ export function PlanSection({ planSection }: { planSection: PlanSection }) {
             </span>
           </div>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
+          <div className="mt-6 grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
             <Column title="Πρόγραμμα" items={planSection?.programme || []} />
             <Column title="Διατροφή" items={planSection?.nutrition || []} />
             <Column title="Στόχοι" items={planSection?.goals || []} />

@@ -9,8 +9,8 @@ export function PointsSection({ pointsSection }: { pointsSection: PointsSection 
   const redemptionOptions = pointsSection?.redemptionOptions || [];
 
   return (
-    <section id="points" className="bg-lime py-20 text-navy-900 sm:py-28">
-      <div className="container-x grid gap-12 lg:grid-cols-2 lg:items-start">
+    <section id="points" className="bg-lime py-0 text-navy-900 sm:py-28">
+      <div className="container-x grid gap-9 bg-lime px-5 py-8 sm:gap-12 sm:bg-transparent sm:px-8 sm:py-0 lg:grid-cols-2 lg:items-start lg:px-10">
         <FadeIn>
           <p className="text-eyebrow uppercase sm:text-eyebrow-d">{pointsSection?.eyebrow || "ΣΥΣΤΗΜΑ ΠΟΝΤΩΝ"}</p>
           <h2 className="mt-4 text-h2b italic uppercase sm:text-h2b-d">

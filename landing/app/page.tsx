@@ -18,11 +18,12 @@ import { FinalCta } from "@/components/FinalCta";
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3100";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const { settings } = await getSiteContent();
+  const { seo } = await getSiteContent();
   return {
-    title: settings?.seoTitle || "SP Team — Personal Coaching",
-    description: settings?.seoDescription || "Προσωπική προπόνηση και coaching από την ομάδα SP Team.",
-    alternates: { canonical: siteUrl },
+    title: seo?.seoTitle || "SP Team — Personal Coaching",
+    description: seo?.seoDescription || "Προσωπική προπόνηση και coaching από την ομάδα SP Team.",
+    alternates: { canonical: seo?.canonicalUrl || siteUrl },
+    keywords: seo?.keywords ? [...seo.keywords] : undefined,
   };
 }
 
@@ -30,6 +31,8 @@ export default async function HomePage() {
   const [
     {
       settings,
+      branding,
+      seo,
       hero,
       featuresStrip,
       coachProfile,
@@ -48,20 +51,26 @@ export default async function HomePage() {
   return (
     <>
       <JsonLd
-        siteUrl={siteUrl}
-        siteName={settings?.siteName || "SP Team"}
+        siteUrl={seo?.canonicalUrl || siteUrl}
+        siteName={seo?.businessName || branding?.siteName || "SP Team"}
         phone={settings?.phone ?? undefined}
         email={settings?.email ?? undefined}
-        address={settings?.address ?? undefined}
+        description={seo?.businessDescription ?? undefined}
+        businessType={seo?.businessType ?? undefined}
+        serviceArea={seo?.serviceArea ?? undefined}
+        image={seo?.ogImage}
+        latitude={seo?.geoLatitude ?? undefined}
+        longitude={seo?.geoLongitude ?? undefined}
+        sameAs={(settings?.socialLinks || []).map((link) => link.url).filter((url): url is string => Boolean(url))}
         packages={plans.map((p) => ({ title: p.name, price: `${p.price} ${p.currency}`, description: p.description }))}
         faqs={faqSection?.items || []}
       />
       <TickerBar items={settings?.tickerItems || []} />
-      <Header settings={settings} />
+      <Header settings={settings} branding={branding} />
       <main>
         <Hero hero={hero} />
         <FeatureStrip featuresStrip={featuresStrip} />
-        <CoachProfile coachProfile={coachProfile} settings={settings} />
+        <CoachProfile coachProfile={coachProfile} branding={branding} />
         <PlatformSection platformSection={platformSection} />
         <PlanSection planSection={planSection} />
         <PointsSection pointsSection={pointsSection} />
@@ -70,7 +79,7 @@ export default async function HomePage() {
         <FaqSection faqSection={faqSection} />
         <FinalCta finalCta={finalCta} />
       </main>
-      <Footer settings={settings} />
+      <Footer settings={settings} branding={branding} />
     </>
   );
 }

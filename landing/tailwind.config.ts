@@ -40,7 +40,7 @@ const config: Config = {
       fontSize: {
         // H1 — hero (mobile base, -d = desktop override via lg: variant)
         h1: ["50px", { lineHeight: "0.92", letterSpacing: "-1.5px", fontWeight: "800" }],
-        "h1-d": ["104px", { lineHeight: "0.92", letterSpacing: "-3px", fontWeight: "800" }],
+        "h1-d": ["72px", { lineHeight: "0.95", letterSpacing: "-2px", fontWeight: "800" }],
         // H2 bold — brand titles
         h2b: ["48px", { lineHeight: "0.92", letterSpacing: "-1px", fontWeight: "800" }],
         "h2b-d": ["88px", { lineHeight: "0.92", letterSpacing: "-2px", fontWeight: "800" }],

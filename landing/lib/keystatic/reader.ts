@@ -6,12 +6,13 @@ export const reader = createReader(process.cwd(), keystaticConfig);
 export async function getSiteContent() {
   const [
     settings,
+    branding,
+    seo,
     hero,
     featuresStrip,
     coachProfile,
     platformSection,
     planSection,
-    allInOneSection,
     pointsSection,
     servicesIntro,
     testimonialsIntro,
@@ -19,12 +20,13 @@ export async function getSiteContent() {
     finalCta,
   ] = await Promise.all([
     reader.singletons.settings.read(),
+    reader.singletons.branding.read(),
+    reader.singletons.seo.read(),
     reader.singletons.hero.read(),
     reader.singletons.featuresStrip.read(),
     reader.singletons.coachProfile.read(),
     reader.singletons.platformSection.read(),
     reader.singletons.planSection.read(),
-    reader.singletons.allInOneSection.read(),
     reader.singletons.pointsSection.read(),
     reader.singletons.servicesIntro.read(),
     reader.singletons.testimonialsIntro.read(),
@@ -34,12 +36,13 @@ export async function getSiteContent() {
 
   return {
     settings,
+    branding,
+    seo,
     hero,
     featuresStrip,
     coachProfile,
     platformSection,
     planSection,
-    allInOneSection,
     pointsSection,
     servicesIntro,
     testimonialsIntro,
@@ -56,6 +59,18 @@ export async function getTestimonials() {
   return entries
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+export async function getTermsPage() {
+  return reader.singletons.termsPage.read();
+}
+
+export async function getPrivacyPage() {
+  return reader.singletons.privacyPage.read();
+}
+
+export async function getCookiesPage() {
+  return reader.singletons.cookiesPage.read();
 }
 
 export async function getPricingPlans() {

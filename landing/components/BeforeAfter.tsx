@@ -1,5 +1,5 @@
+import Image from "next/image";
 import { FadeIn } from "./FadeIn";
-import { BeforeAfterSlider } from "./BeforeAfterSlider";
 import type { getSiteContent, getTestimonials } from "@/lib/keystatic/reader";
 
 type BeforeAfterIntro = Awaited<ReturnType<typeof getSiteContent>>["testimonialsIntro"];
@@ -23,13 +23,15 @@ export function BeforeAfter({ intro, transformations }: { intro: BeforeAfterIntr
         </FadeIn>
 
         {transformations.length ? (
-          <div className="mt-14 grid gap-6 md:grid-cols-3">
+          <div className="-mx-5 mt-10 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-3 [scrollbar-width:none] md:mx-0 md:mt-14 md:grid md:grid-cols-3 md:gap-6 md:overflow-visible md:px-0">
             {transformations.map((item, index) => {
               const displayName = item.name || "";
               return (
                 <FadeIn key={item.slug} delay={index * 0.08}>
-                  <div className="flex h-full flex-col rounded-3xl border border-navy-100 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-white/5">
-                    <BeforeAfterSlider beforeImage={item.beforeImage} afterImage={item.afterImage} name={displayName} />
+                <div className="flex h-full w-[78vw] flex-col snap-center rounded-3xl border border-navy-100 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/5 md:w-auto md:p-5">
+                    <div className="relative aspect-[4/5] w-full overflow-hidden rounded-2xl bg-navy-100 dark:bg-white/5">
+                      {item.photo && <Image src={item.photo} alt={displayName} fill className="object-cover" sizes="360px" />}
+                    </div>
 
                     <div className="mt-5 flex items-center justify-between gap-3">
                       <p className="text-h3">{item.statValue}</p>
@@ -40,10 +42,7 @@ export function BeforeAfter({ intro, transformations }: { intro: BeforeAfterIntr
 
                     <p className="mt-3 text-body leading-relaxed text-navy-600 dark:text-white/70">«{item.quote}»</p>
 
-                    <p className="mt-4 text-xsmall font-semibold">
-                      {displayName}
-                      {item.role && <span className="text-navy-400 dark:text-white/40"> · {item.role}</span>}
-                    </p>
+                    <p className="mt-4 text-xsmall font-semibold">{displayName}</p>
                   </div>
                 </FadeIn>
               );

@@ -26,10 +26,6 @@ export default config({
       label: "Γενικές Ρυθμίσεις",
       path: "content/settings",
       schema: {
-        siteName: fields.text({ label: "Όνομα εταιρίας", defaultValue: "SP Team" }),
-        logoBlack: imageField("Λογότυπο (σκούρο, για ανοιχτό φόντο)", "/uploads/seed-logo-black.svg"),
-        logoWhite: imageField("Λογότυπο (λευκό, για σκούρο φόντο)", "/uploads/seed-logo-white.svg"),
-        tagline: fields.text({ label: "Σύνθημα (tagline)", defaultValue: "Consistency creates results" }),
         tickerItems: fields.array(fields.text({ label: "Κείμενο" }), {
           label: "Κυλιόμενη μπάρα (πάνω από το header)",
           itemLabel: (props) => props.value || "Κείμενο",
@@ -44,13 +40,29 @@ export default config({
             itemLabel: (props) => props.fields.label.value || "Σύνδεσμος",
           }
         ),
+        footerNavigationTitle: fields.text({ label: "Τίτλος μενού footer 1", defaultValue: "Πλοήγηση" }),
+        footerNavigationLinks: fields.array(
+          fields.object({
+            label: fields.text({ label: "Κείμενο" }),
+            href: fields.text({ label: "Σύνδεσμος" }),
+          }),
+          { label: "Μενού footer 1", itemLabel: (props) => props.fields.label.value || "Σύνδεσμος" }
+        ),
+        footerMembersTitle: fields.text({ label: "Τίτλος μενού footer 2", defaultValue: "Μέλη" }),
+        footerMembersLinks: fields.array(
+          fields.object({
+            label: fields.text({ label: "Κείμενο" }),
+            href: fields.text({ label: "Σύνδεσμος" }),
+          }),
+          { label: "Μενού footer 2", itemLabel: (props) => props.fields.label.value || "Σύνδεσμος" }
+        ),
         loginLabel: fields.text({ label: "Κείμενο 'Σύνδεση'", defaultValue: "Σύνδεση" }),
         loginHref: fields.text({ label: "Σύνδεσμος 'Σύνδεση'", defaultValue: "/login" }),
         ctaLabel: fields.text({ label: "Κείμενο κουμπιού header", defaultValue: "Ξεκίνα" }),
         ctaHref: fields.text({ label: "Σύνδεσμος κουμπιού header", defaultValue: "#pricing" }),
         phone: fields.text({ label: "Τηλέφωνο" }),
         email: fields.text({ label: "Email" }),
-        address: fields.text({ label: "Διεύθυνση" }),
+        footerContactTitle: fields.text({ label: "Τίτλος ενότητας επικοινωνίας footer", defaultValue: "Επικοινωνία" }),
         socialLinks: fields.array(
           fields.object({
             platform: fields.select({
@@ -69,14 +81,98 @@ export default config({
         ),
         footerText: fields.text({
           label: "Κείμενο footer",
-          defaultValue: `© ${new Date().getFullYear()} SP Team. Με επιφύλαξη παντός δικαιώματος.`,
+          defaultValue: "SP Team",
         }),
-        seoTitle: fields.text({ label: "SEO Τίτλος (default)", defaultValue: "SP Team — Personal Coaching" }),
+        footerDescription: fields.text({
+          label: "Περιγραφή footer",
+          multiline: true,
+          defaultValue: "Προσωπικό coaching με πλάνο προπόνησης, διατροφής και συνεχή καθοδήγηση.",
+        }),
+        footerCtaLabel: fields.text({ label: "Κείμενο κουμπιού footer", defaultValue: "Ξεκίνα" }),
+        footerCtaHref: fields.text({ label: "Σύνδεσμος κουμπιού footer", defaultValue: "#pricing" }),
+        footerLegalLinks: fields.array(
+          fields.object({
+            label: fields.text({ label: "Κείμενο" }),
+            href: fields.text({ label: "Σύνδεσμος" }),
+          }),
+          { label: "Links κάτω μπάρας footer", itemLabel: (props) => props.fields.label.value || "Σύνδεσμος" }
+        ),
+      },
+    }),
+    branding: singleton({
+      label: "Branding",
+      path: "content/branding",
+      schema: {
+        siteName: fields.text({ label: "Όνομα brand", defaultValue: "SP Team" }),
+        tagline: fields.text({ label: "Σύνθημα (tagline)", defaultValue: "Consistency creates results" }),
+        logoBlack: imageField("Λογότυπο για ανοιχτό φόντο", "/uploads/seed-logo-black.svg"),
+        logoWhite: imageField("Λογότυπο για σκούρο φόντο", "/uploads/seed-logo-white.svg"),
+      },
+    }),
+    seo: singleton({
+      label: "SEO & GEO",
+      path: "content/seo",
+      schema: {
+        seoTitle: fields.text({ label: "SEO τίτλος", defaultValue: "SP Team — Personal Coaching" }),
         seoDescription: fields.text({
-          label: "SEO Περιγραφή (default)",
+          label: "Meta περιγραφή",
           multiline: true,
           defaultValue: "Η συνέπεια φέρνει αποτέλεσμα — προσωπικό coaching, πλάνο προπόνησης & διατροφής από την ομάδα SP Team.",
         }),
+        canonicalUrl: fields.url({ label: "Canonical URL", validation: { isRequired: false } }),
+        ogImage: imageField("Open Graph εικόνα (social sharing)"),
+        keywords: fields.array(fields.text({ label: "Λέξη ή φράση" }), {
+          label: "SEO keywords",
+          itemLabel: (props) => props.value || "Keyword",
+        }),
+        robotsIndex: fields.checkbox({ label: "Να εμφανίζεται στις μηχανές αναζήτησης", defaultValue: true }),
+        googleSiteVerification: fields.text({ label: "Google Search Console verification", validation: { isRequired: false } }),
+        businessName: fields.text({ label: "Όνομα επιχείρησης για SEO/GEO", defaultValue: "SP Team" }),
+        businessDescription: fields.text({
+          label: "Περιγραφή επιχείρησης για AI & local search",
+          multiline: true,
+          defaultValue: "Online personal coaching με εξατομικευμένη προπόνηση, διατροφή και συνεχή υποστήριξη.",
+        }),
+        businessType: fields.select({
+          label: "Τύπος επιχείρησης (structured data)",
+          options: [
+            { label: "Professional Service", value: "ProfessionalService" },
+            { label: "Health Club", value: "HealthClub" },
+            { label: "Local Business", value: "LocalBusiness" },
+          ],
+          defaultValue: "ProfessionalService",
+        }),
+        serviceArea: fields.text({ label: "Περιοχή εξυπηρέτησης", defaultValue: "Ελλάδα και online" }),
+        geoLatitude: fields.text({ label: "Γεωγραφικό πλάτος (προαιρετικό)", validation: { isRequired: false } }),
+        geoLongitude: fields.text({ label: "Γεωγραφικό μήκος (προαιρετικό)", validation: { isRequired: false } }),
+        sitemapEnabled: fields.checkbox({ label: "Ενεργό sitemap.xml", defaultValue: true }),
+        sitemapExtraPages: fields.array(
+          fields.object({
+            label: fields.text({ label: "Όνομα σελίδας" }),
+            href: fields.text({ label: "Διαδρομή ή URL (π.χ. /contact)" }),
+          }),
+          { label: "Επιπλέον σελίδες sitemap", itemLabel: (props) => props.fields.label.value || "Σελίδα" }
+        ),
+        llmsEnabled: fields.checkbox({ label: "Ενεργό llms.txt", defaultValue: true }),
+        llmsTitle: fields.text({ label: "Τίτλος llms.txt", defaultValue: "SP Team — Personal Coaching" }),
+        llmsDescription: fields.text({
+          label: "Σύντομη περιγραφή για AI",
+          multiline: true,
+          defaultValue: "Online personal coaching με εξατομικευμένη προπόνηση, διατροφή και συνεχή υποστήριξη.",
+        }),
+        llmsContent: fields.text({
+          label: "Πρόσθετες οδηγίες για AI",
+          multiline: true,
+          defaultValue: "Χρησιμοποίησε τα τρέχοντα πακέτα και τις τιμές της σελίδας ως την έγκυρη πηγή πληροφοριών.",
+        }),
+        llmsLinks: fields.array(
+          fields.object({
+            label: fields.text({ label: "Τίτλος link" }),
+            href: fields.text({ label: "Διαδρομή ή URL" }),
+            description: fields.text({ label: "Περιγραφή", validation: { isRequired: false } }),
+          }),
+          { label: "Χρήσιμα links για llms.txt", itemLabel: (props) => props.fields.label.value || "Link" }
+        ),
       },
     }),
     hero: singleton({
@@ -104,6 +200,9 @@ export default config({
         workoutMeta: fields.text({ label: "Κάρτα προπόνησης — meta", defaultValue: "5 ασκήσεις · 60 λεπτά" }),
         workoutPoints: fields.text({ label: "Κάρτα προπόνησης — πόντοι", defaultValue: "+[X] πόντοι · Συνδρομή Οκτωβρίου" }),
         backgroundImage: imageField("Φωτογραφία φόντου", "/uploads/seed-hero-bg.jpg"),
+        backgroundImageAlt: fields.text({ label: "Περιγραφή φωτογραφίας φόντου", defaultValue: "Προπόνηση με βάρη" }),
+        showWorkoutCard: fields.checkbox({ label: "Εμφάνιση κάρτας προπόνησης", defaultValue: true }),
+        showMemberStats: fields.checkbox({ label: "Εμφάνιση μελών και βαθμολογίας", defaultValue: true }),
       },
     }),
     featuresStrip: singleton({
@@ -245,56 +344,6 @@ export default config({
         }),
       },
     }),
-    allInOneSection: singleton({
-      label: "Ενότητα 'Όλα σε ένα σημείο'",
-      path: "content/all-in-one-section",
-      schema: {
-        heading: fields.text({ label: "Τίτλος", defaultValue: "Όλα όσα χρειάζεσαι, σε ένα σημείο" }),
-        description: fields.text({
-          label: "Περιγραφή",
-          multiline: true,
-          defaultValue: "Προπόνηση, διατροφή και check-ins οργανωμένα, ώστε να ξέρεις πάντα τι κάνεις σήμερα.",
-        }),
-        trainingTitle: fields.text({ label: "Προπόνηση — τίτλος", defaultValue: "Προπόνηση" }),
-        trainingDescription: fields.text({
-          label: "Προπόνηση — περιγραφή",
-          multiline: true,
-          defaultValue: "Πρόγραμμα με βίντεο εκτέλεσης, sets, κιλά και progressive overload κάθε εβδομάδα.",
-        }),
-        trainingDayLabel: fields.text({ label: "Προπόνηση — ετικέτα ημέρας", defaultValue: "Ημέρα 3 · Push" }),
-        trainingExercises: fields.array(
-          fields.object({
-            name: fields.text({ label: "Άσκηση" }),
-            sets: fields.text({ label: "Sets" }),
-          }),
-          {
-            label: "Προπόνηση — ασκήσεις",
-            itemLabel: (props) => props.fields.name.value || "Άσκηση",
-          }
-        ),
-        trainingCtaLabel: fields.text({ label: "Προπόνηση — κουμπί", defaultValue: "Ξεκίνα προπόνηση" }),
-        nutritionTitle: fields.text({ label: "Διατροφή — τίτλος", defaultValue: "Διατροφή" }),
-        nutritionDescription: fields.text({
-          label: "Διατροφή — περιγραφή",
-          multiline: true,
-          defaultValue: "Macros και γεύματα με ελληνικά φαγητά, λίστα αγορών και εύκολες εναλλακτικές.",
-        }),
-        nutritionPhoto: imageField("Διατροφή — φωτογραφία", "/uploads/seed-food-prep.jpg"),
-        nutritionMacros: fields.array(statField("[X]g", "Πρωτεΐνη"), {
-          label: "Διατροφή — macros",
-          itemLabel: (props) => `${props.fields.value.value} ${props.fields.label.value}`,
-        }),
-        checkinsTitle: fields.text({ label: "Check-ins — τίτλος", defaultValue: "Check-ins στο Discord" }),
-        checkinsDescription: fields.text({
-          label: "Check-ins — περιγραφή",
-          multiline: true,
-          defaultValue: "Εβδομαδιαίος απολογισμός με τον coach σου και προσαρμογές όπου χρειάζεται.",
-        }),
-        checkinsQuestion: fields.text({ label: "Check-ins — ερώτηση coach", defaultValue: "Πώς πήγε η εβδομάδα; Στείλε φωτό και βάρος" }),
-        checkinsReplyClient: fields.text({ label: "Check-ins — απάντηση πελάτη", defaultValue: "Έκανα και τις 4 προπονήσεις! −0,6 kg" }),
-        checkinsReplyCoach: fields.text({ label: "Check-ins — απάντηση coach", defaultValue: "Τέλεια. Ανεβάζουμε λίγο τους υδατάνθρακες." }),
-      },
-    }),
     pointsSection: singleton({
       label: "Ενότητα Συστήματος Πόντων",
       path: "content/points-section",
@@ -344,7 +393,6 @@ export default config({
       schema: {
         eyebrow: fields.text({ label: "Μικρός τίτλος", defaultValue: "Τιμές" }),
         heading: fields.text({ label: "Τίτλος", defaultValue: "Απλές τιμές, χωρίς δέσμευση" }),
-        subheading: fields.text({ label: "Υπότιτλος", multiline: true, defaultValue: "Άλλαξε ή ακύρωσε όποτε θες." }),
       },
     }),
     testimonialsIntro: singleton({
@@ -392,6 +440,30 @@ export default config({
         ctaHref: fields.text({ label: "Σύνδεσμος κουμπιού", defaultValue: "#pricing" }),
       },
     }),
+    termsPage: singleton({
+      label: "Σελίδα 'Όροι χρήσης'",
+      path: "content/terms-page",
+      schema: {
+        heading: fields.text({ label: "Τίτλος", defaultValue: "Όροι χρήσης" }),
+        content: fields.text({ label: "Κείμενο", multiline: true, defaultValue: "" }),
+      },
+    }),
+    privacyPage: singleton({
+      label: "Σελίδα 'Απόρρητο'",
+      path: "content/privacy-page",
+      schema: {
+        heading: fields.text({ label: "Τίτλος", defaultValue: "Πολιτική Απορρήτου" }),
+        content: fields.text({ label: "Κείμενο", multiline: true, defaultValue: "" }),
+      },
+    }),
+    cookiesPage: singleton({
+      label: "Σελίδα 'Cookies'",
+      path: "content/cookies-page",
+      schema: {
+        heading: fields.text({ label: "Τίτλος", defaultValue: "Πολιτική Cookies" }),
+        content: fields.text({ label: "Κείμενο", multiline: true, defaultValue: "" }),
+      },
+    }),
   },
   collections: {
     pricingPlans: collection({
@@ -430,9 +502,7 @@ export default config({
       slugField: "name",
       schema: {
         name: fields.slug({ name: { label: "Όνομα πελάτη" } }),
-        role: fields.text({ label: "Πλάνο (π.χ. 'Coaching', 'Premium 1:1')", validation: { isRequired: false } }),
-        beforeImage: imageField("Φωτογραφία (ΠΡΙΝ)"),
-        afterImage: imageField("Φωτογραφία (ΜΕΤΑ)"),
+        photo: imageField("Φωτογραφία"),
         statValue: fields.text({ label: "Αποτέλεσμα (π.χ. '−[X] KG', '+[X] KG ΜΥΩΝ', '−[X]% ΛΙΠΟΣ')" }),
         weeksLabel: fields.text({ label: "Διάρκεια", defaultValue: "[X] εβδομάδες" }),
         quote: fields.text({ label: "Μαρτυρία", multiline: true }),

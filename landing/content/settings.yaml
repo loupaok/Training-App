@@ -1,7 +1,3 @@
-siteName: SP Team
-logoBlack: /uploads/seed-logo-black.svg
-logoWhite: /uploads/seed-logo-white.svg
-tagline: Consistency creates results
 tickerItems:
   - ΚΑΘΕ ΠΛΗΡΩΜΗ = ΠΟΝΤΟΙ
   - CONSISTENCY CREATES RESULTS
@@ -9,29 +5,57 @@ tickerItems:
   - ΕΞΑΡΓΥΡΩΣΕ ΣΕ ΕΚΠΤΩΣΕΙΣ & ΔΩΡΑ
 navLinks:
   - label: Ο Coach
-    href: "#coach"
+    href: '#coach'
   - label: Coaching
-    href: "#coaching"
+    href: '#coaching'
   - label: Το πλάνο σου
-    href: "#plan"
+    href: '#plan'
   - label: Πόντοι
-    href: "#points"
+    href: '#points'
   - label: Αποτελέσματα
-    href: "#testimonials"
+    href: '#testimonials'
   - label: Τιμές
-    href: "#pricing"
+    href: '#pricing'
+footerNavigationTitle: Πλοήγηση
+footerNavigationLinks:
+  - label: Ο Coach
+    href: '#coach'
+  - label: Coaching
+    href: '#coaching'
+  - label: Το πλάνο σου
+    href: '#plan'
+  - label: Πόντοι
+    href: '#points'
+footerMembersTitle: Μέλη
+footerMembersLinks:
+  - label: Τιμές
+    href: '#pricing'
+  - label: Σύνδεση
+    href: /login
+  - label: FAQ
+    href: '#faq'
 loginLabel: Σύνδεση
 loginHref: /login
 ctaLabel: Ξεκίνα
-ctaHref: "#pricing"
-phone: ""
-email: ""
-address: ""
+ctaHref: '#pricing'
+phone: '69497118311'
+email: info@spteam.gr
+footerContactTitle: Επικοινωνία
 socialLinks:
   - platform: instagram
-    url: "https://instagram.com"
+    url: https://instagram.com
   - platform: youtube
-    url: "https://youtube.com"
-footerText: © 2026 SP Team. Με επιφύλαξη παντός δικαιώματος.
-seoTitle: SP Team — Personal Coaching
-seoDescription: Η συνέπεια φέρνει αποτέλεσμα — προσωπικό coaching, πλάνο προπόνησης & διατροφής από την ομάδα SP Team.
+    url: https://youtube.com
+footerText: SP Team
+footerDescription: >-
+  Online coaching με τον Παντελή Σταυρουλάκη. Μοναδικό πλάνο προπόνησης και
+  διατροφής, επικοινωνία στο Discord.
+footerCtaLabel: Ξεκίνα
+footerCtaHref: '#pricing'
+footerLegalLinks:
+  - label: Όροι χρήσης
+    href: /terms
+  - label: Απόρρητο
+    href: /privacy
+  - label: Cookies
+    href: /cookies

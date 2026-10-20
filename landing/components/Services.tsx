@@ -8,23 +8,28 @@ type ServicesIntro = Awaited<ReturnType<typeof getSiteContent>>["servicesIntro"]
 type PricingPlans = Awaited<ReturnType<typeof getPricingPlans>>;
 
 export function Services({ intro, plans }: { intro: ServicesIntro; plans: PricingPlans }) {
+  const popularPlan = plans.find((plan) => plan.isPopular);
+  const standardPlans = plans.filter((plan) => !plan.isPopular);
+  const desktopPlans = popularPlan && standardPlans.length
+    ? [standardPlans[0], popularPlan, ...standardPlans.slice(1)]
+    : plans;
+
   return (
-    <section id="pricing" className="bg-navy-50 py-20 dark:bg-navy-950 sm:py-28">
+    <section id="pricing" className="bg-[#f2f2f0] py-12 dark:bg-navy-950 sm:py-28">
       <div className="container-x">
         <FadeIn className="mx-auto max-w-2xl text-center">
           <p className="text-eyebrow uppercase text-lime-700 dark:text-lime sm:text-eyebrow-d">{intro?.eyebrow || "Τιμές"}</p>
           <h2 className="mt-3 text-h2l sm:text-h2l-d">
             {intro?.heading || "Απλές τιμές, χωρίς δέσμευση"}
           </h2>
-          {intro?.subheading && <p className="mt-4 text-body text-navy-600 dark:text-white/70">{intro.subheading}</p>}
         </FadeIn>
 
         {plans.length ? (
-          <div className="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {plans.map((plan, index) => (
-              <FadeIn key={plan.slug} delay={index * 0.08}>
+          <div className="mt-10 grid gap-4 sm:mt-16 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
+            {desktopPlans.map((plan, index) => (
+              <FadeIn key={plan.slug} delay={index * 0.08} className={plan.isPopular ? "order-first lg:order-none" : undefined}>
                 <div
-                  className={`flex h-full flex-col rounded-2xl p-8 transition-transform hover:-translate-y-1 ${
+                    className={`flex h-full flex-col rounded-2xl p-6 transition-transform hover:-translate-y-1 sm:p-8 ${
                     plan.isPopular ? "bg-navy-950 text-white shadow-2xl" : "bg-white dark:bg-white/5"
                   }`}
                 >

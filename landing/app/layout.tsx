@@ -15,31 +15,35 @@ const commissioner = Commissioner({
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3100";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const { settings } = await getSiteContent();
-  const title = settings?.seoTitle || "SP Team — Personal Coaching";
-  const description = settings?.seoDescription || "Προσωπική προπόνηση και coaching από την ομάδα SP Team.";
+  const { branding, seo } = await getSiteContent();
+  const title = seo?.seoTitle || "SP Team — Personal Coaching";
+  const description = seo?.seoDescription || "Προσωπική προπόνηση και coaching από την ομάδα SP Team.";
+  const canonicalUrl = seo?.canonicalUrl || siteUrl;
 
   return {
-    metadataBase: new URL(siteUrl),
+    metadataBase: new URL(canonicalUrl),
     title: {
       default: title,
-      template: `%s — ${settings?.siteName || "SP Team"}`,
+      template: `%s — ${branding?.siteName || "SP Team"}`,
     },
     description,
+    keywords: seo?.keywords ? [...seo.keywords] : undefined,
     openGraph: {
       title,
       description,
-      url: siteUrl,
-      siteName: settings?.siteName || "SP Team",
+      url: canonicalUrl,
+      siteName: branding?.siteName || "SP Team",
       locale: "el_GR",
       type: "website",
+      images: seo?.ogImage ? [{ url: seo.ogImage }] : undefined,
     },
     twitter: {
       card: "summary_large_image",
       title,
       description,
     },
-    robots: { index: true, follow: true },
+    robots: { index: seo?.robotsIndex ?? true, follow: seo?.robotsIndex ?? true },
+    verification: seo?.googleSiteVerification ? { google: seo.googleSiteVerification } : undefined,
   };
 }
 

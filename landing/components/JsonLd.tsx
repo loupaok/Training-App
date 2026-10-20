@@ -3,27 +3,31 @@ type JsonLdProps = {
   siteName: string;
   phone?: string;
   email?: string;
-  address?: string;
+  description?: string;
+  businessType?: string;
+  serviceArea?: string;
+  image?: string | null;
+  latitude?: string;
+  longitude?: string;
+  sameAs?: readonly string[];
   packages: Array<{ title?: string | null; price?: string | null; description?: string | null }>;
   faqs?: readonly { question?: string | null; answer?: string | null }[];
 };
 
-export function JsonLd({ siteUrl, siteName, phone, email, address, packages, faqs = [] }: JsonLdProps) {
+export function JsonLd({ siteUrl, siteName, phone, email, description, businessType, serviceArea, image, latitude, longitude, sameAs = [], packages, faqs = [] }: JsonLdProps) {
   const localBusiness = {
     "@context": "https://schema.org",
-    "@type": "LocalBusiness",
+    "@type": businessType || "ProfessionalService",
     "@id": `${siteUrl}/#business`,
     name: siteName,
     url: siteUrl,
-    image: `${siteUrl}/og-image.jpg`,
+    image: image || `${siteUrl}/og-image.jpg`,
+    description: description || undefined,
     telephone: phone || undefined,
     email: email || undefined,
-    address: address
-      ? {
-          "@type": "PostalAddress",
-          streetAddress: address,
-        }
-      : undefined,
+    areaServed: serviceArea || undefined,
+    sameAs: sameAs.length ? sameAs : undefined,
+    geo: latitude && longitude ? { "@type": "GeoCoordinates", latitude, longitude } : undefined,
     priceRange: "€€",
   };
 

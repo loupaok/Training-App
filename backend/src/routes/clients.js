@@ -2192,6 +2192,241 @@ router.get('/:id/workouts', authorizeRole(['coach', 'admin', 'moderator']), asyn
   }
 });
 
+export async function ensureSupplementsSchema(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS client_supplements (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      client_id INT NOT NULL,
+      coach_id INT NOT NULL,
+      name VARCHAR(255) NOT NULL,
+      link VARCHAR(500) NULL,
+      notes TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES users(id),
+      FOREIGN KEY (coach_id) REFERENCES users(id)
+    )
+  `);
+  for (const statement of [
+    "ALTER TABLE client_supplements ADD COLUMN dose_amount DECIMAL(8,2) NULL",
+    "ALTER TABLE client_supplements ADD COLUMN dose_unit ENUM('ml', 'gr', 'mg') NOT NULL DEFAULT 'mg'",
+    'ALTER TABLE client_supplements ADD COLUMN times_per_day INT NULL',
+  ]) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+  }
+  for (const statement of [
+    'ALTER TABLE clients ADD COLUMN supplements_notes TEXT NULL',
+    'ALTER TABLE clients ADD COLUMN supplements_enabled TINYINT(1) NOT NULL DEFAULT 1',
+  ]) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+  }
+}
+
+function optionalText(value, maxLength) {
+  if (value === undefined || value === null || value === '') return null;
+  return String(value).trim().slice(0, maxLength) || null;
+}
+
+function optionalNumber(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+const SUPPLEMENT_COLUMNS = 'id, name, dose_amount, dose_unit, times_per_day, link, created_at, updated_at';
+const DOSE_UNITS = ['ml', 'gr', 'mg'];
+
+async function notifySupplementChange(connection, clientId, change, supplementName) {
+  const messages = {
+    added: { title: 'Νέο συμπλήρωμα', body: `Ο coach πρόσθεσε «${supplementName}» στα συμπληρώματά σου.` },
+    updated: { title: 'Ενημέρωση συμπληρώματος', body: `Ο coach ενημέρωσε το «${supplementName}».` },
+    removed: { title: 'Αφαίρεση συμπληρώματος', body: `Ο coach αφαίρεσε το «${supplementName}» από τα συμπληρώματά σου.` },
+  };
+  try {
+    await notifyUser(connection, clientId, {
+      clientId,
+      type: 'supplement_updated',
+      ...messages[change],
+      linkUrl: '/client-nutrition',
+    });
+  } catch (error) {
+    console.error('Supplement notification failed:', error);
+  }
+}
+
+router.get('/:id/supplements', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureSupplementsSchema(connection);
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    const [items] = await connection.query(
+      `SELECT ${SUPPLEMENT_COLUMNS} FROM client_supplements WHERE client_id = ? ORDER BY created_at ASC, id ASC`,
+      [clientId]
+    );
+    const [[clientRow]] = await connection.query('SELECT supplements_notes, supplements_enabled FROM clients WHERE user_id = ?', [clientId]);
+    res.json({
+      items,
+      generalNotes: clientRow?.supplements_notes || '',
+      enabled: Boolean(clientRow?.supplements_enabled ?? true),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.patch('/:id/supplements/toggle', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureSupplementsSchema(connection);
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    const enabled = req.body.enabled ? 1 : 0;
+    await connection.query('UPDATE clients SET supplements_enabled = ? WHERE user_id = ?', [enabled, clientId]);
+
+    try {
+      await notifyUser(connection, clientId, {
+        clientId,
+        type: 'supplement_updated',
+        title: enabled ? 'Τα συμπληρώματα ενεργοποιήθηκαν' : 'Τα συμπληρώματα απενεργοποιήθηκαν',
+        body: enabled
+          ? 'Ο coach ενεργοποίησε την ενότητα συμπληρωμάτων σου.'
+          : 'Ο coach απενεργοποίησε την ενότητα συμπληρωμάτων σου.',
+        linkUrl: '/client-nutrition',
+      });
+    } catch (error) {
+      console.error('Supplement section notification failed:', error);
+    }
+
+    res.json({ enabled: Boolean(enabled) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.put('/:id/supplements/notes', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureSupplementsSchema(connection);
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    const generalNotes = optionalText(req.body.generalNotes, 4000);
+    await connection.query('UPDATE clients SET supplements_notes = ? WHERE user_id = ?', [generalNotes, clientId]);
+    res.json({ generalNotes: generalNotes || '' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.post('/:id/supplements', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureSupplementsSchema(connection);
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    const name = optionalText(req.body.name, 255);
+    if (!name) return res.status(400).json({ message: 'Το όνομα του συμπληρώματος είναι υποχρεωτικό.' });
+    const doseUnit = DOSE_UNITS.includes(req.body.doseUnit) ? req.body.doseUnit : 'mg';
+    const doseAmount = optionalNumber(req.body.doseAmount);
+    const timesPerDay = optionalNumber(req.body.timesPerDay);
+    const link = optionalText(req.body.link, 500);
+
+    const [result] = await connection.query(
+      `INSERT INTO client_supplements (client_id, coach_id, name, dose_amount, dose_unit, times_per_day, link)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [clientId, req.user.id, name, doseAmount, doseUnit, timesPerDay, link]
+    );
+    const [[supplement]] = await connection.query(`SELECT ${SUPPLEMENT_COLUMNS} FROM client_supplements WHERE id = ?`, [result.insertId]);
+    await notifySupplementChange(connection, clientId, 'added', name);
+    res.status(201).json(supplement);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.put('/:id/supplements/:supplementId', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureSupplementsSchema(connection);
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    const name = optionalText(req.body.name, 255);
+    if (!name) return res.status(400).json({ message: 'Το όνομα του συμπληρώματος είναι υποχρεωτικό.' });
+    const doseUnit = DOSE_UNITS.includes(req.body.doseUnit) ? req.body.doseUnit : 'mg';
+    const doseAmount = optionalNumber(req.body.doseAmount);
+    const timesPerDay = optionalNumber(req.body.timesPerDay);
+    const link = optionalText(req.body.link, 500);
+
+    const [result] = await connection.query(
+      `UPDATE client_supplements SET name = ?, dose_amount = ?, dose_unit = ?, times_per_day = ?, link = ?
+       WHERE id = ? AND client_id = ?`,
+      [name, doseAmount, doseUnit, timesPerDay, link, req.params.supplementId, clientId]
+    );
+    if (!result.affectedRows) return res.status(404).json({ message: 'Το συμπλήρωμα δεν βρέθηκε.' });
+
+    const [[supplement]] = await connection.query(`SELECT ${SUPPLEMENT_COLUMNS} FROM client_supplements WHERE id = ?`, [req.params.supplementId]);
+    await notifySupplementChange(connection, clientId, 'updated', name);
+    res.json(supplement);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.delete('/:id/supplements/:supplementId', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureSupplementsSchema(connection);
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    const [[existing]] = await connection.query('SELECT name FROM client_supplements WHERE id = ? AND client_id = ?', [req.params.supplementId, clientId]);
+    if (!existing) return res.status(404).json({ message: 'Το συμπλήρωμα δεν βρέθηκε.' });
+
+    await connection.query('DELETE FROM client_supplements WHERE id = ? AND client_id = ?', [req.params.supplementId, clientId]);
+    await notifySupplementChange(connection, clientId, 'removed', existing.name);
+    res.json({ message: 'Deleted' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
 router.get('/:id/payments', authorizeRoleOrPermission(['coach', 'admin'], 'view_payments'), async (req, res) => {
   const connection = await pool.getConnection();
   try {

@@ -5,7 +5,7 @@ import fs from 'fs';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
 import { ensureWeeklyUpdateSchema } from './weekly-updates.js';
-import { notifyCoaches } from './clients.js';
+import { notifyCoaches, ensureSupplementsSchema } from './clients.js';
 import { registerWeeklyUpdatePhotos } from './media.js';
 import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { updateNotificationEmail } from '../lib/email-templates.js';
@@ -422,6 +422,25 @@ router.get('/nutrition-plan', async (req, res) => {
   const connection = await pool.getConnection();
   try { res.json((await getPlans(connection, req.user.id)).nutrition); }
   catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
+});
+
+router.get('/supplements', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureSupplementsSchema(connection);
+    const [[clientRow]] = await connection.query('SELECT supplements_notes, supplements_enabled FROM clients WHERE user_id = ?', [req.user.id]);
+    if (!clientRow?.supplements_enabled) {
+      return res.json({ items: [], generalNotes: '' });
+    }
+    const [items] = await connection.query(
+      `SELECT id, name, dose_amount, dose_unit, times_per_day, link
+       FROM client_supplements
+       WHERE client_id = ?
+       ORDER BY created_at ASC, id ASC`,
+      [req.user.id]
+    );
+    res.json({ items, generalNotes: clientRow.supplements_notes || '' });
+  } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
 });
 
 router.get('/nutrition-equivalents', async (req, res) => {

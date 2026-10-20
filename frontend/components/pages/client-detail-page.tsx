@@ -71,6 +71,7 @@ import {
 } from "@/components/shared/nutrition-plan-editor";
 import { AssignTemplateDialog } from "@/components/shared/assign-template-dialog";
 import { CycleProtocolPanel } from "@/components/shared/cycle-protocol-panel";
+import { SupplementsPanel } from "@/components/shared/supplements-panel";
 
 const TrainingPlanEditor = dynamic(
   () => import("@/components/shared/training-plan-editor").then((module) => module.TrainingPlanEditor),
@@ -313,6 +314,7 @@ const tabs = [
   { id: "training", label: "Πρόγραμμα Προπόνησης" },
   { id: "nutrition", label: "Πρόγραμμα Διατροφής" },
   { id: "cycle", label: "Cycle Protocol" },
+  { id: "supplements", label: "Συμπληρώματα" },
   { id: "payments", label: "Πληρωμές" },
   { id: "points", label: "Πόντοι" },
   { id: "messages", label: "Μηνύματα" },
@@ -848,6 +850,10 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
 
             {activeTab === "cycle" && <TabsContent value="cycle" className="mt-6">
               {nutritionResourcesLoading ? <Card className="p-6"><p className="text-sm text-muted-foreground">Φόρτωση προγράμματος διατροφής...</p></Card> : nutritionPlan.id ? <CycleProtocolPanel planId={Number(nutritionPlan.id)} clientId={clientId} /> : <Card className="p-6"><p className="text-sm text-muted-foreground">Δημιούργησε πρώτα ένα πρόγραμμα διατροφής για να ορίσεις Cycle Protocol.</p></Card>}
+            </TabsContent>}
+
+            {activeTab === "supplements" && <TabsContent value="supplements" className="mt-6">
+              <SupplementsPanel clientId={clientId} />
             </TabsContent>}
 
             {activeTab === "payments" && <TabsContent value="payments" className="mt-6">

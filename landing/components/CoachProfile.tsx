@@ -5,9 +5,9 @@ import { VideoPopupButton } from "./VideoPopupButton";
 import type { getSiteContent } from "@/lib/keystatic/reader";
 
 type CoachProfile = Awaited<ReturnType<typeof getSiteContent>>["coachProfile"];
-type Settings = Awaited<ReturnType<typeof getSiteContent>>["settings"];
+type Branding = Awaited<ReturnType<typeof getSiteContent>>["branding"];
 
-export function CoachProfile({ coachProfile, settings }: { coachProfile: CoachProfile; settings?: Settings }) {
+export function CoachProfile({ coachProfile, branding }: { coachProfile: CoachProfile; branding?: Branding }) {
   const stats = coachProfile?.stats || [];
   const achievements = coachProfile?.achievements || [];
 
@@ -108,8 +108,8 @@ export function CoachProfile({ coachProfile, settings }: { coachProfile: CoachPr
               <span className="font-extrabold text-lime">{coachProfile?.quoteHighlight}</span>»
             </p>
             <div className="text-right">
-              {settings?.logoWhite && (
-                <Image src={settings.logoWhite} alt={settings?.siteName || "SP Team"} width={120} height={32} className="ml-auto h-7 w-auto" />
+              {branding?.logoWhite && (
+                <Image src={branding.logoWhite} alt={branding?.siteName || "SP Team"} width={120} height={32} className="ml-auto h-7 w-auto" />
               )}
               <p className="mt-3 text-sm text-white/50">— {coachProfile?.quoteAuthor}</p>
             </div>

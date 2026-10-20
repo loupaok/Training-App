@@ -19,6 +19,7 @@ import {
   Upload,
   ImagePlus,
   Paperclip,
+  X,
 } from "lucide-react"
 import { AreaChart } from "@tremor/react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
@@ -31,13 +32,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
-import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { DiscordConnectionCard } from "@/components/shared/discord-connection-card"
 import { api } from "@/lib/api/client"
 import { useAuth } from "@/lib/auth/auth-context"
 import { resolveMediaUrl } from "@/lib/media"
+import { greekCaps } from "@/lib/utils"
 
 type Question = {
   id: number
@@ -168,7 +169,20 @@ function ModernOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpdate }
   const progressColor = remainingRatio > 0.5 ? "[&_[data-slot=progress-indicator]]:bg-emerald-500" : remainingRatio >= 0.2 ? "[&_[data-slot=progress-indicator]]:bg-amber-500" : "[&_[data-slot=progress-indicator]]:bg-red-500"
 
   return <div className="space-y-6">
-    {client?.birthdayToday && <Alert className="border-primary/30 bg-primary/5"><Gift className="h-4 w-4 text-primary" /><AlertTitle>Χρόνια πολλά, {client.firstName}!</AlertTitle><AlertDescription>Σου ευχόμαστε μια όμορφη και δυνατή νέα χρονιά.</AlertDescription></Alert>}
+    {client?.birthdayToday && (
+      <Alert className="relative overflow-hidden rounded-2xl border-0 bg-black px-5 py-4">
+        <span aria-hidden="true" className="pointer-events-none" style={{ position: "absolute", right: "17px", top: "-13px", width: "14px", height: "120px", background: "#b0f90c", transform: "skewX(-18deg)" }} />
+        <div className="relative flex items-start gap-4">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-lime-400">
+            <Gift className="h-6 w-6 text-black" />
+          </span>
+          <div>
+            <AlertTitle className="text-base font-bold text-white">Χρόνια πολλά, {client.firstName}!</AlertTitle>
+            <AlertDescription className="mt-1 text-gray-400">Σου ευχόμαστε μια δυνατή νέα χρονιά — από όλο το SP Team.</AlertDescription>
+          </div>
+        </div>
+      </Alert>
+    )}
     <section className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm">
       <div className="absolute inset-y-0 left-0 w-1 bg-primary" />
       <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_15rem] lg:items-center">
@@ -200,30 +214,45 @@ function ModernOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpdate }
 function ActivityRow({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) { return <div className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"><span className="grid h-9 w-9 place-items-center rounded-lg bg-muted">{icon}</span><div className="min-w-0"><p className="text-sm font-medium">{title}</p><p className="truncate text-xs text-muted-foreground">{detail}</p></div></div> }
 function ScaleIcon() { return <Dumbbell className="h-4 w-4 text-primary" /> }
 
-function BirthdayCelebration({ firstName, onClose }: { firstName: string; onClose: () => void }) {
-  const colors = ["bg-primary", "bg-amber-400", "bg-sky-400", "bg-emerald-400", "bg-rose-400"]
+const confettiColors = ["bg-lime-400", "bg-white", "bg-lime-300", "bg-neutral-400"]
 
+function BirthdayCelebration({ firstName, onClose }: { firstName: string; onClose: () => void }) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-foreground/20 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="birthday-title">
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-hidden bg-black/60 p-4 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-labelledby="birthday-title">
       <style>{`@keyframes birthday-confetti { 0% { opacity: 0; transform: translateY(-14vh) rotate(0deg) scale(.7); } 12% { opacity: 1; } 78% { opacity: 1; } 100% { opacity: 0; transform: translateY(82vh) rotate(450deg) scale(1); } } @keyframes birthday-card { 0% { opacity: 0; transform: translateY(18px) scale(.96); } 100% { opacity: 1; transform: translateY(0) scale(1); } }`}</style>
       {Array.from({ length: 18 }, (_, index) => (
         <span
           key={index}
           aria-hidden="true"
-          className={`pointer-events-none absolute h-2.5 w-1.5 rounded-sm ${colors[index % colors.length]}`}
+          className={`pointer-events-none absolute h-2 w-2 rounded-full ${confettiColors[index % confettiColors.length]}`}
           style={{ left: `${7 + ((index * 23) % 86)}%`, animation: `birthday-confetti ${1.25 + (index % 4) * 0.16}s cubic-bezier(.2,.8,.3,1) ${((index * 67) % 360) / 1000}s forwards` }}
         />
       ))}
-      <Card className="relative w-full max-w-[23rem] overflow-hidden rounded-2xl border-primary/25 bg-card text-center shadow-2xl" style={{ animation: "birthday-card 280ms cubic-bezier(.2,.8,.3,1) both" }}>
-        <CardContent className="p-0">
-          <div className="border-b border-primary/10 bg-primary/5 px-7 pb-5 pt-7">
-            <span className="mx-auto grid h-16 w-16 place-items-center rounded-full border border-primary/20 bg-background shadow-sm"><Gift className="h-8 w-8 text-primary" /></span>
-            <div className="mt-4 flex items-center justify-center gap-1.5 text-xs font-semibold text-primary"><Sparkles className="h-3.5 w-3.5" /> Μια ξεχωριστή μέρα</div>
-          </div>
-          <div className="px-7 pb-7 pt-5">
-            <h2 id="birthday-title" className="text-2xl font-bold tracking-normal">Χρόνια πολλά, {firstName}!</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">Σου ευχόμαστε υγεία, χαρά και μια χρονιά γεμάτη πρόοδο.</p>
-            <Button type="button" className="mt-6 h-11 w-full" onClick={onClose}>Συνέχεια <ArrowRight className="ml-2 h-4 w-4" /></Button>
+      <Card className="relative w-full max-w-[23rem] overflow-hidden rounded-3xl border-0 bg-black text-center shadow-2xl" style={{ animation: "birthday-card 280ms cubic-bezier(.2,.8,.3,1) both" }}>
+        <CardContent className="relative p-0">
+          <span aria-hidden="true" className="pointer-events-none" style={{ position: "absolute", left: "40px", top: "-30px", width: "22px", height: "280px", background: "#b0f90c", transform: "skewX(-18deg)" }} />
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Κλείσιμο"
+            className="absolute right-4 top-4 z-10 grid h-8 w-8 place-items-center rounded-full bg-white/10 text-white hover:bg-white/20"
+          >
+            <X className="h-4 w-4" />
+          </button>
+          <span aria-hidden="true" className="absolute right-6 top-3 h-1.5 w-1.5 rounded-full bg-lime-400" />
+
+          <div className="relative px-7 pb-7 pt-10">
+            <span className="mx-auto grid h-20 w-20 place-items-center rounded-full border-2 border-lime-400 bg-black shadow-[0_0_0_6px_rgba(163,230,53,0.08)]">
+              <Gift className="h-9 w-9 text-lime-400" />
+            </span>
+            <div className="mt-4 flex items-center justify-center gap-1.5 text-xs font-bold tracking-widest text-lime-400">
+              <Sparkles className="h-3.5 w-3.5" /> {greekCaps("Μια ξεχωριστή μέρα")} <Sparkles className="h-3.5 w-3.5" />
+            </div>
+            <h2 id="birthday-title" className="mt-4 text-3xl font-black italic leading-tight tracking-tight text-white">
+              {greekCaps("Χρόνια πολλά,")}<br /><span className="text-lime-400">{greekCaps(`${firstName}!`)}</span>
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-neutral-400">Σου ευχόμαστε υγεία, χαρά και μια χρονιά γεμάτη πρόοδο.</p>
+            <Button type="button" className="mt-6 h-11 w-full rounded-full bg-lime-400 font-bold text-black hover:bg-lime-300" onClick={onClose}>Συνέχεια <ArrowRight className="ml-2 h-4 w-4" /></Button>
           </div>
         </CardContent>
       </Card>
@@ -275,7 +304,7 @@ function ClientDashboardContent() {
   useEffect(() => { void loadDashboard() }, [])
 
   useEffect(() => {
-    if (!dashboard?.client.birthdayToday || !user?.id) return
+    if (!dashboard?.client.birthdayToday || !user?.id || user.role !== "client") return
 
     const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "Europe/Athens" })
     const storageKey = `birthday-celebration:v2:${user.id}:${todayKey}`
@@ -361,7 +390,7 @@ function ClientDashboardContent() {
         </div>
         {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <ScrollArea className="w-full whitespace-nowrap"><TabsList className="h-auto"><TabsTrigger value="overview">Αρχική</TabsTrigger><TabsTrigger value="update">Update</TabsTrigger></TabsList></ScrollArea>
+          <div className="w-full overflow-x-auto"><TabsList className="h-auto"><TabsTrigger value="overview">Αρχική</TabsTrigger><TabsTrigger value="update">Update</TabsTrigger></TabsList></div>
 
           <TabsContent value="overview" className="space-y-6">
             <ModernOverview dashboard={dashboard} trainingPlan={trainingPlan} nutritionPlan={nutritionPlan} onOpenUpdate={() => setActiveTab("update")} />
