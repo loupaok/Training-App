@@ -70,11 +70,11 @@ export function CoachBottomNav({ user }: { user: AuthUser | null }) {
   const unreadFor = (key: string) => key === "updates" ? unreadUpdates : key === "messages" ? unreadMessages : 0;
 
   return (
-    <nav aria-label="Κύρια πλοήγηση" className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] supports-backdrop-filter:backdrop-blur lg:hidden">
+    <nav aria-label="Κύρια πλοήγηση" className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 supports-backdrop-filter:backdrop-blur lg:hidden">
       <div className={cn("mx-auto grid max-w-xl gap-1", primaryItems.length >= 4 ? "grid-cols-5" : primaryItems.length === 3 ? "grid-cols-4" : "grid-cols-3")}>
         {primaryItems.map((item) => <BottomItem key={item.key} item={item} active={isActivePath(pathname, item.path)} unread={unreadFor(item.key)} />)}
         <Sheet>
-          <SheetTrigger render={<button type="button" className={cn("relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors", moreActive ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground")} />}>
+          <SheetTrigger render={<button type="button" className={cn("relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-[11px] font-semibold transition-colors", moreActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")} />}>
             <Menu className="h-5 w-5" />
             <span>Περισσότερα</span>
           </SheetTrigger>
@@ -96,7 +96,7 @@ export function CoachBottomNav({ user }: { user: AuthUser | null }) {
 function BottomItem({ item, active, unread }: { item: { key: string; label: string; path?: string; icon?: CoachNavSection["icon"] }; active: boolean; unread: number }) {
   const Icon = item.icon;
   return (
-    <Link href={item.path || "#"} className={cn("relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-medium transition-colors", active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
+    <Link href={item.path || "#"} className={cn("relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-[11px] font-semibold transition-colors", active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
       {Icon && <Icon className="h-5 w-5" />}
       <span className="max-w-full truncate">{item.label}</span>
       {unread > 0 && <Badge className="absolute right-1 top-1 grid h-4 min-w-4 place-items-center rounded-full p-0 text-[9px]">{unread > 9 ? "9+" : unread}</Badge>}
@@ -107,7 +107,7 @@ function BottomItem({ item, active, unread }: { item: { key: string; label: stri
 function MoreItem({ item, active, unread }: { item: { key: string; label: string; path?: string; icon?: CoachNavSection["icon"] }; active: boolean; unread: number }) {
   const Icon = item.icon;
   return (
-    <Link href={item.path || "#"} className={cn("relative flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors", active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
+    <Link href={item.path || "#"} className={cn("relative flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-colors", active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
       {Icon && <Icon className="h-5 w-5" />}
       <span className="flex-1">{item.label}</span>
       {unread > 0 && <Badge className="rounded-full px-1.5 text-[10px]">{unread > 99 ? "99+" : unread}</Badge>}

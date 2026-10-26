@@ -1,10 +1,19 @@
+const CACHE_NAME = "fitlife-client-v2";
+
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open("fitlife-client-v1").then((cache) => cache.addAll(["/client-program", "/client-nutrition"])).catch(() => {}));
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(["/client-program", "/client-nutrition"])).catch(() => {}));
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    Promise.all([
+      caches.keys().then((keys) => Promise.all(keys
+        .filter((key) => key.startsWith("fitlife-client-") && key !== CACHE_NAME)
+        .map((key) => caches.delete(key)))),
+      self.clients.claim(),
+    ])
+  );
 });
 
 self.addEventListener("fetch", (event) => {
@@ -15,18 +24,18 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith(fetch(request).then((response) => {
       const copy = response.clone();
-      caches.open("fitlife-client-v1").then((cache) => cache.put(request, copy));
+      caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
       return response;
     }).catch(async () => (await caches.match(request)) || (await caches.match("/client-program")) || new Response("Offline", { status: 503, statusText: "Offline" })));
     return;
   }
 
-  if (url.pathname.startsWith("/_next/") || url.pathname.startsWith("/uploads/")) {
-    event.respondWith(caches.match(request).then((cached) => cached || fetch(request).then((response) => {
+  if (url.pathname.startsWith("/uploads/")) {
+    event.respondWith(fetch(request).then((response) => {
       const copy = response.clone();
-      caches.open("fitlife-client-v1").then((cache) => cache.put(request, copy));
+      caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
       return response;
-    })));
+    }).catch(() => caches.match(request)));
   }
 });
 

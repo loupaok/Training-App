@@ -30,9 +30,11 @@ export function AppHeader({
   }
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b bg-background px-4 py-4 sm:px-6">
+    <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 sm:px-6">
       <div className="flex min-w-0 items-center gap-3">
-        <h1 className="truncate text-lg font-semibold">{title}</h1>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/sp-team-logo-black.svg" alt="SP Team" className="h-6 w-auto shrink-0 lg:hidden" />
+        <h1 className="truncate text-lg font-extrabold tracking-[-0.3px]">{title}</h1>
         {user?.role && (
           <Badge variant="secondary" className="hidden capitalize sm:inline-flex">
             {user.role}
@@ -45,7 +47,7 @@ export function AppHeader({
         <ThemeToggle />
         <UserAvatar
           initials={getInitials(user?.fullName || user?.email)}
-          tone="bg-slate-900"
+          tone="bg-primary"
           size="size-8"
           photoUrl={user?.profilePhoto}
         />

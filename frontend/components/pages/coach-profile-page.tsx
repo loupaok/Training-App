@@ -108,7 +108,7 @@ function CoachProfileContent() {
           <CardContent className="flex flex-col items-center gap-4 p-6 text-center">
             <UserAvatar
               initials={getInitials(user?.fullName || user?.email)}
-              tone="bg-red-600"
+              tone="bg-primary"
               size="h-24 w-24"
               photoUrl={user?.profilePhoto}
             />

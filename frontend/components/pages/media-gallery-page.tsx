@@ -443,7 +443,7 @@ function MediaGalleryContent() {
               size="sm"
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
-              className="gap-2 bg-red-600 font-medium hover:bg-red-700"
+              className="gap-2 bg-primary font-medium hover:bg-primary/90"
             >
               <Upload className="h-4 w-4" /> {uploading ? "Ανέβασμα..." : "Ανέβασμα"}
             </Button>
@@ -873,7 +873,7 @@ function EditPhotoDialog({
           <Button type="button" variant="outline" onClick={onClose}>
             Ακύρωση
           </Button>
-          <Button type="button" onClick={handleSave} className="gap-2 bg-red-600 hover:bg-red-700">
+          <Button type="button" onClick={handleSave} className="gap-2 bg-primary hover:bg-primary/90">
             <Save className="h-4 w-4" /> Αποθήκευση
           </Button>
         </DialogFooter>

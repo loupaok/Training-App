@@ -12,20 +12,20 @@ export function ThemeToggle() {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="outline" size="icon-sm" aria-label="Toggle theme">
+          <Button variant="outline" size="icon-sm" aria-label="Αλλαγή θέματος">
             {theme === "dark" ? <Moon /> : theme === "light" ? <Sun /> : <Monitor />}
           </Button>
         }
       />
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => setTheme("light")}>
-          <Sun /> Light
+          <Sun /> Φωτεινό
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setTheme("dark")}>
-          <Moon /> Dark
+          <Moon /> Σκούρο
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => setTheme("system")}>
-          <Monitor /> System
+          <Monitor /> Σύστημα
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -35,13 +35,13 @@ export function SidebarUserMenu({
           <button
             type="button"
             title={collapsed ? user?.fullName : undefined}
-            className={`flex w-full items-center gap-3 rounded-md p-2 text-left text-sm text-white hover:bg-white/10 ${
+            className={`flex w-full items-center gap-3 rounded-xl p-2 text-left text-sm text-white hover:bg-[var(--sp-black-2)] ${
               collapsed ? "justify-center" : ""
             }`}
           >
             <UserAvatar
               initials={getInitials(user?.fullName || user?.email)}
-              tone="bg-red-600"
+              tone="bg-accent text-accent-foreground"
               size="h-9 w-9"
               photoUrl={user?.profilePhoto}
             />

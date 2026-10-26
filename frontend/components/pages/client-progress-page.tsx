@@ -8,7 +8,7 @@ import { ClientShell } from "@/components/shell/client-shell"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardHint, CardLabel, CardTitle, CardValue } from "@/components/ui/card"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Separator } from "@/components/ui/separator"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -62,7 +62,7 @@ const feelings: Record<string, string> = { easy: "Εύκολο", good: "Καλά
 
 function StatCard({ label, value, detail, icon: Icon, trend }: { label: string; value: string; detail: string; icon: typeof Scale; trend?: "up" | "down" }) {
   const TrendIcon = trend === "down" ? TrendingDown : TrendingUp
-  return <Card className="rounded-xl border-border shadow-sm"><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-bold tabular-nums">{value}</p><p className="mt-1 text-xs text-muted-foreground">{detail}</p></div><span className="grid h-10 w-10 place-items-center rounded-lg bg-muted"><Icon className="h-5 w-5" /></span></div>{trend && <span className="mt-4 flex items-center gap-1 text-xs text-muted-foreground"><TrendIcon className="h-3.5 w-3.5" />Μεταβολή από την αρχή</span>}</CardContent></Card>
+  return <Card variant="stat"><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div><CardLabel>{label}</CardLabel><CardValue className="mt-2">{value}</CardValue><CardHint className="mt-1">{detail}</CardHint></div><span className="grid h-10 w-10 place-items-center rounded-xl bg-muted"><Icon className="h-5 w-5" /></span></div>{trend && <span className="mt-4 flex items-center gap-1 text-xs text-muted-foreground"><TrendIcon className="h-3.5 w-3.5" />Μεταβολή από την αρχή</span>}</CardContent></Card>
 }
 
 function ClientProgressContent() {

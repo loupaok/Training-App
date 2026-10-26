@@ -215,7 +215,7 @@ export default function WorkoutProgramView({
             <TabsTrigger
               key={day.id}
               value={String(day.id)}
-              className="min-h-[72px] flex-col whitespace-normal rounded-md px-4 py-3 font-bold data-[state=active]:bg-red-600 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-red-100"
+              className="min-h-[72px] flex-col whitespace-normal rounded-xl px-4 py-3 font-bold data-[state=active]:bg-accent data-[state=active]:text-accent-foreground"
             >
               <div>Ημέρα {index + 1}</div>
               <div className="mt-1 truncate text-xs font-bold text-slate-500 group-data-[state=active]:text-white/90 data-[state=active]:text-white/90 dark:text-slate-400">
@@ -359,7 +359,7 @@ function ExercisePhotoSlider({ exercise }: { exercise: Exercise }) {
                 type="button"
                 variant="ghost"
                 onClick={() => setIndex(imageIndex)}
-                className={`h-1.5 min-w-0 rounded-full p-0 transition-all hover:bg-white ${imageIndex === index ? "w-5 bg-red-600" : "w-1.5 bg-white/80"}`}
+                className={`h-1.5 min-w-0 rounded-full p-0 transition-all hover:bg-white ${imageIndex === index ? "w-5 bg-accent" : "w-1.5 bg-white/80"}`}
                 aria-label={`Photo ${imageIndex + 1}`}
               />
             ))}

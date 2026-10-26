@@ -3,13 +3,13 @@ import "./globals.css";
 import { Providers } from "./providers";
 
 export const metadata: Metadata = {
-  title: "Coach Management App",
-  description: "Coaching business platform for coaches and clients",
+  title: "SP Team",
+  description: "Πλατφόρμα coaching SP Team",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" suppressHydrationWarning className="h-full antialiased">
+    <html lang="el" suppressHydrationWarning className="h-full antialiased">
       <body className="min-h-full font-sans" suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>

@@ -6,8 +6,6 @@ import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { useBranding } from "@/contexts/BrandingContext";
-import { resolveMediaUrl } from "@/lib/media";
 import { SidebarUserMenu } from "@/components/shell/sidebar-user-menu";
 import { clientNavSections, isActivePath } from "@/lib/nav-config";
 import type { AuthUser } from "@/types/auth";
@@ -32,23 +30,19 @@ export function ClientSidebar({
   onToggle,
 }: ClientSidebarProps) {
   const pathname = usePathname();
-  const { branding } = useBranding();
 
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-40 hidden flex-col bg-[#07131d] text-white transition-[width] duration-200 lg:flex",
-        collapsed ? "w-16" : "w-56",
+        "fixed inset-y-0 left-0 z-40 hidden flex-col bg-[var(--sp-black)] text-white transition-[width] duration-200 lg:flex",
+        collapsed ? "w-16" : "w-[248px]",
       )}
     >
       <div className={cn("flex h-16 items-center border-b border-white/10", collapsed ? "justify-center px-2" : "justify-between px-4")}>
-        {!collapsed &&
-          (branding.logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={resolveMediaUrl(branding.logoUrl)} alt={branding.appName} className="h-8 max-w-32 object-contain" />
-          ) : (
-            <span className="truncate text-base font-semibold">{branding.appName}</span>
-          ))}
+        {!collapsed && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/brand/sp-team-logo-white.svg" alt="SP Team" className="h-7 w-auto max-w-32 object-contain" />
+        )}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -60,17 +54,17 @@ export function ClientSidebar({
         </Button>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
         {clientNavSections.map((section) => {
           const isLocked = Boolean(section.locked && !paymentApproved);
           const active = isActivePath(pathname, section.path);
           const Icon = section.icon;
 
           const className = cn(
-            "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+            "flex h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-colors",
             section.spacerBefore && "mt-4",
             collapsed && "justify-center px-0",
-            isLocked ? "cursor-not-allowed text-slate-500 opacity-45 blur-[1px]" : active ? "bg-red-600 text-white" : "text-slate-100 hover:bg-white/10",
+            isLocked ? "cursor-not-allowed text-[#6a6a6a] opacity-45 blur-[1px]" : active ? "bg-accent text-accent-foreground" : "text-[#c8c8c8] hover:bg-[var(--sp-black-2)] hover:text-white",
           );
 
           return (
@@ -87,10 +81,10 @@ export function ClientSidebar({
                 </span>
               )}
               {!collapsed && section.key === "notifications" && unreadNotifications > 0 && (
-                <Badge className="absolute right-2 top-1/2 -translate-y-1/2 bg-red-600 text-white">{unreadNotifications}</Badge>
+                <Badge className="absolute right-2 top-1/2 -translate-y-1/2 bg-accent text-accent-foreground">{unreadNotifications}</Badge>
               )}
               {!collapsed && section.key === "messages" && unreadMessages > 0 && (
-                <Badge className="absolute right-2 top-1/2 -translate-y-1/2 bg-red-600 text-white">{unreadMessages}</Badge>
+                <Badge className="absolute right-2 top-1/2 -translate-y-1/2 bg-accent text-accent-foreground">{unreadMessages}</Badge>
               )}
               {!collapsed && isLocked && (
                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-slate-400">Κλειδωμένο</span>

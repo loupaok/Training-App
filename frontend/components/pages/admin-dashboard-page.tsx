@@ -6,7 +6,7 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card } from "@/components/ui/card";
+import { Card, CardLabel, CardValue } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -558,9 +558,9 @@ function Alert({ children, tone }: { children: ReactNode; tone: "red" | "green" 
 
 function StatCard({ title, value }: { title: string; value: number }) {
   return (
-    <Card className="p-5 shadow-sm">
-      <div className="text-sm font-bold text-slate-500 dark:text-slate-400">{title}</div>
-      <div className="mt-2 text-3xl font-bold">{value}</div>
+    <Card variant="stat" className="p-5">
+      <CardLabel>{title}</CardLabel>
+      <CardValue className="mt-2 text-3xl">{value}</CardValue>
     </Card>
   );
 }

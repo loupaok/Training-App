@@ -542,7 +542,7 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={resolveMediaUrl(image.imageUrl)} alt="" className="h-full w-full object-cover" />
                           {(image.isPrimary || index === 0) && (
-                            <span className="absolute left-1 top-1 rounded bg-red-600 px-1.5 py-0.5 text-[9px] font-medium text-white">1</span>
+                            <span className="absolute left-1 top-1 rounded bg-accent px-1.5 py-0.5 text-[9px] font-medium text-accent-foreground">1</span>
                           )}
                         </div>
                       ))}
@@ -796,7 +796,7 @@ function SortableThumb({
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={resolveMediaUrl(image.imageUrl)} alt="" className="h-full w-full object-cover" draggable={false} />
-      {isPrimary && <span className="absolute left-1 top-1 rounded bg-red-600 px-1.5 py-0.5 text-[9px] font-medium text-white">1</span>}
+      {isPrimary && <span className="absolute left-1 top-1 rounded bg-accent px-1.5 py-0.5 text-[9px] font-medium text-accent-foreground">1</span>}
       <button
         type="button"
         onClick={onDelete}

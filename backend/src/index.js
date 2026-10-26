@@ -24,6 +24,7 @@ import pricingPlanRoutes from './routes/pricingPlans.js';
 import manualNotificationRoutes from './routes/manualNotifications.js';
 import templateRoutes from './routes/templates.js';
 import foodRoutes from './routes/foods.js';
+import supplementRoutes from './routes/supplements.js';
 import questionnaireRoutes from './routes/questionnaire.js';
 import registerRoutes from './routes/register.js';
 import brandingRoutes from './routes/branding.js';
@@ -42,6 +43,7 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const isProduction = process.env.NODE_ENV === 'production';
 if (process.env.TRUST_PROXY) {
   app.set('trust proxy', Number(process.env.TRUST_PROXY) || 1);
 }
@@ -60,6 +62,9 @@ const apiLimiter = rateLimit({
   max: Number(process.env.API_RATE_LIMIT_MAX || 600),
   standardHeaders: 'draft-8',
   legacyHeaders: false,
+  // Fast Refresh and React Strict Mode deliberately repeat bootstrap requests.
+  // Keep local development usable while retaining rate limiting in production.
+  skip: () => !isProduction,
   message: { message: 'Too many requests. Please try again later.' },
 });
 
@@ -68,6 +73,7 @@ const authenticationLimiter = rateLimit({
   max: Number(process.env.AUTH_RATE_LIMIT_MAX || 10),
   standardHeaders: 'draft-8',
   legacyHeaders: false,
+  skip: () => !isProduction,
   message: { message: 'Too many authentication attempts. Please try again later.' },
 });
 
@@ -76,7 +82,7 @@ const uploadLimiter = rateLimit({
   max: Number(process.env.UPLOAD_RATE_LIMIT_MAX || 40),
   standardHeaders: 'draft-8',
   legacyHeaders: false,
-  skip: (req) => !req.is('multipart/form-data'),
+  skip: (req) => !isProduction || !req.is('multipart/form-data'),
   message: { message: 'Too many uploads. Please try again later.' },
 });
 
@@ -164,6 +170,7 @@ app.use('/api/pricing-plans', pricingPlanRoutes);
 app.use('/api/manual-notifications', authenticateToken, manualNotificationRoutes);
 app.use('/api/templates', authenticateToken, templateRoutes);
 app.use('/api/foods', authenticateToken, foodRoutes);
+app.use('/api/supplements', authenticateToken, supplementRoutes);
 // Public GET (active questions) + coach-gated CRUD handled per-route inside.
 app.use('/api/questionnaire', questionnaireRoutes);
 // Fully public — new client signup, email-availability check, bank details.

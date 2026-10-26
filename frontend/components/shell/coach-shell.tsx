@@ -41,9 +41,9 @@ export function CoachShell({
   return (
     <div className="flex min-h-screen">
       <CoachSidebar user={user} logout={logout} collapsed={collapsed} onToggle={toggle} />
-      <div className={cn("flex min-w-0 flex-1 flex-col transition-[padding] duration-200 lg:pl-56", collapsed && "lg:pl-16")}>
+      <div className={cn("flex min-w-0 flex-1 flex-col transition-[padding] duration-200 lg:pl-[248px]", collapsed && "lg:pl-16")}>
         <AppHeader title={title} user={user} logout={logout} />
-        <main className="min-w-0 flex-1 bg-muted/30 p-4 pb-28 sm:p-6 sm:pb-28 lg:p-6">
+        <main className="min-w-0 flex-1 bg-background p-4 pb-28 sm:p-6 sm:pb-28 lg:p-7">
           <div data-coach-page-content className="mx-auto w-full max-w-(--container-7xl)">
             {children}
           </div>

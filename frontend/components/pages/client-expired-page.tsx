@@ -22,7 +22,7 @@ function ClientExpiredContent() {
           </p>
           <Button
             nativeButton={false}
-            className="mt-6 h-12 rounded-md bg-red-600 px-6 font-bold text-white hover:bg-red-700"
+            className="mt-6 h-12 rounded-full bg-primary px-6 font-bold text-primary-foreground hover:bg-primary/90"
             render={<Link href="/client-billing">Ανανέωση συνδρομής</Link>}
           />
         </section>

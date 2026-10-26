@@ -8,7 +8,7 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { UserAvatar } from "@/components/shared/user-avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardHint, CardLabel, CardTitle, CardValue } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
@@ -54,7 +54,7 @@ function ClientLink({ client, className }: { client: ClientRow; className?: stri
   return <Link href={`/clients/${client.id}`} className={cn("flex items-center gap-3", className)}><UserAvatar initials={getInitials(client.full_name || client.email)} photoUrl={client.profile_photo} size="h-9 w-9" /><span className="min-w-0"><span className="block truncate text-sm font-semibold">{client.full_name || client.email || "Πελάτης"}</span><span className="block truncate text-xs text-muted-foreground">{client.email}</span></span></Link>;
 }
 function Metric({ label, value, note, icon: Icon, tone = "bg-muted text-foreground" }: { label: string; value: number; note: string; icon: typeof Users; tone?: string }) {
-  return <Card className="border-border/80 shadow-sm"><CardContent className="flex items-start justify-between gap-3 p-5"><div><p className="text-sm text-muted-foreground">{label}</p><p className="mt-2 text-3xl font-bold tabular-nums">{value}</p><p className="mt-1 text-xs text-muted-foreground">{note}</p></div><span className={cn("grid h-10 w-10 place-items-center rounded-lg", tone)}><Icon className="h-5 w-5" /></span></CardContent></Card>;
+  return <Card variant="stat"><CardContent className="flex items-start justify-between gap-3 p-5"><div><CardLabel>{label}</CardLabel><CardValue className="mt-2 text-3xl">{value}</CardValue><CardHint className="mt-1">{note}</CardHint></div><span className={cn("grid h-10 w-10 place-items-center rounded-xl", tone)}><Icon className="h-5 w-5" /></span></CardContent></Card>;
 }
 function PriorityRow({ icon: Icon, title, detail, href, tone, children, onClick }: { icon: typeof CalendarDays; title: string; detail: string; href: string; tone: string; children?: ReactNode; onClick?: () => void }) {
   return <Link href={href} onClick={onClick} className="group flex items-center gap-3 rounded-lg px-3 py-3 transition-colors hover:bg-muted/60"><span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg", tone)}><Icon className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{title}</span><span className="block truncate text-xs text-muted-foreground">{detail}</span></span>{children}<ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" /></Link>;

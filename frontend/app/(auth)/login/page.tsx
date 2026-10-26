@@ -68,12 +68,8 @@ export default function LoginPage() {
         {logoUrl ? (
           <img key={logoUrl} src={logoUrl} alt={branding.appName} className="h-9 w-auto self-start object-contain" />
         ) : (
-          <div className="self-start">
-            <p className="text-2xl font-black italic tracking-tight text-slate-900">
-              SP<span className="relative ml-1 inline-block">TEAM<span className="absolute -bottom-1 left-0 h-[3px] w-full bg-lime-400" /></span>
-            </p>
-            <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Consistency creates results</p>
-          </div>
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/brand/sp-team-logo-black.svg" alt="SP Team" className="h-9 w-auto self-start object-contain" />
         )}
 
         <div className="flex flex-1 items-center justify-center">
@@ -147,7 +143,7 @@ export default function LoginPage() {
                   <span style={{ fontSize: "14px", fontWeight: 700 }}>Νέος στο SP Team;</span>
                   <span style={{ fontSize: "12px", color: "#6a6a6a" }}>Κλείσε δωρεάν κλήση γνωριμίας</span>
                 </div>
-                <Button asChild style={{ height: "38px", borderRadius: "999px", background: "#b0f90c", color: "#0b0b0b", fontSize: "13px" }} className="shrink-0 px-4 font-extrabold hover:bg-lime-300">
+                <Button asChild variant="lime" style={{ height: "38px", borderRadius: "999px", fontSize: "13px" }} className="shrink-0 px-4 font-extrabold">
                   <Link href="/register">Ξεκίνα εδώ</Link>
                 </Button>
               </div>

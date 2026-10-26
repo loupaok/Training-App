@@ -133,7 +133,7 @@ export function ExerciseImageSlider({ exercise, large = false }: { exercise: Par
                 type="button"
                 variant="ghost"
                 onClick={() => setIndex(imageIndex)}
-                className={`h-2 min-w-0 rounded-full p-0 transition-all hover:bg-white ${imageIndex === index ? "w-7 bg-red-600" : "w-2 bg-white/80"}`}
+                className={`h-2 min-w-0 rounded-full p-0 transition-all hover:bg-white ${imageIndex === index ? "w-7 bg-accent" : "w-2 bg-white/80"}`}
                 aria-label={`Φωτογραφία ${imageIndex + 1}`}
               />
             ))}

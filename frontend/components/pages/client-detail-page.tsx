@@ -3539,7 +3539,7 @@ function MessagesTab({ clientId, onRead }: { clientId: string; onRead: () => voi
             <div
               className={`max-w-[75%] rounded-lg px-4 py-3 text-sm font-semibold ${
                 item.sender_role === "coach"
-                  ? "bg-red-600 text-white"
+                  ? "bg-primary text-primary-foreground"
                   : "bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-50"
               }`}
             >

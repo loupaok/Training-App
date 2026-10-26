@@ -106,6 +106,35 @@ async function ensureTemplatesSchema(connection) {
   `);
 
   await connection.query('ALTER TABLE template_nutrition_foods ADD COLUMN IF NOT EXISTS food_id INT NULL AFTER meal_id');
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS supplement_templates (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      coach_id INT NOT NULL,
+      title VARCHAR(150) NOT NULL,
+      description TEXT,
+      notes TEXT,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (coach_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS template_supplement_items (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      template_id INT NOT NULL,
+      category VARCHAR(80) NOT NULL,
+      name VARCHAR(150) NOT NULL,
+      dosage VARCHAR(100),
+      timing VARCHAR(150),
+      notes TEXT,
+      sort_order INT NOT NULL DEFAULT 0,
+      FOREIGN KEY (template_id) REFERENCES supplement_templates(id) ON DELETE CASCADE,
+      INDEX idx_template_id (template_id)
+    )
+  `);
 }
 
 export async function getFullTrainingTemplate(connection, templateId) {
@@ -170,6 +199,20 @@ export async function getFullNutritionTemplate(connection, templateId) {
   };
 }
 
+async function getFullSupplementTemplate(connection, templateId) {
+  await ensureTemplatesSchema(connection);
+
+  const [templates] = await connection.query('SELECT * FROM supplement_templates WHERE id = ?', [templateId]);
+  if (!templates.length) return null;
+
+  const [items] = await connection.query(
+    'SELECT * FROM template_supplement_items WHERE template_id = ? ORDER BY sort_order, id',
+    [templateId]
+  );
+
+  return { ...templates[0], items };
+}
+
 async function insertTemplateTrainingDays(connection, templateId, days) {
   for (const [dayIndex, day] of days.entries()) {
     const exercises = Array.isArray(day.exercises) ? day.exercises : [];
@@ -228,6 +271,25 @@ async function insertTemplateNutritionMeals(connection, templateId, meals) {
         [mealResult.insertId, food.foodId || food.food_id || null, foodName, food.quantity || null, food.calories || null, food.proteinG || food.protein_g || null, food.carbsG || food.carbs_g || null, food.fatG || food.fat_g || null, foodIndex]
       );
     }
+  }
+}
+
+async function insertTemplateSupplementItems(connection, templateId, items) {
+  for (const [index, item] of (Array.isArray(items) ? items : []).entries()) {
+    if (!item?.name?.trim()) continue;
+    await connection.query(
+      `INSERT INTO template_supplement_items (template_id, category, name, dosage, timing, notes, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        templateId,
+        item.category || 'proteins',
+        item.name.trim(),
+        item.dosage?.trim() || null,
+        item.timing?.trim() || null,
+        item.notes?.trim() || null,
+        index,
+      ]
+    );
   }
 }
 
@@ -473,6 +535,121 @@ router.delete('/nutrition/:id', authorizeRole(['coach', 'admin']), async (req, r
     await ensureTemplatesSchema(connection);
     const [result] = await connection.query('DELETE FROM nutrition_templates WHERE id = ?', [req.params.id]);
     if (result.affectedRows === 0) return res.status(404).json({ message: 'Template not found' });
+    res.json({ message: 'Template deleted' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Supplement templates
+// ---------------------------------------------------------------------------
+
+router.get('/supplements', authorizeRole(['coach', 'admin']), async (_req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureTemplatesSchema(connection);
+    const [rows] = await connection.query(
+      `SELECT st.*, u.full_name AS coach_name,
+              (SELECT COUNT(*) FROM template_supplement_items item WHERE item.template_id = st.id) AS item_count
+       FROM supplement_templates st
+       LEFT JOIN users u ON u.id = st.coach_id
+       WHERE st.is_active = 1
+       ORDER BY st.updated_at DESC`
+    );
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.get('/supplements/:id', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const template = await getFullSupplementTemplate(connection, req.params.id);
+    if (!template) return res.status(404).json({ message: 'Template not found' });
+    res.json(template);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.post('/supplements', authorizeRole(['coach', 'admin']), [
+  body('title').isString().trim().isLength({ min: 1, max: 150 }),
+  body('items').optional().isArray(),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const connection = await pool.getConnection();
+  try {
+    await ensureTemplatesSchema(connection);
+    await connection.beginTransaction();
+    const { title, description, notes, items = [] } = req.body;
+    const [result] = await connection.query(
+      'INSERT INTO supplement_templates (coach_id, title, description, notes) VALUES (?, ?, ?, ?)',
+      [req.user.id, title.trim(), description?.trim() || null, notes?.trim() || null]
+    );
+    await insertTemplateSupplementItems(connection, result.insertId, items);
+    await connection.commit();
+    res.status(201).json({ message: 'Template created', template: await getFullSupplementTemplate(connection, result.insertId) });
+  } catch (error) {
+    await connection.rollback();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.put('/supplements/:id', authorizeRole(['coach', 'admin']), [
+  body('title').isString().trim().isLength({ min: 1, max: 150 }),
+  body('items').optional().isArray(),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const connection = await pool.getConnection();
+  try {
+    await ensureTemplatesSchema(connection);
+    await connection.beginTransaction();
+    const { title, description, notes, items = [] } = req.body;
+    const [result] = await connection.query(
+      'UPDATE supplement_templates SET title = ?, description = ?, notes = ? WHERE id = ?',
+      [title.trim(), description?.trim() || null, notes?.trim() || null, req.params.id]
+    );
+    if (!result.affectedRows) {
+      await connection.rollback();
+      return res.status(404).json({ message: 'Template not found' });
+    }
+    await connection.query('DELETE FROM template_supplement_items WHERE template_id = ?', [req.params.id]);
+    await insertTemplateSupplementItems(connection, req.params.id, items);
+    await connection.commit();
+    res.json({ message: 'Template updated', template: await getFullSupplementTemplate(connection, req.params.id) });
+  } catch (error) {
+    await connection.rollback();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.delete('/supplements/:id', authorizeRole(['coach', 'admin']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureTemplatesSchema(connection);
+    const [result] = await connection.query('DELETE FROM supplement_templates WHERE id = ?', [req.params.id]);
+    if (!result.affectedRows) return res.status(404).json({ message: 'Template not found' });
     res.json({ message: 'Template deleted' });
   } catch (error) {
     console.error(error);

@@ -125,16 +125,16 @@ function ClientPointsContent() {
           <div className="text-sm text-muted-foreground">Φόρτωση...</div>
         ) : points && settings ? (
           <>
-            <Card className="p-6">
+            <Card variant="lime" className="p-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-primary/10">
-                    <Target className="h-6 w-6 text-primary" />
+                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-black/10">
+                    <Target className="h-6 w-6 text-black" />
                   </span>
                   <div>
-                    <p className="text-sm text-muted-foreground">Διαθέσιμοι πόντοι</p>
-                    <p className="text-3xl font-bold tabular-nums">{points.availablePoints}</p>
-                    <p className="text-xs text-muted-foreground">= {availableEuro.toFixed(2)}€ έκπτωση</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-black/65">Διαθέσιμοι πόντοι</p>
+                    <p className="mt-1 text-3xl font-extrabold tabular-nums text-black">{points.availablePoints}</p>
+                    <p className="text-xs text-black/70">= {availableEuro.toFixed(2)}€ έκπτωση</p>
                   </div>
                 </div>
                 <div className="flex flex-col items-stretch gap-2 sm:items-end">
@@ -142,20 +142,20 @@ function ClientPointsContent() {
                     <Gift className="mr-2 h-4 w-4" />
                     Εξαργύρωση Πόντων
                   </Button>
-                  {!canRedeem && <p className="text-xs text-muted-foreground">Ελάχιστο για εξαργύρωση: {settings.min_points_redeem} πόντοι</p>}
+                  {!canRedeem && <p className="text-xs text-black/80">Ελάχιστο για εξαργύρωση: {settings.min_points_redeem} πόντοι</p>}
                 </div>
               </div>
               <div className="mt-6 grid grid-cols-2 gap-4 border-t border-border pt-4 sm:grid-cols-3">
                 <div>
-                  <p className="text-xs text-muted-foreground">Σύνολο</p>
-                  <p className="text-lg font-bold tabular-nums">{points.totalPoints}</p>
+                  <p className="text-xs font-semibold text-black/75">Σύνολο</p>
+                  <p className="text-lg font-extrabold tabular-nums text-black">{points.totalPoints}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Εξαργυρωμένοι</p>
-                  <p className="text-lg font-bold tabular-nums">{points.usedPoints}</p>
+                  <p className="text-xs font-semibold text-black/75">Εξαργυρωμένοι</p>
+                  <p className="text-lg font-extrabold tabular-nums text-black">{points.usedPoints}</p>
                 </div>
                 {settings.shop_url && (
-                  <a href={settings.shop_url} target="_blank" rel="noreferrer" className="col-span-2 flex items-center gap-2 text-sm font-medium text-primary hover:underline sm:col-span-1">
+                  <a href={settings.shop_url} target="_blank" rel="noreferrer" className="col-span-2 flex items-center gap-2 text-sm font-extrabold text-black hover:underline sm:col-span-1">
                     <ShoppingBag className="h-4 w-4" />
                     Στο κατάστημα
                   </a>

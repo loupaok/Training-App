@@ -7,8 +7,6 @@ import { ChevronDown, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useBranding } from "@/contexts/BrandingContext";
-import { resolveMediaUrl } from "@/lib/media";
 import { api } from "@/lib/api/client";
 import { SidebarUserMenu } from "@/components/shell/sidebar-user-menu";
 import { coachNavSections, isActivePath, type CoachNavSection } from "@/lib/nav-config";
@@ -32,7 +30,6 @@ function orderSections(items: string[]): CoachNavSection[] {
 
 export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebarProps) {
   const pathname = usePathname();
-  const { branding } = useBranding();
   const canSeeCoachSettings = user?.role === "admin" || user?.role === "coach";
   const isAdmin = user?.role === "admin";
   const canUseMessages = user?.role === "admin" || user?.role === "coach" || Boolean(user?.permissions?.includes("messages"));
@@ -107,18 +104,15 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-40 hidden flex-col bg-[#07131d] text-white transition-[width] duration-200 lg:flex",
-        collapsed ? "w-16" : "w-56",
+        "fixed inset-y-0 left-0 z-40 hidden flex-col bg-[var(--sp-black)] text-white transition-[width] duration-200 lg:flex",
+        collapsed ? "w-16" : "w-[248px]",
       )}
     >
       <div className={cn("flex h-16 items-center border-b border-white/10", collapsed ? "justify-center px-2" : "justify-between px-4")}>
-        {!collapsed &&
-          (branding.logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={resolveMediaUrl(branding.logoUrl)} alt={branding.appName} className="h-8 max-w-32 object-contain" />
-          ) : (
-            <span className="truncate text-base font-semibold">{branding.appName}</span>
-          ))}
+        {!collapsed && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/brand/sp-team-logo-white.svg" alt="SP Team" className="h-7 w-auto max-w-32 object-contain" />
+        )}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -130,7 +124,7 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
         </Button>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
         {orderedSections
           .filter((section) =>
             (!section.coachOrAdminOnly || canSeeCoachSettings || (section.key === "management" && canSendAnnouncements)) &&
@@ -151,7 +145,7 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
                     onClick={() => toggleSection(section.key)}
                     title={collapsed ? section.label : undefined}
                     className={cn(
-                      "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-100 transition-colors hover:bg-white/10",
+                      "flex h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-semibold text-[#c8c8c8] transition-colors hover:bg-[var(--sp-black-2)] hover:text-white",
                       collapsed && "justify-center px-0",
                     )}
                   >
@@ -171,8 +165,8 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
                             key={child.key}
                             href={child.path}
                             className={cn(
-                              "rounded-md px-3 py-1.5 text-sm text-slate-300 hover:bg-white/10 hover:text-white",
-                              isActivePath(pathname, child.path) && "bg-white/10 text-white",
+                              "rounded-xl px-3 py-2 text-sm font-semibold text-[#c8c8c8] hover:bg-[var(--sp-black-2)] hover:text-white",
+                              isActivePath(pathname, child.path) && "bg-accent text-accent-foreground",
                             )}
                           >
                             {child.label}
@@ -195,23 +189,23 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
                 href={section.path || "#"}
                 title={collapsed ? section.label : undefined}
                 className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                  "flex h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-colors",
                   collapsed && "justify-center px-0",
-                  active ? "bg-red-600 text-white" : "text-slate-100 hover:bg-white/10",
+                  active ? "bg-accent text-accent-foreground" : "text-[#c8c8c8] hover:bg-[var(--sp-black-2)] hover:text-white",
                 )}
               >
                 {Icon && <Icon className="size-4 shrink-0" />}
                 {!collapsed && <span className="flex-1 truncate">{section.label}</span>}
                 {!collapsed && section.key === "updates" && unreadUpdates > 0 && (
-                  <Badge className="h-5 min-w-5 shrink-0 justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white hover:bg-red-600">
+                  <Badge className="h-5 min-w-5 shrink-0 justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-accent-foreground hover:bg-accent">
                     {unreadUpdates}
                   </Badge>
                 )}
                 {collapsed && section.key === "updates" && unreadUpdates > 0 && (
-                  <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full border-2 border-[#07131d] bg-red-500" aria-label={`${unreadUpdates} unread updates`} />
+                  <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full border-2 border-[var(--sp-black)] bg-accent" aria-label={`${unreadUpdates} unread updates`} />
                 )}
                 {!collapsed && section.key === "messages" && unreadMessages > 0 && (
-                  <Badge className="h-5 min-w-5 shrink-0 justify-center rounded-full bg-red-600 px-1.5 text-[10px] font-bold text-white hover:bg-red-600">
+                  <Badge className="h-5 min-w-5 shrink-0 justify-center rounded-full bg-accent px-1.5 text-[10px] font-bold text-accent-foreground hover:bg-accent">
                     {unreadMessages > 99 ? "99+" : unreadMessages}
                   </Badge>
                 )}

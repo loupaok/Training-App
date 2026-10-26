@@ -269,7 +269,7 @@ function ClientOnboardingContent() {
             <div className="grid gap-8 lg:grid-cols-[1fr_520px] lg:items-center">
               <div>
                 <div className="mb-5 flex items-center gap-3">
-                  <div className="grid h-11 w-11 place-items-center rounded-full bg-red-600 text-xl font-bold text-white">
+                  <div className="grid h-11 w-11 place-items-center rounded-full bg-accent text-xl font-bold text-accent-foreground">
                     K
                   </div>
                   <div>
@@ -643,7 +643,7 @@ function Stepper({ activeIndex }: { activeIndex: number }) {
         <div className="shrink-0 text-sm font-bold text-red-600">{Math.round(progress)}%</div>
       </div>
       <div className="mb-5 h-2 overflow-hidden rounded-full bg-white ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-        <div className="h-full rounded-full bg-red-600 transition-all duration-300" style={{ width: `${progress}%` }} />
+        <div className="h-full rounded-full bg-accent transition-all duration-300" style={{ width: `${progress}%` }} />
       </div>
       <div className="grid grid-cols-1 gap-2 lg:grid-cols-3 lg:gap-3">
         {steps.map((step, index) => {
@@ -667,7 +667,7 @@ function Stepper({ activeIndex }: { activeIndex: number }) {
                     isComplete
                       ? "bg-emerald-500 text-white"
                       : isActive
-                        ? "bg-red-600 text-white"
+                        ? "bg-accent text-accent-foreground"
                         : "bg-slate-100 text-slate-500 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:ring-slate-700"
                   }`}
                 >

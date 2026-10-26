@@ -49,7 +49,7 @@ export function PlanHeader({
             Νέο Πλάνο
           </Button>
         )}
-        <Button type="button" onClick={onSave} disabled={saving} className="h-11 bg-red-600 px-5 text-sm font-bold text-white shadow-lg shadow-red-200 hover:bg-red-700">
+        <Button type="button" onClick={onSave} disabled={saving} className="h-11 bg-primary px-5 text-sm font-bold text-primary-foreground hover:bg-primary/90">
           {saving ? "Αποθήκευση..." : "Αποθήκευση"}
         </Button>
       </div>

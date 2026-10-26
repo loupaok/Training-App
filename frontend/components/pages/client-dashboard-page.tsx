@@ -107,7 +107,7 @@ function PlanCard({ title, icon, children }: { title: string; icon: ReactNode; c
 }
 
 function DashboardQuickLink({ href, title, description, icon: Icon }: { href: string; title: string; description: string; icon: typeof Dumbbell }) {
-  return <Link href={href} className="group flex min-h-32 flex-col justify-between rounded-xl border border-border bg-card p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md"><span className="grid h-10 w-10 place-items-center rounded-lg bg-muted transition-colors group-hover:bg-primary/10"><Icon className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" /></span><span><span className="flex items-center justify-between gap-3 text-base font-semibold">{title}<ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-foreground" /></span><span className="mt-1 block text-sm text-muted-foreground">{description}</span></span></Link>
+  return <Link href={href} className="group flex min-h-32 flex-col justify-between rounded-[20px] border border-border bg-card p-5 transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground"><span className="grid h-10 w-10 place-items-center rounded-xl bg-muted transition-colors group-hover:bg-accent"><Icon className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" /></span><span><span className="flex items-center justify-between gap-3 text-base font-extrabold">{title}<ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-foreground" /></span><span className="mt-1 block text-sm text-muted-foreground">{description}</span></span></Link>
 }
 
 function PointsWidget() {
@@ -136,19 +136,12 @@ function PointsWidget() {
   const availableEuro = Math.round((points.availablePoints / euroPerPoints) * 100) / 100
 
   return (
-    <Link href="/client-points" className="group flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-md sm:p-6">
-      <div className="flex items-center gap-3">
-        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-primary/10"><Target className="h-5 w-5 text-primary" /></span>
-        <div>
-          <p className="text-sm text-muted-foreground">Οι πόντοι μου</p>
-          <p className="text-2xl font-bold tabular-nums">{points.availablePoints} <span className="text-sm font-normal text-muted-foreground">πόντοι</span></p>
-          <p className="text-xs text-muted-foreground">= {availableEuro.toFixed(2)}€ έκπτωση</p>
-        </div>
-      </div>
-      <span className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary">
-        Δες & εξαργύρωσε
-        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-      </span>
+    <Link href="/client-points" className="group relative flex min-h-[218px] flex-col gap-2 overflow-hidden rounded-[20px] bg-accent p-[22px] text-black transition-transform hover:-translate-y-0.5">
+      <span aria-hidden="true" className="absolute right-[30px] -top-5 h-[200px] w-3.5 -skew-x-[18deg] bg-black/90" />
+      <p className="relative text-xs font-extrabold uppercase tracking-[1px]">Οι πόντοι μου</p>
+      <div className="relative flex items-baseline gap-2"><p className="text-[40px] font-extrabold italic leading-none tracking-[-1px] tabular-nums">{points.availablePoints}</p><span className="text-[13px] font-semibold">πόντοι · {availableEuro.toFixed(2)}€</span></div>
+      <p className="relative max-w-[220px] text-[13px] font-medium leading-[1.5]">Με την επόμενη πληρωμή κερδίζεις τους πρώτους σου πόντους.</p>
+      <span className="relative mt-auto inline-flex h-[38px] w-fit items-center rounded-full bg-black px-4 text-[13px] font-bold text-white">Δες τις ανταμοιβές <ArrowRight className="ml-1.5 h-4 w-4 transition-transform group-hover:translate-x-1" /></span>
     </Link>
   )
 }
@@ -183,13 +176,12 @@ function ModernOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpdate }
         </div>
       </Alert>
     )}
-    <section className="relative overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-      <div className="absolute inset-y-0 left-0 w-1 bg-primary" />
+    <Card variant="action" className="rounded-[20px]">
       <div className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_15rem] lg:items-center">
         <div><div className="flex items-center gap-2 text-sm font-medium text-muted-foreground"><Sparkles className="h-4 w-4 text-primary" />Η σημερινή σου εικόνα</div><h2 className="mt-3 text-2xl font-bold tracking-normal">{updateReady ? "Ώρα για το εβδομαδιαίο σου update" : updateDone ? "Το update σου καταχωρήθηκε" : trainingPlan ? "Η προπόνησή σου είναι έτοιμη" : "Ξεκίνα με σταθερό ρυθμό"}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{updateReady ? "Συμπλήρωσε σε λίγα λεπτά πώς πήγε η εβδομάδα σου, για να έχει ο coach σου την πλήρη εικόνα." : updateDone ? `Το επόμενο check-in σου είναι στις ${nextUpdate}.` : trainingPlan ? `${trainingPlan.title} είναι διαθέσιμο για την επόμενη προπόνησή σου.` : "Ο coach σου θα προσθέσει σύντομα το προσωπικό σου πρόγραμμα."}</p><div className="mt-5">{updateReady ? <Button onClick={onOpenUpdate}><Send className="mr-2 h-4 w-4" />Συμπλήρωση update</Button> : trainingPlan ? <Link href="/client-program" className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90">Άνοιγμα προπόνησης<ArrowRight className="ml-2 h-4 w-4" /></Link> : <Link href="/client-messages" className="inline-flex h-9 items-center rounded-md border border-input bg-background px-4 text-sm font-medium shadow-sm transition-colors hover:bg-accent">Επικοινωνία με coach</Link>}</div></div>
         <div className="rounded-lg bg-muted/60 p-5"><p className="text-sm text-muted-foreground">Συνδρομή</p><p className="mt-2 truncate text-lg font-semibold">{client?.planName || "Σε αναμονή πλάνου"}</p>{subscriptionActive ? <><div className="mt-4 flex items-end justify-between gap-3"><div><p className="text-3xl font-bold tabular-nums">{daysRemaining ?? "-"}</p><p className="text-xs text-muted-foreground">ημέρες απομένουν</p></div><CalendarDays className="h-8 w-8 text-primary" /></div><Progress value={subscriptionProgress} className={`mt-4 h-1.5 ${progressColor}`} /><div className="mt-2 flex justify-between text-xs text-muted-foreground"><span>{formatDate(client?.subscriptionStartDate)}</span><span>{formatDate(client?.subscriptionEndDate)}</span></div></> : <div className="mt-4 rounded-md border border-border bg-background/70 px-3 py-2 text-xs text-muted-foreground">Αναμονή επιβεβαίωσης από τον coach</div>}</div>
       </div>
-    </section>
+    </Card>
 
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <div className="rounded-xl border border-border bg-card p-5 shadow-sm transition-shadow hover:shadow-md"><div className="flex items-center justify-between"><p className="text-sm text-muted-foreground">Τρέχον βάρος</p><ScaleIcon /></div><p className="mt-3 text-2xl font-bold tabular-nums">{client?.currentWeight ?? "-"}{client?.currentWeight ? " kg" : ""}</p><p className="mt-1 text-xs text-muted-foreground">{dashboard?.lastWeightUpdate ? "Από το τελευταίο check-in" : "Από την εγγραφή σου"}</p></div>
@@ -206,12 +198,48 @@ function ModernOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpdate }
 
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <Card><CardHeader className="pb-3"><CardTitle className="text-lg">Τελευταία δραστηριότητα</CardTitle></CardHeader><CardContent className="divide-y">{dashboard?.lastUpdate ? <ActivityRow icon={<CheckCircle2 className="h-4 w-4 text-primary" />} title="Υποβλήθηκε εβδομαδιαίο update" detail={formatDate(dashboard.lastUpdate.submittedAt)} /> : <ActivityRow icon={<CalendarDays className="h-4 w-4 text-muted-foreground" />} title="Δεν υπάρχει update ακόμα" detail="Το πρώτο σου check-in θα εμφανιστεί εδώ." />}{trainingPlan && <ActivityRow icon={<Dumbbell className="h-4 w-4 text-primary" />} title="Το πρόγραμμα προπόνησης είναι διαθέσιμο" detail={trainingPlan.title} />}{nutritionPlan && <ActivityRow icon={<Salad className="h-4 w-4 text-primary" />} title="Το πλάνο διατροφής είναι διαθέσιμο" detail={nutritionPlan.title} />}</CardContent></Card>
-      <Card className="border-primary/20 bg-primary/5"><CardContent className="p-5"><p className="text-sm font-semibold">Μικρό βήμα, σταθερή πρόοδος</p><p className="mt-2 text-sm leading-6 text-muted-foreground">Η συνέπεια στα workouts και στα εβδομαδιαία updates βοηθά τον coach να προσαρμόζει το πλάνο σου σωστά.</p><Link href="/client-progress" className="mt-4 inline-flex items-center text-sm font-medium text-foreground hover:underline">Προβολή Progress<ArrowRight className="ml-1 h-4 w-4" /></Link></CardContent></Card>
+      <Card variant="dark"><CardContent className="p-5"><p className="text-sm font-extrabold text-white">Μικρό βήμα, σταθερή πρόοδος</p><p className="mt-2 text-sm leading-6 text-neutral-300">Η συνέπεια στα workouts και στα εβδομαδιαία updates βοηθά τον coach να προσαρμόζει το πλάνο σου σωστά.</p><Link href="/client-progress" className="mt-4 inline-flex items-center text-sm font-extrabold text-accent hover:underline">Προβολή Progress<ArrowRight className="ml-1 h-4 w-4" /></Link></CardContent></Card>
     </section>
   </div>
 }
 
-function ActivityRow({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) { return <div className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"><span className="grid h-9 w-9 place-items-center rounded-lg bg-muted">{icon}</span><div className="min-w-0"><p className="text-sm font-medium">{title}</p><p className="truncate text-xs text-muted-foreground">{detail}</p></div></div> }
+function ClientHomeOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpdate }: { dashboard: DashboardData | null; trainingPlan: TrainingPlan; nutritionPlan: NutritionPlanPreview; onOpenUpdate: () => void }) {
+  const client = dashboard?.client
+  const updateReady = Boolean(dashboard?.todayIsUpdateDay && !dashboard?.alreadySubmittedThisWeek)
+  const updateDone = Boolean(dashboard?.alreadySubmittedThisWeek)
+  const subscriptionActive = client?.subscriptionStatus === "active" || client?.subscriptionStatus === "expiring_soon"
+  const startDate = client?.subscriptionStartDate ? new Date(client.subscriptionStartDate) : null
+  const endDate = client?.subscriptionEndDate ? new Date(client.subscriptionEndDate) : null
+  const totalDays = startDate && endDate ? Math.max(1, Math.ceil((endDate.getTime() - startDate.getTime()) / 86400000)) : 1
+  const elapsedDays = startDate ? Math.max(0, Math.ceil((Date.now() - startDate.getTime()) / 86400000)) : 0
+  const subscriptionProgress = Math.min(100, Math.max(0, (elapsedDays / totalDays) * 100))
+  const daysToNextUpdate = dashboard?.nextUpdateDate ? Math.max(0, Math.ceil((new Date(dashboard.nextUpdateDate).getTime() - Date.now()) / 86400000)) : 7
+  const completedUpdateDays = Math.max(0, Math.min(7, 7 - daysToNextUpdate))
+  const workout = trainingPlan?.days[0]
+  const workoutExercises = workout?.exercises.length || 0
+  const workoutSets = workout?.exercises.reduce((total, exercise) => total + (Number(exercise.sets) || 0), 0) || 0
+
+  return <div className="space-y-5">
+    {client?.birthdayToday && <Alert className="relative overflow-hidden rounded-2xl border-0 bg-black px-[18px] py-4"><span aria-hidden="true" className="pointer-events-none absolute right-[70px] -top-4 h-[110px] w-3.5 -skew-x-[18deg] bg-accent" /><div className="relative flex items-center gap-3.5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent"><Gift className="h-[19px] w-[19px] text-black" /></span><div><AlertTitle className="text-base font-extrabold text-white">Χρόνια πολλά, {client.firstName}!</AlertTitle><AlertDescription className="mt-0.5 text-[13px] text-neutral-300">Σου ευχόμαστε μια δυνατή νέα χρονιά — από όλο το SP Team.</AlertDescription></div></div></Alert>}
+
+    <section className="grid gap-5 lg:grid-cols-3">
+      <div className="space-y-5 lg:col-span-2">
+        {updateReady ? <Card variant="action" className="min-h-[238px]"><CardContent className="grid items-center gap-6 p-7 sm:grid-cols-[minmax(0,1fr)_9.5rem]"><div><Badge className="h-7 bg-black px-2.5 text-[11px] font-extrabold uppercase tracking-[1px] text-accent">Σήμερα · εκκρεμεί</Badge><h2 className="mt-3 text-2xl font-extrabold tracking-[-0.4px]">Ώρα για το εβδομαδιαίο σου update</h2><p className="mt-2 text-sm leading-[1.55] text-[#555]">Σε 3 λεπτά: βάρος, φωτογραφίες και πώς πήγε η εβδομάδα — για να προσαρμόσει ο coach το πλάνο σου.</p><Button variant="lime" onClick={onOpenUpdate} className="mt-4 h-[46px] px-[22px]">Συμπλήρωσε update <ArrowRight className="ml-2 h-4 w-4" /></Button></div><div className="hidden space-y-2.5 text-[13px] sm:block"><span className="flex items-center gap-2"><CheckCircle2 className="h-[18px] w-[18px] rounded-full bg-black p-1 text-accent" />Βάρος</span><span className="flex items-center gap-2 text-muted-foreground"><i className="h-[18px] w-[18px] rounded-full border-[1.5px] border-[#cfcfcb]" />Φωτογραφίες</span><span className="flex items-center gap-2 text-muted-foreground"><i className="h-[18px] w-[18px] rounded-full border-[1.5px] border-[#cfcfcb]" />Ερωτηματολόγιο</span></div></CardContent></Card> : <Card className="rounded-[18px]"><CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:gap-5 sm:px-5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black text-accent"><CheckCircle2 className="h-3.5 w-3.5" strokeWidth={4} /></span><div className="shrink-0"><p className="text-[15px] font-extrabold">Εβδομαδιαίο update</p><p className="text-xs text-muted-foreground">{updateDone ? `Στάλθηκε ${formatDate(dashboard?.lastUpdate?.submittedAt)}` : "Δεν εκκρεμεί update"}</p></div><div className="min-w-0 flex-1 px-0 sm:px-2"><div className="mb-1.5 flex justify-between gap-3 text-xs text-muted-foreground"><span><strong className="text-[13px] text-black">{daysToNextUpdate} ημέρες</strong> για το επόμενο</span><span>{formatDate(dashboard?.nextUpdateDate)}</span></div><div className="flex gap-1">{Array.from({ length: 7 }, (_, index) => <span key={index} className={`h-1.5 flex-1 rounded-[3px] ${index < completedUpdateDays ? "bg-accent" : "bg-[#ececea]"}`} />)}</div></div><Button asChild variant="outline" size="sm" className="h-[38px] shrink-0 px-4"><Link href="/client-progress">Δες το τελευταίο</Link></Button></CardContent></Card>}
+
+        <div className="grid gap-5 md:grid-cols-2">
+          <Card variant="dark" className="min-h-[270px]"><CardContent className="p-[22px]"><div className="flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-[1px] text-neutral-400">Σημερινή προπόνηση</p><p className="text-xs text-neutral-300">Ημέρα 1</p></div><h2 className="mt-3 text-[19px] font-extrabold leading-[1.2] text-white">{workout?.name || "Η προπόνησή σου"}</h2><div className="mt-4 flex flex-wrap gap-2"><Badge className="bg-[#1f1f1f] px-2.5 py-1.5 text-xs font-semibold text-white">{workoutExercises} ασκήσεις</Badge><Badge className="bg-[#1f1f1f] px-2.5 py-1.5 text-xs font-semibold text-white">{workoutSets || "-"} sets</Badge><Badge className="bg-[#1f1f1f] px-2.5 py-1.5 text-xs font-semibold text-white">Πρόγραμμα</Badge></div><Button asChild variant="lime" className="mt-auto h-11 w-full"><Link href="/client-program">Ξεκίνα προπόνηση <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardContent></Card>
+          <Card className="min-h-[270px]"><CardContent className="p-[22px]"><div className="flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-[1px] text-muted-foreground">Διατροφή σήμερα</p><Link href="/client-nutrition" className="text-xs font-bold">Δες πλάνο <ArrowRight className="inline h-3.5 w-3.5" /></Link></div><div className="mt-5 flex items-center gap-4"><div className="grid h-[86px] w-[86px] shrink-0 place-items-center rounded-full bg-[conic-gradient(#0b0b0b_0_44%,#ececea_44%_100%)]"><div className="grid h-[66px] w-[66px] place-items-center rounded-full bg-card text-center"><strong className="text-base font-extrabold">{nutritionPlan?.meals.length || 0}</strong><span className="text-[9px] text-muted-foreground">γεύματα</span></div></div><div className="space-y-2 text-xs font-semibold"><p>Πλάνο διατροφής</p><p className="text-muted-foreground">{nutritionPlan ? `${nutritionPlan.meals.length} γεύματα σήμερα` : "Δεν υπάρχει διαθέσιμο πλάνο"}</p><p className="text-[#9a9a9a]">{nutritionPlan?.title || ""}</p></div></div><Button asChild variant="outline" className="mt-auto h-11 w-full"><Link href="/client-nutrition">Λίστα για ψώνια</Link></Button></CardContent></Card>
+        </div>
+
+        <Card><CardContent className="p-[22px] sm:px-6"><CardTitle className="pb-2 text-base">Τελευταία δραστηριότητα</CardTitle><div className="divide-y divide-[#f0f0ee]">{dashboard?.lastUpdate ? <ActivityRow icon={<CheckCircle2 className="h-4 w-4" />} title="Υποβλήθηκε εβδομαδιαίο update" detail={formatDate(dashboard.lastUpdate.submittedAt)} /> : <ActivityRow icon={<CalendarDays className="h-4 w-4" />} title="Δεν υπάρχει update ακόμα" detail="Το πρώτο σου check-in θα εμφανιστεί εδώ." />}{nutritionPlan && <ActivityRow icon={<Salad className="h-4 w-4" />} title="Το πλάνο διατροφής είναι διαθέσιμο" detail={nutritionPlan.title} />}</div></CardContent></Card>
+      </div>
+
+      <aside className="space-y-5"><Card><CardContent className="p-[22px]"><div className="flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-[1px] text-muted-foreground">Συνδρομή</p><Badge className="bg-black px-2.5 py-1 text-[11px] font-extrabold text-accent">{client?.planName || "ΠΛΑΝΟ"}</Badge></div><div className="mt-3 flex items-baseline gap-2"><p className="text-[40px] font-extrabold italic leading-none tracking-[-1px] tabular-nums">{subscriptionActive ? client?.daysRemaining ?? "-" : "-"}</p><span className="text-[13px] text-muted-foreground">ημέρες απομένουν</span></div>{subscriptionActive ? <><Progress value={subscriptionProgress} className="mt-4 h-2" /><div className="mt-2 flex justify-between text-xs text-[#8a8a8a]"><span>{formatDate(client?.subscriptionStartDate)}</span><span>{formatDate(client?.subscriptionEndDate)}</span></div></> : <p className="mt-4 text-xs text-muted-foreground">Αναμονή επιβεβαίωσης από τον coach</p>}<Button asChild variant="outline" className="mt-4 h-10 w-full"><Link href="/client-payments">Διαχείριση συνδρομής</Link></Button></CardContent></Card><PointsWidget /><div className="grid grid-cols-2 gap-3"><Card variant="stat" className="rounded-2xl"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Τρέχον βάρος</p><p className="mt-1 text-2xl font-extrabold tabular-nums">{client?.currentWeight ?? "-"}{client?.currentWeight ? " kg" : ""}</p><p className="text-[11px] text-[#8a8a8a]">τελευταίο check-in</p></CardContent></Card><Link href="/client-progress" className="rounded-2xl border border-border bg-card p-4 transition-colors hover:bg-muted"><p className="text-xs text-muted-foreground">Πρόοδος</p><p className="mt-2 text-base font-extrabold">Δες αναλυτικά <ArrowRight className="inline h-4 w-4" /></p><p className="mt-1 text-[11px] text-[#8a8a8a]">βάρος, ρεκόρ, φωτό</p></Link></div></aside>
+    </section>
+  </div>
+}
+
+function ActivityRow({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) { return <div className="flex items-center gap-3 py-3 first:pt-0 last:pb-0"><span className="grid h-9 w-9 place-items-center rounded-[10px] bg-[var(--sp-lime-soft)] text-black">{icon}</span><div className="min-w-0"><p className="text-sm font-semibold">{title}</p><p className="truncate text-xs text-[#8a8a8a]">{detail}</p></div></div> }
 function ScaleIcon() { return <Dumbbell className="h-4 w-4 text-primary" /> }
 
 const confettiColors = ["bg-lime-400", "bg-white", "bg-lime-300", "bg-neutral-400"]
@@ -383,17 +411,17 @@ function ClientDashboardContent() {
   return (
     <ClientShell user={user} logout={logout} paymentApproved={subscriptionActive} active="dashboard">
       {showBirthdayCelebration && <BirthdayCelebration firstName={dashboard?.client.firstName || ""} onClose={() => setShowBirthdayCelebration(false)} />}
-      <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
-        <div>
-          <h1 className="text-2xl font-bold">Γεια σου, {dashboard?.client.firstName || ""}!</h1>
-          <p className="text-sm text-muted-foreground">Η προσωπική σου προπόνηση, διατροφή και πρόοδος σε ένα μέρος.</p>
+      <main className="mx-auto w-full max-w-none space-y-5 p-4 sm:p-6 lg:px-10 lg:py-8">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div><h1 className="text-2xl font-extrabold tracking-[-0.5px] sm:text-[28px]">Γεια σου, {dashboard?.client.firstName || ""}</h1><p className="mt-1 text-sm text-muted-foreground">Η προσωπική σου προπόνηση, διατροφή και πρόοδος σε ένα μέρος.</p></div>
+          <span className="inline-flex h-[34px] w-fit items-center gap-2 rounded-full border border-border bg-card px-3.5 text-[13px] font-bold"><i className="h-2 w-2 rounded-full bg-accent shadow-[0_0_0_3px_rgb(176_249_12_/_25%)]" />{dashboard?.streak || 0} εβδομάδες συνέπεια</span>
         </div>
         {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <div className="w-full overflow-x-auto"><TabsList className="h-auto"><TabsTrigger value="overview">Αρχική</TabsTrigger><TabsTrigger value="update">Update</TabsTrigger></TabsList></div>
+          <div className={activeTab === "overview" ? "hidden" : "w-full overflow-x-auto"}><TabsList className="h-auto"><TabsTrigger value="overview">Αρχική</TabsTrigger><TabsTrigger value="update">Update</TabsTrigger></TabsList></div>
 
           <TabsContent value="overview" className="space-y-6">
-            <ModernOverview dashboard={dashboard} trainingPlan={trainingPlan} nutritionPlan={nutritionPlan} onOpenUpdate={() => setActiveTab("update")} />
+            <ClientHomeOverview dashboard={dashboard} trainingPlan={trainingPlan} nutritionPlan={nutritionPlan} onOpenUpdate={() => setActiveTab("update")} />
             <div className="hidden">
             {dashboard?.todayIsUpdateDay && !dashboard.alreadySubmittedThisWeek && <Alert><CalendarDays className="h-4 w-4" /><AlertTitle>Σήμερα είναι ημέρα update</AlertTitle><AlertDescription className="flex flex-wrap items-center gap-3">Συμπλήρωσε το εβδομαδιαίο σου update για να ενημερωθεί ο coach σου.<Button size="sm" onClick={() => setActiveTab("update")}>Συμπλήρωση update</Button></AlertDescription></Alert>}
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">

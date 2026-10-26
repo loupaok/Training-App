@@ -49,8 +49,6 @@ import { cn } from "@/lib/utils";
 import { ExerciseImage, normalizeExerciseImages, type Exercise } from "@/components/shared/exercise-visuals";
 
 const PAGE_SIZE = 24;
-const MUSCLE_GROUP_TABS = ["Στήθος", "Πλάτη", "Πόδια", "Ώμοι", "Δικέφαλοι", "Τρικέφαλοι", "Κοιλιακοί", "Γλουτοί", "Cardio"];
-const EQUIPMENT_TABS = ["Μπάρα", "Αλτήρες", "Τροχαλία", "Μηχάνημα", "Σωματικό βάρος", "Λάστιχα", "Άλλο"];
 
 interface FiltersState {
   muscleGroups: string[];
@@ -270,7 +268,7 @@ function ExercisesContent() {
             <FilterPill active={!muscleGroup} onClick={() => setMuscleGroup("")}>
               Όλα
             </FilterPill>
-            {MUSCLE_GROUP_TABS.map((option) => (
+            {filters.muscleGroups.map((option) => (
               <FilterPill key={option} active={muscleGroup === option} onClick={() => setMuscleGroup(option)}>
                 {option}
               </FilterPill>
@@ -280,7 +278,7 @@ function ExercisesContent() {
         </ScrollArea>
 
         <Select
-          items={[{ value: "all", label: "Όλοι" }, ...EQUIPMENT_TABS.map((option) => ({ value: option, label: option }))]}
+          items={[{ value: "all", label: "Όλοι" }, ...filters.equipment.map((option) => ({ value: option, label: option }))]}
           value={equipment || "all"}
           onValueChange={(value) => value && setEquipment(value === "all" ? "" : value)}
         >
@@ -290,7 +288,7 @@ function ExercisesContent() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Όλοι</SelectItem>
-            {EQUIPMENT_TABS.map((option) => (
+            {filters.equipment.map((option) => (
               <SelectItem key={option} value={option}>
                 {option}
               </SelectItem>

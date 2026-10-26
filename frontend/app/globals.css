@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Commissioner:wght@400;500;600;700;800&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -8,7 +9,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: "Commissioner", system-ui, sans-serif;
   --font-mono: ui-monospace, monospace;
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -51,39 +52,56 @@
 
 :root {
   --container-7xl: 80rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: #dc2626;
+  --sp-lime: #b0f90c;
+  --sp-lime-soft: #f1fbd6;
+  --sp-lime-glow: rgb(176 249 12 / 45%);
+  --sp-black: #0b0b0b;
+  --sp-black-2: #161616;
+  --sp-black-3: #1f1f1f;
+  --sp-white: #ffffff;
+  --sp-bg: #f4f4f2;
+  --sp-surface: #f6f6f3;
+  --sp-border: #e6e6e2;
+  --sp-border-strong: #dcdcd8;
+  --sp-track: #ececea;
+  --sp-text: #0b0b0b;
+  --sp-text-2: #555555;
+  --sp-text-3: #6a6a6a;
+  --sp-text-4: #8a8a8a;
+  --sp-danger: #dc2626;
+  --background: var(--sp-bg);
+  --foreground: var(--sp-text);
+  --card: var(--sp-white);
+  --card-foreground: var(--sp-text);
+  --popover: var(--sp-white);
+  --popover-foreground: var(--sp-text);
+  --primary: var(--sp-black);
   --primary-foreground: #ffffff;
-  --title-color: #1a1a2e;
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: #dc2626;
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: #dc2626;
-  --chart-1: #dc2626;
-  --chart-2: #2563eb;
-  --chart-3: #16a34a;
-  --chart-4: #f59e0b;
-  --chart-5: #6366f1;
-  --radius: 0.5rem;
-  --sidebar: #07131d;
-  --sidebar-foreground: #f1f5f9;
-  --sidebar-primary: #dc2626;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(255, 255, 255, 0.1);
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-ring: #dc2626;
+  --title-color: var(--sp-text);
+  --secondary: var(--sp-surface);
+  --secondary-foreground: var(--sp-text);
+  --muted: var(--sp-surface);
+  --muted-foreground: var(--sp-text-3);
+  --accent: var(--sp-lime);
+  --accent-foreground: var(--sp-black);
+  --destructive: var(--sp-danger);
+  --border: var(--sp-border);
+  --input: var(--sp-border-strong);
+  --ring: var(--sp-lime);
+  --chart-1: var(--sp-black);
+  --chart-2: var(--sp-lime);
+  --chart-3: var(--sp-text-2);
+  --chart-4: var(--sp-text-3);
+  --chart-5: var(--sp-lime-soft);
+  --radius: 1rem;
+  --sidebar: var(--sp-black);
+  --sidebar-foreground: #c8c8c8;
+  --sidebar-primary: var(--sp-lime);
+  --sidebar-primary-foreground: var(--sp-black);
+  --sidebar-accent: var(--sp-black-2);
+  --sidebar-accent-foreground: var(--sp-white);
+  --sidebar-border: #2a2a2a;
+  --sidebar-ring: var(--sp-lime);
 }
 
 /* Every Admin/Coach page is rendered inside CoachShell. Keep legacy page
@@ -94,38 +112,38 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: #dc2626;
-  --primary-foreground: #ffffff;
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: #dc2626;
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: #dc2626;
-  --chart-1: #dc2626;
-  --chart-2: #3b82f6;
-  --chart-3: #22c55e;
-  --chart-4: #fbbf24;
-  --chart-5: #818cf8;
-  --sidebar: #07131d;
-  --sidebar-foreground: #f1f5f9;
-  --sidebar-primary: #dc2626;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(255, 255, 255, 0.1);
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-ring: #dc2626;
-  --title-color: oklch(0.985 0 0);
+  --background: var(--sp-black);
+  --foreground: var(--sp-white);
+  --card: var(--sp-black-2);
+  --card-foreground: var(--sp-white);
+  --popover: var(--sp-black-2);
+  --popover-foreground: var(--sp-white);
+  --primary: var(--sp-lime);
+  --primary-foreground: var(--sp-black);
+  --title-color: var(--sp-white);
+  --secondary: var(--sp-black-3);
+  --secondary-foreground: var(--sp-white);
+  --muted: var(--sp-black-3);
+  --muted-foreground: #bdbdbd;
+  --accent: var(--sp-lime);
+  --accent-foreground: var(--sp-black);
+  --destructive: var(--sp-danger);
+  --border: #2a2a2a;
+  --input: #2a2a2a;
+  --ring: var(--sp-lime);
+  --chart-1: var(--sp-lime);
+  --chart-2: var(--sp-white);
+  --chart-3: #bdbdbd;
+  --chart-4: var(--sp-text-4);
+  --chart-5: var(--sp-text-2);
+  --sidebar: var(--sp-black);
+  --sidebar-foreground: #c8c8c8;
+  --sidebar-primary: var(--sp-lime);
+  --sidebar-primary-foreground: var(--sp-black);
+  --sidebar-accent: var(--sp-black-2);
+  --sidebar-accent-foreground: var(--sp-white);
+  --sidebar-border: #2a2a2a;
+  --sidebar-ring: var(--sp-lime);
 }
 
 @layer base {
@@ -134,6 +152,7 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: "Commissioner", system-ui, sans-serif;
   }
   h1, h2, h3, h4, h5, h6 {
     color: var(--title-color);
@@ -141,4 +160,89 @@
   html {
     @apply font-sans;
   }
+}
+
+::selection {
+  background: var(--sp-lime);
+  color: var(--sp-black);
+}
+
+/* Legacy utility colours remain in older feature screens. Keep their visual
+   meaning inside the SP palette while those screens are progressively
+   simplified; destructive red is intentionally not included here. */
+[class*="bg-green-"],
+[class*="bg-emerald-"],
+[class*="bg-blue-"],
+[class*="bg-sky-"],
+[class*="bg-indigo-"],
+[class*="bg-violet-"],
+[class*="bg-purple-"],
+[class*="bg-amber-"],
+[class*="bg-yellow-"],
+[class*="bg-orange-"],
+[class*="bg-teal-"],
+[class*="bg-rose-"] {
+  background-color: var(--sp-lime-soft) !important;
+}
+
+[class*="text-green-"],
+[class*="text-emerald-"],
+[class*="text-blue-"],
+[class*="text-sky-"],
+[class*="text-indigo-"],
+[class*="text-violet-"],
+[class*="text-purple-"],
+[class*="text-amber-"],
+[class*="text-yellow-"],
+[class*="text-orange-"],
+[class*="text-teal-"],
+[class*="text-rose-"] {
+  color: var(--sp-text) !important;
+}
+
+[class*="border-green-"],
+[class*="border-emerald-"],
+[class*="border-blue-"],
+[class*="border-sky-"],
+[class*="border-indigo-"],
+[class*="border-violet-"],
+[class*="border-purple-"],
+[class*="border-amber-"],
+[class*="border-yellow-"],
+[class*="border-orange-"],
+[class*="border-teal-"],
+[class*="border-rose-"],
+[class*="ring-green-"],
+[class*="ring-emerald-"],
+[class*="ring-blue-"],
+[class*="ring-sky-"],
+[class*="ring-indigo-"],
+[class*="ring-violet-"],
+[class*="ring-purple-"],
+[class*="ring-amber-"],
+[class*="ring-yellow-"],
+[class*="ring-orange-"],
+[class*="ring-teal-"],
+[class*="ring-rose-"] {
+  border-color: var(--sp-border) !important;
+  --tw-ring-color: var(--sp-lime) !important;
+}
+
+.dark [class*="text-green-"],
+.dark [class*="text-emerald-"],
+.dark [class*="text-blue-"],
+.dark [class*="text-sky-"],
+.dark [class*="text-indigo-"],
+.dark [class*="text-violet-"],
+.dark [class*="text-purple-"],
+.dark [class*="text-amber-"],
+.dark [class*="text-yellow-"],
+.dark [class*="text-orange-"],
+.dark [class*="text-teal-"],
+.dark [class*="text-rose-"] {
+  color: var(--sp-lime) !important;
+}
+
+[data-slot="progress-indicator"] {
+  background-color: var(--sp-lime) !important;
 }

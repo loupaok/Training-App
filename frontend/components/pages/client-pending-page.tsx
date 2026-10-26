@@ -56,7 +56,7 @@ function BankRow({ label, value, action }: { label: string; value: string; actio
 function NextStep({ step, title, text }: { step: number; title: string; text: string }) {
   return (
     <div className="rounded-xl bg-slate-50 p-5 dark:bg-slate-800">
-      <div className="mb-3 grid h-8 w-8 place-items-center rounded-full bg-red-600 text-sm font-bold text-white">{step}</div>
+      <div className="mb-3 grid h-8 w-8 place-items-center rounded-full bg-accent text-sm font-bold text-accent-foreground">{step}</div>
       <h3 className="font-bold text-slate-900 dark:text-slate-50">{title}</h3>
       <p className="mt-1.5 text-sm font-semibold leading-6 text-slate-500 dark:text-slate-400">{text}</p>
     </div>
