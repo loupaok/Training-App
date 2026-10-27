@@ -185,6 +185,7 @@ interface Onboarding {
 }
 
 interface Subscription {
+  id?: number | string;
   plan_name?: string;
   price?: number | string | null;
   currency?: string;
@@ -1754,7 +1755,7 @@ function OverviewTab({
           )}
 
           {pendingPayment && (
-            <Button type="button" onClick={() => onApprovePayment(pendingPayment.id)} disabled={approvingPayment} className="h-10 w-full bg-emerald-600 font-bold text-white hover:bg-emerald-700">
+            <Button type="button" variant="lime" onClick={() => onApprovePayment(pendingPayment.id)} disabled={approvingPayment} className="h-10 w-full font-extrabold">
               {approvingPayment ? "Έγκριση..." : "Έγκριση πληρωμής"}
             </Button>
           )}
@@ -2235,6 +2236,28 @@ function DateOfBirthField({
 // Payments tab
 // ---------------------------------------------------------------------------
 
+function SubscriptionManagement({ clientId, subscription, onUpdated }: { clientId: string; subscription?: Subscription; onUpdated: () => void }) {
+  const [saving, setSaving] = useState<"pause" | "resume" | "cancel" | null>(null);
+  if (!subscription?.id || ["cancelled", "expired", "pending_payment"].includes(subscription.status || "")) return null;
+
+  const run = async (action: "pause" | "resume" | "cancel") => {
+    if (action === "cancel" && !window.confirm("Η συνδρομή θα διακοπεί άμεσα. Οι πληρωμές και το ιστορικό θα διατηρηθούν. Συνέχεια;")) return;
+    setSaving(action);
+    try {
+      await api.post(`/clients/${clientId}/subscription/${action}`, {});
+      onUpdated();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Δεν ενημερώθηκε η συνδρομή.");
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const paused = subscription.status === "paused";
+  return <Card className="border-border"><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-extrabold">Διαχείριση συνδρομής</p><p className="mt-1 text-sm text-muted-foreground">Η διακοπή αφαιρεί άμεσα την πρόσβαση στα προγράμματα. Οι πληρωμές και το ιστορικό του πελάτη διατηρούνται.</p></div><Button type="button" variant="outline" disabled={saving !== null} onClick={() => void run("cancel")} className="shrink-0 border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive">{saving === "cancel" ? "Διακοπή..." : "Διακοπή συνδρομής"}</Button></CardContent></Card>;
+  return <Card className="border-border"><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-extrabold">Διαχείριση συνδρομής</p><p className="mt-1 text-sm text-muted-foreground">Η παύση διατηρεί τις υπόλοιπες ημέρες. Η διακοπή αφαιρεί την πρόσβαση, χωρίς να διαγράφει πληρωμές ή ιστορικό.</p></div><div className="flex shrink-0 flex-wrap gap-2">{paused ? <Button type="button" variant="lime" disabled={saving !== null} onClick={() => void run("resume")}>{saving === "resume" ? "Επανενεργοποίηση..." : "Επανενεργοποίηση"}</Button> : <Button type="button" variant="outline" disabled={saving !== null} onClick={() => void run("pause")}>{saving === "pause" ? "Πάγωμα..." : "Πάγωμα"}</Button>}<Button type="button" variant="outline" disabled={saving !== null} onClick={() => void run("cancel")} className="border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive">{saving === "cancel" ? "Διακοπή..." : "Διακοπή συνδρομής"}</Button></div></CardContent></Card>
+}
+
 function PaymentsTab({
   client,
   clientId,
@@ -2383,6 +2406,8 @@ function PaymentsTab({
         </Card>
       </div>
 
+      <SubscriptionManagement clientId={clientId} subscription={client.subscription} onUpdated={onUpdated} />
+
       <Card className="overflow-hidden p-0">
         <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-800">
           <div>
@@ -2507,7 +2532,7 @@ function PaymentsTab({
                   </Tooltip>
                 ) : <span className="text-muted-foreground">-</span>}
               </TableCell>
-              <TableCell className="whitespace-normal px-5 py-4">
+              <TableCell className="whitespace-normal px-5 py-4 [&>div>button[aria-label]]:hidden">
                 <div className="flex flex-wrap items-center gap-2">
                   {payment.status === "pending" && (
                     <>
@@ -2515,7 +2540,8 @@ function PaymentsTab({
                       type="button"
                       onClick={() => onApprovePayment(payment.id)}
                       disabled={approvingPayment}
-                      className="h-9 bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700"
+                      variant="lime"
+                      className="h-9 px-4 text-sm font-extrabold"
                     >
                       {approvingPayment ? "Έγκριση..." : "Έγκριση"}
                     </Button>

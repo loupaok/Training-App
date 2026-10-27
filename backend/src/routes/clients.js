@@ -700,8 +700,11 @@ export async function notifyUser(connection, userId, notification) {
 }
 
 async function refreshClientPaymentStatus(connection, clientId) {
-  const [[completed]] = await connection.query(
-    'SELECT id FROM payments WHERE client_id = ? AND status = "completed" LIMIT 1',
+  const [[activeSubscription]] = await connection.query(
+    `SELECT id FROM subscriptions
+     WHERE client_id = ? AND status IN ('active', 'expiring_soon')
+       AND start_date <= CURDATE() AND end_date >= CURDATE()
+     LIMIT 1`,
     [clientId]
   );
   const [[pending]] = await connection.query(
@@ -709,7 +712,7 @@ async function refreshClientPaymentStatus(connection, clientId) {
     [clientId]
   );
 
-  if (completed) {
+  if (activeSubscription) {
     await connection.query(
       'UPDATE users SET status = "active" WHERE id = ? AND role = "client"',
       [clientId]
@@ -725,6 +728,14 @@ async function refreshClientPaymentStatus(connection, clientId) {
       [clientId]
     );
   }
+}
+
+async function ensureSubscriptionPauseSchema(connection) {
+  const [columns] = await connection.query('SHOW COLUMNS FROM subscriptions');
+  const present = new Set(columns.map((column) => column.Field));
+  if (!present.has('paused_at')) await connection.query('ALTER TABLE subscriptions ADD COLUMN paused_at DATETIME NULL');
+  if (!present.has('paused_remaining_days')) await connection.query('ALTER TABLE subscriptions ADD COLUMN paused_remaining_days INT NULL');
+  if (!present.has('cancelled_at')) await connection.query('ALTER TABLE subscriptions ADD COLUMN cancelled_at DATETIME NULL');
 }
 
 // GET /clients/me/onboarding — current client's onboarding state
@@ -2508,10 +2519,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
               DATEDIFF(end_date, CURDATE()) AS days_remaining
        FROM subscriptions
        WHERE client_id = ?
-         AND (
-           (status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE())
-           OR status = 'expired'
-         )
+         AND status IN ('active', 'expiring_soon', 'paused', 'cancelled', 'expired')
        ORDER BY
          CASE WHEN status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE() THEN 0 ELSE 1 END,
          end_date DESC
@@ -2794,6 +2802,11 @@ router.post('/:id/payments', authorizeRole(['coach', 'admin']), [
   } finally {
     connection.release();
   }
+});
+
+// Payments are accounting history. They are never deleted; use approve/reject for pending payments.
+router.delete('/:id/payments/:paymentId', authorizeRole(['coach', 'admin']), async (_req, res) => {
+  res.status(405).json({ message: 'Payments cannot be deleted. Use approval or rejection for pending payments.' });
 });
 
 router.delete('/:id/payments/:paymentId', authorizeRole(['coach', 'admin']), async (req, res) => {
@@ -3583,6 +3596,90 @@ router.post('/:id/reject-payment', authorizeRoleOrPermission(['coach', 'admin'],
     res.status(500).json({ message: 'Server error' });
   }
 });
+
+async function changeSubscriptionLifecycle(req, res, action) {
+  const connection = await pool.getConnection();
+  try {
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    await ensureSubscriptionPauseSchema(connection);
+    const [[subscription]] = await connection.query(
+      `SELECT id, status, end_date, paused_remaining_days
+       FROM subscriptions
+       WHERE client_id = ? AND status IN ('active', 'expiring_soon', 'paused')
+       ORDER BY created_at DESC LIMIT 1`,
+      [clientId]
+    );
+    if (!subscription) return res.status(404).json({ message: 'No active or paused subscription found.' });
+
+    if (action === 'pause') {
+      if (!['active', 'expiring_soon'].includes(subscription.status)) return res.status(400).json({ message: 'Only an active subscription can be paused.' });
+      const [[remaining]] = await connection.query('SELECT GREATEST(0, DATEDIFF(?, CURDATE())) AS days', [subscription.end_date]);
+      await connection.query(
+        `UPDATE subscriptions
+         SET status = 'paused', paused_at = NOW(), paused_remaining_days = ?
+         WHERE id = ?`,
+        [Number(remaining?.days || 0), subscription.id]
+      );
+    }
+
+    if (action === 'resume') {
+      if (subscription.status !== 'paused') return res.status(400).json({ message: 'Only a paused subscription can be resumed.' });
+      const days = Math.max(0, Number(subscription.paused_remaining_days || 0));
+      await connection.query(
+        `UPDATE subscriptions
+         SET status = 'active', start_date = CURDATE(), end_date = DATE_ADD(CURDATE(), INTERVAL ? DAY),
+             paused_at = NULL, paused_remaining_days = NULL
+         WHERE id = ?`,
+        [days, subscription.id]
+      );
+    }
+
+    if (action === 'cancel') {
+      await connection.query(
+        `UPDATE subscriptions
+         SET status = 'cancelled', cancelled_at = NOW(), paused_at = NULL, paused_remaining_days = NULL
+         WHERE id = ?`,
+        [subscription.id]
+      );
+    }
+
+    await refreshClientPaymentStatus(connection, clientId);
+    const lifecycleCopy = action === 'pause'
+      ? { title: 'Η συνδρομή σου μπήκε σε πάγωμα', body: 'Οι υπόλοιπες ημέρες διατηρούνται και η πρόσβαση θα επανέλθει μόλις ο coach την ενεργοποιήσει ξανά.' }
+      : action === 'resume'
+        ? { title: 'Η συνδρομή σου ενεργοποιήθηκε ξανά', body: 'Η πρόσβαση στα προγράμματά σου είναι διαθέσιμη.' }
+        : { title: 'Η συνδρομή σου διακόπηκε', body: 'Η πρόσβαση στα προγράμματά σου έχει τεθεί σε παύση. Μπορείς να δεις τις διαθέσιμες επιλογές ανανέωσης.' };
+    await notifyUser(connection, clientId, {
+      clientId,
+      type: `subscription_${action}`,
+      title: lifecycleCopy.title,
+      body: lifecycleCopy.body,
+      linkUrl: '/client-billing',
+    });
+    await logClientActivity(connection, {
+      clientId,
+      action: action === 'pause' ? 'Subscription paused' : action === 'resume' ? 'Subscription resumed' : 'Subscription cancelled',
+      performedBy: req.user.id,
+      details: { subscriptionId: subscription.id },
+    });
+    try {
+      await syncDiscordSubscriptionRole(connection, clientId);
+    } catch (discordError) {
+      console.error(`Discord sync after subscription ${action} failed:`, discordError.message);
+    }
+    res.json({ success: true, status: action === 'pause' ? 'paused' : action === 'resume' ? 'active' : 'cancelled' });
+  } catch (error) {
+    console.error(`Subscription ${action} failed:`, error);
+    res.status(500).json({ message: 'Could not update subscription.' });
+  } finally {
+    connection.release();
+  }
+}
+
+router.post('/:id/subscription/cancel', authorizeRole(['coach', 'admin']), (req, res) => changeSubscriptionLifecycle(req, res, 'cancel'));
 
 router.put('/:id/demo-mode', authorizeRole(['coach', 'admin']), [
   body('enabled').isBoolean(),

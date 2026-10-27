@@ -1,58 +1,26 @@
 "use client"
 
-import { ChevronDown, Trophy } from "lucide-react"
-import { Checkbox } from "@/components/ui/checkbox"
+import { Check, ChevronDown, Trophy } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 
 export type SetType = "normal" | "warmup" | "drop" | "failure"
 
-const setTypeDetails: Record<SetType, { label: string; shortLabel: string; className: string }> = {
-  normal: { label: "Κανονικό", shortLabel: "", className: "" },
-  warmup: { label: "Warm-up", shortLabel: "W", className: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
-  drop: { label: "Drop set", shortLabel: "D", className: "bg-purple-500/10 text-purple-700 dark:text-purple-400" },
-  failure: { label: "Failure", shortLabel: "F", className: "bg-red-500/10 text-red-700 dark:text-red-400" },
+const types: Record<SetType, { label: string; mark: string }> = {
+  normal: { label: "Κανονικό", mark: "" }, warmup: { label: "Warm-up", mark: "W" }, drop: { label: "Drop set", mark: "D" }, failure: { label: "Failure", mark: "F" },
 }
-
-function displayWeight(weightKg: number, weightUnit: "kg" | "lbs") {
-  return weightUnit === "lbs" ? Math.round(weightKg * 2.20462 * 10) / 10 : weightKg
-}
+const shownWeight = (value: number, unit: "kg" | "lbs") => unit === "lbs" ? Math.round(value * 2.20462 * 10) / 10 : value
 
 export function SetRow({ setNumber, setType, previous, weightKg, repsCompleted, isCompleted, autoFocusKg, weightUnit, isPersonalRecord, onSetTypeChange, onWeightChange, onRepsChange, onComplete }: {
-  setNumber: number
-  setType: SetType
-  previous?: { weight: number; reps: number } | null
-  weightKg: number
-  repsCompleted: number
-  isCompleted: boolean
-  autoFocusKg?: boolean
-  weightUnit: "kg" | "lbs"
-  isPersonalRecord?: boolean
-  onSetTypeChange: (setType: SetType) => void
-  onWeightChange: (weightKg: number) => void
-  onRepsChange: (reps: number) => void
-  onComplete: (completed: boolean) => void
+  setNumber: number; setType: SetType; previous?: { weight: number; reps: number } | null; weightKg: number; repsCompleted: number; isCompleted: boolean; autoFocusKg?: boolean; weightUnit: "kg" | "lbs"; isPersonalRecord?: boolean; onSetTypeChange: (setType: SetType) => void; onWeightChange: (weightKg: number) => void; onRepsChange: (reps: number) => void; onComplete: (completed: boolean) => void
 }) {
-  const inputClass = "h-8 rounded-none border-0 border-b-2 border-muted bg-transparent px-0 text-center [appearance:textfield] focus-visible:border-primary focus-visible:ring-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-  const details = setTypeDetails[setType]
-  const enteredWeight = displayWeight(weightKg, weightUnit)
-
-  return (
-    <tr className={`border-l-2 transition-colors hover:bg-muted/30 ${isCompleted ? "border-green-500 bg-green-500/[0.08] text-green-700 dark:text-green-400" : "border-transparent"}`}>
-      <td className="w-10 p-2 text-center">
-        <DropdownMenu>
-          <DropdownMenuTrigger className={`inline-flex h-7 min-w-7 items-center justify-center gap-0.5 rounded px-1 font-bold outline-none hover:bg-muted ${details.className}`} aria-label="Τύπος σετ">
-            {details.shortLabel || setNumber}<ChevronDown className="h-3 w-3" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
-            {(Object.keys(setTypeDetails) as SetType[]).map((type) => <DropdownMenuItem key={type} onSelect={() => onSetTypeChange(type)} className={setTypeDetails[type].className}>{setTypeDetails[type].shortLabel ? `${setTypeDetails[type].shortLabel} - ` : ""}{setTypeDetails[type].label}</DropdownMenuItem>)}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </td>
-      <td className="p-2 text-right text-xs text-muted-foreground">{previous ? `${displayWeight(previous.weight, weightUnit)}×${previous.reps}` : "-"}</td>
-      <td className="p-2 text-center"><Input type="number" inputMode="decimal" min="0" step="0.5" placeholder="0" value={enteredWeight || ""} autoFocus={autoFocusKg} onChange={(event) => onWeightChange((Number(event.target.value) || 0) / (weightUnit === "lbs" ? 2.20462 : 1))} className={`${inputClass} w-14`} /></td>
-      <td className="p-2 text-center"><Input type="number" inputMode="numeric" min="0" step="1" placeholder="0" value={repsCompleted || ""} onChange={(event) => onRepsChange(Number(event.target.value) || 0)} className={`${inputClass} w-12`} /></td>
-      <td className="p-2 text-right"><div className="inline-flex items-center gap-1"><Checkbox checked={isCompleted} onCheckedChange={(checked) => onComplete(Boolean(checked))} className="h-6 w-6 rounded border-2 border-muted data-[state=checked]:border-green-500 data-[state=checked]:bg-green-500 data-[state=checked]:text-white" aria-label={`Ολοκλήρωση σετ ${setNumber}`} />{isPersonalRecord && <span className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium text-amber-600"><Trophy className="h-4 w-4" />Νέο Ρεκόρ!</span>}</div></td>
-    </tr>
-  )
+  const copyPrevious = () => { if (!previous) return; onWeightChange(previous.weight); onRepsChange(previous.reps) }
+  const field = "h-10 w-full rounded-[10px] border border-[#E6E6E2] bg-white px-1 text-center text-[14px] font-extrabold tabular-nums text-[#0B0B0B] shadow-none focus-visible:border-[#0B0B0B] focus-visible:ring-0 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+  return <div className={`grid grid-cols-[34px_1fr_64px_64px_36px] items-center gap-2 rounded-[10px] px-2 py-1.5 transition-colors ${isCompleted ? "bg-[#F1FBD6]" : "bg-transparent"}`}>
+    <DropdownMenu><DropdownMenuTrigger className={`grid h-[30px] w-[30px] place-items-center rounded-[9px] text-[12px] font-extrabold ${isCompleted ? "bg-[#0B0B0B] text-[#B0F90C]" : "bg-[#F2F2F0] text-[#0B0B0B]"}`} aria-label="Τύπος set">{types[setType].mark || setNumber}<ChevronDown className="ml-0.5 h-3 w-3" /></DropdownMenuTrigger><DropdownMenuContent align="start">{(Object.keys(types) as SetType[]).map((type) => <DropdownMenuItem key={type} onSelect={() => onSetTypeChange(type)}>{types[type].mark ? `${types[type].mark} · ` : ""}{types[type].label}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
+    <button type="button" onClick={copyPrevious} disabled={!previous} className="truncate text-left text-[12px] font-semibold tabular-nums text-[#6A6A6A] underline-offset-2 enabled:hover:text-[#0B0B0B] enabled:hover:underline disabled:no-underline">{previous ? `${shownWeight(previous.weight, weightUnit)} × ${previous.reps}` : "—"}</button>
+    <Input type="number" inputMode="decimal" min="0" step="0.5" value={shownWeight(weightKg, weightUnit) || ""} autoFocus={autoFocusKg} onChange={(event) => onWeightChange((Number(event.target.value) || 0) / (weightUnit === "lbs" ? 2.20462 : 1))} className={field} aria-label={`Κιλά set ${setNumber}`} />
+    <Input type="number" inputMode="numeric" min="0" step="1" value={repsCompleted || ""} onChange={(event) => onRepsChange(Number(event.target.value) || 0)} className={field} aria-label={`Επαναλήψεις set ${setNumber}`} />
+    <button type="button" onClick={() => onComplete(!isCompleted)} aria-label={`Ολοκλήρωση set ${setNumber}`} className={`grid h-[34px] w-[34px] place-items-center rounded-[10px] border transition-colors ${isCompleted ? "border-[#0B0B0B] bg-[#0B0B0B] text-[#B0F90C]" : "border-[#D6D6D2] bg-white text-[#B0B0AC] hover:border-[#0B0B0B]"}`}>{isCompleted ? <Check className="h-4 w-4" /> : <Check className="h-4 w-4" />}{isPersonalRecord && <Trophy className="sr-only" />}</button>
+  </div>
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Search, Plus, Pencil, Trash2, ImageOff, Images, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -442,24 +443,22 @@ function FoodsContent() {
   );
 
   return (
-    <CoachShell title="Βιβλιοθήκη Τροφίμων" user={user} logout={logout}>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-3xl font-bold dark:text-slate-50">Βιβλιοθήκη Τροφίμων</h1>
-          <Badge variant="secondary" className="text-sm font-bold">
-            {total}
-          </Badge>
+    <CoachShell title="Τρόφιμα & συμπληρώματα" user={user} logout={logout}>
+      <section className="mx-auto w-full max-w-[var(--container-7xl)] pb-8">
+      <div className="mb-[18px] flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="flex items-center gap-3 text-[28px] font-extrabold tracking-[-.5px]">Τρόφιμα & συμπληρώματα <span className="rounded-full bg-[#0b0b0b] px-2.5 py-1 text-[13px] text-accent">{total}</span></h1>
+          <p className="mt-1 text-sm text-[#6a6a6a]">Τιμές ανά 100g. Χρησιμοποιούνται στα πλάνα διατροφής των πελατών.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" className="gap-2 font-bold" onClick={openCreate}>
+        <Button type="button" className="h-[46px] rounded-full bg-[#0b0b0b] px-5 text-white hover:bg-[#1f1f1f]" onClick={openCreate}>
             <Plus className="h-4 w-4" />
-            Νέο Τρόφιμο
-          </Button>
-        </div>
+            Νέο τρόφιμο
+        </Button>
       </div>
-
-      <div className="flex h-12 items-center rounded-lg border border-slate-200 bg-white px-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <Search className="mr-3 h-4 w-4 shrink-0 text-slate-400" />
+      <div className="mb-[18px] flex flex-wrap items-center justify-between gap-4"><div className="flex rounded-[14px] border border-border bg-white p-1"><span className="flex h-[38px] items-center gap-2 rounded-[10px] bg-accent px-4 text-[13px] font-extrabold">Τρόφιμα <span className="rounded-full bg-[#0b0b0b] px-1.5 text-[11px] text-accent">{total}</span></span><Link href="/coach/supplements" className="flex h-[38px] items-center gap-2 rounded-[10px] px-4 text-[13px] font-bold text-[#555]">Συμπληρώματα</Link></div></div>
+      <div className="flex flex-wrap gap-2">
+      <div className="flex h-12 min-w-[220px] flex-1 items-center rounded-xl border border-border bg-white px-4">
+        <Search className="mr-3 h-4 w-4 shrink-0 text-[#8a8a8a]" />
         <Input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
@@ -467,24 +466,25 @@ function FoodsContent() {
           className="h-auto border-none bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
         />
       </div>
+      <Button variant="outline" className="h-12 rounded-xl px-4">Α → Ω</Button></div>
 
-      <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+      <div className="relative mt-4 overflow-hidden"><div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
         {CATEGORY_TABS.map((tab) => (
           <button
             key={tab.value || "all"}
             type="button"
             onClick={() => setCategoryFilter(tab.value)}
             className={cn(
-              "shrink-0 whitespace-nowrap rounded-full border px-3.5 py-2 text-sm font-bold transition-colors",
+              "h-[38px] shrink-0 whitespace-nowrap rounded-full border px-4 text-[13px] font-semibold transition-colors",
               categoryFilter === tab.value
-                ? "border-red-500 bg-red-500 text-white"
-                : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300",
+                ? "border-[#0b0b0b] bg-[#0b0b0b] text-white"
+                : "border-border bg-white text-[#333] hover:border-[#0b0b0b]",
             )}
           >
             {tab.emoji ? `${tab.emoji} ${tab.label}` : tab.label}
           </button>
         ))}
-      </div>
+      </div><span className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background to-transparent" /></div>
 
       {error && (
         <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
@@ -492,37 +492,21 @@ function FoodsContent() {
         </div>
       )}
 
-      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+      <div className="mt-4 flex items-center gap-2 text-[13px] text-[#6a6a6a]"><strong className="text-[#0b0b0b]">{total}</strong> αποτελέσματα</div>
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {items.map((food) => (
-          <Card key={food.id} className="group overflow-hidden p-0 transition-transform hover:scale-105">
+          <Card key={food.id} className="group overflow-hidden rounded-[18px] border border-border bg-white p-0 shadow-none">
             <FoodCardImage imageUrl={food.imageUrl} name={food.nameGr} />
-            <div className="space-y-1 p-2">
+            <div className="flex min-h-[176px] flex-col gap-3 p-4">
               <div className="flex items-center justify-between gap-1">
-                <span className="truncate text-sm font-semibold" title={food.nameGr}>
+                <span className="truncate text-[15px] font-extrabold" title={food.nameGr}>
                   {food.nameGr}
                 </span>
-                {food.source === "custom" && (
-                  <Badge variant="outline" className="shrink-0 px-1 py-0 text-[9px]">
-                    Custom
-                  </Badge>
-                )}
+                <span className="text-sm font-bold">{food.caloriesPer100g != null ? Math.round(Number(food.caloriesPer100g)) : "—"} kcal</span>
               </div>
-              <div className="text-sm text-muted-foreground">
-                {food.caloriesPer100g != null ? Number(food.caloriesPer100g) : "—"} kcal
-              </div>
-              <div className="flex flex-col text-xs font-medium">
-                <span className="text-blue-600 dark:text-blue-400">
-                  Πρωτεΐνη: {food.proteinPer100g != null ? Math.round(Number(food.proteinPer100g)) : "—"}g
-                </span>
-                <span className="text-yellow-600 dark:text-yellow-500">
-                  Υδατάνθρακες: {food.carbsPer100g != null ? Math.round(Number(food.carbsPer100g)) : "—"}g
-                </span>
-                <span className="text-red-600 dark:text-red-400">
-                  Λίπη: {food.fatsPer100g != null ? Math.round(Number(food.fatsPer100g)) : "—"}g
-                </span>
-              </div>
-              <div className="flex justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-                <Button type="button" variant="ghost" size="icon-sm" onClick={() => openEdit(food)} aria-label="Edit">
+              <MacroBar food={food} />
+              <div className="flex gap-3 text-xs font-semibold text-[#555]"><span>Π {food.proteinPer100g ?? "—"}g</span><span>Υ {food.carbsPer100g ?? "—"}g</span><span>Λ {food.fatsPer100g ?? "—"}g</span></div>
+              <div className="mt-auto flex items-center gap-1"><Button type="button" className="h-9 flex-1 rounded-full bg-[#0b0b0b] text-xs text-white hover:bg-[#1f1f1f]" onClick={() => openEdit(food)}><Plus className="size-3.5" />Σε πλάνο διατροφής</Button><Button type="button" variant="ghost" size="icon-sm" onClick={() => openEdit(food)} aria-label="Επεξεργασία">
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
                 <Button
@@ -741,6 +725,7 @@ function FoodsContent() {
           )}
         </DialogContent>
       </Dialog>
+      </section>
     </CoachShell>
   );
 }
@@ -751,14 +736,14 @@ function FoodCardImage({ imageUrl, name }: { imageUrl: string; name: string }) {
 
   if (!imageUrl || failed) {
     return (
-      <div className="flex h-28 items-center justify-center bg-slate-100 dark:bg-slate-800">
+      <div className="flex h-[140px] items-center justify-center bg-[#ecece8]">
         <ImageOff className="h-8 w-8 text-slate-300 dark:text-slate-600" />
       </div>
     );
   }
 
   return (
-    <div className="h-28 bg-slate-100 dark:bg-slate-800">
+    <div className="h-[140px] bg-[#ecece8]">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={resolveMediaUrl(imageUrl)}
@@ -766,6 +751,20 @@ function FoodCardImage({ imageUrl, name }: { imageUrl: string; name: string }) {
         className="h-full w-full object-cover"
         onError={() => setFailed(true)}
       />
+    </div>
+  );
+}
+
+function MacroBar({ food }: { food: Food }) {
+  const protein = Math.max(0, Number(food.proteinPer100g) || 0) * 4;
+  const carbs = Math.max(0, Number(food.carbsPer100g) || 0) * 4;
+  const fats = Math.max(0, Number(food.fatsPer100g) || 0) * 9;
+  const total = protein + carbs + fats || 1;
+  return (
+    <div className="flex h-1.5 overflow-hidden rounded-full bg-[#ecece8]" aria-label="Μακροθρεπτικά">
+      <span className="bg-[#0b0b0b]" style={{ width: `${(protein / total) * 100}%` }} />
+      <span className="bg-accent" style={{ width: `${(carbs / total) * 100}%` }} />
+      <span className="bg-[#c9c9c4]" style={{ width: `${(fats / total) * 100}%` }} />
     </div>
   );
 }

@@ -14,6 +14,7 @@ import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { api } from "@/lib/api/client"
 import { useAuth } from "@/lib/auth/auth-context"
@@ -52,6 +53,14 @@ function formatQuantity(item: ShoppingItem) {
   if (item.quantity === null) return item.unit || "-"
   const amount = Number.isInteger(item.quantity) ? String(item.quantity) : item.quantity.toLocaleString("el-GR", { maximumFractionDigits: 1 })
   return `${amount}${item.unit === "g" ? "g" : item.unit ? ` ${item.unit}` : ""}`
+}
+
+function formatQuantityForDays(item: ShoppingItem, days: number) {
+  if (item.quantity === null) return item.unit || "-"
+  const total = item.quantity * days
+  if (item.unit.toLocaleLowerCase("el-GR") === "g" && total >= 1000) return `${(total / 1000).toLocaleString("el-GR", { maximumFractionDigits: 1 })} kg`
+  if (/^(τεμ\.?|piece|pieces)$/i.test(item.unit)) return `${Math.round(total).toLocaleString("el-GR")} τεμ.`
+  return `${total.toLocaleString("el-GR", { maximumFractionDigits: 1 })}${item.unit === "g" ? " g" : item.unit ? ` ${item.unit}` : ""}`
 }
 
 function formatGrams(value: number | string | null | undefined) {
@@ -128,6 +137,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
   const [selectedDay, setSelectedDay] = useState<number | null>(null)
   const [activeCategory, setActiveCategory] = useState("Όλα")
   const [shoppingOpen, setShoppingOpen] = useState(false)
+  const [shoppingDays, setShoppingDays] = useState<3 | 7 | 14>(7)
   const storageKey = `shopping_checked_${plan.id}`
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   const [checkedPlanId, setCheckedPlanId] = useState<number | null>(null)
@@ -158,6 +168,14 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
   const filteredShoppingItems = activeCategory === "Όλα"
     ? shoppingItems
     : shoppingItems.filter((item) => shoppingCategory(item.name) === activeCategory)
+  const shoppingGroups = useMemo(() => {
+    const groups = new Map<string, ShoppingItem[]>()
+    shoppingItems.forEach((item) => {
+      const category = shoppingCategory(item.name)
+      groups.set(category, [...(groups.get(category) || []), item])
+    })
+    return [...groups.entries()]
+  }, [shoppingItems])
   const proteinCalories = totals.protein * 4
   const carbsCalories = totals.carbs * 4
   const fatCalories = totals.fats * 9
@@ -236,7 +254,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
         row.appendChild(placeholder)
       }
       quantity.className = "food-quantity"
-      quantity.textContent = formatQuantity(item)
+      quantity.textContent = formatQuantityForDays(item, shoppingDays)
       row.append(name, quantity)
       list.appendChild(row)
     })
@@ -449,7 +467,19 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
         )}
       </section>
 
-      {shoppingOpen && (
+      <Sheet open={shoppingOpen} onOpenChange={setShoppingOpen}>
+        <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-[460px]" showCloseButton={false}>
+          <SheetHeader className="gap-3 border-b border-[#ececea] px-7 pb-4 pt-[22px]">
+            <div className="flex items-start justify-between gap-4"><div><SheetTitle className="text-xl font-extrabold">Λίστα για ψώνια</SheetTitle><p className="mt-1 text-xs text-muted-foreground">Από το πλάνο διατροφής σου</p></div><Button variant="outline" size="icon" className="h-10 w-10 rounded-xl" onClick={() => setShoppingOpen(false)} aria-label="Κλείσιμο"><X className="h-[18px] w-[18px]" /></Button></div>
+            <div className="flex items-center justify-between gap-3"><span className="text-[13px] font-semibold">Για πόσες ημέρες;</span><div className="flex rounded-xl bg-[#f2f2f0] p-[3px]">{([3, 7, 14] as const).map((days) => <button key={days} type="button" onClick={() => setShoppingDays(days)} className={`h-8 rounded-[9px] px-3.5 text-[13px] font-bold ${shoppingDays === days ? "bg-black text-accent" : "text-[#555]"}`}>{days}{days === 7 ? " ημέρες" : ""}</button>)}</div></div>
+          </SheetHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-7 py-[18px]">
+            {shoppingGroups.map(([category, categoryItems]) => <section key={category} className="mb-4"><p className="pb-1.5 text-[11px] font-extrabold uppercase tracking-[1px] text-muted-foreground">{category}</p>{categoryItems.map((item) => { const isChecked = Boolean(checked[item.key]); return <label key={item.key} className={`flex cursor-pointer items-center gap-3 border-b border-[#f0f0ee] py-[9px] ${isChecked ? "text-[#9a9a9a]" : ""}`}><Checkbox checked={isChecked} onCheckedChange={(value) => setChecked((current) => ({ ...current, [item.key]: value === true }))} className="h-[22px] w-[22px] rounded-[7px] border-[#cfcfcb] data-[state=checked]:border-black data-[state=checked]:bg-black data-[state=checked]:text-accent" />{item.imageUrl ? <img src={resolveMediaUrl(item.imageUrl)} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" /> : <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#f2f2f0] text-xs font-bold text-[#6a6a6a]">{item.name.trim().charAt(0).toLocaleUpperCase("el-GR")}</span>}<span className={`min-w-0 flex-1 text-sm font-semibold ${isChecked ? "line-through" : ""}`}>{item.name}</span><span className="whitespace-nowrap text-[11px] text-[#9a9a9a]">{item.quantity === null ? "χωρίς ποσότητα" : `${formatQuantity(item)} × ${shoppingDays}`}</span><span className="w-16 shrink-0 text-right text-sm font-extrabold">{formatQuantityForDays(item, shoppingDays)}</span></label> })}</section>)}
+          </div>
+          <SheetFooter className="gap-2.5 border-t border-[#ececea] px-7 pb-5 pt-4"><p className="text-[11px] leading-4 text-[#8a8a8a]">Ποσότητα = ημερήσια ποσότητα του πλάνου × ημέρες. {Object.values(checked).filter(Boolean).length} από {shoppingItems.length} στο καλάθι.</p><Button variant="lime" className="h-[50px] w-full rounded-full" onClick={exportShoppingList}><Download className="mr-2 h-4 w-4" />Εξαγωγή PDF</Button></SheetFooter>
+        </SheetContent>
+      </Sheet>
+      {false && shoppingOpen && (
         <div className="fixed inset-0 z-50">
           <button
             type="button"

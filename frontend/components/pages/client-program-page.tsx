@@ -5,6 +5,7 @@ import { LineChart } from "@tremor/react"
 import { ChevronDown, ChevronLeft, ChevronRight, Clock3, Dumbbell, ExternalLink, ImageOff, Info, Layers3, Play, Plus, Settings2, TrendingUp, Volume2, VolumeX, X } from "lucide-react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { ManualWorkoutClock, RestTimer, type ManualClockStatus } from "@/components/client/rest-timer"
+import { MobileWorkoutFlow, MobileWorkoutOverview } from "@/components/client/mobile-workout-flow"
 import { SetRow, type SetType } from "@/components/client/set-row"
 import { WorkoutSummary, type WorkoutFeeling } from "@/components/client/workout-summary"
 import { ClientShell } from "@/components/shell/client-shell"
@@ -29,7 +30,7 @@ import { cacheOfflineData, createOfflineWorkoutId, isOnline, queueOfflineWorkout
 import { toast } from "sonner"
 
 type Exercise = { id: number; exercise_id?: number | null; exercise_name?: string; name?: string; sets?: string; reps?: string; rest_seconds?: string | number | null; notes?: string | null; image_url?: string | null; muscle_group?: string | null; equipment?: string | null; video_url?: string | null; instructions?: string | null }
-type TrainingDay = { id: number; day_of_week: number; title?: string | null; name?: string; exercises: Exercise[] }
+type TrainingDay = { id: number; day_of_week: number; title?: string | null; name?: string; notes?: string | null; coach_notes?: string | null; exercises: Exercise[] }
 type TrainingPlan = { id: number; title: string; description?: string | null; days: TrainingDay[] } | null
 type WorkoutLog = { id: number; training_plan_id: number; day_number: number; day_name?: string | null; completed_at: string; duration_seconds: number; total_volume_kg?: number | null; workout_feeling?: "easy" | "good" | "hard" | "pr" | null; notes?: string | null }
 type LastSet = { exerciseName: string; setNumber: number; weightKg: number; repsCompleted: number }
@@ -51,7 +52,7 @@ function getDayTitle(day: TrainingDay, index: number): string {
 }
 type Dashboard = { client?: { subscriptionStatus?: string | null }; unreadNotifications?: number }
 type ProgramOfflineCache = { training: TrainingPlan; workoutHistory: WorkoutLog[]; dashboard: Dashboard }
-type WorkoutSettings = { weightUnit: "kg" | "lbs"; defaultRest: number; autoRest: boolean; soundEnabled: boolean }
+type WorkoutSettings = { weightUnit: "kg" | "lbs"; defaultRest: number; autoRest: boolean; soundEnabled: boolean; keepAwake: boolean; exerciseView: "single" | "all" }
 
 const dateFormat = new Intl.DateTimeFormat("el-GR", { day: "numeric", month: "short", year: "numeric" })
 const workoutFeelingMeta: Record<string, { emoji: string; label: string }> = {
@@ -62,7 +63,7 @@ const workoutFeelingMeta: Record<string, { emoji: string; label: string }> = {
 }
 const settingsKey = "workout-settings"
 const workoutDraftKey = "workout-draft"
-const defaultSettings: WorkoutSettings = { weightUnit: "kg", defaultRest: 90, autoRest: true, soundEnabled: true }
+const defaultSettings: WorkoutSettings = { weightUnit: "kg", defaultRest: 90, autoRest: true, soundEnabled: true, keepAwake: true, exerciseView: "single" }
 const baseSetCount = (exercise: Exercise) => Math.max(1, Number.parseInt(String(exercise.sets || "1"), 10) || 1)
 const plannedReps = (exercise: Exercise) => Number.parseInt(String(exercise.reps || "0"), 10) || 0
 const restSeconds = (exercise: Exercise) => Math.max(0, Number.parseInt(String(exercise.rest_seconds || "0"), 10) || 0)
@@ -121,6 +122,8 @@ function ClientProgramContent() {
   const [extraSets, setExtraSets] = useState<Record<string, number>>({})
   const [focusSet, setFocusSet] = useState<string | null>(null)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  const [workoutStartedAt, setWorkoutStartedAt] = useState<number | null>(null)
+  const [openExerciseIndex, setOpenExerciseIndex] = useState(0)
   const [restLeft, setRestLeft] = useState(0)
   const [manualClockOpen, setManualClockOpen] = useState(false)
   const [manualClockStatus, setManualClockStatus] = useState<ManualClockStatus>({ mode: null, display: "", running: false })
@@ -137,6 +140,12 @@ function ClientProgramContent() {
   const [lastDayVolume, setLastDayVolume] = useState<number | null>(null)
   const [lastVolumeByDay, setLastVolumeByDay] = useState<Record<number, number | null>>({})
   const [draftRestored, setDraftRestored] = useState(false)
+
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has("clock")) return
+    setManualClockOpen(true)
+    window.history.replaceState({}, "", window.location.pathname)
+  }, [])
 
   const load = useCallback(async () => {
     if (!user?.id) { setLoading(false); return }
@@ -194,6 +203,7 @@ function ClientProgramContent() {
           setPersonalBests(parsed.personalBests || {})
           setExtraSets(parsed.extraSets || {})
           setElapsedSeconds(parsed.elapsedSeconds || 0)
+          setWorkoutStartedAt(parsed.workoutStartedAt || Date.now() - ((parsed.elapsedSeconds || 0) * 1000))
           setSummaryNotes(parsed.summaryNotes || "")
           setWorkoutFeeling(parsed.workoutFeeling ?? null)
           setPhase(parsed.phase)
@@ -204,33 +214,51 @@ function ClientProgramContent() {
   }, [load])
   useEffect(() => { window.localStorage.setItem(settingsKey, JSON.stringify(settings)) }, [settings])
   useEffect(() => {
-    if (phase !== "workout") return
-    const timer = window.setInterval(() => setElapsedSeconds((value) => value + 1), 1000)
-    return () => window.clearInterval(timer)
-  }, [phase])
+    if (phase !== "workout" || !workoutStartedAt) return
+    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - workoutStartedAt) / 1000)))
+    update()
+    const timer = window.setInterval(update, 1000)
+    document.addEventListener("visibilitychange", update)
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", update) }
+  }, [phase, workoutStartedAt])
+  useEffect(() => {
+    if (phase !== "workout" || !settings.keepAwake || !("wakeLock" in navigator)) return
+    let lock: { release: () => Promise<void> } | null = null
+    const request = async () => { try { lock = await (navigator as Navigator & { wakeLock: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> } }).wakeLock.request("screen") } catch { /* unsupported or refused */ } }
+    void request()
+    const restore = () => { if (document.visibilityState === "visible") void request() }
+    document.addEventListener("visibilitychange", restore)
+    return () => { document.removeEventListener("visibilitychange", restore); if (lock) void lock.release() }
+  }, [phase, settings.keepAwake])
   useEffect(() => {
     if (!draftRestored) return
     if (phase === "workout" || phase === "complete") {
-      window.sessionStorage.setItem(workoutDraftKey, JSON.stringify({ phase, dayIndex, workoutLogId, offlineWorkoutId, sets, setTypes, previousSets, personalBests, extraSets, elapsedSeconds, summaryNotes, workoutFeeling }))
+      window.sessionStorage.setItem(workoutDraftKey, JSON.stringify({ phase, dayIndex, workoutLogId, offlineWorkoutId, sets, setTypes, previousSets, personalBests, extraSets, elapsedSeconds, workoutStartedAt, summaryNotes, workoutFeeling }))
     } else {
       window.sessionStorage.removeItem(workoutDraftKey)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftRestored, phase, dayIndex, workoutLogId, offlineWorkoutId, sets, setTypes, previousSets, personalBests, extraSets, elapsedSeconds, summaryNotes, workoutFeeling])
+  }, [draftRestored, phase, dayIndex, workoutLogId, offlineWorkoutId, sets, setTypes, previousSets, personalBests, extraSets, elapsedSeconds, workoutStartedAt, summaryNotes, workoutFeeling])
 
   const rawDays = plan?.days || []
   const days = rawDays.map((currentDay, index) => ({ ...currentDay, title: getDayTitle(currentDay, index), name: getDayTitle(currentDay, index) }))
+  const nextDayIndex = useMemo(() => {
+    if (!plan || !days.length) return 0
+    const latest = history.filter((log) => log.training_plan_id === plan.id).sort((a, b) => new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime())[0]
+    return latest ? latest.day_number % days.length : 0
+  }, [days.length, history, plan])
   const day = days[dayIndex]
   const visibleSetCount = useCallback((exercise: Exercise) => baseSetCount(exercise) + (extraSets[exerciseKey(exercise)] || 0), [extraSets])
   const allSets = useMemo(() => day?.exercises.flatMap((exercise) => Array.from({ length: visibleSetCount(exercise) }, (_, index) => ({ exercise, setNumber: index + 1 }))) || [], [day, visibleSetCount])
   const completedSets = allSets.filter(({ exercise, setNumber }) => sets[setKey(exercise, setNumber)]?.completed).length
-  const totalVolume = allSets.reduce((sum, { exercise, setNumber }) => { const state = sets[setKey(exercise, setNumber)]; return sum + (state?.completed ? state.weight : 0) }, 0)
+  const totalVolume = allSets.reduce((sum, { exercise, setNumber }) => { const state = sets[setKey(exercise, setNumber)]; return sum + (state?.completed ? state.weight * state.reps : 0) }, 0)
   const completedExercises = day?.exercises.filter((exercise) => Array.from({ length: visibleSetCount(exercise) }, (_, index) => sets[setKey(exercise, index + 1)]?.completed).some(Boolean)).length || 0
   const activeExerciseNumber = Math.min((day?.exercises.findIndex((exercise) => !Array.from({ length: visibleSetCount(exercise) }, (_, index) => sets[setKey(exercise, index + 1)]?.completed).every(Boolean)) ?? 0) + 1, day?.exercises.length || 1)
   const exerciseProgress = day?.exercises.length ? (activeExerciseNumber / day.exercises.length) * 100 : 0
 
   const startRest = (exercise: Exercise) => {
     const seconds = restSeconds(exercise) || settings.defaultRest
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") void Notification.requestPermission().catch(() => undefined)
     setRestTotal(seconds); setRestLeft(seconds); setRestExerciseName(displayName(exercise))
   }
   const loadPersonalBests = async (exercises: Exercise[]) => {
@@ -251,7 +279,7 @@ function ClientProgramContent() {
       selectedDay.exercises.forEach((exercise) => Array.from({ length: baseSetCount(exercise) }, (_, setIndex) => setIndex + 1).forEach((setNumber) => {
         initial[setKey(exercise, setNumber)] = { weight: 0, reps: plannedReps(exercise), completed: false }
       }))
-      setSets(initial); setSetTypes({}); setPreviousSets({}); setPersonalBests({}); setExtraSets({}); setFocusSet(null); setWorkoutLogId(null); setOfflineWorkoutId(createOfflineWorkoutId()); setDayIndex(index); setElapsedSeconds(0); setRestLeft(0); setRestTotal(0); setRestExerciseName(null); setWorkoutFeeling(null); setPhase("workout")
+      setSets(initial); setSetTypes({}); setPreviousSets({}); setPersonalBests({}); setExtraSets({}); setFocusSet(null); setOpenExerciseIndex(0); setWorkoutLogId(null); setOfflineWorkoutId(createOfflineWorkoutId()); setDayIndex(index); setElapsedSeconds(0); setWorkoutStartedAt(Date.now()); setRestLeft(0); setRestTotal(0); setRestExerciseName(null); setWorkoutFeeling(null); setPhase("workout")
       toast.message("Η προπόνηση καταγράφεται offline και θα συγχρονιστεί όταν επανέλθει η σύνδεση.")
       return
     }
@@ -266,7 +294,7 @@ function ClientProgramContent() {
         initial[setKey(exercise, setNumber)] = { ...value, completed: false }
         if (prior) previous[setKey(exercise, setNumber)] = value
       }))
-      setSets(initial); setSetTypes({}); setPreviousSets(previous); setExtraSets({}); setFocusSet(null); setWorkoutLogId(result.workoutLogId); setOfflineWorkoutId(null); setDayIndex(index); setElapsedSeconds(0); setRestLeft(0); setRestTotal(0); setRestExerciseName(null); setWorkoutFeeling(null); setPhase("workout")
+      setSets(initial); setSetTypes({}); setPreviousSets(previous); setExtraSets({}); setFocusSet(null); setOpenExerciseIndex(0); setWorkoutLogId(result.workoutLogId); setOfflineWorkoutId(null); setDayIndex(index); setElapsedSeconds(0); setWorkoutStartedAt(Date.now()); setRestLeft(0); setRestTotal(0); setRestExerciseName(null); setWorkoutFeeling(null); setPhase("workout")
       void loadPersonalBests(selectedDay.exercises)
     } catch (caughtError) { setError(caughtError instanceof Error ? caughtError.message : "Δεν ξεκίνησε η προπόνηση.") }
   }
@@ -276,24 +304,40 @@ function ClientProgramContent() {
     setExtraSets((current) => ({ ...current, [exerciseKey(exercise)]: (current[exerciseKey(exercise)] || 0) + 1 }))
     setSets((current) => ({ ...current, [key]: { weight: prior.weight, reps: prior.reps, completed: false } })); setFocusSet(key)
   }
+  const advanceExerciseIfFinished = (exercise: Exercise, completedSet: number) => {
+    if (!day || settings.exerciseView !== "single") return
+    const finished = Array.from({ length: visibleSetCount(exercise) }, (_, index) => {
+      const number = index + 1
+      return number === completedSet || sets[setKey(exercise, number)]?.completed
+    }).every(Boolean)
+    if (finished) {
+      const current = day.exercises.findIndex((item) => exerciseKey(item) === exerciseKey(exercise))
+      if (current >= 0 && current < day.exercises.length - 1) window.setTimeout(() => setOpenExerciseIndex(current + 1), 250)
+    }
+  }
   const toggleSet = async (exercise: Exercise, setNumber: number, completed: boolean) => {
     const key = setKey(exercise, setNumber); const state = sets[key] || { weight: 0, reps: plannedReps(exercise), completed: false }
     if (!completed) { setSets((current) => ({ ...current, [key]: { ...state, completed: false } })); return }
     if (!workoutLogId && !offlineWorkoutId) return
     if (offlineWorkoutId) {
-      setSets((current) => ({ ...current, [key]: { ...state, completed: true } })); playSound("tick", settings.soundEnabled)
+      setSets((current) => ({ ...current, [key]: { ...state, completed: true } })); navigator.vibrate?.(15); playSound("tick", settings.soundEnabled)
       if (settings.autoRest) startRest(exercise)
+      advanceExerciseIfFinished(exercise, setNumber)
       return
     }
     try {
       await api.post("/client/workout/log-set", { workoutLogId, exerciseName: displayName(exercise), exerciseId: exercise.exercise_id || null, setNumber, targetReps: plannedReps(exercise), repsCompleted: state.reps, weightKg: state.weight, setType: setTypes[key] || "normal" })
-      setSets((current) => ({ ...current, [key]: { ...state, completed: true } })); playSound("tick", settings.soundEnabled)
+      setSets((current) => ({ ...current, [key]: { ...state, completed: true } })); navigator.vibrate?.(15); playSound("tick", settings.soundEnabled)
       if (settings.autoRest) startRest(exercise)
+      advanceExerciseIfFinished(exercise, setNumber)
     } catch (caughtError) { setError(caughtError instanceof Error ? caughtError.message : "Δεν αποθηκεύτηκε το σετ.") }
   }
   const cancelWorkout = async () => {
     if (workoutLogId) { try { await api.post("/client/workout/cancel", { workoutLogId }) } catch { /* The local workout still closes after a transient failure. */ } }
     setWorkoutLogId(null); setOfflineWorkoutId(null); setRestLeft(0); setRestExerciseName(null); setExitOpen(false); setPhase("list")
+  }
+  const saveAndExitWorkout = () => {
+    setRestLeft(0); setRestExerciseName(null); setExitOpen(false); setPhase("list")
   }
   const saveWorkout = async () => {
     if (!workoutLogId && !offlineWorkoutId) return
@@ -304,21 +348,22 @@ function ClientProgramContent() {
       })
       queueOfflineWorkout({ id: offlineWorkoutId, clientId: user.id, trainingPlanId: plan!.id, dayNumber: dayIndex + 1, dayName: getDayTitle(day, dayIndex), durationSeconds: elapsedSeconds, totalSetsCompleted: completedSets, totalVolumeKg: totalVolume, notes: summaryNotes, workoutFeeling, sets: offlineSets, createdAt: new Date().toISOString() })
       const synced = await syncOfflineWorkouts(user.id)
-      setOfflineWorkoutId(null); setWorkoutLogId(null); setSummaryNotes(""); setPhase("recap")
+      setOfflineWorkoutId(null); setWorkoutLogId(null); setSummaryNotes(""); window.dispatchEvent(new Event("workout-completed")); setPhase("recap")
       toast.success(synced ? "Η προπόνηση συγχρονίστηκε." : "Η προπόνηση αποθηκεύτηκε στη συσκευή και θα συγχρονιστεί αυτόματα.")
       return
     }
     setSaving(true)
     try {
       await api.post("/client/workout/complete", { workoutLogId, durationSeconds: elapsedSeconds, totalSetsCompleted: completedSets, totalVolumeKg: totalVolume, notes: summaryNotes, workoutFeeling })
-      playSound("fanfare", settings.soundEnabled); setWorkoutLogId(null); setSummaryNotes(""); await load(); setPhase("recap")
+      playSound("fanfare", settings.soundEnabled); setWorkoutLogId(null); setSummaryNotes(""); window.dispatchEvent(new Event("workout-completed")); await load(); setPhase("recap")
     } catch (caughtError) { setError(caughtError instanceof Error ? caughtError.message : "Δεν ολοκληρώθηκε η προπόνηση.") } finally { setSaving(false) }
   }
 
   if (loading) return <ClientShell title="Η Προπόνησή μου" user={user} logout={logout} paymentApproved={false} active="training"><p className="text-muted-foreground">Φόρτωση...</p></ClientShell>
 
   return <ClientShell title="Η Προπόνησή μου" user={user} logout={logout} paymentApproved={paymentApproved} unreadNotifications={unreadNotifications} active="training">
-    {phase === "list" && <div className="mx-auto max-w-4xl space-y-6">
+    {phase === "list" && plan && days[nextDayIndex] && <div className="-m-4 md:hidden"><MobileWorkoutOverview planTitle={plan.title} day={days[nextDayIndex]} dayIndex={nextDayIndex} daysCount={days.length} onStart={() => void startWorkout(nextDayIndex)} /></div>}
+    {phase === "list" && <div className="mx-auto hidden max-w-4xl space-y-6 md:block">
       {error && <Alert variant="destructive"><AlertTitle>Σφάλμα</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
       {!plan || !days.length ? <div className="py-20 text-center"><Dumbbell className="mx-auto mb-4 h-12 w-12 text-muted-foreground" /><p className="font-medium">Δεν έχει οριστεί πρόγραμμα</p><p className="mt-1 text-sm text-muted-foreground">Ο coach σου θα σου στείλει το πρόγραμμά σου σύντομα.</p></div> : <><section><h1 className="text-2xl font-bold">{plan.title}</h1><div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground"><span>{days.length} ημέρες</span>{Boolean(totalVolumeKg) && <><span>·</span><span className="font-semibold text-primary">Σύνολο: {totalVolumeKg!.toLocaleString("el-GR")} kg</span></>}</div></section><div className="space-y-3">{days.map((item, index) => { const cover = item.exercises[0]; const minutes = Math.round(item.exercises.reduce((total, exercise) => total + baseSetCount(exercise) * (1 + (restSeconds(exercise) || 90) / 60), 0)); const lastVolume = lastVolumeByDay[index]; return <button key={item.id} type="button" onClick={() => openDayDetails(index, plan.id)} className="flex w-full items-center gap-4 rounded-xl border bg-card p-3 text-left shadow-sm transition-colors hover:border-primary/40 hover:bg-muted/30">{cover?.image_url ? <img src={resolveMediaUrl(cover.image_url)} alt="" className="h-16 w-16 shrink-0 rounded-lg bg-muted object-cover" /> : <span className="grid h-16 w-16 shrink-0 place-items-center rounded-lg bg-muted"><Dumbbell className="h-6 w-6 text-muted-foreground" /></span>}<span className="min-w-0 flex-1"><span className="block truncate text-base font-bold">{getDayTitle(item, index)}</span><span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground"><span className="flex shrink-0 items-center gap-1"><Dumbbell className="h-3.5 w-3.5" />{item.exercises.length} ασκήσεις</span><span className="flex shrink-0 items-center gap-1"><Clock3 className="h-3.5 w-3.5" />~{minutes} λεπτά</span></span>{Boolean(lastVolume) && <Badge className="mt-1.5 border-none bg-primary/10 text-primary hover:bg-primary/10">Τελευταία: {lastVolume!.toLocaleString("el-GR")} kg</Badge>}</span><ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" /></button> })}</div>{Boolean(history.length) && <section><h2 className="text-sm font-bold text-muted-foreground">Ιστορικό</h2><div className="mt-2 divide-y border-y">{history.slice(0, 5).map((log) => { const feeling = log.workout_feeling ? workoutFeelingMeta[log.workout_feeling] : null; return <div key={log.id} className="flex items-center gap-3 px-1 py-3"><span className="min-w-0 flex-1"><span className="block text-sm font-medium">{log.day_name || "Προπόνηση"}</span><span className="mt-0.5 block text-xs text-muted-foreground">{dateFormat.format(new Date(log.completed_at))}{log.total_volume_kg ? ` · ${log.total_volume_kg} kg` : ""}{log.notes ? ` · ${log.notes}` : ""}</span></span>{feeling && <span className="text-lg" title={feeling.label}>{feeling.emoji}</span>}</div> })}</div></section>}</>}
     </div>}
@@ -344,7 +389,9 @@ function ClientProgramContent() {
       })}</div></>}
     </div>}
 
-    {phase === "workout" && day && <div className="fixed inset-0 z-50 overflow-y-auto bg-background">
+    {phase === "workout" && day && <MobileWorkoutFlow day={day} dayIndex={dayIndex} elapsedSeconds={elapsedSeconds} settings={settings} sets={sets} setTypes={setTypes} previousSets={previousSets} personalBests={personalBests} extraSets={extraSets} focusSet={focusSet} clockStatus={manualClockStatus} isResting={restLeft > 0} onExit={() => setExitOpen(true)} onOpenClock={() => setManualClockOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onToggleSound={() => setSettings((current) => ({ ...current, soundEnabled: !current.soundEnabled }))} onInfo={setInfoExercise} onToggleSet={(exercise, setNumber, completed) => void toggleSet(exercise, setNumber, completed)} onWeight={(exercise, setNumber, weight) => setSets((current) => ({ ...current, [setKey(exercise, setNumber)]: { ...(current[setKey(exercise, setNumber)] || { reps: plannedReps(exercise), completed: false }), weight } }))} onReps={(exercise, setNumber, reps) => setSets((current) => ({ ...current, [setKey(exercise, setNumber)]: { ...(current[setKey(exercise, setNumber)] || { weight: 0, completed: false }), reps } }))} onType={(exercise, setNumber, type) => setSetTypes((current) => ({ ...current, [setKey(exercise, setNumber)]: type }))} onAddSet={addSet} onComplete={() => setPhase("complete")} onStartRest={startRest} />}
+    {phase === "workout" && day && <><>{restLeft > 0 && <RestTimer seconds={restLeft} totalSeconds={restTotal} exerciseName={restExerciseName || undefined} onChange={setRestLeft} onComplete={() => { setRestLeft(0); setRestExerciseName(null); playSound("bell", settings.soundEnabled) }} />}</><ManualWorkoutClock open={manualClockOpen} onOpenChange={setManualClockOpen} defaultSeconds={settings.defaultRest} onStatusChange={setManualClockStatus} /></>}
+    {false && <div className="fixed inset-0 z-50 overflow-y-auto bg-background">
       <div className="sticky top-0 z-20 bg-background/95 shadow-sm backdrop-blur">
       <header className="border-b px-4 py-2 sm:py-3"><div className="mx-auto flex max-w-4xl items-center justify-between gap-3"><Button size="icon" variant="ghost" onClick={() => setExitOpen(true)} aria-label="Έξοδος"><X className="h-5 w-5" /></Button><div className="min-w-0 text-center"><ManualClockTitle status={manualClockStatus} /><div className="hidden sm:block"><p className="truncate font-medium">Ημέρα {dayIndex + 1} - {day.title || day.name}</p><p className="text-xs text-muted-foreground">Άσκηση {activeExerciseNumber} από {day.exercises.length}</p></div></div><div className="flex items-center gap-1"><span className="hidden items-center gap-1 text-sm tabular-nums text-muted-foreground sm:flex"><Clock3 className="h-4 w-4" />{workoutTime(elapsedSeconds)}</span><Button size="icon" variant="ghost" onClick={() => setManualClockOpen(true)} aria-label="Χειροκίνητος χρονομετρητής"><Clock3 className="h-5 w-5" /></Button><Button size="icon" variant="ghost" onClick={() => setSettingsOpen(true)} aria-label="Ρυθμίσεις προπόνησης"><Settings2 className="h-5 w-5" /></Button><Button size="icon" variant="ghost" onClick={() => setSettings((current) => ({ ...current, soundEnabled: !current.soundEnabled }))} aria-label="Ρύθμιση ήχου">{settings.soundEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}</Button></div></div></header>
       <div className="border-b px-4 py-1 lg:py-2"><div className="mx-auto max-w-4xl"><div className="mb-1 hidden justify-between text-xs text-muted-foreground lg:flex"><span>Άσκηση {activeExerciseNumber} από {day.exercises.length}</span><span>{Math.round(exerciseProgress)}%</span></div><Progress value={exerciseProgress} className="h-1" /></div></div>
@@ -359,10 +406,10 @@ function ClientProgramContent() {
       <ManualWorkoutClock open={manualClockOpen} onOpenChange={setManualClockOpen} defaultSeconds={settings.defaultRest} onStatusChange={setManualClockStatus} />
     </div>}
 
-    <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}><SheetContent side="right"><SheetHeader><SheetTitle>Ρυθμίσεις προπόνησης</SheetTitle><SheetDescription>Οι επιλογές αποθηκεύονται σε αυτή τη συσκευή.</SheetDescription></SheetHeader><div className="space-y-6 p-4"><div><p className="mb-2 text-sm font-medium">Μονάδα βάρους</p><div className="grid grid-cols-2 gap-2"><Button variant={settings.weightUnit === "kg" ? "default" : "outline"} onClick={() => setSettings((current) => ({ ...current, weightUnit: "kg" }))}>kg</Button><Button variant={settings.weightUnit === "lbs" ? "default" : "outline"} onClick={() => setSettings((current) => ({ ...current, weightUnit: "lbs" }))}>lbs</Button></div></div><div><p className="mb-2 text-sm font-medium">Προεπιλεγμένος χρόνος ξεκούρασης</p><Select value={String(settings.defaultRest)} onValueChange={(value) => setSettings((current) => ({ ...current, defaultRest: Number(value) }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[30, 60, 90, 120, 180].map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds}s</SelectItem>)}</SelectContent></Select></div><SettingSwitch label="Αυτόματη εκκίνηση χρονομέτρου" checked={settings.autoRest} onCheckedChange={(autoRest) => setSettings((current) => ({ ...current, autoRest }))} /><SettingSwitch label="Ήχος" checked={settings.soundEnabled} onCheckedChange={(soundEnabled) => setSettings((current) => ({ ...current, soundEnabled }))} /></div></SheetContent></Sheet>
+    <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}><SheetContent side="right"><SheetHeader><SheetTitle>Ρυθμίσεις προπόνησης</SheetTitle><SheetDescription>Οι επιλογές αποθηκεύονται σε αυτή τη συσκευή.</SheetDescription></SheetHeader><div className="space-y-6 p-4"><div><p className="mb-2 text-sm font-medium">Μονάδα βάρους</p><div className="grid grid-cols-2 gap-2"><Button variant={settings.weightUnit === "kg" ? "default" : "outline"} onClick={() => setSettings((current) => ({ ...current, weightUnit: "kg" }))}>kg</Button><Button variant={settings.weightUnit === "lbs" ? "default" : "outline"} onClick={() => setSettings((current) => ({ ...current, weightUnit: "lbs" }))}>lbs</Button></div></div><div><p className="mb-2 text-sm font-medium">Προεπιλεγμένος χρόνος ξεκούρασης</p><Select value={String(settings.defaultRest)} onValueChange={(value) => setSettings((current) => ({ ...current, defaultRest: Number(value) }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[30, 60, 90, 120, 180].map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds}s</SelectItem>)}</SelectContent></Select></div><SettingSwitch label="Αυτόματη εκκίνηση χρονομέτρου" checked={settings.autoRest} onCheckedChange={(autoRest) => setSettings((current) => ({ ...current, autoRest }))} /><SettingSwitch label="Ήχος" checked={settings.soundEnabled} onCheckedChange={(soundEnabled) => setSettings((current) => ({ ...current, soundEnabled }))} /><SettingSwitch label="Η οθόνη μένει ενεργή" checked={settings.keepAwake} onCheckedChange={(keepAwake) => setSettings((current) => ({ ...current, keepAwake }))} /><div><p className="mb-2 text-sm font-medium">Προβολή ασκήσεων</p><div className="grid grid-cols-2 gap-2"><Button variant={settings.exerciseView === "single" ? "default" : "outline"} onClick={() => setSettings((current) => ({ ...current, exerciseView: "single" }))}>Μία-μία</Button><Button variant={settings.exerciseView === "all" ? "default" : "outline"} onClick={() => setSettings((current) => ({ ...current, exerciseView: "all" }))}>Όλες ανοιχτές</Button></div></div></div></SheetContent></Sheet>
     <Dialog open={Boolean(infoExercise)} onOpenChange={(open) => !open && setInfoExercise(null)}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">{infoExercise && <><DialogHeader><DialogTitle>{displayName(infoExercise)}</DialogTitle><DialogDescription>{infoExercise.muscle_group || "-"}{infoExercise.equipment ? ` · ${infoExercise.equipment}` : ""}</DialogDescription></DialogHeader>{infoExercise.image_url && <img src={resolveMediaUrl(infoExercise.image_url)} alt="" className="max-h-[300px] w-full rounded-md object-cover" />}<div className="space-y-4 text-sm">{infoExercise.instructions && <section><h3 className="font-semibold">Περιγραφή</h3><p className="mt-1 text-muted-foreground">{infoExercise.instructions}</p></section>}{infoExercise.notes && <section><h3 className="font-semibold">Εκτέλεση</h3><p className="mt-1 text-muted-foreground">{infoExercise.notes}</p></section>}{infoExercise.video_url && <Button asChild variant="outline"><a href={infoExercise.video_url} target="_blank" rel="noreferrer">Δες το βίντεο <ExternalLink className="ml-2 h-4 w-4" /></a></Button>}{!infoExercise.instructions && !infoExercise.notes && !infoExercise.video_url && <p className="text-muted-foreground">Δεν υπάρχουν επιπλέον πληροφορίες για αυτή την άσκηση.</p>}</div></>}</DialogContent></Dialog>
     {phase === "complete" && <WorkoutSummary durationSeconds={elapsedSeconds} completedSets={completedSets} totalSets={allSets.length} volumeKg={totalVolume} exerciseCount={day?.exercises.length || 0} notes={summaryNotes} feeling={workoutFeeling} onNotesChange={setSummaryNotes} onFeelingChange={setWorkoutFeeling} onSave={() => void saveWorkout()} saving={saving} />}
-    {exitOpen && <AlertDialog open onOpenChange={setExitOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Έξοδος από την προπόνηση;</AlertDialogTitle><AlertDialogDescription>Η πρόοδός σου θα χαθεί.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Μείνε</AlertDialogCancel><AlertDialogAction onClick={() => void cancelWorkout()}>Έξοδος</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}
+    {exitOpen && <AlertDialog open onOpenChange={setExitOpen}><AlertDialogContent className="rounded-[22px] border-[#E6E6E2] bg-[#F4F4F2] p-6"><AlertDialogHeader><AlertDialogTitle className="text-[22px] font-extrabold text-[#0B0B0B]">Να βγεις από την προπόνηση;</AlertDialogTitle><AlertDialogDescription className="text-[#6A6A6A]">Τα ολοκληρωμένα set σου έχουν αποθηκευτεί. Μπορείς να συνεχίσεις αργότερα ή να ακυρώσεις οριστικά την προπόνηση.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3"><AlertDialogCancel className="m-0 h-11 rounded-full border-[#0B0B0B] bg-transparent font-extrabold text-[#0B0B0B]">Συνέχισε</AlertDialogCancel><Button type="button" variant="outline" onClick={saveAndExitWorkout} className="h-11 rounded-full border-[#0B0B0B] bg-white font-extrabold text-[#0B0B0B]">Αποθήκευση & έξοδος</Button><AlertDialogAction onClick={() => void cancelWorkout()} className="h-11 rounded-full bg-[#0B0B0B] font-extrabold text-white hover:bg-[#1F1F1F]">Ακύρωση</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}
   </ClientShell>
 }
 

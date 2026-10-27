@@ -14,6 +14,8 @@ interface ClientSidebarProps {
   user: AuthUser | null;
   logout: () => Promise<void>;
   paymentApproved: boolean;
+  subscriptionStatus?: string | null;
+  daysRemaining?: number | null;
   unreadNotifications?: number;
   unreadMessages?: number;
   collapsed: boolean;
@@ -24,6 +26,8 @@ export function ClientSidebar({
   user,
   logout,
   paymentApproved,
+  subscriptionStatus,
+  daysRemaining,
   unreadNotifications = 0,
   unreadMessages = 0,
   collapsed,
@@ -56,7 +60,7 @@ export function ClientSidebar({
 
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
         {clientNavSections.map((section) => {
-          const isLocked = Boolean(section.locked && !paymentApproved);
+          const isLocked = Boolean(section.locked && !paymentApproved && section.key !== "points");
           const active = isActivePath(pathname, section.path);
           const Icon = section.icon;
 
@@ -94,6 +98,12 @@ export function ClientSidebar({
         })}
       </nav>
 
+      {!collapsed && subscriptionStatus && (
+        <div className="mx-3 mb-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
+          <p className="text-[10px] font-bold uppercase tracking-[1px] text-white/45">Συνδρομή</p>
+          <p className="mt-0.5 text-xs font-bold text-white">{subscriptionStatus === "expired" || (typeof daysRemaining === "number" && daysRemaining <= 0) ? "Έληξε" : subscriptionStatus === "expiring_soon" || (typeof daysRemaining === "number" && daysRemaining <= 7) ? `Λήγει σε ${Math.max(0, daysRemaining ?? 0)} ημέρες` : `Pro · ${daysRemaining ?? "-"} ημέρες`}</p>
+        </div>
+      )}
       <div className="border-t border-white/10 p-3">
         <SidebarUserMenu
           user={user}

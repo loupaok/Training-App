@@ -18,7 +18,7 @@ export function ClientBottomNav({ paymentApproved, unreadNotifications = 0, unre
 
   return <nav aria-label="Κύρια πλοήγηση" className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-card/95 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 supports-backdrop-filter:backdrop-blur lg:hidden">
     <div className="mx-auto grid max-w-xl grid-cols-5 gap-1">
-      {primaryItems.map((item) => <BottomItem key={item.key} item={item} active={isActivePath(pathname, item.path)} locked={Boolean(item.locked && !paymentApproved)} />)}
+      {primaryItems.map((item) => <BottomItem key={item.key} item={item} active={isActivePath(pathname, item.path)} locked={Boolean(item.locked && !paymentApproved && item.key !== "points")} />)}
       <Sheet>
         <SheetTrigger render={<button type="button" className={cn("relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-[11px] font-semibold transition-colors", moreActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")} />}>
           <Menu className="h-5 w-5" />
@@ -28,7 +28,7 @@ export function ClientBottomNav({ paymentApproved, unreadNotifications = 0, unre
         <SheetContent side="bottom" className="max-h-[80dvh] rounded-t-2xl p-0" showCloseButton>
           <SheetHeader className="border-b px-5 pt-5 pb-4 text-left"><SheetTitle>Περισσότερα</SheetTitle><SheetDescription>Όλες οι επιλογές του λογαριασμού σου.</SheetDescription></SheetHeader>
           <div className="grid gap-1 p-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-            {moreItems.map((item) => <MoreItem key={item.key} item={item} active={isActivePath(pathname, item.path)} locked={Boolean(item.locked && !paymentApproved)} unreadNotifications={item.key === "notifications" ? unreadNotifications : item.key === "messages" ? unreadMessages : 0} />)}
+            {moreItems.map((item) => <MoreItem key={item.key} item={item} active={isActivePath(pathname, item.path)} locked={Boolean(item.locked && !paymentApproved && item.key !== "points")} unreadNotifications={item.key === "notifications" ? unreadNotifications : item.key === "messages" ? unreadMessages : 0} />)}
             <Link href="/client-profile" className="flex min-h-12 items-center gap-3 rounded-lg px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">Προφίλ</Link>
           </div>
         </SheetContent>

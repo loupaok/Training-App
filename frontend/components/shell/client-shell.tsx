@@ -7,6 +7,7 @@ import { ClientBottomNav } from "@/components/shell/client-bottom-nav";
 import { AppHeader } from "@/components/shell/app-header";
 import { api } from "@/lib/api/client";
 import type { AuthUser } from "@/types/auth";
+import { Clock3 } from "lucide-react";
 
 const STORAGE_KEY = "client-sidebar-collapsed";
 
@@ -15,6 +16,8 @@ export function ClientShell({
   user,
   logout,
   paymentApproved,
+  subscriptionStatus,
+  daysRemaining,
   unreadNotifications,
   children,
 }: {
@@ -22,6 +25,8 @@ export function ClientShell({
   user: AuthUser | null;
   logout: () => Promise<void>;
   paymentApproved: boolean;
+  subscriptionStatus?: string | null;
+  daysRemaining?: number | null;
   unreadNotifications?: number;
   active?: string;
   children: ReactNode;
@@ -60,6 +65,8 @@ export function ClientShell({
         user={user}
         logout={logout}
         paymentApproved={paymentApproved}
+        subscriptionStatus={subscriptionStatus}
+        daysRemaining={daysRemaining}
         unreadNotifications={unreadNotifications}
         unreadMessages={unreadMessages}
         collapsed={collapsed}
@@ -70,6 +77,29 @@ export function ClientShell({
         <main className="min-w-0 flex-1 bg-background p-4 pb-28 sm:p-6 sm:pb-28 lg:p-7">{children}</main>
       </div>
       <ClientBottomNav paymentApproved={paymentApproved} unreadNotifications={unreadNotifications} unreadMessages={unreadMessages} />
+      <ClientActiveClock />
     </div>
   );
+}
+
+function ClientActiveClock() {
+  const [clock, setClock] = useState<{ mode: "timer" | "stopwatch"; running: boolean; duration: number; startedAt: number; elapsedBeforeStart: number } | null>(null);
+  const [now, setNow] = useState(0);
+
+  useEffect(() => {
+    const load = () => {
+      try { setClock(JSON.parse(window.localStorage.getItem("sp-workout-manual-clock") || "null")); } catch { setClock(null); }
+    };
+    load();
+    const id = window.setInterval(() => { load(); setNow(Date.now()); }, 250);
+    return () => window.clearInterval(id);
+  }, []);
+
+  if (!clock?.running) return null;
+  const elapsed = clock.elapsedBeforeStart + Math.max(0, now - clock.startedAt);
+  const seconds = clock.mode === "timer" ? Math.max(0, clock.duration - Math.floor(elapsed / 1000)) : Math.floor(elapsed / 1000);
+  const display = clock.mode === "timer"
+    ? `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
+    : `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}:${String(Math.floor((elapsed % 1000) / 10)).padStart(2, "0")}`;
+  return <button type="button" onClick={() => { window.location.assign("/client-program?clock=1"); }} className="fixed bottom-[92px] right-[14px] z-40 flex h-14 items-center gap-2 rounded-full bg-[#0B0B0B] px-3 pr-4 text-white shadow-xl transition-transform active:scale-95" aria-label="Άνοιγμα ενεργού χρονομέτρου"><span className="grid h-10 w-10 place-items-center rounded-full border-2 border-[#B0F90C] text-[#B0F90C]"><Clock3 className="h-4 w-4" /></span><span><span className="block text-[10px] font-bold uppercase tracking-[.8px] text-neutral-400">{clock.mode === "timer" ? "Αντίστροφη" : "Χρονόμετρο"}</span><span className="block font-mono text-[16px] font-extrabold italic text-[#B0F90C]">{display}</span></span></button>;
 }

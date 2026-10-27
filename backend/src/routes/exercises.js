@@ -201,6 +201,7 @@ async function archiveCurrentExerciseImage(connection, exerciseId, nextImageUrl)
 
 router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   const { search = '', muscleGroup = '', equipment = '', level = '' } = req.query;
+  const limit = req.query.limit ? Math.min(200, Math.max(1, Number(req.query.limit) || 200)) : null;
   const filters = [];
   const values = [];
 
@@ -231,8 +232,8 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
               instructions, programs_count AS programsCount
        FROM exercises
        ${where}
-       ORDER BY name`,
-      values
+       ORDER BY name${limit ? '\n       LIMIT ?' : ''}`,
+      limit ? [...values, limit] : values
     );
     const imagesMap = await getExerciseImagesMap(connection, rows.map((row) => row.id));
     connection.release();

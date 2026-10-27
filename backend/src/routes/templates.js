@@ -129,12 +129,14 @@ async function ensureTemplatesSchema(connection) {
       name VARCHAR(150) NOT NULL,
       dosage VARCHAR(100),
       timing VARCHAR(150),
+      link_url VARCHAR(600),
       notes TEXT,
       sort_order INT NOT NULL DEFAULT 0,
       FOREIGN KEY (template_id) REFERENCES supplement_templates(id) ON DELETE CASCADE,
       INDEX idx_template_id (template_id)
     )
   `);
+  await connection.query('ALTER TABLE template_supplement_items ADD COLUMN IF NOT EXISTS link_url VARCHAR(600) NULL');
 }
 
 export async function getFullTrainingTemplate(connection, templateId) {
@@ -278,14 +280,15 @@ async function insertTemplateSupplementItems(connection, templateId, items) {
   for (const [index, item] of (Array.isArray(items) ? items : []).entries()) {
     if (!item?.name?.trim()) continue;
     await connection.query(
-      `INSERT INTO template_supplement_items (template_id, category, name, dosage, timing, notes, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO template_supplement_items (template_id, category, name, dosage, timing, link_url, notes, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         templateId,
         item.category || 'proteins',
         item.name.trim(),
         item.dosage?.trim() || null,
         item.timing?.trim() || null,
+        item.linkUrl?.trim() || item.link_url?.trim() || null,
         item.notes?.trim() || null,
         index,
       ]

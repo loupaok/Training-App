@@ -1,52 +1,14 @@
 "use client"
 
-import { Check, Clock3, Dumbbell, Layers3, Save } from "lucide-react"
 import type { ReactNode } from "react"
+import { Check, Clock3, Dumbbell, Layers3, Save } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 
 export type WorkoutFeeling = "easy" | "good" | "hard" | "pr" | null
+const feelings: Array<{ value: Exclude<WorkoutFeeling, null>; label: string }> = [{ value: "easy", label: "Εύκολη" }, { value: "good", label: "Καλή" }, { value: "hard", label: "Δύσκολη" }, { value: "pr", label: "Νέο PR" }]
 
-const feelings: Array<{ value: Exclude<WorkoutFeeling, null>; emoji: string; label: string }> = [
-  { value: "easy", emoji: "😊", label: "Εύκολο" },
-  { value: "good", emoji: "😄", label: "Καλά" },
-  { value: "hard", emoji: "😤", label: "Δύσκολο" },
-  { value: "pr", emoji: "🏆", label: "PR" },
-]
-
-function duration(seconds: number) {
-  return `${Math.floor(seconds / 60)} λεπτά`
+export function WorkoutSummary({ durationSeconds, completedSets, totalSets, volumeKg, exerciseCount, notes, feeling, onNotesChange, onFeelingChange, onSave, saving }: { durationSeconds: number; completedSets: number; totalSets: number; volumeKg: number; exerciseCount: number; notes: string; feeling: WorkoutFeeling; onNotesChange: (value: string) => void; onFeelingChange: (value: WorkoutFeeling) => void; onSave: () => void; saving: boolean }) {
+  return <div className="fixed inset-0 z-[70] overflow-y-auto bg-[#F4F4F2] px-4 pb-12 pt-12 font-[family-name:var(--font-commissioner)] text-[#0B0B0B]"><main className="mx-auto max-w-md"><span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#B0F90C] text-[#0B0B0B]"><Check className="h-8 w-8" /></span><h1 className="mt-5 text-center text-[28px] font-extrabold tracking-[-.6px]">Ολοκληρώθηκε!</h1><p className="mt-2 text-center text-[14px] text-[#6A6A6A]">Μπράβο, η προπόνησή σου καταγράφηκε.</p><div className="mt-7 grid grid-cols-2 gap-2"><Stat icon={<Clock3 />} label="Διάρκεια" value={`${Math.max(1, Math.round(durationSeconds / 60))} λεπτά`} /><Stat icon={<Layers3 />} label="Sets" value={`${completedSets}/${totalSets}`} /><Stat icon={<Dumbbell />} label="Όγκος" value={`${volumeKg.toLocaleString("el-GR")} kg`} /><Stat icon={<Check />} label="Ασκήσεις" value={String(exerciseCount)} /></div><section className="mt-7"><h2 className="text-[16px] font-extrabold">Πώς πήγε;</h2><div className="mt-3 grid grid-cols-2 gap-2">{feelings.map((option) => <button key={option.value} type="button" onClick={() => onFeelingChange(option.value)} className={`h-11 rounded-full border text-[13px] font-extrabold ${feeling === option.value ? "border-[#0B0B0B] bg-[#0B0B0B] text-[#B0F90C]" : "border-[#E6E6E2] bg-white text-[#0B0B0B]"}`}>{option.label}</button>)}</div></section><section className="mt-6"><label className="mb-2 block text-[14px] font-extrabold">Σημείωση <span className="font-normal text-[#8A8A8A]">(προαιρετικά)</span></label><Textarea value={notes} onChange={(event) => onNotesChange(event.target.value)} placeholder="Πώς ένιωσες σήμερα;" className="min-h-24 rounded-[14px] border-[#E6E6E2] bg-white text-[14px] shadow-none focus-visible:border-[#0B0B0B] focus-visible:ring-0" /></section><Button onClick={onSave} disabled={saving} className="mt-7 h-[52px] w-full rounded-full bg-[#0B0B0B] text-[15px] font-extrabold text-white hover:bg-[#1F1F1F]"><Save className="mr-2 h-4 w-4" />{saving ? "Αποθήκευση…" : "Αποθήκευση & έξοδος"}</Button></main></div>
 }
-
-export function WorkoutSummary({ durationSeconds, completedSets, totalSets, volumeKg, exerciseCount, notes, feeling, onNotesChange, onFeelingChange, onSave, saving }: {
-  durationSeconds: number
-  completedSets: number
-  totalSets: number
-  volumeKg: number
-  exerciseCount: number
-  notes: string
-  feeling: WorkoutFeeling
-  onNotesChange: (value: string) => void
-  onFeelingChange: (value: WorkoutFeeling) => void
-  onSave: () => void
-  saving: boolean
-}) {
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center overflow-y-auto bg-background p-4">
-      <Card className="w-full max-w-2xl">
-        <CardHeader className="text-center"><div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-green-500/10"><Dumbbell className="h-8 w-8 text-green-600" /></div><CardTitle className="mt-4 text-3xl">Προπόνηση ολοκληρώθηκε!</CardTitle></CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Stat icon={<Clock3 />} label="Διάρκεια" value={duration(durationSeconds)} /><Stat icon={<Layers3 />} label="Σετ" value={`${completedSets}/${totalSets}`} /><Stat icon={<Dumbbell />} label="Κιλά" value={`${volumeKg.toLocaleString("el-GR")} kg`} /><Stat icon={<Check />} label="Ασκήσεις" value={`${exerciseCount}/${exerciseCount}`} /></div>
-          <div><p className="mb-3 text-sm font-medium">Πώς ήταν η προπόνηση;</p><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{feelings.map((option) => <Button key={option.value} type="button" variant={feeling === option.value ? "default" : "outline"} className="h-auto flex-col gap-1 py-3" onClick={() => onFeelingChange(option.value)}><span className="text-xl">{option.emoji}</span><span className="text-xs">{option.label}</span></Button>)}</div></div>
-          <Textarea value={notes} onChange={(event) => onNotesChange(event.target.value)} placeholder="Προσθήκη σημειώσεων..." />
-          <Button className="w-full" size="lg" onClick={onSave} disabled={saving}><Save className="mr-2 h-4 w-4" />{saving ? "Αποθήκευση..." : "Αποθήκευση & Έξοδος"}</Button>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-function Stat({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
-  return <div className="rounded-md border p-3"><div className="flex items-center gap-2 text-muted-foreground">{icon}<span className="text-xs">{label}</span></div><p className="mt-2 font-semibold">{value}</p></div>
-}
+function Stat({ icon, label, value }: { icon: ReactNode; label: string; value: string }) { return <div className="rounded-[14px] border border-[#E6E6E2] bg-white p-4"><span className="text-[#0B0B0B]">{icon}</span><p className="mt-3 text-[11px] font-semibold text-[#8A8A8A]">{label}</p><p className="mt-1 text-[16px] font-extrabold">{value}</p></div> }

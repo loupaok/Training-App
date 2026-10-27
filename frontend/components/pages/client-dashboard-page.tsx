@@ -18,7 +18,11 @@ import {
   Gift,
   Upload,
   ImagePlus,
+  LockKeyhole,
   Paperclip,
+  Download,
+  Play,
+  ShoppingCart,
   X,
 } from "lucide-react"
 import { AreaChart } from "@tremor/react"
@@ -34,6 +38,8 @@ import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { DiscordConnectionCard } from "@/components/shared/discord-connection-card"
 import { api } from "@/lib/api/client"
 import { useAuth } from "@/lib/auth/auth-context"
@@ -70,6 +76,7 @@ type DashboardData = {
     planName: string | null
     subscriptionStartDate?: string | null
     subscriptionEndDate?: string | null
+    subscriptionCancelledAt?: string | null
     birthdayToday?: boolean
   }
   todayIsUpdateDay: boolean
@@ -84,10 +91,15 @@ type DashboardData = {
 type TrainingPlan = {
   id: number
   title: string
-  days: Array<{ name: string; exercises: Array<{ name: string; sets?: number; reps?: string; imageUrl?: string | null }> }>
+  start_date?: string | null
+  days: Array<{ id: number; name: string; title?: string | null; exercises: Array<{ name: string; sets?: number | string; reps?: string; rest_seconds?: number | string | null; muscle_group?: string | null; imageUrl?: string | null }> }>
 } | null
 
-type NutritionPlanPreview = { id: number; title: string; meals: unknown[] } | null
+type NutritionFood = { id?: number; name: string; quantity?: string | null; amount?: string | null; food_category?: string | null; food_image?: string | null; food_image_url?: string | null; image_url?: string | null; calories?: number | string | null; protein_g?: number | string | null; carbs_g?: number | string | null; fat_g?: number | string | null }
+type NutritionMeal = { id?: number; foods: NutritionFood[] }
+type NutritionPlanPreview = { id: number; title: string; updated_at?: string | null; daily_calories?: number | string | null; protein_g?: number | string | null; carbs_g?: number | string | null; fat_g?: number | string | null; meals: NutritionMeal[] } | null
+type WorkoutLog = { id: number; training_plan_id: number; day_number: number; day_name?: string | null; completed_at: string; duration_seconds?: number | null }
+type ActiveWorkout = { id: number; training_plan_id: number; day_number: number; day_name?: string | null; started_at: string } | null
 
 type Payment = { id: number; amount: number; method: string; status: string; paidAt: string; notes?: string | null }
 type PaymentData = { subscription: { planName?: string | null; price?: number | null; endDate?: string | null; daysRemaining?: number | null; status?: string | null } | null; payments: Payment[] }
@@ -96,6 +108,18 @@ type PointsData = { totalPoints: number; usedPoints: number; availablePoints: nu
 type PointsSettings = { euro_per_points: number; min_points_redeem: number; is_active: boolean | number }
 
 const dateFormat = new Intl.DateTimeFormat("el-GR", { day: "numeric", month: "short", year: "numeric" })
+const defaultTrainingDayNames = new Set(["Κυριακή", "Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο"])
+
+function trainingDayDisplayTitle(day: NonNullable<TrainingPlan>["days"][number], index: number) {
+  const customName = day.name || day.title
+  if (customName?.trim() && !defaultTrainingDayNames.has(customName.trim()) && !/^(ημέρα|day|μέρα)\s*\d+$/i.test(customName.trim())) return customName.trim()
+  const groups = day.exercises
+    .map((exercise) => exercise.muscle_group || "")
+    .filter(Boolean)
+    .map((group) => group.split("/")[0].split(",")[0].trim())
+  const unique = [...new Set(groups)]
+  return unique.length ? unique.slice(0, 3).join(" & ") : `Ημέρα ${index + 1}`
+}
 const paymentMethod: Record<string, string> = { card: "Κάρτα", bank: "Τραπεζικό Έμβασμα", stripe: "Stripe", cash: "Μετρητά" }
 
 function formatDate(date: string | null | undefined) {
@@ -203,8 +227,234 @@ function ModernOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpdate }
   </div>
 }
 
+type SubscriptionVisualState = "active" | "expiring" | "expired" | "pending"
+
+function subscriptionVisualState(client: DashboardData["client"] | undefined): SubscriptionVisualState {
+  if (!client?.subscriptionEndDate) return "pending"
+  const days = typeof client.daysRemaining === "number" ? client.daysRemaining : Math.ceil((new Date(client.subscriptionEndDate).getTime() - Date.now()) / 86400000)
+  if (client.subscriptionStatus === "expired" || client.subscriptionStatus === "cancelled" || days <= 0) return "expired"
+  if (days <= 7 || client.subscriptionStatus === "expiring_soon") return "expiring"
+  return "active"
+}
+
+function subscriptionDays(client: DashboardData["client"] | undefined) {
+  if (typeof client?.daysRemaining === "number") return client.daysRemaining
+  return client?.subscriptionEndDate ? Math.ceil((new Date(client.subscriptionEndDate).getTime() - Date.now()) / 86400000) : null
+}
+
+function formatExpiryDate(date: string | null | undefined) {
+  if (!date) return "-"
+  return new Intl.DateTimeFormat("el-GR", { weekday: "short", day: "numeric", month: "short" }).format(new Date(date))
+}
+
+function subscriptionDisplayEndDate(client: DashboardData["client"] | undefined) {
+  return client?.subscriptionStatus === "cancelled" && client.subscriptionCancelledAt
+    ? client.subscriptionCancelledAt
+    : client?.subscriptionEndDate
+}
+
+function subscriptionEndLabel(client: DashboardData["client"] | undefined) {
+  return client?.subscriptionStatus === "cancelled" ? "διακόπηκε στις" : "έληξε στις"
+}
+
+function SubscriptionStateCard({ client, className = "" }: { client: DashboardData["client"] | undefined; className?: string }) {
+  const state = subscriptionVisualState(client)
+  const days = Math.max(0, subscriptionDays(client) ?? 0)
+  const start = client?.subscriptionStartDate ? new Date(client.subscriptionStartDate) : null
+  const end = client?.subscriptionEndDate ? new Date(client.subscriptionEndDate) : null
+  const totalDays = start && end ? Math.max(1, Math.ceil((end.getTime() - start.getTime()) / 86400000)) : 1
+  const elapsed = start ? Math.max(0, Math.ceil((Date.now() - start.getTime()) / 86400000)) : 0
+  const progress = Math.min(100, Math.max(0, (elapsed / totalDays) * 100))
+
+  if (state === "expired") {
+    return <Card variant="dark" className={`relative overflow-hidden rounded-[20px] border-0 ${className}`}><CardContent className="relative flex flex-col gap-3 p-[22px]"><span aria-hidden="true" className="absolute right-[26px] -top-5 h-[200px] w-3 -skew-x-[18deg] bg-accent" /><div className="relative flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-[1px] text-neutral-400">Συνδρομή</p><Badge className="mr-7 bg-[#262626] px-2.5 py-1 text-[11px] font-extrabold tracking-[.5px] text-white">ΕΛΗΞΕ</Badge></div><h2 className="relative text-[24px] font-extrabold leading-[1.15] tracking-[-.4px] text-white">Η συνδρομή σου<br />{subscriptionEndLabel(client)} {formatExpiryDate(subscriptionDisplayEndDate(client))}</h2><p className="relative max-w-[260px] text-[13px] leading-[1.5] text-neutral-300">Το πρόγραμμα και η διατροφή σου είναι σε παύση. Ανανέωσε και συνέχισε από εκεί που σταμάτησες.</p><Button asChild variant="lime" className="relative mt-1 h-11 w-full"><Link href="/client-billing">Ανανέωση συνδρομής <ArrowRight className="ml-2 h-4 w-4" /></Link></Button><Link href="/client-billing" className="relative text-center text-xs font-bold text-white hover:text-accent">Δες όλα τα πακέτα</Link></CardContent></Card>
+  }
+
+  if (state === "expiring") {
+    return <Card className={`relative overflow-hidden rounded-[20px] border-[1.5px] border-black ${className}`}><span aria-hidden="true" className="absolute inset-y-0 left-0 w-1.5 bg-accent" /><CardContent className="flex flex-col gap-3 p-[22px] pl-[26px]"><div className="flex items-center justify-between gap-3"><p className="text-xs font-bold uppercase tracking-[1px] text-muted-foreground">Συνδρομή</p><Badge className="bg-accent px-2.5 py-1 text-[11px] font-extrabold tracking-[.5px] text-black">ΛΗΓΕΙ ΣΥΝΤΟΜΑ</Badge></div><div className="flex items-baseline gap-2"><p className="text-[40px] font-extrabold italic leading-none tracking-[-1px] tabular-nums">{days}</p><p className="text-[13px] font-semibold">ημέρες · λήγει {formatExpiryDate(client?.subscriptionEndDate)}</p></div><Progress value={progress} className="h-2 [&_[data-slot=progress-indicator]]:bg-black" /><div className="flex items-center gap-2 rounded-xl bg-[#f1fbd6] px-3 py-2.5 text-xs font-semibold leading-[1.4]"><Sparkles className="h-3.5 w-3.5 shrink-0" />Ανανέωσε πριν τη λήξη και πάρε τους πόντους bonus ανανέωσης.</div><Button asChild variant="lime" className="h-11 w-full"><Link href="/client-billing">Ανανέωση συνδρομής <ArrowRight className="ml-2 h-4 w-4" /></Link></Button></CardContent></Card>
+  }
+
+  if (state === "active") {
+    return <Card className={`rounded-[20px] ${className}`}><CardContent className="flex flex-col gap-3 p-[22px]"><div className="flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-[1px] text-muted-foreground">Συνδρομή</p><Badge className="bg-black px-2.5 py-1 text-[11px] font-extrabold text-accent">PRO</Badge></div><div className="flex items-baseline gap-2"><p className="text-[40px] font-extrabold italic leading-none tracking-[-1px] tabular-nums">{days}</p><span className="text-[13px] text-muted-foreground">ημέρες απομένουν</span></div><Progress value={progress} className="h-2 [&_[data-slot=progress-indicator]]:bg-accent" /><div className="flex justify-between text-xs text-[#8a8a8a]"><span>{formatDate(client?.subscriptionStartDate)}</span><span>{formatDate(client?.subscriptionEndDate)}</span></div><Button asChild variant="outline" className="h-10 w-full border-[1.5px] border-black"><Link href="/client-billing">Διαχείριση συνδρομής</Link></Button></CardContent></Card>
+  }
+
+  return <Card className={`rounded-[20px] ${className}`}><CardContent className="p-[22px]"><p className="text-xs font-bold uppercase tracking-[1px] text-muted-foreground">Συνδρομή</p><p className="mt-3 text-sm text-muted-foreground">Αναμονή επιβεβαίωσης από τον coach</p><Button asChild variant="outline" className="mt-4 h-10 w-full border-[1.5px] border-black"><Link href="/client-billing">Διαχείριση συνδρομής</Link></Button></CardContent></Card>
+}
+
+function ExpiredSubscriptionBanner({ endDate }: { endDate?: string | null }) {
+  return <Card variant="dark" className="relative overflow-hidden rounded-[20px]"><CardContent className="relative flex flex-col gap-5 p-6 sm:flex-row sm:items-center sm:justify-between sm:p-7"><span aria-hidden="true" className="absolute right-[30%] -top-8 h-[260px] w-4 -skew-x-[18deg] bg-accent" /><span aria-hidden="true" className="absolute right-[calc(30%+26px)] -top-8 h-[260px] w-[5px] -skew-x-[18deg] bg-accent/45" /><div className="relative max-w-[560px]"><Badge className="bg-[#262626] px-2.5 py-1 text-[11px] font-extrabold tracking-[1px] text-white">Η ΣΥΝΔΡΟΜΗ ΕΛΗΞΕ · {formatExpiryDate(endDate)}</Badge><h2 className="mt-3 text-[28px] font-extrabold italic leading-[1.05] tracking-[-.6px] text-white">ΜΗΝ ΧΑΣΕΙΣ ΤΟΝ <span className="text-accent">ΡΥΘΜΟ ΣΟΥ.</span></h2><p className="mt-2 text-sm leading-[1.55] text-neutral-300">Ανανέωσε και ο coach σου συνεχίζει το πλάνο σου από εκεί που σταμάτησες.</p></div><div className="relative flex w-full shrink-0 flex-col gap-2 sm:w-[220px]"><Button asChild variant="lime" className="h-[50px]"><Link href="/client-billing">Ανανέωση <ArrowRight className="ml-2 h-4 w-4" /></Link></Button><Button asChild variant="outline" className="h-11 border-[#3a3a3a] bg-transparent text-white hover:bg-white/10 hover:text-white"><Link href="/client-billing">Δες τα πακέτα</Link></Button></div></CardContent></Card>
+}
+
+function PausedPrograms() {
+  return <div className="grid gap-5 md:grid-cols-2">{["Σημερινή προπόνηση", "Διατροφή σήμερα"].map((title) => <Card key={title} className="rounded-[18px] opacity-55"><CardContent className="flex min-h-[130px] items-center gap-3 p-[18px]"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-[#f2f2f0]"><LockKeyhole className="h-4 w-4" /></span><div><p className="text-sm font-extrabold">{title}</p><p className="mt-1 text-xs text-muted-foreground">Σε παύση μέχρι την ανανέωση</p></div></CardContent></Card>)}</div>
+}
+
+function numberFrom(value: number | string | null | undefined) {
+  return Number(value) || 0
+}
+
+function parseFoodQuantity(value: string | null | undefined) {
+  const match = String(value || "").trim().match(/^(\d+(?:[.,]\d+)?)\s*(.*)$/)
+  return match ? { amount: Number(match[1].replace(",", ".")), unit: match[2].trim() || "g" } : { amount: null, unit: String(value || "").trim() || "g" }
+}
+
+const foodCategoryLabels: Record<string, string> = {
+  meat: "Κρέας & ψάρι", fish: "Κρέας & ψάρι", eggs: "Αυγά & γαλακτοκομικά", dairy: "Αυγά & γαλακτοκομικά",
+  grains: "Δημητριακά", vegetables: "Φρούτα & λαχανικά", fruits: "Φρούτα & λαχανικά", legumes: "Όσπρια",
+  nuts: "Ξηροί καρποί & έλαια", oils: "Ξηροί καρποί & έλαια", other: "Άλλα",
+}
+
+type ShoppingListItem = { key: string; name: string; amount: number | null; unit: string; category: string; imageUrl?: string | null }
+
+function formatShoppingAmount(amount: number | null, unit: string) {
+  if (amount === null) return "—"
+  if (unit.toLocaleLowerCase("el-GR") === "g" && amount >= 1000) return `${(amount / 1000).toLocaleString("el-GR", { maximumFractionDigits: 1 })} kg`
+  if (/^(τεμ\.?|piece|pieces)$/i.test(unit)) return `${Math.round(amount).toLocaleString("el-GR")} τεμ.`
+  return `${amount.toLocaleString("el-GR", { maximumFractionDigits: 1 })}${unit === "g" ? " g" : unit ? ` ${unit}` : ""}`
+}
+
+function startOfProgramWeek(value = new Date()) {
+  const date = new Date(value)
+  const day = date.getDay()
+  date.setHours(0, 0, 0, 0)
+  date.setDate(date.getDate() - (day === 0 ? 6 : day - 1))
+  return date
+}
+
+function ShoppingListSheet({ plan, open, onOpenChange }: { plan: NutritionPlanPreview; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [days, setDays] = useState<3 | 7 | 14>(7)
+  const storageKey = `shopping-list:dashboard:${plan?.id ?? "none"}`
+  const [checked, setChecked] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    try { setChecked(JSON.parse(window.localStorage.getItem(storageKey) || "{}")) } catch { setChecked({}) }
+  }, [storageKey])
+
+  const items = useMemo<ShoppingListItem[]>(() => {
+    const grouped = new Map<string, ShoppingListItem>()
+    plan?.meals.flatMap((meal) => meal.foods || []).forEach((food) => {
+      const parsed = parseFoodQuantity(food.quantity ?? food.amount)
+      const category = foodCategoryLabels[food.food_category || ""] || "Άλλα"
+      const key = `${food.name.trim().toLocaleLowerCase("el-GR")}::${parsed.unit.toLocaleLowerCase("el-GR")}`
+      const existing = grouped.get(key)
+      grouped.set(key, { key, name: food.name, unit: parsed.unit, category, imageUrl: existing?.imageUrl || food.food_image || food.food_image_url || food.image_url, amount: parsed.amount === null || existing?.amount === null ? null : (existing?.amount || 0) + parsed.amount })
+    })
+    return [...grouped.values()]
+  }, [plan])
+
+  const groups = useMemo(() => {
+    const result = new Map<string, ShoppingListItem[]>()
+    items.forEach((item) => result.set(item.category, [...(result.get(item.category) || []), item]))
+    return [...result.entries()]
+  }, [items])
+  const checkedCount = items.filter((item) => checked[item.key]).length
+  const updateChecked = (key: string, next: boolean) => {
+    setChecked((current) => {
+      const nextChecked = { ...current, [key]: next }
+      window.localStorage.setItem(storageKey, JSON.stringify(nextChecked))
+      return nextChecked
+    })
+  }
+  const shareText = groups.map(([category, categoryItems]) => `${category}\n${categoryItems.map((item) => `• ${item.name}: ${formatShoppingAmount(item.amount === null ? null : item.amount * days, item.unit)}`).join("\n")}`).join("\n\n")
+  const copy = async () => { try { await navigator.clipboard.writeText(shareText) } catch { /* Clipboard access is optional. */ } }
+  const share = async () => {
+    if (navigator.share) { try { await navigator.share({ title: "Λίστα για ψώνια", text: shareText }); return } catch { /* User cancelled sharing. */ } }
+    await copy()
+  }
+  const exportShoppingList = () => {
+    const printWindow = window.open("", "_blank")
+    if (!printWindow) return
+    const document = printWindow.document
+    document.open()
+    document.write("<!doctype html><html><head><meta charset=\"utf-8\"><title>Λίστα για ψώνια</title><style>body{font-family:Arial,sans-serif;color:#0b0b0b;margin:40px;max-width:720px}h1{font-size:22px;margin:0 0 24px}h2{font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#6a6a6a;margin:22px 0 4px}ul{list-style:none;padding:0;margin:0}li{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #e6e6e2}.food-image,.food-placeholder{width:32px;height:32px;border-radius:50%;flex:0 0 32px;object-fit:cover}.food-placeholder{display:grid;place-items:center;background:#f2f2f0;color:#6a6a6a;font-weight:700}.food-name{flex:1;font-weight:600}.food-quantity{white-space:nowrap;font-weight:700}</style></head><body></body></html>")
+    document.close()
+    const title = document.createElement("h1"); title.textContent = "Λίστα για ψώνια"; document.body.appendChild(title)
+    groups.forEach(([category, categoryItems]) => {
+      const heading = document.createElement("h2"); heading.textContent = category; document.body.appendChild(heading)
+      const list = document.createElement("ul")
+      categoryItems.forEach((item) => {
+        const row = document.createElement("li"); const name = document.createElement("span"); const quantity = document.createElement("span")
+        name.className = "food-name"; name.textContent = item.name; quantity.className = "food-quantity"; quantity.textContent = formatShoppingAmount(item.amount === null ? null : item.amount * days, item.unit)
+        if (item.imageUrl) { const image = document.createElement("img"); image.className = "food-image"; image.alt = ""; image.src = resolveMediaUrl(item.imageUrl); row.appendChild(image) }
+        else { const placeholder = document.createElement("span"); placeholder.className = "food-placeholder"; placeholder.textContent = item.name.trim().charAt(0).toLocaleUpperCase("el-GR"); row.appendChild(placeholder) }
+        row.append(name, quantity); list.appendChild(row)
+      })
+      document.body.appendChild(list)
+    })
+    const images = Array.from(document.images)
+    Promise.all(images.map((image) => new Promise<void>((resolve) => { if (image.complete) resolve(); else { image.onload = () => resolve(); image.onerror = () => resolve() } }))).finally(() => { printWindow.focus(); window.setTimeout(() => printWindow.print(), 50) })
+  }
+
+  return <Sheet open={open} onOpenChange={onOpenChange}>
+    <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-[460px]" showCloseButton={false}>
+      <SheetHeader className="gap-3 border-b border-[#ececea] px-7 pb-4 pt-[22px]">
+        <div className="flex items-start justify-between gap-4"><div><SheetTitle className="text-xl font-extrabold">Λίστα για ψώνια</SheetTitle><SheetDescription className="mt-1 text-xs">Από το πλάνο διατροφής σου{plan?.updated_at ? ` · ενημ. ${formatDate(plan.updated_at)}` : ""}</SheetDescription></div><Button variant="outline" size="icon" className="h-10 w-10 rounded-xl" onClick={() => onOpenChange(false)} aria-label="Κλείσιμο"><X className="h-[18px] w-[18px]" /></Button></div>
+        <div className="flex items-center justify-between gap-3"><span className="text-[13px] font-semibold">Για πόσες ημέρες;</span><div className="flex rounded-xl bg-[#f2f2f0] p-[3px]">{([3, 7, 14] as const).map((value) => <button key={value} type="button" onClick={() => setDays(value)} className={`h-8 rounded-[9px] px-3.5 text-[13px] font-bold ${days === value ? "bg-black text-accent" : "text-[#555]"}`}>{value}{value === 7 ? " ημέρες" : ""}</button>)}</div></div>
+      </SheetHeader>
+      <div className="min-h-0 flex-1 overflow-y-auto px-7 py-[18px]">{groups.map(([category, categoryItems]) => <section key={category} className="mb-4"><p className="pb-1.5 text-[11px] font-extrabold uppercase tracking-[1px] text-muted-foreground">{category}</p>{categoryItems.map((item) => { const isChecked = Boolean(checked[item.key]); const total = item.amount === null ? null : item.amount * days; return <label key={item.key} className={`flex cursor-pointer items-center gap-3 border-b border-[#f0f0ee] py-[9px] ${isChecked ? "text-[#9a9a9a]" : ""}`}><Checkbox checked={isChecked} onCheckedChange={(value) => updateChecked(item.key, Boolean(value))} className="h-[22px] w-[22px] rounded-[7px] border-[#cfcfcb] data-[state=checked]:border-black data-[state=checked]:bg-black data-[state=checked]:text-accent" />{item.imageUrl ? <img src={resolveMediaUrl(item.imageUrl)} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" /> : <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#f2f2f0] text-xs font-bold text-[#6a6a6a]">{item.name.trim().charAt(0).toLocaleUpperCase("el-GR")}</span>}<span className={`min-w-0 flex-1 text-sm font-semibold ${isChecked ? "line-through" : ""}`}>{item.name}</span><span className="whitespace-nowrap text-[11px] text-[#9a9a9a]">{item.amount === null ? "χωρίς ποσότητα" : `${formatShoppingAmount(item.amount, item.unit)} × ${days}`}</span><span className="w-16 shrink-0 text-right text-sm font-extrabold">{formatShoppingAmount(total, item.unit)}</span></label> })}</section>)}</div>
+      <SheetFooter className="gap-2.5 border-t border-[#ececea] px-7 pb-5 pt-4"><p className="text-[11px] leading-4 text-[#8a8a8a]">Ποσότητα = ημερήσια ποσότητα του πλάνου × ημέρες. {checkedCount} από {items.length} στο καλάθι.</p><Button variant="lime" className="h-[50px] w-full rounded-full" onClick={exportShoppingList}><Download className="mr-2 h-4 w-4" />Εξαγωγή PDF</Button></SheetFooter>
+    </SheetContent>
+  </Sheet>
+}
+
+function ClientHomeOverviewNext({ dashboard, trainingPlan, nutritionPlan, workoutHistory, activeWorkout, onOpenUpdate }: { dashboard: DashboardData | null; trainingPlan: TrainingPlan; nutritionPlan: NutritionPlanPreview; workoutHistory: WorkoutLog[]; activeWorkout: ActiveWorkout; onOpenUpdate: () => void }) {
+  const [shoppingOpen, setShoppingOpen] = useState(false)
+  const client = dashboard?.client
+  const subscriptionState = subscriptionVisualState(client)
+  const subscriptionExpired = subscriptionState === "expired"
+  const accountActive = client?.subscriptionStatus === "active" || client?.subscriptionStatus === "expiring_soon"
+  const updateReady = Boolean(dashboard?.todayIsUpdateDay && !dashboard?.alreadySubmittedThisWeek)
+  const daysToNextUpdate = dashboard?.nextUpdateDate ? Math.max(0, Math.ceil((new Date(dashboard.nextUpdateDate).getTime() - Date.now()) / 86400000)) : 7
+  const completedUpdateDays = Math.max(0, Math.min(7, 7 - daysToNextUpdate))
+  const weekStart = startOfProgramWeek()
+  const programWeek = trainingPlan?.start_date ? Math.max(1, Math.floor((Date.now() - new Date(trainingPlan.start_date).getTime()) / 604800000) + 1) : 1
+  const planHistory = workoutHistory.filter((log) => log.training_plan_id === trainingPlan?.id && new Date(log.completed_at) >= weekStart).sort((first, second) => new Date(second.completed_at).getTime() - new Date(first.completed_at).getTime())
+  const daysCount = trainingPlan?.days.length || 0
+  const lastWorkout = planHistory[0]
+  const chronologicalHistory = [...planHistory].reverse()
+  const lastCycleStart = chronologicalHistory.map((log) => log.day_number).lastIndexOf(1)
+  let sequentialCompleted = 0
+  if (lastCycleStart >= 0) {
+    for (let index = lastCycleStart; index < chronologicalHistory.length; index += 1) {
+      if (chronologicalHistory[index].day_number !== sequentialCompleted + 1) break
+      sequentialCompleted += 1
+    }
+  }
+  sequentialCompleted = Math.min(sequentialCompleted, daysCount)
+  const completedDayNumbers = new Set(Array.from({ length: sequentialCompleted }, (_, index) => index + 1))
+  const allDaysCompleted = daysCount > 0 && sequentialCompleted === daysCount
+  const nextDayNumber = allDaysCompleted ? 1 : Math.min(daysCount || 1, sequentialCompleted + 1)
+  const nextWorkout = trainingPlan?.days[nextDayNumber - 1]
+  const activeForPlan = activeWorkout?.training_plan_id === trainingPlan?.id ? activeWorkout : null
+  const displayedDayNumber = activeForPlan?.day_number || nextDayNumber
+  const selectedWorkout = activeForPlan ? trainingPlan?.days[activeForPlan.day_number - 1] : nextWorkout
+  const displayedWorkout = selectedWorkout ? { ...selectedWorkout, name: trainingDayDisplayTitle(selectedWorkout, displayedDayNumber - 1) } : undefined
+  const workoutSets = displayedWorkout?.exercises.reduce((sum, exercise) => sum + Math.max(1, Number(exercise.sets) || 1), 0) || 0
+  const workoutMinutes = Math.max(1, Math.round((displayedWorkout?.exercises.reduce((sum, exercise) => sum + Math.max(1, Number(exercise.sets) || 1) * (1 + (Number(exercise.rest_seconds) || 90) / 60), 0) || 0)))
+  const nutritionTotals = useMemo(() => nutritionPlan?.meals.flatMap((meal) => meal.foods || []).reduce((sum, food) => ({ calories: sum.calories + numberFrom(food.calories), protein: sum.protein + numberFrom(food.protein_g), carbs: sum.carbs + numberFrom(food.carbs_g), fats: sum.fats + numberFrom(food.fat_g) }), { calories: 0, protein: 0, carbs: 0, fats: 0 }) || { calories: 0, protein: 0, carbs: 0, fats: 0 }, [nutritionPlan])
+  const calories = numberFrom(nutritionPlan?.daily_calories) || nutritionTotals.calories
+  const protein = numberFrom(nutritionPlan?.protein_g) || nutritionTotals.protein
+  const carbs = numberFrom(nutritionPlan?.carbs_g) || nutritionTotals.carbs
+  const fats = numberFrom(nutritionPlan?.fat_g) || nutritionTotals.fats
+
+  return <div className="relative space-y-5">
+    {client?.birthdayToday && <Alert className="relative overflow-hidden rounded-2xl border-0 bg-black px-[18px] py-4"><span aria-hidden="true" className="pointer-events-none absolute right-[70px] -top-4 h-[110px] w-3.5 -skew-x-[18deg] bg-accent" /><div className="relative flex items-center gap-3.5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent"><Gift className="h-[19px] w-[19px] text-black" /></span><div><AlertTitle className="text-base font-extrabold text-white">Χρόνια πολλά, {client.firstName}!</AlertTitle><AlertDescription className="mt-0.5 text-[13px] text-neutral-300">Σου ευχόμαστε μια δυνατή νέα χρονιά — από όλο το SP Team.</AlertDescription></div></div></Alert>}
+    {subscriptionExpired && <div className="grid gap-5 lg:grid-cols-3"><div className="space-y-5 lg:col-span-2"><ExpiredSubscriptionBanner endDate={subscriptionDisplayEndDate(client)} /><PausedPrograms /></div><PointsWidget /></div>}
+    {!subscriptionExpired && <section className="grid gap-5 lg:grid-cols-3"><div className="space-y-5 lg:col-span-2">{updateReady ? <Card variant="action" className="min-h-[238px]"><CardContent className="grid items-center gap-6 p-7 sm:grid-cols-[minmax(0,1fr)_9.5rem]"><div><Badge className="h-7 bg-black px-2.5 text-[11px] font-extrabold uppercase tracking-[1px] text-accent">Σήμερα · εκκρεμεί</Badge><h2 className="mt-3 text-2xl font-extrabold tracking-[-0.4px]">Ώρα για το εβδομαδιαίο σου update</h2><p className="mt-2 text-sm leading-[1.55] text-[#555]">Σε 3 λεπτά: βάρος, φωτογραφίες και πώς πήγε η εβδομάδα — για να προσαρμόσει ο coach το πλάνο σου.</p><Button variant="lime" onClick={onOpenUpdate} className="mt-4 h-[46px] px-[22px]">Συμπλήρωσε update <ArrowRight className="ml-2 h-4 w-4" /></Button></div></CardContent></Card> : <Card className="rounded-[18px]"><CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:gap-5 sm:px-5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black text-accent"><CheckCircle2 className="h-3.5 w-3.5" strokeWidth={4} /></span><div className="shrink-0"><p className="text-[15px] font-extrabold">Εβδομαδιαίο update</p><p className="text-xs text-muted-foreground">{dashboard?.alreadySubmittedThisWeek ? `Στάλθηκε ${formatDate(dashboard?.lastUpdate?.submittedAt)}` : "Δεν εκκρεμεί update"}</p></div><div className="min-w-0 flex-1 px-0 sm:px-2"><div className="mb-1.5 flex justify-between gap-3 text-xs text-muted-foreground"><span><strong className="text-[13px] text-black">{daysToNextUpdate} ημέρες</strong> για το επόμενο</span><span>{formatDate(dashboard?.nextUpdateDate)}</span></div><div className="flex gap-1">{Array.from({ length: 7 }, (_, index) => <span key={index} className={`h-1.5 flex-1 rounded-[3px] ${index < completedUpdateDays ? "bg-accent" : "bg-[#ececea]"}`} />)}</div></div><Button asChild variant="outline" size="sm" className="h-[38px] shrink-0 px-4"><Link href="/client-progress">Δες το τελευταίο</Link></Button></CardContent></Card>}
+      <div className="grid gap-5 md:grid-cols-2"><Card variant="dark" className="min-h-[270px]"><CardContent className="flex h-full flex-col gap-3 p-[22px]"><div className="flex items-center justify-between gap-3"><p className="text-xs font-bold uppercase tracking-[1px] text-neutral-400">Επόμενη προπόνηση</p><Badge className="bg-[#1f1f1f] text-xs font-bold text-white">Ημέρα {displayedDayNumber} <span className="text-neutral-400">/ {daysCount || "–"}</span></Badge></div><h2 className="text-[19px] font-extrabold leading-[1.2] text-white">{displayedWorkout?.name || displayedWorkout?.title || "Δεν υπάρχει διαθέσιμη προπόνηση"}</h2>{daysCount > 0 && <div className="space-y-1.5"><div className="flex gap-1">{Array.from({ length: daysCount }, (_, index) => <span key={index} className={`h-1.5 flex-1 rounded-[3px] ${index + 1 === displayedDayNumber ? "bg-white" : completedDayNumbers.has(index + 1) ? "bg-accent" : "bg-[#2a2a2a]"}`} />)}</div><p className="text-[11px] text-neutral-400">Εβδομάδα {programWeek} · {completedDayNumbers.size} από {daysCount}{lastWorkout ? ` · τελευταία: Ημέρα ${lastWorkout.day_number}, ${formatDate(lastWorkout.completed_at)}` : ""}</p></div>}<div className="flex flex-wrap gap-2"><Badge className="bg-[#1f1f1f] text-xs font-semibold text-white">{displayedWorkout?.exercises.length || 0} ασκήσεις</Badge><Badge className="bg-[#1f1f1f] text-xs font-semibold text-white">{workoutSets} sets</Badge><Badge className="bg-[#1f1f1f] text-xs font-semibold text-white">~{workoutMinutes}′</Badge></div><Button asChild variant="lime" className="mt-auto h-11 w-full"><Link href="/client-program"><Play className="mr-2 h-[13px] w-[13px] fill-current" />{activeForPlan ? "Συνέχισε" : allDaysCompleted ? "Ολοκλήρωσες την εβδομάδα" : "Ξεκίνα προπόνηση"}</Link></Button></CardContent></Card>
+      <Card className="min-h-[270px]"><CardContent className="flex h-full flex-col gap-[14px] p-[22px]"><div className="flex items-center justify-between"><p className="text-xs font-bold uppercase tracking-[1px] text-muted-foreground">Το πλάνο διατροφής μου</p><Link href="/client-nutrition" className="text-xs font-bold">Δες πλάνο →</Link></div><div className="flex items-baseline gap-2"><p className="text-[34px] font-extrabold italic leading-none tracking-[-1px]">{Math.round(calories).toLocaleString("el-GR")}</p><span className="text-[13px] text-muted-foreground">kcal / ημέρα</span></div><div className="grid grid-cols-3 gap-3">{[["bg-black", protein, "Πρωτεΐνη"], ["bg-accent", carbs, "Υδατάνθρακες"], ["bg-[#c9c9c4]", fats, "Λιπαρά"]].map(([color, value, label]) => <div key={String(label)} className="space-y-1.5"><span className={`block h-1.5 rounded-[3px] ${color}`} /><p className="text-base font-extrabold">{Math.round(Number(value))}g</p><p className="-mt-1 text-[11px] text-[#8a8a8a]">{label}</p></div>)}</div><p className="text-xs text-[#8a8a8a]">{nutritionPlan?.meals.length || 0} γεύματα{nutritionPlan?.updated_at ? ` · ενημ. ${formatDate(nutritionPlan.updated_at)}` : ""}</p><Button variant="outline" className="mt-auto h-11 w-full border-[1.5px] border-black" onClick={() => setShoppingOpen(true)}><ShoppingCart className="mr-2 h-4 w-4" />Λίστα για ψώνια</Button></CardContent></Card></div></div><aside className="space-y-5"><SubscriptionStateCard client={client} /><PointsWidget /></aside></section>}
+    {accountActive && <section className="grid gap-5 lg:grid-cols-2">
+      <Card className="rounded-[20px]"><CardContent className="p-[22px]"><div className="flex items-center justify-between gap-4"><CardTitle className="text-base">Τελευταία δραστηριότητα</CardTitle><Link href="/client-progress" className="text-xs font-extrabold">Πρόοδος <ArrowRight className="inline h-3.5 w-3.5" /></Link></div><div className="mt-2 divide-y divide-[#f0f0ee]">{dashboard?.lastUpdate ? <ActivityRow icon={<CheckCircle2 className="h-4 w-4" />} title="Υποβλήθηκε εβδομαδιαίο update" detail={formatDate(dashboard.lastUpdate.submittedAt)} /> : <ActivityRow icon={<CalendarDays className="h-4 w-4" />} title="Δεν υπάρχει update ακόμα" detail="Το πρώτο σου check-in θα εμφανιστεί εδώ." />}{trainingPlan && <ActivityRow icon={<Dumbbell className="h-4 w-4" />} title="Το πρόγραμμα προπόνησης είναι διαθέσιμο" detail={trainingPlan.title} />}{nutritionPlan && <ActivityRow icon={<Salad className="h-4 w-4" />} title="Το πλάνο διατροφής είναι διαθέσιμο" detail={nutritionPlan.title} />}</div></CardContent></Card>
+      <div className="grid gap-5 sm:grid-cols-2"><Card variant="stat" className="rounded-[20px]"><CardContent className="p-[22px]"><p className="text-xs font-bold uppercase tracking-[1px] text-muted-foreground">Τρέχον βάρος</p><p className="mt-2 text-[32px] font-extrabold italic leading-none tracking-[-1px] tabular-nums">{client?.currentWeight ?? "–"}{client?.currentWeight ? " kg" : ""}</p><p className="mt-2 text-xs text-[#8a8a8a]">{dashboard?.lastWeightUpdate ? `τελευταίο check-in · ${formatDate(dashboard.lastWeightUpdate.submittedAt)}` : "από την εγγραφή σου"}</p></CardContent></Card><Link href="/client-progress" className="group rounded-[20px] border border-border bg-card p-[22px] transition-colors hover:bg-muted"><p className="text-xs font-bold uppercase tracking-[1px] text-muted-foreground">Πρόοδος</p><p className="mt-3 text-base font-extrabold">Δες αναλυτικά <ArrowRight className="inline h-4 w-4 transition-transform group-hover:translate-x-1" /></p><p className="mt-2 text-xs text-[#8a8a8a]">βάρος, ρεκόρ, φωτογραφίες</p></Link><div className="sm:col-span-2"><DiscordConnectionCard /></div></div>
+    </section>}
+    {nutritionPlan && <ShoppingListSheet plan={nutritionPlan} open={shoppingOpen} onOpenChange={setShoppingOpen} />}
+  </div>
+}
+
 function ClientHomeOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpdate }: { dashboard: DashboardData | null; trainingPlan: TrainingPlan; nutritionPlan: NutritionPlanPreview; onOpenUpdate: () => void }) {
   const client = dashboard?.client
+  const subscriptionState = subscriptionVisualState(client)
+  const subscriptionExpired = subscriptionState === "expired"
   const updateReady = Boolean(dashboard?.todayIsUpdateDay && !dashboard?.alreadySubmittedThisWeek)
   const updateDone = Boolean(dashboard?.alreadySubmittedThisWeek)
   const subscriptionActive = client?.subscriptionStatus === "active" || client?.subscriptionStatus === "expiring_soon"
@@ -219,9 +469,11 @@ function ClientHomeOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpda
   const workoutExercises = workout?.exercises.length || 0
   const workoutSets = workout?.exercises.reduce((total, exercise) => total + (Number(exercise.sets) || 0), 0) || 0
 
-  return <div className="space-y-5">
+  return <div className={`relative space-y-5 [&>section>div:first-child>:nth-child(3)]:hidden [&>section>aside>div.grid]:hidden ${subscriptionExpired ? "[&>section>div:first-child>:first-child]:hidden [&>section>div:first-child>div:nth-child(2)]:hidden [&>section>aside>a]:hidden" : "[&>section>aside]:lg:pt-[282px]"} [&>section>aside>[data-slot=card]:first-child]:hidden`}>
     {client?.birthdayToday && <Alert className="relative overflow-hidden rounded-2xl border-0 bg-black px-[18px] py-4"><span aria-hidden="true" className="pointer-events-none absolute right-[70px] -top-4 h-[110px] w-3.5 -skew-x-[18deg] bg-accent" /><div className="relative flex items-center gap-3.5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-accent"><Gift className="h-[19px] w-[19px] text-black" /></span><div><AlertTitle className="text-base font-extrabold text-white">Χρόνια πολλά, {client.firstName}!</AlertTitle><AlertDescription className="mt-0.5 text-[13px] text-neutral-300">Σου ευχόμαστε μια δυνατή νέα χρονιά — από όλο το SP Team.</AlertDescription></div></div></Alert>}
 
+    {subscriptionExpired && <><div className="lg:mr-[calc((100%+40px)/3)]"><ExpiredSubscriptionBanner endDate={subscriptionDisplayEndDate(client)} /></div><div className={`lg:absolute lg:right-0 lg:z-10 lg:w-[calc((100%_-_40px)/3)] ${client?.birthdayToday ? "lg:top-[102px]" : "lg:top-0"}`}><PointsWidget /></div><div className="lg:mr-[calc((100%+40px)/3)]"><PausedPrograms /></div></>}
+    {!subscriptionExpired && <SubscriptionStateCard client={client} className={`lg:absolute lg:right-0 lg:z-10 lg:w-[calc((100%_-_40px)/3)] ${client?.birthdayToday ? "lg:top-[102px]" : "lg:top-0"}`} />}
     <section className="grid gap-5 lg:grid-cols-3">
       <div className="space-y-5 lg:col-span-2">
         {updateReady ? <Card variant="action" className="min-h-[238px]"><CardContent className="grid items-center gap-6 p-7 sm:grid-cols-[minmax(0,1fr)_9.5rem]"><div><Badge className="h-7 bg-black px-2.5 text-[11px] font-extrabold uppercase tracking-[1px] text-accent">Σήμερα · εκκρεμεί</Badge><h2 className="mt-3 text-2xl font-extrabold tracking-[-0.4px]">Ώρα για το εβδομαδιαίο σου update</h2><p className="mt-2 text-sm leading-[1.55] text-[#555]">Σε 3 λεπτά: βάρος, φωτογραφίες και πώς πήγε η εβδομάδα — για να προσαρμόσει ο coach το πλάνο σου.</p><Button variant="lime" onClick={onOpenUpdate} className="mt-4 h-[46px] px-[22px]">Συμπλήρωσε update <ArrowRight className="ml-2 h-4 w-4" /></Button></div><div className="hidden space-y-2.5 text-[13px] sm:block"><span className="flex items-center gap-2"><CheckCircle2 className="h-[18px] w-[18px] rounded-full bg-black p-1 text-accent" />Βάρος</span><span className="flex items-center gap-2 text-muted-foreground"><i className="h-[18px] w-[18px] rounded-full border-[1.5px] border-[#cfcfcb]" />Φωτογραφίες</span><span className="flex items-center gap-2 text-muted-foreground"><i className="h-[18px] w-[18px] rounded-full border-[1.5px] border-[#cfcfcb]" />Ερωτηματολόγιο</span></div></CardContent></Card> : <Card className="rounded-[18px]"><CardContent className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:gap-5 sm:px-5"><span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-black text-accent"><CheckCircle2 className="h-3.5 w-3.5" strokeWidth={4} /></span><div className="shrink-0"><p className="text-[15px] font-extrabold">Εβδομαδιαίο update</p><p className="text-xs text-muted-foreground">{updateDone ? `Στάλθηκε ${formatDate(dashboard?.lastUpdate?.submittedAt)}` : "Δεν εκκρεμεί update"}</p></div><div className="min-w-0 flex-1 px-0 sm:px-2"><div className="mb-1.5 flex justify-between gap-3 text-xs text-muted-foreground"><span><strong className="text-[13px] text-black">{daysToNextUpdate} ημέρες</strong> για το επόμενο</span><span>{formatDate(dashboard?.nextUpdateDate)}</span></div><div className="flex gap-1">{Array.from({ length: 7 }, (_, index) => <span key={index} className={`h-1.5 flex-1 rounded-[3px] ${index < completedUpdateDays ? "bg-accent" : "bg-[#ececea]"}`} />)}</div></div><Button asChild variant="outline" size="sm" className="h-[38px] shrink-0 px-4"><Link href="/client-progress">Δες το τελευταίο</Link></Button></CardContent></Card>}
@@ -295,6 +547,8 @@ function ClientDashboardContent() {
   const [updates, setUpdates] = useState<Update[]>([])
   const [trainingPlan, setTrainingPlan] = useState<TrainingPlan>(null)
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlanPreview>(null)
+  const [workoutHistory, setWorkoutHistory] = useState<WorkoutLog[]>([])
+  const [activeWorkout, setActiveWorkout] = useState<ActiveWorkout>(null)
   const [paymentData, setPaymentData] = useState<PaymentData | null>(null)
   const [answers, setAnswers] = useState<Record<number, string | string[]>>({})
   const [files, setFiles] = useState<Array<{ file: File; questionId: number }>>([])
@@ -308,13 +562,15 @@ function ClientDashboardContent() {
   const loadDashboard = async () => {
     setLoading(true)
     try {
-      const [dashboardResponse, updatesResponse, questionsResponse, trainingResponse, nutritionResponse, paymentsResponse] = await Promise.all([
+      const [dashboardResponse, updatesResponse, questionsResponse, trainingResponse, nutritionResponse, paymentsResponse, workoutHistoryResponse, activeWorkoutResponse] = await Promise.all([
         api.get<DashboardData>("/client/dashboard"),
         api.get<Update[]>("/client/updates"),
         api.get<Question[]>("/updates/questions"),
-        api.get<TrainingPlan>("/client/training-plan"),
+        api.get<TrainingPlan>("/client/training-plan", { cache: "no-store" }),
         api.get<NutritionPlanPreview>("/client/nutrition-plan"),
         api.get<PaymentData>("/client/payments"),
+        api.get<WorkoutLog[]>("/client/workout/history", { cache: "no-store" }),
+        api.get<ActiveWorkout>("/client/workout/active", { cache: "no-store" }),
       ])
       setDashboard(dashboardResponse)
       setUpdates(updatesResponse)
@@ -322,6 +578,8 @@ function ClientDashboardContent() {
       setTrainingPlan(trainingResponse)
       setNutritionPlan(nutritionResponse)
       setPaymentData(paymentsResponse)
+      setWorkoutHistory(workoutHistoryResponse)
+      setActiveWorkout(activeWorkoutResponse)
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Δεν ήταν δυνατή η φόρτωση του dashboard.")
     } finally {
@@ -330,6 +588,20 @@ function ClientDashboardContent() {
   }
 
   useEffect(() => { void loadDashboard() }, [])
+
+  useEffect(() => {
+    const refreshAfterReturn = () => {
+      if (document.visibilityState === "visible") void loadDashboard()
+    }
+    window.addEventListener("pageshow", refreshAfterReturn)
+    document.addEventListener("visibilitychange", refreshAfterReturn)
+    window.addEventListener("workout-completed", refreshAfterReturn)
+    return () => {
+      window.removeEventListener("pageshow", refreshAfterReturn)
+      document.removeEventListener("visibilitychange", refreshAfterReturn)
+      window.removeEventListener("workout-completed", refreshAfterReturn)
+    }
+  }, [])
 
   useEffect(() => {
     if (!dashboard?.client.birthdayToday || !user?.id || user.role !== "client") return
@@ -409,7 +681,7 @@ function ClientDashboardContent() {
   const upcomingDate = formatDate(dashboard?.nextUpdateDate)
 
   return (
-    <ClientShell user={user} logout={logout} paymentApproved={subscriptionActive} active="dashboard">
+    <ClientShell user={user} logout={logout} paymentApproved={subscriptionActive} subscriptionStatus={dashboard?.client.subscriptionStatus} daysRemaining={dashboard?.client.daysRemaining} active="dashboard">
       {showBirthdayCelebration && <BirthdayCelebration firstName={dashboard?.client.firstName || ""} onClose={() => setShowBirthdayCelebration(false)} />}
       <main className="mx-auto w-full max-w-none space-y-5 p-4 sm:p-6 lg:px-10 lg:py-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -421,7 +693,7 @@ function ClientDashboardContent() {
           <div className={activeTab === "overview" ? "hidden" : "w-full overflow-x-auto"}><TabsList className="h-auto"><TabsTrigger value="overview">Αρχική</TabsTrigger><TabsTrigger value="update">Update</TabsTrigger></TabsList></div>
 
           <TabsContent value="overview" className="space-y-6">
-            <ClientHomeOverview dashboard={dashboard} trainingPlan={trainingPlan} nutritionPlan={nutritionPlan} onOpenUpdate={() => setActiveTab("update")} />
+            <ClientHomeOverviewNext dashboard={dashboard} trainingPlan={trainingPlan} nutritionPlan={nutritionPlan} workoutHistory={workoutHistory} activeWorkout={activeWorkout} onOpenUpdate={() => setActiveTab("update")} />
             <div className="hidden">
             {dashboard?.todayIsUpdateDay && !dashboard.alreadySubmittedThisWeek && <Alert><CalendarDays className="h-4 w-4" /><AlertTitle>Σήμερα είναι ημέρα update</AlertTitle><AlertDescription className="flex flex-wrap items-center gap-3">Συμπλήρωσε το εβδομαδιαίο σου update για να ενημερωθεί ο coach σου.<Button size="sm" onClick={() => setActiveTab("update")}>Συμπλήρωση update</Button></AlertDescription></Alert>}
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -457,5 +729,5 @@ function ClientDashboardContent() {
 }
 
 export default function ClientDashboardPage() {
-  return <ProtectedRoute allow="client-active"><ClientDashboardContent /></ProtectedRoute>
+  return <ProtectedRoute allow="client-dashboard"><ClientDashboardContent /></ProtectedRoute>
 }

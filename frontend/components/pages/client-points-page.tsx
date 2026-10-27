@@ -302,7 +302,7 @@ function ClientPointsContent() {
 
 export default function ClientPointsPage() {
   return (
-    <ProtectedRoute allow="client-active">
+    <ProtectedRoute allow="client-dashboard">
       <ClientPointsContent />
     </ProtectedRoute>
   )

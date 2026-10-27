@@ -1,135 +1,45 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import { Pause, Play, X } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { Pause, Play, RotateCcw, X } from "lucide-react"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
-const formatSeconds = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
-const formatStopwatch = (centiseconds: number) => {
-  const totalSeconds = Math.floor(centiseconds / 100)
-  return `${String(Math.floor(totalSeconds / 60)).padStart(2, "0")}:${String(totalSeconds % 60).padStart(2, "0")}:${String(centiseconds % 100).padStart(2, "0")}`
-}
+const clockStorageKey = "sp-workout-manual-clock"
+const timerText = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
+const stopwatchText = (centiseconds: number) => { const seconds = Math.floor(centiseconds / 100); return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}:${String(centiseconds % 100).padStart(2, "0")}` }
+export type ManualClockStatus = { mode: "timer" | "stopwatch" | null; display: string; running: boolean; startedAt?: number }
+type Clock = { mode: "timer" | "stopwatch"; running: boolean; duration: number; startedAt: number; elapsedBeforeStart: number }
 
-export type ManualClockStatus = {
-  mode: "timer" | "stopwatch" | null
-  display: string
-  running: boolean
-  startedAt?: number
-}
+function useNow(enabled: boolean, every = 250) { const [now, setNow] = useState(() => Date.now()); useEffect(() => { if (!enabled) return; const update = () => setNow(Date.now()); update(); const id = window.setInterval(update, every); document.addEventListener("visibilitychange", update); return () => { window.clearInterval(id); document.removeEventListener("visibilitychange", update) } }, [enabled, every]); return now }
 
-export function RestTimer({ seconds, totalSeconds, exerciseName, nextSet, onChange, onComplete }: {
-  seconds: number
-  totalSeconds: number
-  exerciseName?: string
-  nextSet?: string
-  onChange: (seconds: number) => void
-  onComplete: () => void
-}) {
-  const [paused, setPaused] = useState(false)
-  const [finished, setFinished] = useState(false)
-  const completionScheduled = useRef(false)
-
-  useEffect(() => {
-    if (seconds <= 0 || paused) return
-    const timer = window.setInterval(() => onChange(Math.max(0, seconds - 1)), 1000)
-    return () => window.clearInterval(timer)
-  }, [seconds, paused, onChange])
-
-  useEffect(() => {
-    if (totalSeconds <= 0 || seconds !== 0 || completionScheduled.current) return
-    completionScheduled.current = true
-    setFinished(true)
-    const timeout = window.setTimeout(onComplete, 900)
-    return () => window.clearTimeout(timeout)
-  }, [seconds, totalSeconds, onComplete])
-
-  const radius = 80
-  const circumference = 2 * Math.PI * radius
-  const dashOffset = circumference * (1 - (totalSeconds ? seconds / totalSeconds : 0))
-  const urgent = seconds < 10
-
-  return <>
-    <div className="fixed inset-x-2 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-[60] lg:hidden">
-      <div className="overflow-hidden rounded-xl border border-border bg-background/95 shadow-xl backdrop-blur">
-        <div className="h-0.5 bg-muted"><div className="h-full bg-primary transition-[width]" style={{ width: `${totalSeconds ? (seconds / totalSeconds) * 100 : 0}%` }} /></div>
-        {finished ? <p className="py-4 text-center text-lg font-semibold">Πάμε!</p> : <div className="grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem_4.5rem] items-center gap-1 p-2">
-          <Button size="sm" variant="secondary" className="h-11 rounded-lg font-semibold" onClick={() => onChange(Math.max(0, seconds - 15))}>-15</Button>
-          <div className="min-w-0 text-center"><p className="truncate text-[11px] font-medium text-muted-foreground">{exerciseName || "Ξεκούραση"}</p><p className={`font-mono text-3xl font-semibold tabular-nums ${urgent ? "animate-pulse text-destructive" : "text-foreground"}`}>{formatSeconds(seconds)}</p></div>
-          <Button size="sm" variant="secondary" className="h-11 rounded-lg font-semibold" onClick={() => onChange(seconds + 15)}>+15</Button>
-          <Button size="sm" className="h-11 rounded-lg px-2 font-semibold" onClick={onComplete}>Skip</Button>
-        </div>}
-      </div>
-    </div>
-
-    <Card className="fixed bottom-4 right-4 z-[60] hidden w-[min(calc(100vw-2rem),22rem)] shadow-xl lg:block">
-      <CardContent className="space-y-5 p-5">
-        <div className="flex items-center justify-between"><div><p className="text-sm font-medium">{exerciseName || "Ξεκούραση"}</p><p className="text-xs text-muted-foreground">Χρόνος ξεκούρασης</p></div><Button size="icon" variant="ghost" onClick={onComplete} aria-label="Κλείσιμο"><X className="h-4 w-4" /></Button></div>
-        {finished ? <p className="py-12 text-center text-xl font-semibold">Πάμε!</p> : <div className="relative mx-auto h-48 w-48"><svg viewBox="0 0 200 200" className="h-full w-full"><circle cx="100" cy="100" r={radius} fill="none" stroke="currentColor" strokeWidth="8" className="text-muted" /><circle cx="100" cy="100" r={radius} fill="none" stroke="currentColor" strokeWidth="8" strokeDasharray={circumference} strokeDashoffset={dashOffset} strokeLinecap="round" className={urgent ? "animate-pulse text-destructive" : "text-primary"} transform="rotate(-90 100 100)" /></svg><p className={`absolute inset-0 grid place-items-center font-mono text-4xl font-semibold tabular-nums ${urgent ? "text-destructive" : ""}`}>{formatSeconds(seconds)}</p></div>}
-        {nextSet && <div className="rounded-md bg-muted/50 p-3 text-center"><p className="text-xs text-muted-foreground">Επόμενο σετ</p><p className="mt-1 text-sm font-medium">{nextSet}</p></div>}
-        <div className="grid grid-cols-2 gap-2"><Button variant="outline" onClick={() => onChange(Math.max(0, seconds - 15))}>-15s</Button><Button variant="outline" onClick={() => onChange(seconds + 15)}>+15s</Button><Button className="col-span-2" onClick={() => setPaused((value) => !value)}>{paused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}{paused ? "Συνέχεια" : "Παύση"}</Button><Button className="col-span-2" variant="outline" onClick={onComplete}>Παράλειψη χρονομέτρου</Button></div>
-      </CardContent>
-    </Card>
-  </>
+export function RestTimer({ seconds, totalSeconds, exerciseName, onChange, onComplete }: { seconds: number; totalSeconds: number; exerciseName?: string; onChange: (seconds: number) => void; onComplete: () => void }) {
+  const started = useRef<number | null>(null); const base = useRef(seconds); const done = useRef(false); const now = useNow(seconds > 0); const [finished, setFinished] = useState(false)
+  useEffect(() => { if (started.current === null) { started.current = Date.now(); base.current = seconds } }, [seconds])
+  useEffect(() => { if (!started.current || seconds <= 0) return; const next = Math.max(0, base.current - Math.floor((now - started.current) / 1000)); if (next !== seconds) onChange(next) }, [now, onChange, seconds])
+  useEffect(() => { if (seconds !== 0 || done.current) return; done.current = true; setFinished(true); navigator.vibrate?.([80, 50, 80]); const id = window.setTimeout(onComplete, 900); return () => window.clearTimeout(id) }, [onComplete, seconds])
+  const progress = totalSeconds ? ((totalSeconds - seconds) / totalSeconds) * 100 : 0
+  return <div className="fixed inset-x-3 bottom-[calc(98px+env(safe-area-inset-bottom))] z-[70] lg:inset-x-auto lg:bottom-5 lg:right-5 lg:w-[31rem]"><div className="relative overflow-hidden rounded-[22px] bg-[#0B0B0B] px-[14px] py-[14px] pl-[18px] text-white shadow-[0_12px_30px_rgba(11,11,11,.3)]"><span className="absolute left-0 top-0 h-1 bg-[#B0F90C] transition-[width]" style={{ width: `${Math.max(0, progress)}%` }} />{finished ? <p className="py-2 text-center text-[22px] font-extrabold italic text-[#B0F90C]">Πάμε!</p> : <div className="flex items-center gap-[10px]"><div className="min-w-0 flex-1"><p className="truncate text-[11px] font-bold text-[#9A9A9A]">Διάλειμμα · {exerciseName || "Ξεκούραση"}</p><p className="font-mono text-[34px] font-extrabold italic leading-none tracking-[-1px] text-[#B0F90C]">{timerText(seconds)}</p></div><button type="button" onClick={() => onChange(Math.max(0, seconds - 15))} className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#1F1F1F] text-[13px] font-extrabold">−15</button><button type="button" onClick={() => onChange(seconds + 15)} className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#1F1F1F] text-[13px] font-extrabold">+15</button><button type="button" onClick={onComplete} className="flex h-11 shrink-0 items-center rounded-full bg-[#B0F90C] px-[14px] text-[13px] font-extrabold text-[#0B0B0B]">Παράλειψη</button></div>}</div></div>
 }
 
 export function ManualWorkoutClock({ open, onOpenChange, defaultSeconds = 90, onStatusChange }: { open: boolean; onOpenChange: (open: boolean) => void; defaultSeconds?: number; onStatusChange?: (status: ManualClockStatus) => void }) {
-  const [timerLeft, setTimerLeft] = useState(defaultSeconds)
-  const [timerRunning, setTimerRunning] = useState(false)
-  const [stopwatchCentiseconds, setStopwatchCentiseconds] = useState(0)
-  const [stopwatchRunning, setStopwatchRunning] = useState(false)
-
-  useEffect(() => {
-    if (!open) return
-    if (!timerRunning && timerLeft === 0) setTimerLeft(defaultSeconds)
-  }, [defaultSeconds, open, timerLeft, timerRunning])
-
-  useEffect(() => {
-    if (!timerRunning || timerLeft <= 0) return
-    const interval = window.setInterval(() => setTimerLeft((value) => Math.max(0, value - 1)), 1000)
-    return () => window.clearInterval(interval)
-  }, [timerLeft, timerRunning])
-
-  useEffect(() => {
-    if (timerLeft === 0 && timerRunning) setTimerRunning(false)
-  }, [timerLeft, timerRunning])
-
-  useEffect(() => {
-    if (!stopwatchRunning) return
-    const interval = window.setInterval(() => setStopwatchCentiseconds((value) => value + 1), 10)
-    return () => window.clearInterval(interval)
-  }, [stopwatchRunning])
-
-  useEffect(() => {
-    if (timerRunning) {
-      onStatusChange?.({ mode: "timer", display: formatSeconds(timerLeft), running: true })
-      return
-    }
-    if (stopwatchRunning) {
-      onStatusChange?.({ mode: "stopwatch", display: formatStopwatch(stopwatchCentiseconds), running: true, startedAt: Date.now() })
-      return
-    }
-    onStatusChange?.({ mode: null, display: "", running: false })
-  }, [onStatusChange, stopwatchRunning, timerLeft, timerRunning, Math.floor(stopwatchCentiseconds / 100)])
-
-  const timerRadius = 88
-  const timerCircumference = 2 * Math.PI * timerRadius
-  const timerProgress = Math.min(1, timerLeft / Math.max(1, defaultSeconds))
-
-  return <Sheet open={open} onOpenChange={onOpenChange}>
-    <SheetContent side="bottom" className="max-h-[82dvh] rounded-t-2xl p-0 sm:mx-auto sm:max-w-md">
-      <SheetHeader className="border-b px-4 pb-3 pt-4 text-left"><SheetTitle>Clock</SheetTitle><SheetDescription className="sr-only">Χειροκίνητος χρονομετρητής για την προπόνηση.</SheetDescription></SheetHeader>
-      <Tabs defaultValue="timer" className="p-4">
-        <TabsList className="grid h-10 w-full grid-cols-2"><TabsTrigger value="timer">Timer</TabsTrigger><TabsTrigger value="stopwatch">Stopwatch</TabsTrigger></TabsList>
-        <TabsContent value="timer" className="space-y-3 pt-4">
-          <div className="relative mx-auto h-44 w-44"><svg viewBox="0 0 200 200" className="h-full w-full"><circle cx="100" cy="100" r={timerRadius} fill="none" stroke="currentColor" strokeWidth="7" className="text-muted" /><circle cx="100" cy="100" r={timerRadius} fill="none" stroke="currentColor" strokeWidth="7" strokeDasharray={timerCircumference} strokeDashoffset={timerCircumference * (1 - timerProgress)} strokeLinecap="round" className="text-primary transition-[stroke-dashoffset] duration-300" transform="rotate(-90 100 100)" /></svg><div className="absolute inset-0 grid place-items-center"><span className="font-mono text-3xl font-semibold tabular-nums">{formatSeconds(timerLeft)}</span></div></div>
-          <div className="grid grid-cols-2 gap-2"><Button variant="ghost" className="h-9 text-sm font-semibold" onClick={() => setTimerLeft((value) => Math.max(0, value - 15))}>-15s</Button><Button variant="ghost" className="h-9 text-sm font-semibold" onClick={() => setTimerLeft((value) => value + 15)}>+15s</Button></div>
-          <Button className="h-10 w-full" variant={timerRunning ? "secondary" : "default"} onClick={() => { if (timerRunning) { setTimerRunning(false); onOpenChange(false); return } setStopwatchRunning(false); setTimerRunning(true) }}>{timerRunning ? "Ακύρωση" : "ΕΚΚΙΝΗΣΗ"}</Button>
-        </TabsContent>
-        <TabsContent value="stopwatch" className="space-y-6 pt-6"><p className="py-6 text-center font-mono text-5xl font-semibold tabular-nums">{formatStopwatch(stopwatchCentiseconds)}</p><div className="grid grid-cols-2 gap-3"><Button className="h-12" onClick={() => { setTimerRunning(false); setStopwatchRunning((value) => !value) }}>{stopwatchRunning ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}{stopwatchRunning ? "Παύση" : "Έναρξη"}</Button><Button className="h-12" variant="outline" onClick={() => { setStopwatchCentiseconds(0); setStopwatchRunning(false) }}>Μηδενισμός</Button></div></TabsContent>
-      </Tabs>
-    </SheetContent>
-  </Sheet>
+  const [tab, setTab] = useState<"timer" | "stopwatch">("timer")
+  const [clock, setClock] = useState<Clock>({ mode: "timer", running: false, duration: defaultSeconds, startedAt: 0, elapsedBeforeStart: 0 })
+  const [laps, setLaps] = useState<number[]>([])
+  const now = useNow(clock.running, 30)
+  const elapsed = clock.running ? clock.elapsedBeforeStart + Math.max(0, now - clock.startedAt) : clock.elapsedBeforeStart
+  const timerLeft = Math.max(0, clock.duration - Math.floor(elapsed / 1000))
+  const centiseconds = Math.floor(elapsed / 10)
+  const display = clock.mode === "timer" ? timerText(timerLeft) : stopwatchText(centiseconds)
+  const running = clock.running
+  useEffect(() => { try { const saved = window.localStorage.getItem(clockStorageKey); if (saved) setClock(JSON.parse(saved) as Clock) } catch { /* safe fallback */ } }, [])
+  useEffect(() => { window.localStorage.setItem(clockStorageKey, JSON.stringify(clock)) }, [clock])
+  useEffect(() => { if (clock.mode === "timer" && clock.running && timerLeft === 0) setClock((value) => ({ ...value, running: false, elapsedBeforeStart: value.duration * 1000 })) }, [clock.mode, clock.running, timerLeft])
+  useEffect(() => { onStatusChange?.(running ? { mode: clock.mode, display, running, startedAt: clock.startedAt } : { mode: null, display: "", running: false }) }, [clock.mode, clock.startedAt, display, onStatusChange, running])
+  const switchTab = (mode: "timer" | "stopwatch") => { setTab(mode); setClock({ mode, running: false, duration: mode === "timer" ? defaultSeconds : 0, startedAt: 0, elapsedBeforeStart: 0 }); setLaps([]) }
+  const setTimer = (seconds: number) => setClock({ mode: "timer", running: false, duration: seconds, startedAt: 0, elapsedBeforeStart: 0 })
+  const toggle = () => setClock((value) => value.running ? { ...value, running: false, elapsedBeforeStart: value.elapsedBeforeStart + Date.now() - value.startedAt } : { ...value, running: true, startedAt: Date.now() })
+  const reset = () => { setClock({ mode: tab, running: false, duration: tab === "timer" ? defaultSeconds : 0, startedAt: 0, elapsedBeforeStart: 0 }); setLaps([]) }
+  const ring = clock.mode === "timer" ? timerLeft / Math.max(1, clock.duration) : (centiseconds % 6000) / 6000
+  const lapRows = useMemo(() => [...laps].reverse(), [laps])
+  return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent side="bottom" showCloseButton={false} className="max-h-[92dvh] rounded-t-[28px] border-0 bg-[#0B0B0B] p-0 text-white sm:mx-auto sm:max-w-md"><SheetHeader className="relative px-5 pb-3 pt-4"><span className="mx-auto mb-3 block h-[5px] w-11 rounded-full bg-[#555555]" /><SheetTitle className="text-center text-[20px] font-extrabold text-white">Ρολόι</SheetTitle><SheetDescription className="sr-only">Χρονόμετρο προπόνησης</SheetDescription><button type="button" onClick={() => onOpenChange(false)} aria-label="Κλείσιμο" className="absolute right-4 top-5 grid h-9 w-9 place-items-center rounded-full bg-[#1F1F1F]"><X className="h-4 w-4" /></button></SheetHeader><div className="border-t border-[#1F1F1F] px-4 pb-[calc(18px+env(safe-area-inset-bottom))] pt-4"><div className="grid h-12 grid-cols-2 rounded-[14px] bg-[#1A1A1A] p-1"><button type="button" onClick={() => switchTab("timer")} className={`rounded-[10px] text-[14px] font-extrabold ${tab === "timer" ? "bg-[#B0F90C] text-[#0B0B0B]" : "text-[#9A9A9A]"}`}>Αντίστροφη</button><button type="button" onClick={() => switchTab("stopwatch")} className={`rounded-[10px] text-[14px] font-extrabold ${tab === "stopwatch" ? "bg-[#B0F90C] text-[#0B0B0B]" : "text-[#9A9A9A]"}`}>Χρονόμετρο</button></div><div className="relative mx-auto my-5 grid h-[210px] w-[210px] place-items-center rounded-full" style={{ background: `conic-gradient(#B0F90C ${ring * 360}deg, #333333 0deg)` }}><div className="flex h-[188px] w-[188px] flex-col items-center justify-center rounded-full bg-[#0B0B0B] text-center"><p className="font-mono text-[52px] font-extrabold italic leading-none tracking-[-2px]">{tab === "timer" ? timerText(timerLeft) : <>{stopwatchText(centiseconds).slice(0, 5)}<span className="text-[26px] text-[#B0F90C]">.{stopwatchText(centiseconds).slice(-2)}</span></>}</p>{tab === "stopwatch" && <p className="mt-2 text-[12px] text-[#9A9A9A]">Γύρος {laps.length + 1}</p>}</div></div>{tab === "timer" ? <><div className="flex items-center justify-between gap-3"><button type="button" onClick={() => setTimer(Math.max(0, timerLeft - 15))} className="grid h-14 w-14 place-items-center rounded-full bg-[#1F1F1F] text-[15px] font-extrabold">−15</button><div className="flex gap-1.5">{[30, 60, 90, 120, 180, 300].map((value) => <button key={value} type="button" onClick={() => setTimer(value)} className="rounded-full border border-[#333333] px-2 py-1 text-[11px] font-bold text-[#C9C9C4]">{value < 60 ? `${value}″` : `${value / 60}′`}</button>)}</div><button type="button" onClick={() => setTimer(timerLeft + 15)} className="grid h-14 w-14 place-items-center rounded-full bg-[#1F1F1F] text-[15px] font-extrabold">+15</button></div><div className="mt-5 grid grid-cols-2 gap-2"><button type="button" onClick={reset} className="h-14 rounded-full bg-[#1F1F1F] text-[15px] font-extrabold">Μηδενισμός</button><button type="button" onClick={toggle} className="h-14 rounded-full bg-[#B0F90C] text-[15px] font-extrabold text-[#0B0B0B]">{running ? "Παύση" : timerLeft === 0 ? "Εκκίνηση" : "Έναρξη"}</button></div></> : <><div className="max-h-[120px] overflow-y-auto border-y border-[#1F1F1F]">{lapRows.map((lap, index) => <div key={`${lap}-${index}`} className="flex items-center justify-between border-b border-[#1F1F1F] py-2 text-[14px]"><span className="font-semibold text-[#9A9A9A]">Γύρος {laps.length - index}</span><span className="font-extrabold">{stopwatchText(lap)}</span></div>)}</div><div className="mt-5 grid grid-cols-2 gap-[10px]"><button type="button" onClick={() => setLaps((current) => [...current, centiseconds])} disabled={!running} className="h-14 rounded-full bg-[#1F1F1F] text-[15px] font-extrabold disabled:opacity-40">Γύρος</button><button type="button" onClick={toggle} className="flex h-14 items-center justify-center gap-2 rounded-full bg-[#B0F90C] text-[15px] font-extrabold text-[#0B0B0B]">{running ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 fill-current" />}{running ? "Παύση" : "Έναρξη"}</button></div><button type="button" onClick={reset} className="mt-2 flex h-10 w-full items-center justify-center gap-2 text-[13px] font-bold text-[#9A9A9A]"><RotateCcw className="h-4 w-4" />Μηδενισμός</button></>}</div></SheetContent></Sheet>
 }

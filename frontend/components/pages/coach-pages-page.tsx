@@ -31,7 +31,7 @@ const pageGroups: Array<{ title: string; pages: AppPage[] }> = [
     title: "Προπόνηση & Διατροφή",
     pages: [
       { href: "/exercises", label: "Βιβλιοθήκη Ασκήσεων", icon: Dumbbell, access: "coach" },
-      { href: "/coach/foods", label: "Βιβλιοθήκη Τροφίμων", icon: Apple, access: "coach" },
+      { href: "/coach/foods", label: "Τρόφιμα & Συμπληρώματα", icon: Apple, access: "coach" },
       { href: "/coach/templates/training/new", label: "Νέο Πρότυπο Προπόνησης", icon: FilePlus2, access: "coach" },
       { href: "/coach/templates/nutrition/new", label: "Νέο Πρότυπο Διατροφής", icon: FilePlus2, access: "coach" },
     ],

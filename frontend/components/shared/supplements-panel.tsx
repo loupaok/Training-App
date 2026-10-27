@@ -20,6 +20,7 @@ type Supplement = {
   times_per_day: number | string | null;
   link: string | null;
 };
+type SupplementTemplate = { id: number | string; title: string; notes?: string; items: Array<{ name: string; dosage?: string; timing?: string; link_url?: string; linkUrl?: string }> };
 
 const doseUnits: DoseUnit[] = ["ml", "gr", "mg"];
 const emptyForm = { name: "", doseAmount: "", doseUnit: "mg" as DoseUnit, timesPerDay: "", link: "" };
@@ -36,6 +37,9 @@ export function SupplementsPanel({ clientId }: { clientId: string | number }) {
   const [togglingSection, setTogglingSection] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [savingNotes, setSavingNotes] = useState(false);
+  const [templates, setTemplates] = useState<SupplementTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [applyingTemplate, setApplyingTemplate] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -54,7 +58,36 @@ export function SupplementsPanel({ clientId }: { clientId: string | number }) {
 
   useEffect(() => {
     void load();
+    api.get<SupplementTemplate[]>("/templates/supplements").then(setTemplates).catch(() => setTemplates([]));
   }, [clientId]);
+
+  const applyTemplate = async () => {
+    let template = templates.find((item) => String(item.id) === selectedTemplateId);
+    if (template) template = await api.get<SupplementTemplate>(`/templates/supplements/${template.id}`);
+    if (!template?.items?.length) return;
+    setApplyingTemplate(true);
+    try {
+      const created = await Promise.all(template.items.map(async (item) => {
+        const match = String(item.dosage || "").match(/([\d.,]+)\s*(mg|ml|gr|g)?/i);
+        return api.post<Supplement>(`/clients/${clientId}/supplements`, {
+          name: item.name,
+          doseAmount: match ? Number(match[1].replace(",", ".")) : null,
+          doseUnit: match?.[2]?.toLowerCase() === "g" ? "gr" : match?.[2]?.toLowerCase() || "mg",
+          timesPerDay: 1,
+          link: item.linkUrl || item.link_url || "",
+        });
+      }));
+      setSupplements((current) => [...current, ...created]);
+      if (template.notes?.trim()) {
+        const nextNotes = template.notes?.trim() || "";
+        setGeneralNotes(nextNotes);
+        await api.put(`/clients/${clientId}/supplements/notes`, { generalNotes: nextNotes });
+      }
+      setSelectedTemplateId("");
+    } catch (applyError) {
+      setError(applyError instanceof Error ? applyError.message : "Δεν εφαρμόστηκε το πρότυπο.");
+    } finally { setApplyingTemplate(false); }
+  };
 
   const startEdit = (supplement: Supplement) => {
     setEditingId(supplement.id);
@@ -159,6 +192,7 @@ export function SupplementsPanel({ clientId }: { clientId: string | number }) {
           <p className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p>
         )}
 
+        {templates.length > 0 && <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/20 p-3"><Select value={selectedTemplateId || "__none"} onValueChange={(value) => setSelectedTemplateId(!value || value === "__none" ? "" : value)}><SelectTrigger className="min-w-56 flex-1"><SelectValue placeholder="Επιλογή προτύπου" /></SelectTrigger><SelectContent><SelectItem value="__none">Επιλογή προτύπου</SelectItem>{templates.map((template) => <SelectItem key={template.id} value={String(template.id)}>{template.title}</SelectItem>)}</SelectContent></Select><Button type="button" disabled={!selectedTemplateId || applyingTemplate} onClick={() => void applyTemplate()}>{applyingTemplate ? "Προσθήκη…" : "Εφαρμογή προτύπου"}</Button></div>}
         {supplements.length > 0 && (
           <div className="space-y-2">
             {supplements.map((supplement) => (

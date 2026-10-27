@@ -15,6 +15,13 @@ import { optimizeUploadedImages } from '../utils/image-optimization.js';
 const router = express.Router();
 router.use(authorizeRole(['client']));
 
+async function ensureSubscriptionCancellationSchema(connection) {
+  const [columns] = await connection.query('SHOW COLUMNS FROM subscriptions');
+  if (!columns.some((column) => column.Field === 'cancelled_at')) {
+    await connection.query('ALTER TABLE subscriptions ADD COLUMN cancelled_at DATETIME NULL');
+  }
+}
+
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, file, callback) => {
@@ -158,10 +165,11 @@ async function getPlans(connection, clientId) {
     const [meals] = await connection.query('SELECT * FROM nutrition_plan_meals WHERE nutrition_plan_id = ? ORDER BY day_of_week, sort_order', [nutrition.id]);
     const mealIds = meals.map((meal) => meal.id);
     const [foods] = mealIds.length ? await connection.query(
-      `SELECT npf.*, f.image_url AS food_image
+      `SELECT npf.*, f.image_url AS food_image, f.category AS food_category
        FROM nutrition_plan_foods npf
        LEFT JOIN foods f ON (
-         LOWER(TRIM(npf.food_name)) = LOWER(TRIM(f.name_gr))
+         f.id = npf.food_id
+         OR LOWER(TRIM(npf.food_name)) = LOWER(TRIM(f.name_gr))
          OR LOWER(TRIM(npf.food_name)) = LOWER(TRIM(f.name_en))
        )
        WHERE npf.meal_id IN (?)
@@ -186,6 +194,7 @@ router.get('/dashboard', async (req, res) => {
   try {
     try {
       await ensureWeeklyUpdateSchema(connection);
+      await ensureSubscriptionCancellationSchema(connection);
     } catch (schemaError) {
       console.error('Client dashboard weekly-update schema check failed:', schemaError);
     }
@@ -199,7 +208,7 @@ router.get('/dashboard', async (req, res) => {
       [clientId],
     );
     const [schedules] = await connection.query('SELECT day_of_week, next_due_date FROM update_schedule WHERE client_id = ? ORDER BY updated_at DESC LIMIT 1', [clientId]);
-    const [subscriptions] = await connection.query("SELECT plan_name, status, start_date, end_date, DATEDIFF(end_date, CURDATE()) AS days_remaining FROM subscriptions WHERE client_id = ? AND status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE() ORDER BY end_date DESC LIMIT 1", [clientId]);
+    const [subscriptions] = await connection.query("SELECT plan_name, status, start_date, end_date, COALESCE(cancelled_at, CASE WHEN status = 'cancelled' THEN NOW() ELSE NULL END) AS cancelled_at, DATEDIFF(end_date, CURDATE()) AS days_remaining FROM subscriptions WHERE client_id = ? AND ((status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE()) OR status IN ('cancelled', 'expired')) ORDER BY CASE WHEN status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE() THEN 0 ELSE 1 END, end_date DESC LIMIT 1", [clientId]);
     let updates = [];
     try {
       updates = await getUpdates(connection, clientId, 52);
@@ -223,7 +232,7 @@ router.get('/dashboard', async (req, res) => {
     const ratings = [lastUpdate?.trainingRating, lastUpdate?.nutritionRating, lastUpdate?.generalRating].filter(Number.isFinite);
     const averageRating = ratings.length ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length : null;
     res.json({
-      client: { firstName: String(users[0]?.full_name || '').trim().split(/\s+/)[0] || 'Client', currentWeight: lastWeightUpdate?.weight ?? users[0]?.weight_kg ?? null, subscriptionStatus: subscription?.status || null, daysRemaining: subscription?.days_remaining ?? null, planName: subscription?.plan_name || null, subscriptionStartDate: subscription?.start_date || null, subscriptionEndDate: subscription?.end_date || null, demoUpdatesEnabled, birthdayToday: Boolean(users[0]?.birthday_today) },
+      client: { firstName: String(users[0]?.full_name || '').trim().split(/\s+/)[0] || 'Client', currentWeight: lastWeightUpdate?.weight ?? users[0]?.weight_kg ?? null, subscriptionStatus: subscription?.status || null, daysRemaining: subscription?.days_remaining ?? null, planName: subscription?.plan_name || null, subscriptionStartDate: subscription?.start_date || null, subscriptionEndDate: subscription?.end_date || null, subscriptionCancelledAt: subscription?.cancelled_at || null, demoUpdatesEnabled, birthdayToday: Boolean(users[0]?.birthday_today) },
       todayIsUpdateDay: demoUpdatesEnabled || todayIsUpdateDay, alreadySubmittedThisWeek: demoUpdatesEnabled ? false : alreadySubmittedThisWeek, nextUpdateDate: schedule?.next_due_date || nextScheduledDate(schedule?.day_of_week), streak: streakFor(updates), updatesCount: updates.length,
       lastUpdate: lastUpdate ? { submittedAt: lastUpdate.submittedAt, averageRating } : null,
       lastWeightUpdate: lastWeightUpdate ? { submittedAt: lastWeightUpdate.submittedAt } : null,
@@ -361,6 +370,22 @@ router.get('/workout/history', async (req, res) => {
     const ids = logs.map((log) => log.id);
     const [sets] = await connection.query('SELECT * FROM workout_set_logs WHERE workout_log_id IN (?) ORDER BY set_number', [ids]);
     res.json(logs.map((log) => ({ ...log, setLogs: sets.filter((set) => set.workout_log_id === log.id) })));
+  } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
+});
+
+router.get('/workout/active', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureWorkoutSchema(connection);
+    const [logs] = await connection.query(
+      `SELECT id, training_plan_id, day_number, day_name, started_at
+       FROM workout_logs
+       WHERE client_id = ? AND completed_at IS NULL AND DATE(started_at) = CURDATE()
+       ORDER BY started_at DESC, id DESC
+       LIMIT 1`,
+      [req.user.id],
+    );
+    res.json(logs[0] || null);
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
 });
 
