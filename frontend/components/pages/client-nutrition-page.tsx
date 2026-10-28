@@ -318,7 +318,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
                 <MacroProgress label="Υδατάνθρακες" value={totals.carbs} calories={carbsCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-amber-100 [&_[data-slot=progress-indicator]]:bg-amber-500" />
                 <MacroProgress label="Λίπος" value={totals.fats} calories={fatCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-pink-100 [&_[data-slot=progress-indicator]]:bg-pink-500" />
               </div>
-              <div className="rounded-xl bg-emerald-50 p-4 dark:bg-emerald-950/20"><p className="text-sm text-muted-foreground">Ημερήσιο σύνολο</p><p className="mt-1 text-xl font-bold">{Math.round(totals.calories).toLocaleString("el-GR")} kcal</p></div>
+              <div className="rounded-xl bg-accent/10 p-4"><p className="text-sm text-muted-foreground">Ημερήσιο σύνολο</p><p className="mt-1 text-xl font-bold">{Math.round(totals.calories).toLocaleString("el-GR")} kcal</p></div>
             </div>
           </AccordionContent>
         </AccordionItem>
@@ -338,9 +338,9 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
               <div className="pl-5"><MacroProgress label="Λίπος" value={totals.fats} calories={fatCalories} totalCalories={macroCalories} progressClass="[&_[data-slot=progress-track]]:bg-pink-100 [&_[data-slot=progress-indicator]]:bg-pink-500" /></div>
             </div>
 
-            <div className="rounded-xl bg-emerald-50 p-5 dark:bg-emerald-950/20">
+            <div className="rounded-xl bg-accent/10 p-5">
               <div className="flex items-center gap-3">
-                <span className="grid h-11 w-11 place-items-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50">
+                <span className="grid h-11 w-11 place-items-center rounded-full bg-accent/20 text-emerald-600">
                   <ChartNoAxesColumnIncreasing className="h-6 w-6" />
                 </span>
                 <div>
@@ -471,7 +471,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
         <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-[460px]" showCloseButton={false}>
           <SheetHeader className="gap-3 border-b border-[#ececea] px-7 pb-4 pt-[22px]">
             <div className="flex items-start justify-between gap-4"><div><SheetTitle className="text-xl font-extrabold">Λίστα για ψώνια</SheetTitle><p className="mt-1 text-xs text-muted-foreground">Από το πλάνο διατροφής σου</p></div><Button variant="outline" size="icon" className="h-10 w-10 rounded-xl" onClick={() => setShoppingOpen(false)} aria-label="Κλείσιμο"><X className="h-[18px] w-[18px]" /></Button></div>
-            <div className="flex items-center justify-between gap-3"><span className="text-[13px] font-semibold">Για πόσες ημέρες;</span><div className="flex rounded-xl bg-[#f2f2f0] p-[3px]">{([3, 7, 14] as const).map((days) => <button key={days} type="button" onClick={() => setShoppingDays(days)} className={`h-8 rounded-[9px] px-3.5 text-[13px] font-bold ${shoppingDays === days ? "bg-black text-accent" : "text-[#555]"}`}>{days}{days === 7 ? " ημέρες" : ""}</button>)}</div></div>
+            <div className="flex items-center justify-between gap-3"><span className="text-[13px] font-semibold">Για πόσες ημέρες;</span><div className="flex rounded-xl bg-muted p-[3px]">{([3, 7, 14] as const).map((days) => <button key={days} type="button" onClick={() => setShoppingDays(days)} className={`h-8 rounded-[9px] px-3.5 text-[13px] font-bold ${shoppingDays === days ? "bg-black text-accent" : "text-muted-foreground"}`}>{days}{days === 7 ? " ημέρες" : ""}</button>)}</div></div>
           </SheetHeader>
           <div className="min-h-0 flex-1 overflow-y-auto px-7 py-[18px]">
             {shoppingGroups.map(([category, categoryItems]) => <section key={category} className="mb-4"><p className="pb-1.5 text-[11px] font-extrabold uppercase tracking-[1px] text-muted-foreground">{category}</p>{categoryItems.map((item) => { const isChecked = Boolean(checked[item.key]); return <label key={item.key} className={`flex cursor-pointer items-center gap-3 border-b border-[#f0f0ee] py-[9px] ${isChecked ? "text-[#9a9a9a]" : ""}`}><Checkbox checked={isChecked} onCheckedChange={(value) => setChecked((current) => ({ ...current, [item.key]: value === true }))} className="h-[22px] w-[22px] rounded-[7px] border-[#cfcfcb] data-[state=checked]:border-black data-[state=checked]:bg-black data-[state=checked]:text-accent" />{item.imageUrl ? <img src={resolveMediaUrl(item.imageUrl)} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" /> : <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#f2f2f0] text-xs font-bold text-[#6a6a6a]">{item.name.trim().charAt(0).toLocaleUpperCase("el-GR")}</span>}<span className={`min-w-0 flex-1 text-sm font-semibold ${isChecked ? "line-through" : ""}`}>{item.name}</span><span className="whitespace-nowrap text-[11px] text-[#9a9a9a]">{item.quantity === null ? "χωρίς ποσότητα" : `${formatQuantity(item)} × ${shoppingDays}`}</span><span className="w-16 shrink-0 text-right text-sm font-extrabold">{formatQuantityForDays(item, shoppingDays)}</span></label> })}</section>)}

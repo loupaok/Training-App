@@ -92,9 +92,18 @@ function applyBranding(branding: BrandingData, isDark: boolean) {
     root.style.setProperty("--foreground", asHslColor(branding.fontColor));
     root.style.setProperty("--title-color", asHslColor(branding.titleColor));
   }
-  root.style.setProperty("--primary", asHslColor(branding.buttonColor));
-  root.style.setProperty("--button-hover", asHslColor(branding.buttonHoverColor));
-  root.style.setProperty("--primary-foreground", asHslColor(branding.buttonTextColor));
+  // Same reasoning as --foreground/--title-color above: the coach's branded
+  // button colors are only meant for light mode, so leave the .dark class's
+  // own --primary/--primary-foreground (black/lime) in charge in dark mode.
+  if (isDark) {
+    root.style.removeProperty("--primary");
+    root.style.removeProperty("--button-hover");
+    root.style.removeProperty("--primary-foreground");
+  } else {
+    root.style.setProperty("--primary", asHslColor(branding.buttonColor));
+    root.style.setProperty("--button-hover", asHslColor(branding.buttonHoverColor));
+    root.style.setProperty("--primary-foreground", asHslColor(branding.buttonTextColor));
+  }
 
   let buttonHoverStyle = document.getElementById("branding-button-hover-style") as HTMLStyleElement | null;
   if (!buttonHoverStyle) {
@@ -102,7 +111,7 @@ function applyBranding(branding: BrandingData, isDark: boolean) {
     buttonHoverStyle.id = "branding-button-hover-style";
     document.head.appendChild(buttonHoverStyle);
   }
-  buttonHoverStyle.textContent = `
+  buttonHoverStyle.textContent = isDark ? "" : `
     .btn-primary:hover,
     [data-primary-btn]:hover,
     button[data-slot="button"].bg-primary:hover {

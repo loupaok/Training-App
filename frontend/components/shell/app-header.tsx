@@ -10,7 +10,6 @@ import { getInitials } from "@/lib/media";
 import type { AuthUser } from "@/types/auth";
 
 export function AppHeader({
-  title,
   user,
   logout,
 }: {
@@ -30,11 +29,12 @@ export function AppHeader({
   }
 
   return (
-    <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 sm:px-6">
+    <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 sm:px-6 dark:border-white/10 dark:bg-[#0B0B0B]">
       <div className="flex min-w-0 items-center gap-3">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/brand/sp-team-logo-black.svg" alt="SP Team" className="h-6 w-auto shrink-0 lg:hidden" />
-        <h1 className="truncate text-lg font-extrabold tracking-[-0.3px]">{title}</h1>
+        <img src="/brand/sp-team-logo-black.svg" alt="SP Team" className="h-6 w-auto shrink-0 dark:hidden lg:hidden" />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/sp-team-logo-white.svg" alt="SP Team" className="hidden h-6 w-auto shrink-0 dark:block lg:hidden" />
         {user?.role && (
           <Badge variant="secondary" className="hidden capitalize sm:inline-flex">
             {user.role}

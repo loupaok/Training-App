@@ -359,7 +359,12 @@ router.get('/workout/history', async (req, res) => {
   const connection = await pool.getConnection();
   try {
     await ensureWorkoutSchema(connection);
-    const [logs] = await connection.query('SELECT * FROM workout_logs WHERE client_id = ? AND completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 10', [req.user.id]);
+    const planId = Number(req.query.planId);
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 50));
+    const filters = ['client_id = ?', 'completed_at IS NOT NULL'];
+    const values = [req.user.id];
+    if (Number.isInteger(planId) && planId > 0) { filters.push('training_plan_id = ?'); values.push(planId); }
+    const [logs] = await connection.query(`SELECT * FROM workout_logs WHERE ${filters.join(' AND ')} ORDER BY completed_at DESC LIMIT ?`, [...values, limit]);
     if (!logs.length) return res.json([]);
     const ids = logs.map((log) => log.id);
     const [sets] = await connection.query('SELECT * FROM workout_set_logs WHERE workout_log_id IN (?) ORDER BY set_number', [ids]);
@@ -408,6 +413,25 @@ router.get('/workout/exercise-history', async (req, res) => {
       completedAt: session.completed_at,
       sets: sets.filter((set) => set.workout_log_id === session.id),
     })));
+  } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
+});
+
+router.get('/workout/exercise-best', async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureWorkoutSchema(connection);
+    const exerciseName = String(req.query.exerciseName || '').trim();
+    if (!exerciseName) return res.status(400).json({ message: 'exerciseName is required.' });
+    const [[record]] = await connection.query(
+      `SELECT COALESCE(MAX(workout_sets.weight_kg), 0) AS bestWeight
+       FROM workout_set_logs AS workout_sets
+       INNER JOIN workout_logs AS workout_log ON workout_log.id = workout_sets.workout_log_id
+       WHERE workout_log.client_id = ?
+         AND workout_log.completed_at IS NOT NULL
+         AND workout_sets.exercise_name = ?`,
+      [req.user.id, exerciseName]
+    );
+    res.json({ bestWeight: Number(record?.bestWeight || 0) });
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
 });
 

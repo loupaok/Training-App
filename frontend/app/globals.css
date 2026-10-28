@@ -224,7 +224,7 @@
 [class*="ring-orange-"],
 [class*="ring-teal-"],
 [class*="ring-rose-"] {
-  border-color: var(--sp-border) !important;
+  border-color: var(--border) !important;
   --tw-ring-color: var(--sp-lime) !important;
 }
 
@@ -241,6 +241,21 @@
 .dark [class*="text-teal-"],
 .dark [class*="text-rose-"] {
   color: var(--sp-lime) !important;
+}
+
+.dark [class*="bg-green-"],
+.dark [class*="bg-emerald-"],
+.dark [class*="bg-blue-"],
+.dark [class*="bg-sky-"],
+.dark [class*="bg-indigo-"],
+.dark [class*="bg-violet-"],
+.dark [class*="bg-purple-"],
+.dark [class*="bg-amber-"],
+.dark [class*="bg-yellow-"],
+.dark [class*="bg-orange-"],
+.dark [class*="bg-teal-"],
+.dark [class*="bg-rose-"] {
+  background-color: color-mix(in oklab, var(--sp-lime) 12%, var(--sp-black-2)) !important;
 }
 
 [data-slot="progress-indicator"] {
