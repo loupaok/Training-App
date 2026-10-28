@@ -9,7 +9,6 @@ type OfflineSet = {
   targetReps: number
   repsCompleted: number
   weightKg: number
-  setType: string
 }
 
 export type PendingOfflineWorkout = {

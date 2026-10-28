@@ -72,7 +72,6 @@ export async function ensureWorkoutSchema(connection) {
       target_reps INT NULL,
       reps_completed INT NULL,
       weight_kg DECIMAL(6,2) DEFAULT 0,
-      set_type VARCHAR(20) NOT NULL DEFAULT 'normal',
       completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (workout_log_id) REFERENCES workout_logs(id) ON DELETE CASCADE,
       UNIQUE KEY unique_workout_exercise_set (workout_log_id, exercise_name, set_number)
@@ -81,7 +80,6 @@ export async function ensureWorkoutSchema(connection) {
   await connection.query("ALTER TABLE workout_logs ADD COLUMN IF NOT EXISTS workout_feeling VARCHAR(20) NULL");
   await connection.query("ALTER TABLE workout_logs ADD COLUMN IF NOT EXISTS offline_sync_id VARCHAR(80) NULL");
   await connection.query("CREATE UNIQUE INDEX IF NOT EXISTS unique_offline_workout ON workout_logs (client_id, offline_sync_id)");
-  await connection.query("ALTER TABLE workout_set_logs ADD COLUMN IF NOT EXISTS set_type VARCHAR(20) NOT NULL DEFAULT 'normal'");
 }
 
 const today = (value = new Date()) => {
@@ -303,20 +301,16 @@ router.post('/workout/log-set', async (req, res) => {
     const weightKg = Math.max(0, Number(req.body.weightKg) || 0);
     const exerciseName = String(req.body.exerciseName || '').trim().slice(0, 255);
     const exerciseId = Number(req.body.exerciseId) || null;
-    const setType = String(req.body.setType || 'normal').trim().toLowerCase();
-    if (!['normal', 'warmup', 'drop', 'failure'].includes(setType)) {
-      return res.status(400).json({ message: 'Invalid set type.' });
-    }
     if (!Number.isInteger(workoutLogId) || !Number.isInteger(setNumber) || setNumber < 1 || !exerciseName) {
       return res.status(400).json({ message: 'Invalid set details.' });
     }
     const [logs] = await connection.query('SELECT id FROM workout_logs WHERE id = ? AND client_id = ? AND completed_at IS NULL', [workoutLogId, req.user.id]);
     if (!logs.length) return res.status(404).json({ message: 'Active workout not found.' });
     await connection.query(
-      `INSERT INTO workout_set_logs (workout_log_id, exercise_name, exercise_id, set_number, target_reps, reps_completed, weight_kg, set_type)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE target_reps = VALUES(target_reps), reps_completed = VALUES(reps_completed), weight_kg = VALUES(weight_kg), set_type = VALUES(set_type), completed_at = CURRENT_TIMESTAMP`,
-      [workoutLogId, exerciseName, exerciseId, setNumber, targetReps, repsCompleted, weightKg, setType]
+      `INSERT INTO workout_set_logs (workout_log_id, exercise_name, exercise_id, set_number, target_reps, reps_completed, weight_kg)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE target_reps = VALUES(target_reps), reps_completed = VALUES(reps_completed), weight_kg = VALUES(weight_kg), completed_at = CURRENT_TIMESTAMP`,
+      [workoutLogId, exerciseName, exerciseId, setNumber, targetReps, repsCompleted, weightKg]
     );
     res.json({ success: true });
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }

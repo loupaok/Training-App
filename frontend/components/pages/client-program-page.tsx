@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { LineChart } from "@tremor/react"
-import { ChevronDown, ChevronLeft, ChevronRight, Clock3, Dumbbell, ExternalLink, ImageOff, Info, Layers3, Play, Plus, Settings2, TrendingUp, Volume2, VolumeX, X } from "lucide-react"
+import { ChevronDown, ChevronLeft, ChevronRight, Clock3, Dumbbell, ImageOff, Info, Layers3, Play, Plus, Settings2, TrendingUp, Volume2, VolumeX, X } from "lucide-react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { ManualWorkoutClock, RestTimer, type ManualClockStatus } from "@/components/client/rest-timer"
 import { MobileWorkoutFlow, MobileWorkoutOverview } from "@/components/client/mobile-workout-flow"
-import { SetRow, type SetType } from "@/components/client/set-row"
+import { SetRow } from "@/components/client/set-row"
 import { WorkoutSummary, type WorkoutFeeling } from "@/components/client/workout-summary"
 import { ClientShell } from "@/components/shell/client-shell"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -116,7 +116,6 @@ function ClientProgramContent() {
   const [offlineWorkoutId, setOfflineWorkoutId] = useState<string | null>(null)
   const [dayIndex, setDayIndex] = useState(0)
   const [sets, setSets] = useState<Record<string, SetState>>({})
-  const [setTypes, setSetTypes] = useState<Record<string, SetType>>({})
   const [previousSets, setPreviousSets] = useState<Record<string, { weight: number; reps: number }>>({})
   const [personalBests, setPersonalBests] = useState<Record<string, number>>({})
   const [extraSets, setExtraSets] = useState<Record<string, number>>({})
@@ -198,7 +197,6 @@ function ClientProgramContent() {
           setWorkoutLogId(parsed.workoutLogId ?? null)
           setOfflineWorkoutId(parsed.offlineWorkoutId ?? null)
           setSets(parsed.sets || {})
-          setSetTypes(parsed.setTypes || {})
           setPreviousSets(parsed.previousSets || {})
           setPersonalBests(parsed.personalBests || {})
           setExtraSets(parsed.extraSets || {})
@@ -233,12 +231,12 @@ function ClientProgramContent() {
   useEffect(() => {
     if (!draftRestored) return
     if (phase === "workout" || phase === "complete") {
-      window.sessionStorage.setItem(workoutDraftKey, JSON.stringify({ phase, dayIndex, workoutLogId, offlineWorkoutId, sets, setTypes, previousSets, personalBests, extraSets, elapsedSeconds, workoutStartedAt, summaryNotes, workoutFeeling }))
+      window.sessionStorage.setItem(workoutDraftKey, JSON.stringify({ phase, dayIndex, workoutLogId, offlineWorkoutId, sets, previousSets, personalBests, extraSets, elapsedSeconds, workoutStartedAt, summaryNotes, workoutFeeling }))
     } else {
       window.sessionStorage.removeItem(workoutDraftKey)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftRestored, phase, dayIndex, workoutLogId, offlineWorkoutId, sets, setTypes, previousSets, personalBests, extraSets, elapsedSeconds, workoutStartedAt, summaryNotes, workoutFeeling])
+  }, [draftRestored, phase, dayIndex, workoutLogId, offlineWorkoutId, sets, previousSets, personalBests, extraSets, elapsedSeconds, workoutStartedAt, summaryNotes, workoutFeeling])
 
   const rawDays = plan?.days || []
   const days = rawDays.map((currentDay, index) => ({ ...currentDay, title: getDayTitle(currentDay, index), name: getDayTitle(currentDay, index) }))
@@ -279,7 +277,7 @@ function ClientProgramContent() {
       selectedDay.exercises.forEach((exercise) => Array.from({ length: baseSetCount(exercise) }, (_, setIndex) => setIndex + 1).forEach((setNumber) => {
         initial[setKey(exercise, setNumber)] = { weight: 0, reps: plannedReps(exercise), completed: false }
       }))
-      setSets(initial); setSetTypes({}); setPreviousSets({}); setPersonalBests({}); setExtraSets({}); setFocusSet(null); setOpenExerciseIndex(0); setWorkoutLogId(null); setOfflineWorkoutId(createOfflineWorkoutId()); setDayIndex(index); setElapsedSeconds(0); setWorkoutStartedAt(Date.now()); setRestLeft(0); setRestTotal(0); setRestExerciseName(null); setWorkoutFeeling(null); setPhase("workout")
+      setSets(initial); setPreviousSets({}); setPersonalBests({}); setExtraSets({}); setFocusSet(null); setOpenExerciseIndex(0); setWorkoutLogId(null); setOfflineWorkoutId(createOfflineWorkoutId()); setDayIndex(index); setElapsedSeconds(0); setWorkoutStartedAt(Date.now()); setRestLeft(0); setRestTotal(0); setRestExerciseName(null); setWorkoutFeeling(null); setPhase("workout")
       toast.message("Η προπόνηση καταγράφεται offline και θα συγχρονιστεί όταν επανέλθει η σύνδεση.")
       return
     }
@@ -294,7 +292,7 @@ function ClientProgramContent() {
         initial[setKey(exercise, setNumber)] = { ...value, completed: false }
         if (prior) previous[setKey(exercise, setNumber)] = value
       }))
-      setSets(initial); setSetTypes({}); setPreviousSets(previous); setExtraSets({}); setFocusSet(null); setOpenExerciseIndex(0); setWorkoutLogId(result.workoutLogId); setOfflineWorkoutId(null); setDayIndex(index); setElapsedSeconds(0); setWorkoutStartedAt(Date.now()); setRestLeft(0); setRestTotal(0); setRestExerciseName(null); setWorkoutFeeling(null); setPhase("workout")
+      setSets(initial); setPreviousSets(previous); setExtraSets({}); setFocusSet(null); setOpenExerciseIndex(0); setWorkoutLogId(result.workoutLogId); setOfflineWorkoutId(null); setDayIndex(index); setElapsedSeconds(0); setWorkoutStartedAt(Date.now()); setRestLeft(0); setRestTotal(0); setRestExerciseName(null); setWorkoutFeeling(null); setPhase("workout")
       void loadPersonalBests(selectedDay.exercises)
     } catch (caughtError) { setError(caughtError instanceof Error ? caughtError.message : "Δεν ξεκίνησε η προπόνηση.") }
   }
@@ -326,7 +324,7 @@ function ClientProgramContent() {
       return
     }
     try {
-      await api.post("/client/workout/log-set", { workoutLogId, exerciseName: displayName(exercise), exerciseId: exercise.exercise_id || null, setNumber, targetReps: plannedReps(exercise), repsCompleted: state.reps, weightKg: state.weight, setType: setTypes[key] || "normal" })
+      await api.post("/client/workout/log-set", { workoutLogId, exerciseName: displayName(exercise), exerciseId: exercise.exercise_id || null, setNumber, targetReps: plannedReps(exercise), repsCompleted: state.reps, weightKg: state.weight })
       setSets((current) => ({ ...current, [key]: { ...state, completed: true } })); navigator.vibrate?.(15); playSound("tick", settings.soundEnabled)
       if (settings.autoRest) startRest(exercise)
       advanceExerciseIfFinished(exercise, setNumber)
@@ -344,7 +342,7 @@ function ClientProgramContent() {
     if (offlineWorkoutId && user && day) {
       const offlineSets = allSets.flatMap(({ exercise, setNumber }) => {
         const state = sets[setKey(exercise, setNumber)]
-        return state?.completed ? [{ exerciseName: displayName(exercise), exerciseId: exercise.exercise_id || null, setNumber, targetReps: plannedReps(exercise), repsCompleted: state.reps, weightKg: state.weight, setType: setTypes[setKey(exercise, setNumber)] || "normal" }] : []
+        return state?.completed ? [{ exerciseName: displayName(exercise), exerciseId: exercise.exercise_id || null, setNumber, targetReps: plannedReps(exercise), repsCompleted: state.reps, weightKg: state.weight }] : []
       })
       queueOfflineWorkout({ id: offlineWorkoutId, clientId: user.id, trainingPlanId: plan!.id, dayNumber: dayIndex + 1, dayName: getDayTitle(day, dayIndex), durationSeconds: elapsedSeconds, totalSetsCompleted: completedSets, totalVolumeKg: totalVolume, notes: summaryNotes, workoutFeeling, sets: offlineSets, createdAt: new Date().toISOString() })
       const synced = await syncOfflineWorkouts(user.id)
@@ -389,7 +387,7 @@ function ClientProgramContent() {
       })}</div></>}
     </div>}
 
-    {phase === "workout" && day && <MobileWorkoutFlow day={day} dayIndex={dayIndex} elapsedSeconds={elapsedSeconds} settings={settings} sets={sets} setTypes={setTypes} previousSets={previousSets} personalBests={personalBests} extraSets={extraSets} focusSet={focusSet} clockStatus={manualClockStatus} isResting={restLeft > 0} onExit={() => setExitOpen(true)} onOpenClock={() => setManualClockOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onToggleSound={() => setSettings((current) => ({ ...current, soundEnabled: !current.soundEnabled }))} onInfo={setInfoExercise} onToggleSet={(exercise, setNumber, completed) => void toggleSet(exercise, setNumber, completed)} onWeight={(exercise, setNumber, weight) => setSets((current) => ({ ...current, [setKey(exercise, setNumber)]: { ...(current[setKey(exercise, setNumber)] || { reps: plannedReps(exercise), completed: false }), weight } }))} onReps={(exercise, setNumber, reps) => setSets((current) => ({ ...current, [setKey(exercise, setNumber)]: { ...(current[setKey(exercise, setNumber)] || { weight: 0, completed: false }), reps } }))} onType={(exercise, setNumber, type) => setSetTypes((current) => ({ ...current, [setKey(exercise, setNumber)]: type }))} onAddSet={addSet} onComplete={() => setPhase("complete")} onStartRest={startRest} />}
+    {phase === "workout" && day && <MobileWorkoutFlow day={day} dayIndex={dayIndex} elapsedSeconds={elapsedSeconds} settings={settings} sets={sets} previousSets={previousSets} personalBests={personalBests} extraSets={extraSets} focusSet={focusSet} clockStatus={manualClockStatus} isResting={restLeft > 0} onExit={() => setExitOpen(true)} onOpenClock={() => setManualClockOpen(true)} onOpenSettings={() => setSettingsOpen(true)} onToggleSound={() => setSettings((current) => ({ ...current, soundEnabled: !current.soundEnabled }))} onInfo={setInfoExercise} onToggleSet={(exercise, setNumber, completed) => void toggleSet(exercise, setNumber, completed)} onWeight={(exercise, setNumber, weight) => setSets((current) => ({ ...current, [setKey(exercise, setNumber)]: { ...(current[setKey(exercise, setNumber)] || { reps: plannedReps(exercise), completed: false }), weight } }))} onReps={(exercise, setNumber, reps) => setSets((current) => ({ ...current, [setKey(exercise, setNumber)]: { ...(current[setKey(exercise, setNumber)] || { weight: 0, completed: false }), reps } }))} onAddSet={addSet} onComplete={() => setPhase("complete")} onStartRest={startRest} />}
     {phase === "workout" && day && <><>{restLeft > 0 && <RestTimer seconds={restLeft} totalSeconds={restTotal} exerciseName={restExerciseName || undefined} onChange={setRestLeft} onComplete={() => { setRestLeft(0); setRestExerciseName(null); playSound("bell", settings.soundEnabled) }} />}</><ManualWorkoutClock open={manualClockOpen} onOpenChange={setManualClockOpen} defaultSeconds={settings.defaultRest} onStatusChange={setManualClockStatus} /></>}
     {false && <div className="fixed inset-0 z-50 overflow-y-auto bg-background">
       <div className="sticky top-0 z-20 bg-background/95 shadow-sm backdrop-blur">
@@ -399,7 +397,7 @@ function ClientProgramContent() {
       </div>
       <main className="mx-auto max-w-4xl space-y-0 p-4 pb-28 sm:p-8 sm:pb-32">{day.exercises.map((exercise, exerciseIndex) => <div key={exercise.id}><Card className="rounded-xl border-border bg-card shadow-sm"><CardContent className="space-y-4 p-4"><div className="flex items-center gap-3">{exercise.image_url ? <button type="button" onClick={() => setInfoExercise(exercise)} className="shrink-0 cursor-pointer rounded-full ring-2 ring-transparent transition hover:ring-primary hover:ring-offset-2"><img src={resolveMediaUrl(exercise.image_url)} alt="" className="h-10 w-10 rounded-full object-cover" /></button> : <button type="button" onClick={() => setInfoExercise(exercise)} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-muted ring-2 ring-transparent transition hover:ring-primary hover:ring-offset-2"><ImageOff className="h-4 w-4 text-muted-foreground" /></button>}<div className="min-w-0 flex-1"><h2 className="truncate text-base font-semibold">{displayName(exercise)}</h2><p className="text-xs text-muted-foreground">{exercise.muscle_group || "-"}</p><div className="mt-2 flex items-center gap-2"><span className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="h-3.5 w-3.5" />{restSeconds(exercise) || settings.defaultRest}&quot;</span><Button size="sm" variant="outline" className="h-7 px-2 text-xs" onClick={() => startRest(exercise)}><Play className="mr-1 h-3.5 w-3.5" />Έναρξη</Button></div></div></div><ExerciseHistory exerciseName={displayName(exercise)} /><div><table className="w-full text-sm"><thead className="border-b text-left text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="w-10 p-2 text-center">Σετ</th><th className="p-2 text-right">Προηγ.</th><th className="p-2 text-center">{settings.weightUnit}</th><th className="p-2 text-center">Επαν.</th><th className="p-2 text-right">✓</th></tr></thead><tbody>{Array.from({ length: visibleSetCount(exercise) }, (_, index) => {
         const setNumber = index + 1; const key = setKey(exercise, setNumber); const state = sets[key] || { weight: 0, reps: plannedReps(exercise), completed: false }; const priorWeightInExercise = Math.max(personalBests[displayName(exercise)] || 0, ...Array.from({ length: setNumber - 1 }, (_, priorIndex) => sets[setKey(exercise, priorIndex + 1)]?.completed ? sets[setKey(exercise, priorIndex + 1)].weight : 0)); const isPersonalRecord = state.completed && priorWeightInExercise > 0 && state.weight > priorWeightInExercise
-        return <SetRow key={key} setNumber={setNumber} setType={setTypes[key] || "normal"} previous={previousSets[key]} weightKg={state.weight} repsCompleted={state.reps} isCompleted={state.completed} autoFocusKg={focusSet === key} weightUnit={settings.weightUnit} isPersonalRecord={isPersonalRecord} onSetTypeChange={(setType) => setSetTypes((current) => ({ ...current, [key]: setType }))} onWeightChange={(weight) => setSets((current) => ({ ...current, [key]: { ...state, weight } }))} onRepsChange={(reps) => setSets((current) => ({ ...current, [key]: { ...state, reps } }))} onComplete={(completed) => void toggleSet(exercise, setNumber, completed)} />
+        return <SetRow key={key} setNumber={setNumber} previous={previousSets[key]} weightKg={state.weight} repsCompleted={state.reps} isCompleted={state.completed} autoFocusKg={focusSet === key} weightUnit={settings.weightUnit} onWeightChange={(weight) => setSets((current) => ({ ...current, [key]: { ...state, weight } }))} onRepsChange={(reps) => setSets((current) => ({ ...current, [key]: { ...state, reps } }))} onComplete={(completed) => void toggleSet(exercise, setNumber, completed)} />
       })}</tbody></table><Button variant="ghost" className="mt-3 h-11 w-full border-2 border-dashed border-muted-foreground/30 text-muted-foreground transition-colors hover:border-primary hover:text-primary" onClick={() => addSet(exercise)}><Plus className="mr-1 h-4 w-4" />Προσθήκη Σετ</Button></div>{exercise.notes && <p className="rounded-md bg-muted/30 p-2 text-xs italic text-muted-foreground">{exercise.notes}</p>}</CardContent></Card>{exerciseIndex < day.exercises.length - 1 && <Separator className="my-6" />}</div>)}</main>
       <footer className="sticky bottom-0 border-t bg-background/95 p-4 backdrop-blur"><div className="mx-auto max-w-4xl"><Button className="w-full" size="lg" disabled={completedSets === 0} onClick={() => setPhase("complete")}><Dumbbell className="mr-2 h-5 w-5" />Ολοκλήρωση Προπόνησης</Button></div></footer>
       {restLeft > 0 && <RestTimer seconds={restLeft} totalSeconds={restTotal} exerciseName={restExerciseName || undefined} onChange={setRestLeft} onComplete={() => { setRestLeft(0); setRestExerciseName(null); playSound("bell", settings.soundEnabled) }} />}
@@ -407,10 +405,40 @@ function ClientProgramContent() {
     </div>}
 
     <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}><SheetContent side="right"><SheetHeader><SheetTitle>Ρυθμίσεις προπόνησης</SheetTitle><SheetDescription>Οι επιλογές αποθηκεύονται σε αυτή τη συσκευή.</SheetDescription></SheetHeader><div className="space-y-6 p-4"><div><p className="mb-2 text-sm font-medium">Μονάδα βάρους</p><div className="grid grid-cols-2 gap-2"><Button variant={settings.weightUnit === "kg" ? "default" : "outline"} onClick={() => setSettings((current) => ({ ...current, weightUnit: "kg" }))}>kg</Button><Button variant={settings.weightUnit === "lbs" ? "default" : "outline"} onClick={() => setSettings((current) => ({ ...current, weightUnit: "lbs" }))}>lbs</Button></div></div><div><p className="mb-2 text-sm font-medium">Προεπιλεγμένος χρόνος ξεκούρασης</p><Select value={String(settings.defaultRest)} onValueChange={(value) => setSettings((current) => ({ ...current, defaultRest: Number(value) }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[30, 60, 90, 120, 180].map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds}s</SelectItem>)}</SelectContent></Select></div><SettingSwitch label="Αυτόματη εκκίνηση χρονομέτρου" checked={settings.autoRest} onCheckedChange={(autoRest) => setSettings((current) => ({ ...current, autoRest }))} /><SettingSwitch label="Ήχος" checked={settings.soundEnabled} onCheckedChange={(soundEnabled) => setSettings((current) => ({ ...current, soundEnabled }))} /><SettingSwitch label="Η οθόνη μένει ενεργή" checked={settings.keepAwake} onCheckedChange={(keepAwake) => setSettings((current) => ({ ...current, keepAwake }))} /><div><p className="mb-2 text-sm font-medium">Προβολή ασκήσεων</p><div className="grid grid-cols-2 gap-2"><Button variant={settings.exerciseView === "single" ? "default" : "outline"} onClick={() => setSettings((current) => ({ ...current, exerciseView: "single" }))}>Μία-μία</Button><Button variant={settings.exerciseView === "all" ? "default" : "outline"} onClick={() => setSettings((current) => ({ ...current, exerciseView: "all" }))}>Όλες ανοιχτές</Button></div></div></div></SheetContent></Sheet>
-    <Dialog open={Boolean(infoExercise)} onOpenChange={(open) => !open && setInfoExercise(null)}><DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">{infoExercise && <><DialogHeader><DialogTitle>{displayName(infoExercise)}</DialogTitle><DialogDescription>{infoExercise.muscle_group || "-"}{infoExercise.equipment ? ` · ${infoExercise.equipment}` : ""}</DialogDescription></DialogHeader>{infoExercise.image_url && <img src={resolveMediaUrl(infoExercise.image_url)} alt="" className="max-h-[300px] w-full rounded-md object-cover" />}<div className="space-y-4 text-sm">{infoExercise.instructions && <section><h3 className="font-semibold">Περιγραφή</h3><p className="mt-1 text-muted-foreground">{infoExercise.instructions}</p></section>}{infoExercise.notes && <section><h3 className="font-semibold">Εκτέλεση</h3><p className="mt-1 text-muted-foreground">{infoExercise.notes}</p></section>}{infoExercise.video_url && <Button asChild variant="outline"><a href={infoExercise.video_url} target="_blank" rel="noreferrer">Δες το βίντεο <ExternalLink className="ml-2 h-4 w-4" /></a></Button>}{!infoExercise.instructions && !infoExercise.notes && !infoExercise.video_url && <p className="text-muted-foreground">Δεν υπάρχουν επιπλέον πληροφορίες για αυτή την άσκηση.</p>}</div></>}</DialogContent></Dialog>
+    <ExerciseInfoSheet exercise={infoExercise} elapsedSeconds={elapsedSeconds} previous={infoExercise ? previousSets[setKey(infoExercise, 1)] : null} bestWeight={infoExercise ? personalBests[displayName(infoExercise)] : 0} onOpenChange={(open) => !open && setInfoExercise(null)} />
     {phase === "complete" && <WorkoutSummary durationSeconds={elapsedSeconds} completedSets={completedSets} totalSets={allSets.length} volumeKg={totalVolume} exerciseCount={day?.exercises.length || 0} notes={summaryNotes} feeling={workoutFeeling} onNotesChange={setSummaryNotes} onFeelingChange={setWorkoutFeeling} onSave={() => void saveWorkout()} saving={saving} />}
     {exitOpen && <AlertDialog open onOpenChange={setExitOpen}><AlertDialogContent className="rounded-[22px] border-[#E6E6E2] bg-[#F4F4F2] p-6"><AlertDialogHeader><AlertDialogTitle className="text-[22px] font-extrabold text-[#0B0B0B]">Να βγεις από την προπόνηση;</AlertDialogTitle><AlertDialogDescription className="text-[#6A6A6A]">Τα ολοκληρωμένα set σου έχουν αποθηκευτεί. Μπορείς να συνεχίσεις αργότερα ή να ακυρώσεις οριστικά την προπόνηση.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3"><AlertDialogCancel className="m-0 h-11 rounded-full border-[#0B0B0B] bg-transparent font-extrabold text-[#0B0B0B]">Συνέχισε</AlertDialogCancel><Button type="button" variant="outline" onClick={saveAndExitWorkout} className="h-11 rounded-full border-[#0B0B0B] bg-white font-extrabold text-[#0B0B0B]">Αποθήκευση & έξοδος</Button><AlertDialogAction onClick={() => void cancelWorkout()} className="h-11 rounded-full bg-[#0B0B0B] font-extrabold text-white hover:bg-[#1F1F1F]">Ακύρωση</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}
   </ClientShell>
+}
+
+function ExerciseInfoSheet({ exercise, elapsedSeconds, previous, bestWeight, onOpenChange }: { exercise: Exercise | null; elapsedSeconds: number; previous?: { weight: number; reps: number } | null; bestWeight?: number; onOpenChange: (open: boolean) => void }) {
+  const [playing, setPlaying] = useState(false)
+  const open = Boolean(exercise)
+
+  useEffect(() => { if (!open) setPlaying(false) }, [open])
+  if (!exercise) return null
+
+  // Οι οδηγίες έρχονται αυτούσιες από τη Βιβλιοθήκη Ασκήσεων. Υποστηρίζουμε
+  // και πραγματικά line breaks και παλιές εγγραφές που έχουν αποθηκευμένο "\\n".
+  const instructions = (exercise.instructions || "Δεν έχουν προστεθεί οδηγίες εκτέλεσης για αυτή την άσκηση.").split(/(?:\\n|\n)+/).map((instruction) => instruction.trim()).filter(Boolean)
+  const labels = [exercise.muscle_group, exercise.equipment].filter(Boolean) as string[]
+  const best = bestWeight ? `${bestWeight} kg` : "—"
+  const last = previous ? `${previous.weight} kg × ${previous.reps}` : "—"
+  const duration = `${String(Math.floor(elapsedSeconds / 60)).padStart(2, "0")}:${String(elapsedSeconds % 60).padStart(2, "0")}`
+
+  return <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent showCloseButton={false} className="!inset-x-0 !top-auto !bottom-0 !z-[70] !grid !h-[88dvh] !w-full !max-w-none !translate-x-0 !translate-y-0 gap-[14px] overflow-y-auto rounded-t-[26px] rounded-b-none border-0 bg-[#F4F4F2] p-[10px_16px_24px] text-[#0B0B0B] shadow-[0_-20px_50px_rgba(0,0,0,.25)] sm:!h-auto sm:!max-w-[620px] sm:!rounded-[26px]">
+      <div className="flex flex-col items-center gap-[10px]"><span className="h-[5px] w-11 rounded-full bg-[#DCDCD8]" /><span className="flex h-[26px] items-center gap-1.5 rounded-full bg-[#0B0B0B] px-2.5 text-[11px] font-bold text-white"><span className="h-[7px] w-[7px] rounded-full bg-[#B0F90C]" />Προπόνηση σε εξέλιξη · {duration}</span></div>
+      <div className="relative aspect-video min-h-[200px] overflow-hidden rounded-[18px] bg-[#1F1F1F]">
+        {playing && exercise.video_url ? <video src={exercise.video_url} controls autoPlay playsInline className="h-full w-full object-cover" /> : <><img src={exercise.image_url ? resolveMediaUrl(exercise.image_url) : "/placeholder.svg"} alt="" className="h-full w-full object-cover opacity-80" /><span className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/70" />{exercise.video_url && <button type="button" onClick={() => setPlaying(true)} aria-label="Αναπαραγωγή βίντεο" className="absolute left-1/2 top-1/2 grid h-16 w-16 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-[#B0F90C] text-[#0B0B0B] shadow-[0_8px_24px_rgba(0,0,0,.35)]"><Play className="ml-1 h-6 w-6 fill-current" /></button>}<div className="absolute inset-x-[14px] bottom-3 flex items-center gap-2.5 text-[11px] font-bold text-white"><span>0:00</span><span className="h-1 flex-1 overflow-hidden rounded-full bg-white/30"><span className="block h-full w-0 bg-[#B0F90C]" /></span><span>—</span></div></>}
+      </div>
+      <div className="flex flex-col gap-2"><DialogTitle className="text-[22px] font-extrabold leading-[1.15] tracking-[-.3px] text-[#0B0B0B]">{displayName(exercise)}</DialogTitle><div className="flex flex-wrap gap-1.5">{labels.map((label, index) => <span key={`${label}-${index}`} className={`rounded-full px-2.5 py-[5px] text-[12px] font-bold ${index === 0 ? "bg-[#B0F90C] text-[#0B0B0B]" : "bg-[#F2F2F0] text-[#333333]"}`}>{label}</span>)}</div></div>
+      <section className="flex flex-col gap-2.5"><p className="text-[12px] font-extrabold uppercase tracking-[1px] text-[#6A6A6A]">Εκτέλεση</p>{instructions.map((instruction, index) => <div key={`${instruction}-${index}`} className="flex items-start gap-3"><span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#0B0B0B] text-[12px] font-extrabold text-[#B0F90C]">{index + 1}</span><p className="pt-0.5 text-[13px] leading-[1.45] text-[#333333]">{instruction}</p></div>)}</section>
+      {exercise.notes && <div className="flex gap-2.5 rounded-[14px] bg-[#F1FBD6] p-3 text-[12px] leading-[1.45] text-[#333333]"><span className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full bg-[#0B0B0B] text-[10px] font-extrabold text-[#B0F90C]">ΠΣ</span><p><strong>Σημείωση coach:</strong> {exercise.notes}</p></div>}
+      <div className="grid grid-cols-2 gap-2"><div className="flex flex-col rounded-[14px] border border-[#E6E6E2] bg-white p-3"><span className="text-[11px] text-[#6A6A6A]">Καλύτερο σετ</span><strong className="text-[17px] font-extrabold">{best}</strong><span className="text-[11px] text-[#8A8A8A]">ιστορικό άσκησης</span></div><div className="flex flex-col rounded-[14px] border border-[#E6E6E2] bg-white p-3"><span className="text-[11px] text-[#6A6A6A]">Τελευταία φορά</span><strong className="text-[17px] font-extrabold">{last}</strong><span className="text-[11px] text-[#8A8A8A]">προηγούμενη προπόνηση</span></div></div>
+      <Button type="button" onClick={() => onOpenChange(false)} className="mt-auto h-[52px] rounded-full bg-[#0B0B0B] text-[15px] font-extrabold text-white hover:bg-[#1F1F1F]">Πίσω στην προπόνηση</Button>
+    </DialogContent>
+  </Dialog>
 }
 
 function SettingSwitch({ label, checked, onCheckedChange }: { label: string; checked: boolean; onCheckedChange: (value: boolean) => void }) {
