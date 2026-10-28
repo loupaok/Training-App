@@ -25,6 +25,12 @@ export interface BrandingData {
   loginLogoUrl: string | null;
   faviconUrl: string | null;
   loginBackgroundUrl: string | null;
+  eshopEnabled: boolean;
+  eshopUrl: string | null;
+  eshopBannerTitle: string | null;
+  eshopBannerText: string | null;
+  eshopButtonText: string;
+  eshopBannerImageUrl: string | null;
 }
 
 const defaults: BrandingData = {
@@ -39,6 +45,12 @@ const defaults: BrandingData = {
   loginLogoUrl: null,
   faviconUrl: null,
   loginBackgroundUrl: null,
+  eshopEnabled: false,
+  eshopUrl: null,
+  eshopBannerTitle: null,
+  eshopBannerText: null,
+  eshopButtonText: "Πήγαινε στο eshop",
+  eshopBannerImageUrl: null,
 };
 
 interface BrandingContextValue {

@@ -38,11 +38,11 @@ export function ClientSidebar({
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-40 hidden flex-col bg-[var(--sp-black)] text-white transition-[width] duration-200 lg:flex",
+        "fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-transparent bg-[var(--sp-sidebar)] text-white transition-[width] duration-200 dark:border-[#232323] lg:flex",
         collapsed ? "w-16" : "w-[248px]",
       )}
     >
-      <div className={cn("flex h-16 items-center border-b border-white/10", collapsed ? "justify-center px-2" : "justify-between px-4")}>
+      <div className={cn("flex h-16 items-center border-b border-white/10 dark:border-[#232323]", collapsed ? "justify-center px-2" : "justify-between px-4")}>
         {!collapsed && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src="/brand/sp-team-logo-white.svg" alt="SP Team" className="h-7 w-auto max-w-32 object-contain" />
@@ -99,12 +99,12 @@ export function ClientSidebar({
       </nav>
 
       {!collapsed && subscriptionStatus && (
-        <div className="mx-3 mb-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2">
+        <div className="mx-3 mb-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 dark:border-[#262626] dark:bg-[#1A1A1A]">
           <p className="text-[10px] font-bold uppercase tracking-[1px] text-white/45">Συνδρομή</p>
           <p className="mt-0.5 text-xs font-bold text-white">{subscriptionStatus === "expired" || (typeof daysRemaining === "number" && daysRemaining <= 0) ? "Έληξε" : subscriptionStatus === "expiring_soon" || (typeof daysRemaining === "number" && daysRemaining <= 7) ? `Λήγει σε ${Math.max(0, daysRemaining ?? 0)} ημέρες` : `Pro · ${daysRemaining ?? "-"} ημέρες`}</p>
         </div>
       )}
-      <div className="border-t border-white/10 p-3">
+      <div className="border-t border-white/10 p-3 dark:border-[#232323]">
         <SidebarUserMenu
           user={user}
           logout={logout}

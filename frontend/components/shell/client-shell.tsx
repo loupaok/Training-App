@@ -74,7 +74,7 @@ export function ClientShell({
       />
       <div className={cn("flex min-w-0 flex-1 flex-col transition-[padding] duration-200", collapsed ? "lg:pl-16" : "lg:pl-[248px]")}>
         <AppHeader title={title} user={user} logout={logout} />
-        <main className="min-w-0 flex-1 bg-background p-4 pb-28 sm:p-6 sm:pb-28 lg:p-7">{children}</main>
+        <main data-client-page-content className="min-w-0 flex-1 bg-background p-4 pb-28 sm:p-6 sm:pb-28 lg:p-7">{children}</main>
       </div>
       <ClientBottomNav paymentApproved={paymentApproved} unreadNotifications={unreadNotifications} unreadMessages={unreadMessages} />
       <ClientActiveClock />
@@ -101,5 +101,5 @@ function ClientActiveClock() {
   const display = clock.mode === "timer"
     ? `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`
     : `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}:${String(Math.floor((elapsed % 1000) / 10)).padStart(2, "0")}`;
-  return <button type="button" onClick={() => { window.location.assign("/client-program?clock=1"); }} className="fixed bottom-[92px] right-[14px] z-40 flex h-14 items-center gap-2 rounded-full bg-[#0B0B0B] px-3 pr-4 text-white shadow-xl transition-transform active:scale-95" aria-label="Άνοιγμα ενεργού χρονομέτρου"><span className="grid h-10 w-10 place-items-center rounded-full border-2 border-[#B0F90C] text-[#B0F90C]"><Clock3 className="h-4 w-4" /></span><span><span className="block text-[10px] font-bold uppercase tracking-[.8px] text-neutral-400">{clock.mode === "timer" ? "Αντίστροφη" : "Χρονόμετρο"}</span><span className="block font-mono text-[16px] font-extrabold italic text-[#B0F90C]">{display}</span></span></button>;
+  return <button type="button" onClick={() => { window.location.assign("/client-program?clock=1"); }} className="fixed bottom-[92px] right-[14px] z-40 flex h-14 items-center gap-2 rounded-full bg-[var(--sp-emphasis)] px-3 pr-4 text-[var(--sp-emphasis-foreground)] shadow-xl transition-transform active:scale-95 dark:border dark:border-border" aria-label="Άνοιγμα ενεργού χρονομέτρου"><span className="grid h-10 w-10 place-items-center rounded-full border-2 border-accent text-accent"><Clock3 className="h-4 w-4" /></span><span><span className="block text-[10px] font-bold uppercase tracking-[.8px] text-muted-foreground">{clock.mode === "timer" ? "Αντίστροφη" : "Χρονόμετρο"}</span><span className="block font-mono text-[16px] font-extrabold italic text-accent">{display}</span></span></button>;
 }

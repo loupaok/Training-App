@@ -11,7 +11,7 @@ const buttonVariants = cva(
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
         lime: "bg-accent text-accent-foreground hover:bg-accent/85",
         outline:
-          "border-2 border-foreground bg-transparent text-foreground hover:bg-secondary aria-expanded:bg-secondary aria-expanded:text-foreground",
+          "border-[1.5px] border-foreground bg-transparent text-foreground hover:bg-secondary aria-expanded:bg-secondary aria-expanded:text-foreground",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-muted aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:

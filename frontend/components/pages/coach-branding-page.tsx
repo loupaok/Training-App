@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CoachShell } from "@/components/shell/coach-shell";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -29,6 +30,12 @@ const emptyBranding: Branding = {
   loginLogoUrl: null,
   faviconUrl: null,
   loginBackgroundUrl: null,
+  eshopEnabled: false,
+  eshopUrl: null,
+  eshopBannerTitle: null,
+  eshopBannerText: null,
+  eshopButtonText: "Πήγαινε στο eshop",
+  eshopBannerImageUrl: null,
 };
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -82,10 +89,11 @@ function CoachBrandingContent() {
   const loginLogoInputRef = useRef<HTMLInputElement>(null);
   const faviconInputRef = useRef<HTMLInputElement>(null);
   const loginBackgroundInputRef = useRef<HTMLInputElement>(null);
+  const eshopBannerInputRef = useRef<HTMLInputElement>(null);
   const [branding, setBranding] = useState<Branding>(emptyBranding);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState<"logo" | "login-logo" | "favicon" | "login-background" | null>(null);
+  const [uploading, setUploading] = useState<"logo" | "login-logo" | "favicon" | "login-background" | "eshop-banner" | null>(null);
 
   useEffect(() => {
     api
@@ -115,6 +123,11 @@ function CoachBrandingContent() {
         buttonColor: branding.buttonColor,
         buttonHoverColor: branding.buttonHoverColor,
         buttonTextColor: branding.buttonTextColor,
+        eshopEnabled: branding.eshopEnabled,
+        eshopUrl: branding.eshopUrl?.trim() || null,
+        eshopBannerTitle: branding.eshopBannerTitle?.trim() || null,
+        eshopBannerText: branding.eshopBannerText?.trim() || null,
+        eshopButtonText: branding.eshopButtonText?.trim() || "Πήγαινε στο eshop",
       }));
       await refreshBranding();
       toast.success("Οι αλλαγές αποθηκεύτηκαν.");
@@ -125,7 +138,7 @@ function CoachBrandingContent() {
     }
   };
 
-  const uploadBrandImage = async (kind: "logo" | "login-logo" | "favicon" | "login-background", event: ChangeEvent<HTMLInputElement>) => {
+  const uploadBrandImage = async (kind: "logo" | "login-logo" | "favicon" | "login-background" | "eshop-banner", event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -135,7 +148,7 @@ function CoachBrandingContent() {
       formData.append("file", file);
       setBranding(await api.upload<Branding>(`/branding/${kind}`, formData));
       await refreshBranding();
-      toast.success(kind === "logo" ? "Το logo ανέβηκε." : kind === "login-logo" ? "Το logo σύνδεσης ανέβηκε." : kind === "favicon" ? "Το favicon ανέβηκε." : "Το background του login ανέβηκε.");
+      toast.success(kind === "logo" ? "Το logo ανέβηκε." : kind === "login-logo" ? "Το logo σύνδεσης ανέβηκε." : kind === "favicon" ? "Το favicon ανέβηκε." : kind === "eshop-banner" ? "Η εικόνα eshop ανέβηκε." : "Το background του login ανέβηκε.");
     } catch (error) {
       toast.error(getErrorMessage(error, "Η μεταφόρτωση απέτυχε."));
     } finally {
@@ -274,6 +287,21 @@ function CoachBrandingContent() {
 
         <Card>
           <CardHeader>
+            <CardTitle>Eshop</CardTitle>
+            <CardDescription>Ρύθμισε το banner και το link που βλέπουν οι πελάτες στη σελίδα Πόντοι & Rewards.</CardDescription>
+          </CardHeader>
+          <CardContent className="gap-5">
+            <div className="flex items-center justify-between gap-4 rounded-[14px] border border-border bg-muted/40 p-4"><div><Label htmlFor="eshop-enabled">Εμφάνιση eshop στους πελάτες</Label><p className="mt-1 text-xs text-muted-foreground">Αν δεν υπάρχει έγκυρο HTTPS link, τα στοιχεία eshop κρύβονται αυτόματα.</p></div><Switch id="eshop-enabled" checked={branding.eshopEnabled} onCheckedChange={(value) => updateBranding("eshopEnabled", value)} disabled={loading} /></div>
+            <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2 sm:col-span-2"><Label htmlFor="eshop-url">Link eshop</Label><Input id="eshop-url" type="url" value={branding.eshopUrl || ""} onChange={(event) => updateBranding("eshopUrl", event.target.value)} placeholder="https://example.com" disabled={loading} /></div><div className="space-y-2"><Label htmlFor="eshop-title">Τίτλος banner</Label><Input id="eshop-title" maxLength={100} value={branding.eshopBannerTitle || ""} onChange={(event) => updateBranding("eshopBannerTitle", event.target.value)} placeholder="Χρησιμοποίησε τους πόντους σου" disabled={loading} /></div><div className="space-y-2"><Label htmlFor="eshop-button">Κείμενο κουμπιού</Label><Input id="eshop-button" maxLength={100} value={branding.eshopButtonText || ""} onChange={(event) => updateBranding("eshopButtonText", event.target.value)} placeholder="Πήγαινε στο eshop" disabled={loading} /></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="eshop-text">Κείμενο banner</Label><Input id="eshop-text" maxLength={255} value={branding.eshopBannerText || ""} onChange={(event) => updateBranding("eshopBannerText", event.target.value)} placeholder="Εξαργύρωσε τους πόντους σου σε κουπόνια." disabled={loading} /></div></div>
+            <BrandImagePreview url={branding.eshopBannerImageUrl} type="eshop-banner" />
+            <Button type="button" variant="outline" onClick={() => eshopBannerInputRef.current?.click()} disabled={uploading !== null || loading}>{uploading === "eshop-banner" ? <LoaderCircle className="animate-spin" /> : <Upload />}{uploading === "eshop-banner" ? "Ανέβασμα..." : "Ανέβασε φωτογραφία banner"}</Button>
+            <input ref={eshopBannerInputRef} type="file" accept=".jpg,.jpeg,.png" onChange={(event) => uploadBrandImage("eshop-banner", event)} className="hidden" />
+            {branding.eshopEnabled && branding.eshopUrl && <div className="relative overflow-hidden rounded-[18px] bg-[var(--sp-emphasis)] p-5 text-[var(--sp-emphasis-foreground)]"><span className="absolute right-8 -top-4 h-28 w-3 -skew-x-[18deg] bg-accent" /><p className="relative text-lg font-extrabold">{branding.eshopBannerTitle || "Χρησιμοποίησε τους πόντους σου"}</p><p className="relative mt-1 max-w-md text-sm text-muted-foreground">{branding.eshopBannerText || "Εξαργύρωσέ τους σε κουπόνια για το eshop."}</p><span className="relative mt-4 inline-flex rounded-full bg-accent px-4 py-2 text-xs font-extrabold text-accent-foreground">{branding.eshopButtonText || "Πήγαινε στο eshop"}</span></div>}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
             <CardTitle>Προεπισκόπηση</CardTitle>
             <CardDescription>Ένα μικρό δείγμα του header με τις τρέχουσες ρυθμίσεις.</CardDescription>
           </CardHeader>
@@ -322,12 +350,12 @@ function CoachBrandingContent() {
   );
 }
 
-function BrandImagePreview({ url, type }: { url: string | null; type: "logo" | "login-logo" | "favicon" | "login-background" }) {
+function BrandImagePreview({ url, type }: { url: string | null; type: "logo" | "login-logo" | "favicon" | "login-background" | "eshop-banner" }) {
   if (url) {
     return (
       <div className="flex min-h-20 items-center rounded-lg border bg-muted/30 p-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={resolveMediaUrl(url)} alt={type === "logo" ? "Current logo" : type === "login-logo" ? "Current login logo" : type === "favicon" ? "Current favicon" : "Current login background"} className={type === "logo" || type === "login-logo" ? "max-h-16 max-w-full rounded-md bg-white p-2 object-contain" : type === "favicon" ? "h-8 w-8 object-contain" : "max-h-48 w-full rounded-md object-cover"} />
+        <img src={resolveMediaUrl(url)} alt={type === "logo" ? "Current logo" : type === "login-logo" ? "Current login logo" : type === "favicon" ? "Current favicon" : type === "eshop-banner" ? "Current eshop banner" : "Current login background"} className={type === "logo" || type === "login-logo" ? "max-h-16 max-w-full rounded-md bg-white p-2 object-contain" : type === "favicon" ? "h-8 w-8 object-contain" : "max-h-48 w-full rounded-md object-cover"} />
       </div>
     );
   }

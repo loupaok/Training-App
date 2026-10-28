@@ -251,22 +251,25 @@ router.post('/redeem', authenticateToken, authorizeRole(['client']), [
   try {
     await ensurePointsSchema(connection);
     const { pointsToRedeem } = req.body;
+    // Lock the client's balance before the external coupon call. This keeps a
+    // double click (or two browser tabs) from spending the same points twice.
+    await connection.beginTransaction();
 
-    const [settingsRows] = await connection.query('SELECT * FROM points_settings WHERE id = 1');
+    const [settingsRows] = await connection.query('SELECT * FROM points_settings WHERE id = 1 FOR UPDATE');
     const settings = settingsRows[0];
     if (!settings?.is_active) {
-      connection.release();
+      await connection.rollback();
       return res.status(400).json({ message: 'Το πρόγραμμα πόντων δεν είναι ενεργό.' });
     }
     if (pointsToRedeem < settings.min_points_redeem) {
-      connection.release();
+      await connection.rollback();
       return res.status(400).json({ message: `Ελάχιστοι πόντοι για εξαργύρωση: ${settings.min_points_redeem}.` });
     }
 
-    const [pointsRows] = await connection.query('SELECT * FROM client_points WHERE client_id = ?', [req.user.id]);
+    const [pointsRows] = await connection.query('SELECT * FROM client_points WHERE client_id = ? FOR UPDATE', [req.user.id]);
     const available = pointsRows[0]?.available_points || 0;
     if (available < pointsToRedeem) {
-      connection.release();
+      await connection.rollback();
       return res.status(400).json({ message: 'Δεν έχεις αρκετούς διαθέσιμους πόντους.' });
     }
 
@@ -285,12 +288,11 @@ router.post('/redeem', authenticateToken, authorizeRole(['client']), [
         expiryDays: settings.coupon_expiry_days,
       });
     } catch (wcError) {
-      connection.release();
+      await connection.rollback();
       console.error('WooCommerce coupon creation failed:', wcError);
       return res.status(502).json({ message: `Δεν ήταν δυνατή η δημιουργία coupon: ${wcError.message}` });
     }
 
-    await connection.beginTransaction();
     await connection.query('UPDATE client_points SET used_points = used_points + ? WHERE client_id = ?', [pointsToRedeem, req.user.id]);
     await connection.query(
       `INSERT INTO points_transactions (client_id, type, points, description, coupon_code, wc_coupon_id)

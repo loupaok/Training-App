@@ -23,7 +23,7 @@ export function ClientBottomNav({ paymentApproved, unreadNotifications = 0, unre
         <SheetTrigger render={<button type="button" className={cn("relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-[14px] px-1 text-[11px] font-semibold transition-colors", moreActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")} />}>
           <Menu className="h-5 w-5" />
           <span>Περισσότερα</span>
-          {unreadNotifications + unreadMessages > 0 && <Badge className="absolute top-1 right-2 grid h-4 min-w-4 place-items-center rounded-full p-0 text-[9px]">{unreadNotifications + unreadMessages > 9 ? "9+" : unreadNotifications + unreadMessages}</Badge>}
+          {unreadNotifications + unreadMessages > 0 && <Badge className="absolute top-1 right-2 grid h-4 min-w-4 place-items-center rounded-full bg-accent p-0 text-[9px] text-accent-foreground">{unreadNotifications + unreadMessages > 9 ? "9+" : unreadNotifications + unreadMessages}</Badge>}
         </SheetTrigger>
         <SheetContent side="bottom" className="max-h-[80dvh] rounded-t-2xl p-0" showCloseButton>
           <SheetHeader className="border-b px-5 pt-5 pb-4 text-left"><SheetTitle>Περισσότερα</SheetTitle><SheetDescription>Όλες οι επιλογές του λογαριασμού σου.</SheetDescription></SheetHeader>
@@ -47,7 +47,7 @@ function BottomItem({ item, active, locked }: { item: (typeof clientNavSections)
 function MoreItem({ item, active, locked, unreadNotifications }: { item: (typeof clientNavSections)[number]; active: boolean; locked: boolean; unreadNotifications: number }) {
   const Icon = item.icon
   const className = cn("relative flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition-colors", locked ? "cursor-not-allowed text-muted-foreground/45" : active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")
-  const content = <>{Icon && <Icon className="h-5 w-5" />}{locked && <LockKeyhole className="h-3.5 w-3.5" />}<span className="flex-1">{item.label}</span>{unreadNotifications > 0 && <Badge className="rounded-full">{unreadNotifications}</Badge>}</>
+  const content = <>{Icon && <Icon className="h-5 w-5" />}{locked && <LockKeyhole className="h-3.5 w-3.5" />}<span className="flex-1">{item.label}</span>{unreadNotifications > 0 && <Badge className="rounded-full bg-accent text-accent-foreground">{unreadNotifications}</Badge>}</>
   if (!item.path || locked) return <span className={className}>{content}</span>
   return <Link href={item.path} className={className}>{content}</Link>
 }

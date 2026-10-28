@@ -35,7 +35,7 @@ export function SidebarUserMenu({
           <button
             type="button"
             title={collapsed ? user?.fullName : undefined}
-            className={`flex w-full items-center gap-3 rounded-xl p-2 text-left text-sm text-white hover:bg-[var(--sp-black-2)] ${
+            className={`flex w-full items-center gap-3 rounded-xl p-2 text-left text-sm text-white hover:bg-[var(--sp-black-2)] dark:border dark:border-[#262626] dark:bg-[#1A1A1A] ${
               collapsed ? "justify-center" : ""
             }`}
           >

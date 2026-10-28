@@ -29,7 +29,7 @@ export function AppHeader({
   }
 
   return (
-    <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 sm:px-6 dark:border-white/10 dark:bg-[#0B0B0B]">
+    <header className="sticky top-0 z-30 flex min-h-16 items-center justify-between gap-3 border-b border-border bg-card px-4 py-3 sm:px-6 dark:[&_[data-slot=button]]:border-border dark:[&_[data-slot=button]]:hover:bg-muted">
       <div className="flex min-w-0 items-center gap-3">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/brand/sp-team-logo-black.svg" alt="SP Team" className="h-6 w-auto shrink-0 dark:hidden lg:hidden" />
@@ -47,7 +47,7 @@ export function AppHeader({
         <ThemeToggle />
         <UserAvatar
           initials={getInitials(user?.fullName || user?.email)}
-          tone="bg-primary"
+          tone="bg-primary dark:bg-accent dark:!text-[#0B0B0B]"
           size="size-8"
           photoUrl={user?.profilePhoto}
         />

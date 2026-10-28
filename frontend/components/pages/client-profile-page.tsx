@@ -17,6 +17,7 @@ import { ChangePasswordCard } from "@/components/shared/change-password-card";
 import { PushNotificationsCard } from "@/components/shared/push-notifications-card";
 import { DiscordConnectionCard } from "@/components/shared/discord-connection-card";
 import { useFontSize, type FontSize } from "@/components/shell/font-size-context";
+import { ThemeSelector } from "@/components/shell/theme-toggle";
 import type { AuthUser } from "@/types/auth";
 
 const socialPlatforms = ["Instagram", "Facebook", "YouTube", "TikTok"];
@@ -503,14 +504,7 @@ function ClientProfileContent() {
             <CardDescription>Μέγεθος γραμματοσειράς για όλη την εφαρμογή.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ToggleGroup
-              value={[fontSize]}
-              onValueChange={(value) => value[0] && setFontSize(value[0] as FontSize)}
-            >
-              <ToggleGroupItem value="small">Μικρό</ToggleGroupItem>
-              <ToggleGroupItem value="medium">Κανονικό</ToggleGroupItem>
-              <ToggleGroupItem value="large">Μεγάλο</ToggleGroupItem>
-            </ToggleGroup>
+            <div className="space-y-5"><div><p className="mb-2 text-sm font-semibold">Μέγεθος γραμματοσειράς</p><ToggleGroup value={[fontSize]} onValueChange={(value) => value[0] && setFontSize(value[0] as FontSize)}><ToggleGroupItem value="small">Μικρό</ToggleGroupItem><ToggleGroupItem value="medium">Κανονικό</ToggleGroupItem><ToggleGroupItem value="large">Μεγάλο</ToggleGroupItem></ToggleGroup></div><div className="border-t border-border pt-5"><p className="text-sm font-semibold">Θέμα</p><p className="mt-1 text-xs text-muted-foreground">Επίλεξε φωτεινό, σκούρο ή τη ρύθμιση της συσκευής σου.</p><div className="mt-3"><ThemeSelector /></div></div></div>
           </CardContent>
         </Card>
 

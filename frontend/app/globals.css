@@ -54,10 +54,14 @@
   --container-7xl: 80rem;
   --sp-lime: #b0f90c;
   --sp-lime-soft: #f1fbd6;
+  --sp-lime-foreground: #0b0b0b;
   --sp-lime-glow: rgb(176 249 12 / 45%);
   --sp-black: #0b0b0b;
   --sp-black-2: #161616;
   --sp-black-3: #1f1f1f;
+  --sp-emphasis: #0b0b0b;
+  --sp-emphasis-foreground: #ffffff;
+  --sp-sidebar: #0b0b0b;
   --sp-white: #ffffff;
   --sp-bg: #f4f4f2;
   --sp-surface: #f6f6f3;
@@ -112,19 +116,30 @@
 }
 
 .dark {
-  --background: var(--sp-black);
-  --foreground: var(--sp-white);
-  --card: var(--sp-black-2);
-  --card-foreground: var(--sp-white);
-  --popover: var(--sp-black-2);
-  --popover-foreground: var(--sp-white);
-  --primary: var(--sp-lime);
-  --primary-foreground: var(--sp-black);
-  --title-color: var(--sp-white);
-  --secondary: var(--sp-black-3);
-  --secondary-foreground: var(--sp-white);
-  --muted: var(--sp-black-3);
-  --muted-foreground: #bdbdbd;
+  --sp-black-2: #1c1c1c;
+  --sp-black-3: #232323;
+  --sp-lime-soft: rgb(176 249 12 / 12%);
+  --sp-lime-glow: rgb(176 249 12 / 18%);
+  --sp-text-2: #b5b5b5;
+  --sp-text-3: #8a8a8a;
+  --sp-text-4: #8a8a8a;
+  --sp-track: #262626;
+  --sp-emphasis: #1c1c1c;
+  --sp-emphasis-foreground: #f4f4f2;
+  --sp-sidebar: #121212;
+  --background: #0e0e0e;
+  --foreground: #f4f4f2;
+  --card: #171717;
+  --card-foreground: #f4f4f2;
+  --popover: #171717;
+  --popover-foreground: #f4f4f2;
+  --primary: #f4f4f2;
+  --primary-foreground: #0b0b0b;
+  --title-color: #f4f4f2;
+  --secondary: #232323;
+  --secondary-foreground: #f4f4f2;
+  --muted: #232323;
+  --muted-foreground: #8a8a8a;
   --accent: var(--sp-lime);
   --accent-foreground: var(--sp-black);
   --destructive: var(--sp-danger);
@@ -136,7 +151,7 @@
   --chart-3: #bdbdbd;
   --chart-4: var(--sp-text-4);
   --chart-5: var(--sp-text-2);
-  --sidebar: var(--sp-black);
+  --sidebar: #121212;
   --sidebar-foreground: #c8c8c8;
   --sidebar-primary: var(--sp-lime);
   --sidebar-primary-foreground: var(--sp-black);
@@ -144,6 +159,46 @@
   --sidebar-accent-foreground: var(--sp-white);
   --sidebar-border: #2a2a2a;
   --sidebar-ring: var(--sp-lime);
+}
+
+/* Transitional compatibility for the client screens that still carry the
+   former light-theme utility literals. Tokens win in dark mode, so cards and
+   dividers stay readable while the remaining page-specific pieces are moved
+   to semantic utilities. */
+.dark [data-client-page-content] [class~="bg-white"],
+.dark [data-client-page-content] [class*="dark:bg-[#161616]"] {
+  background-color: var(--card) !important;
+}
+
+.dark [data-client-page-content] [class*="bg-[#F4F4F2]"] {
+  background-color: var(--background) !important;
+}
+
+.dark [data-client-page-content] [class*="border-[#E6E6E2]"],
+.dark [data-client-page-content] [class*="dark:border-[#2A2A2A]"] {
+  border-color: var(--border) !important;
+}
+
+/* Program cards still use the original presentation utility literals. Keep
+   their text legible in dark mode, while preserving the required black text
+   on lime tags/actions. */
+.dark [data-client-program] [class*="text-[#0B0B0B]"],
+.dark [data-client-program] [class*="text-[#333333]"] {
+  color: var(--foreground) !important;
+}
+
+.dark [data-client-program] [class*="text-[#6A6A6A]"],
+.dark [data-client-program] [class*="text-[#8A8A8A]"] {
+  color: var(--sp-text-2) !important;
+}
+
+.dark [data-client-program] [class*="bg-[#B0F90C]"][class*="text-[#0B0B0B]"] {
+  color: var(--sp-lime-foreground) !important;
+}
+
+.dark [data-client-program] [class*="bg-[#0B0B0B]"] {
+  background-color: var(--sp-emphasis) !important;
+  border-color: var(--border) !important;
 }
 
 @layer base {

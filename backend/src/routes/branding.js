@@ -35,7 +35,13 @@ export async function ensureBrandingSchema(connection) {
       ADD COLUMN IF NOT EXISTS button_hover_color VARCHAR(7) DEFAULT '#c0392b',
       ADD COLUMN IF NOT EXISTS button_text_color VARCHAR(7) DEFAULT '#ffffff',
       ADD COLUMN IF NOT EXISTS login_background_url VARCHAR(255) NULL,
-      ADD COLUMN IF NOT EXISTS login_logo_url VARCHAR(255) NULL
+      ADD COLUMN IF NOT EXISTS login_logo_url VARCHAR(255) NULL,
+      ADD COLUMN IF NOT EXISTS eshop_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS eshop_url VARCHAR(500) NULL,
+      ADD COLUMN IF NOT EXISTS eshop_banner_title VARCHAR(100) NULL,
+      ADD COLUMN IF NOT EXISTS eshop_banner_text VARCHAR(255) NULL,
+      ADD COLUMN IF NOT EXISTS eshop_button_text VARCHAR(100) NULL,
+      ADD COLUMN IF NOT EXISTS eshop_banner_image_url VARCHAR(255) NULL
   `);
 }
 
@@ -52,6 +58,12 @@ function normalizeBranding(row) {
     loginLogoUrl: row.login_logo_url,
     faviconUrl: row.favicon_url,
     loginBackgroundUrl: row.login_background_url,
+    eshopEnabled: Boolean(row.eshop_enabled),
+    eshopUrl: row.eshop_url,
+    eshopBannerTitle: row.eshop_banner_title,
+    eshopBannerText: row.eshop_banner_text,
+    eshopButtonText: row.eshop_button_text || 'Πήγαινε στο eshop',
+    eshopBannerImageUrl: row.eshop_banner_image_url,
   };
 }
 
@@ -118,6 +130,10 @@ const uploadLoginBackground = uploadSingle(createUpload({
   kind: 'login-background',
   maxSize: 5 * 1024 * 1024,
 }));
+const uploadEshopBanner = uploadSingle(createUpload({
+  kind: 'eshop-banner',
+  maxSize: 5 * 1024 * 1024,
+}));
 
 router.get('/', async (_req, res) => {
   let connection;
@@ -141,6 +157,11 @@ router.put('/', authenticateToken, authorizeRole(['coach']), [
   body('buttonColor').matches(hexColorPattern),
   body('buttonHoverColor').matches(hexColorPattern),
   body('buttonTextColor').matches(hexColorPattern),
+  body('eshopEnabled').optional().isBoolean(),
+  body('eshopUrl').optional({ nullable: true }).isURL({ protocols: ['https'], require_protocol: true }),
+  body('eshopBannerTitle').optional({ nullable: true }).isString().isLength({ max: 100 }),
+  body('eshopBannerText').optional({ nullable: true }).isString().isLength({ max: 255 }),
+  body('eshopButtonText').optional({ nullable: true }).isString().isLength({ max: 100 }),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -152,7 +173,9 @@ router.put('/', authenticateToken, authorizeRole(['coach']), [
     await connection.query(
       `UPDATE branding
        SET app_name = ?, primary_color = ?, font_color = ?, title_color = ?,
-           button_color = ?, button_hover_color = ?, button_text_color = ?
+           button_color = ?, button_hover_color = ?, button_text_color = ?,
+           eshop_enabled = ?, eshop_url = ?, eshop_banner_title = ?,
+           eshop_banner_text = ?, eshop_button_text = ?
        WHERE id = 1`,
       [
         req.body.appName,
@@ -162,6 +185,11 @@ router.put('/', authenticateToken, authorizeRole(['coach']), [
         req.body.buttonColor,
         req.body.buttonHoverColor,
         req.body.buttonTextColor,
+        req.body.eshopEnabled ? 1 : 0,
+        req.body.eshopUrl || null,
+        req.body.eshopBannerTitle || null,
+        req.body.eshopBannerText || null,
+        req.body.eshopButtonText || 'Πήγαινε στο eshop',
       ]
     );
     res.json(await getBranding(connection));
@@ -202,5 +230,6 @@ router.post('/logo', authenticateToken, authorizeRole(['coach']), uploadLogo, (r
 router.post('/login-logo', authenticateToken, authorizeRole(['coach']), uploadLoginLogo, (req, res) => saveBrandImage(req, res, 'login_logo_url'));
 router.post('/favicon', authenticateToken, authorizeRole(['coach']), uploadFavicon, (req, res) => saveBrandImage(req, res, 'favicon_url'));
 router.post('/login-background', authenticateToken, authorizeRole(['coach']), uploadLoginBackground, (req, res) => saveBrandImage(req, res, 'login_background_url'));
+router.post('/eshop-banner', authenticateToken, authorizeRole(['coach']), uploadEshopBanner, (req, res) => saveBrandImage(req, res, 'eshop_banner_image_url'));
 
 export default router;

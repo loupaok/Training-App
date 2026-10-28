@@ -104,11 +104,11 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-40 hidden flex-col bg-[var(--sp-black)] text-white transition-[width] duration-200 lg:flex",
+        "fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-transparent bg-[var(--sp-sidebar)] text-white transition-[width] duration-200 dark:border-[#232323] lg:flex",
         collapsed ? "w-16" : "w-[248px]",
       )}
     >
-      <div className={cn("flex h-16 items-center border-b border-white/10", collapsed ? "justify-center px-2" : "justify-between px-4")}>
+      <div className={cn("flex h-16 items-center border-b border-white/10 dark:border-[#232323]", collapsed ? "justify-center px-2" : "justify-between px-4")}>
         {!collapsed && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src="/brand/sp-team-logo-white.svg" alt="SP Team" className="h-7 w-auto max-w-32 object-contain" />
@@ -214,7 +214,7 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
           })}
       </nav>
 
-      <div className="border-t border-white/10 p-3">
+      <div className="border-t border-white/10 p-3 dark:border-[#232323]">
         <SidebarUserMenu
           user={user}
           logout={logout}
