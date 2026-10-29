@@ -58,6 +58,18 @@ type Question = {
   maxPhotos?: number
 }
 
+type UpdateFile = {
+  file: File
+  questionId: number
+  angle?: "front" | "side" | "back" | "other"
+}
+
+const updatePhotoAngles = [
+  { key: "front", label: "Μπροστά" },
+  { key: "side", label: "Πλάι" },
+  { key: "back", label: "Πίσω" },
+] as const
+
 type Update = {
   id: number
   submittedAt: string
@@ -551,7 +563,7 @@ function ClientDashboardContent() {
   const [activeWorkout, setActiveWorkout] = useState<ActiveWorkout>(null)
   const [paymentData, setPaymentData] = useState<PaymentData | null>(null)
   const [answers, setAnswers] = useState<Record<number, string | string[]>>({})
-  const [files, setFiles] = useState<Array<{ file: File; questionId: number }>>([])
+  const [files, setFiles] = useState<UpdateFile[]>([])
   const [activeTab, setActiveTab] = useState("overview")
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -623,13 +635,54 @@ function ClientDashboardContent() {
     .filter((entry): entry is { date: string; weight: number } => entry !== null)
     .reverse(), [updates])
 
+  const setProgressPhoto = (questionId: number, angle: "front" | "side" | "back", file?: File) => {
+    setFiles((current) => {
+      const withoutAngle = current.filter((entry) => entry.questionId !== questionId || entry.angle !== angle)
+      return file ? [...withoutAngle, { file, questionId, angle }] : withoutAngle
+    })
+  }
+
+  const addUpdateFiles = (questionId: number, nextFiles: File[], angle: UpdateFile["angle"] = "other") => {
+    setFiles((current) => [...current, ...nextFiles.map((file) => ({ file, questionId, angle }))].slice(0, 5))
+  }
+
   const renderQuestion = (question: Question) => {
     const value = answers[question.id] ?? (question.type === "multi_select" ? [] : "")
     const setValue = (next: string | string[]) => setAnswers((current) => ({ ...current, [question.id]: next }))
     const required = question.isRequired ? <span className="text-destructive"> *</span> : null
 
-    if (question.allowPhotos || question.allowPdf) {
-      return <div key={question.id} className="space-y-3"><Label className="text-base font-semibold">{question.question}{required}</Label><label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 p-4 text-sm transition-colors hover:bg-muted/40"><span className="grid h-9 w-9 place-items-center rounded-md bg-background">{question.allowPhotos ? <ImagePlus className="h-4 w-4" /> : <Paperclip className="h-4 w-4" />}</span><span className="min-w-0 flex-1"><span className="block font-medium">Πρόσθεσε επισύναψη</span><span className="block text-xs text-muted-foreground">Έως {question.allowPhotos ? question.maxPhotos || 4 : 1} αρχεία, 5MB το καθένα</span></span><Input className="hidden" type="file" multiple={question.allowPhotos} accept={[question.allowPhotos ? "image/jpeg,image/png,image/webp" : "", question.allowPdf ? "application/pdf" : ""].filter(Boolean).join(",")} onChange={(event) => setFiles((current) => [...current, ...Array.from(event.target.files ?? []).map((file) => ({ file, questionId: question.id }))].slice(0, 5))} /></label>{files.filter((entry) => entry.questionId === question.id).length > 0 && <p className="text-xs text-muted-foreground">{files.filter((entry) => entry.questionId === question.id).length} αρχεία επιλέχθηκαν</p>}</div>
+    if (question.allowPhotos || question.allowPdf || question.type === "photos" || question.type === "pdf") {
+      const supportsPhotos = question.allowPhotos || question.type === "photos"
+      const supportsPdf = question.allowPdf || question.type === "pdf"
+      const questionFiles = files.filter((entry) => entry.questionId === question.id)
+
+      return <div key={question.id} className="space-y-3">
+        <div className="space-y-1">
+          <Label className="text-base font-semibold">{question.question}{required}</Label>
+          {supportsPhotos && <p className="text-xs text-muted-foreground">Πρόσθεσε μία φωτογραφία για κάθε όψη, ώστε ο coach να βλέπει καθαρά την πρόοδό σου.</p>}
+        </div>
+        {supportsPhotos && <div className="grid grid-cols-3 gap-2 sm:gap-3">
+          {updatePhotoAngles.map((photoAngle) => {
+            const selected = questionFiles.find((entry) => entry.angle === photoAngle.key)
+            return <div key={photoAngle.key} className="space-y-1.5">
+              <label className={`flex h-28 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed p-2 text-center transition-colors ${selected ? "border-accent bg-[color:var(--sp-lime-soft)]" : "border-border bg-muted/20 hover:bg-muted/40"}`}>
+                <Input
+                  className="hidden"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onClick={(event) => { event.currentTarget.value = "" }}
+                  onChange={(event) => setProgressPhoto(question.id, photoAngle.key, event.target.files?.[0])}
+                />
+                <span className={`grid h-8 w-8 place-items-center rounded-full ${selected ? "bg-accent text-accent-foreground" : "bg-background text-muted-foreground"}`}><ImagePlus className="h-4 w-4" /></span>
+                <span className="text-xs font-extrabold">{photoAngle.label}</span>
+                <span className="max-w-full truncate text-[10px] text-muted-foreground">{selected ? selected.file.name : "Πρόσθεσε"}</span>
+              </label>
+              {selected && <button type="button" onClick={() => setProgressPhoto(question.id, photoAngle.key)} className="w-full text-[10px] font-semibold text-muted-foreground hover:text-foreground">Αφαίρεση</button>}
+            </div>
+          })}
+        </div>}
+        {supportsPdf && <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 p-3 text-sm transition-colors hover:bg-muted/40"><span className="grid h-8 w-8 place-items-center rounded-md bg-background"><Paperclip className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="block font-medium">Πρόσθεσε PDF</span><span className="block text-xs text-muted-foreground">Έως 1 αρχείο, 5MB</span></span><Input className="hidden" type="file" accept="application/pdf" onClick={(event) => { event.currentTarget.value = "" }} onChange={(event) => addUpdateFiles(question.id, Array.from(event.target.files ?? []))} /></label>}
+      </div>
     }
 
     if (question.type === "rating") {
@@ -638,9 +691,6 @@ function ClientDashboardContent() {
     if (question.type === "textarea") {
       return <div key={question.id} className="space-y-2"><Label className="text-base font-semibold">{question.question}{required}</Label><Textarea value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} className="min-h-28 resize-y" /></div>
     }
-    if (question.type === "photos" || question.type === "pdf") {
-      return <div key={question.id} className="space-y-2"><Label>{question.question}{required}</Label><Input type="file" multiple={question.type === "photos"} accept={question.type === "photos" ? "image/jpeg,image/png,image/webp" : "application/pdf"} onChange={(event) => setFiles((current) => [...current, ...Array.from(event.target.files ?? []).map((file) => ({ file, questionId: question.id }))].slice(0, 5))} /><p className="text-xs text-muted-foreground">Έως 5 αρχεία, 5MB το καθένα.</p></div>
-    }
     if (question.type === "select" || question.type === "single_select") {
       return <fieldset key={question.id} className="space-y-3"><legend className="text-base font-semibold">{question.question}{required}</legend><div className="flex flex-wrap gap-2">{(question.options ?? []).map((option) => <button type="button" key={option} onClick={() => setValue(option)} className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${value === option ? "border-primary bg-primary/10 text-foreground" : "bg-background hover:bg-muted"}`}>{option}</button>)}</div></fieldset>
     }
@@ -648,7 +698,7 @@ function ClientDashboardContent() {
       const selected = Array.isArray(value) ? value : []
       return <fieldset key={question.id} className="space-y-3"><legend className="text-base font-semibold">{question.question}{required}</legend><div className="flex flex-wrap gap-2">{(question.options ?? []).map((option) => <button type="button" key={option} onClick={() => setValue(selected.includes(option) ? selected.filter((item) => item !== option) : [...selected, option])} className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${selected.includes(option) ? "border-primary bg-primary/10 text-foreground" : "bg-background hover:bg-muted"}`}>{option}</button>)}</div></fieldset>
     }
-    return <div key={question.id} className="space-y-3"><div className="space-y-2"><Label className="text-base font-semibold">{question.question}{required}</Label><Input type={question.type === "number" ? "number" : question.type === "url" ? "url" : "text"} autoComplete={question.type === "url" ? "off" : undefined} value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} className="h-11" /></div>{(question.allowPhotos || question.allowPdf) && <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 p-3 text-sm transition-colors hover:bg-muted/40"><span className="grid h-8 w-8 place-items-center rounded-md bg-background">{question.allowPhotos ? <ImagePlus className="h-4 w-4" /> : <Paperclip className="h-4 w-4" />}</span><span className="min-w-0 flex-1"><span className="block font-medium">Πρόσθεσε επισύναψη</span><span className="block text-xs text-muted-foreground">Έως {question.allowPhotos ? question.maxPhotos || 4 : 1} αρχεία, 5MB το καθένα</span></span><Input className="hidden" type="file" multiple={question.allowPhotos} accept={[question.allowPhotos ? "image/jpeg,image/png,image/webp" : "", question.allowPdf ? "application/pdf" : ""].filter(Boolean).join(",")} onChange={(event) => setFiles((current) => [...current, ...Array.from(event.target.files ?? []).map((file) => ({ file, questionId: question.id }))].slice(0, 5))} /></label>}</div>
+    return <div key={question.id} className="space-y-3"><div className="space-y-2"><Label className="text-base font-semibold">{question.question}{required}</Label><Input type={question.type === "number" ? "number" : question.type === "url" ? "url" : "text"} autoComplete={question.type === "url" ? "off" : undefined} value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} className="h-11" /></div></div>
   }
 
   const submitUpdate = async (event: FormEvent) => {
@@ -662,6 +712,7 @@ function ClientDashboardContent() {
       formData.append("answers", JSON.stringify(Object.entries(answers).map(([questionId, answer]) => ({ questionId: Number(questionId), answer }))))
       files.forEach(({ file }) => formData.append("files", file))
       formData.append("fileQuestionIds", JSON.stringify(files.map(({ questionId }) => questionId)))
+      formData.append("fileAngles", JSON.stringify(files.map(({ angle }) => angle ?? "other")))
       await api.upload("/client/updates/submit", formData)
       setSubmitted(true)
       setAnswers({})

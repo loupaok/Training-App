@@ -28,6 +28,7 @@ export interface BrandingData {
   eshopEnabled: boolean;
   eshopUrl: string | null;
   eshopBannerTitle: string | null;
+  eshopBannerAccentText: string | null;
   eshopBannerText: string | null;
   eshopButtonText: string;
   eshopBannerImageUrl: string | null;
@@ -48,6 +49,7 @@ const defaults: BrandingData = {
   eshopEnabled: false,
   eshopUrl: null,
   eshopBannerTitle: null,
+  eshopBannerAccentText: null,
   eshopBannerText: null,
   eshopButtonText: "Πήγαινε στο eshop",
   eshopBannerImageUrl: null,

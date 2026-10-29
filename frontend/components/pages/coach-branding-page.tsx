@@ -33,6 +33,7 @@ const emptyBranding: Branding = {
   eshopEnabled: false,
   eshopUrl: null,
   eshopBannerTitle: null,
+  eshopBannerAccentText: null,
   eshopBannerText: null,
   eshopButtonText: "Πήγαινε στο eshop",
   eshopBannerImageUrl: null,
@@ -126,6 +127,7 @@ function CoachBrandingContent() {
         eshopEnabled: branding.eshopEnabled,
         eshopUrl: branding.eshopUrl?.trim() || null,
         eshopBannerTitle: branding.eshopBannerTitle?.trim() || null,
+        eshopBannerAccentText: branding.eshopBannerAccentText?.trim() || null,
         eshopBannerText: branding.eshopBannerText?.trim() || null,
         eshopButtonText: branding.eshopButtonText?.trim() || "Πήγαινε στο eshop",
       }));
@@ -285,20 +287,31 @@ function CoachBrandingContent() {
           </CardContent>
         </Card>
 
-        <Card>
+        {false && <Card>
           <CardHeader>
             <CardTitle>Eshop</CardTitle>
             <CardDescription>Ρύθμισε το banner και το link που βλέπουν οι πελάτες στη σελίδα Πόντοι & Rewards.</CardDescription>
           </CardHeader>
           <CardContent className="gap-5">
             <div className="flex items-center justify-between gap-4 rounded-[14px] border border-border bg-muted/40 p-4"><div><Label htmlFor="eshop-enabled">Εμφάνιση eshop στους πελάτες</Label><p className="mt-1 text-xs text-muted-foreground">Αν δεν υπάρχει έγκυρο HTTPS link, τα στοιχεία eshop κρύβονται αυτόματα.</p></div><Switch id="eshop-enabled" checked={branding.eshopEnabled} onCheckedChange={(value) => updateBranding("eshopEnabled", value)} disabled={loading} /></div>
-            <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2 sm:col-span-2"><Label htmlFor="eshop-url">Link eshop</Label><Input id="eshop-url" type="url" value={branding.eshopUrl || ""} onChange={(event) => updateBranding("eshopUrl", event.target.value)} placeholder="https://example.com" disabled={loading} /></div><div className="space-y-2"><Label htmlFor="eshop-title">Τίτλος banner</Label><Input id="eshop-title" maxLength={100} value={branding.eshopBannerTitle || ""} onChange={(event) => updateBranding("eshopBannerTitle", event.target.value)} placeholder="Χρησιμοποίησε τους πόντους σου" disabled={loading} /></div><div className="space-y-2"><Label htmlFor="eshop-button">Κείμενο κουμπιού</Label><Input id="eshop-button" maxLength={100} value={branding.eshopButtonText || ""} onChange={(event) => updateBranding("eshopButtonText", event.target.value)} placeholder="Πήγαινε στο eshop" disabled={loading} /></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="eshop-text">Κείμενο banner</Label><Input id="eshop-text" maxLength={255} value={branding.eshopBannerText || ""} onChange={(event) => updateBranding("eshopBannerText", event.target.value)} placeholder="Εξαργύρωσε τους πόντους σου σε κουπόνια." disabled={loading} /></div></div>
+            <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2 sm:col-span-2"><Label htmlFor="eshop-url">Link eshop</Label><Input id="eshop-url" type="url" value={branding.eshopUrl || ""} onChange={(event) => updateBranding("eshopUrl", event.target.value)} placeholder="https://example.com" disabled={loading} /></div><div className="space-y-2"><Label htmlFor="eshop-button">Κείμενο κουμπιού</Label><Input id="eshop-button" maxLength={100} value={branding.eshopButtonText || ""} onChange={(event) => updateBranding("eshopButtonText", event.target.value)} placeholder="Πήγαινε στο eshop" disabled={loading} /></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="eshop-text">Κείμενο banner</Label><Input id="eshop-text" maxLength={255} value={branding.eshopBannerText || ""} onChange={(event) => updateBranding("eshopBannerText", event.target.value)} placeholder="Εξαργύρωσε τους πόντους σου σε κουπόνια." disabled={loading} /></div></div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="eshop-title-white">Λευκό κείμενο τίτλου</Label>
+                <Input id="eshop-title-white" maxLength={100} value={branding.eshopBannerTitle || ""} onChange={(event) => updateBranding("eshopBannerTitle", event.target.value)} placeholder="ΧΡΗΣΙΜΟΠΟΙΗΣΕ ΤΟΥΣ ΠΟΝΤΟΥΣ ΣΟΥ ΣΤΟ" disabled={loading} />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="eshop-accent-title">Lime κείμενο τίτλου</Label>
+                <Input id="eshop-accent-title" maxLength={100} value={branding.eshopBannerAccentText || ""} onChange={(event) => updateBranding("eshopBannerAccentText", event.target.value)} placeholder="ESHOP." disabled={loading} />
+                <p className="text-xs text-muted-foreground">Το δεύτερο μέρος του τίτλου εμφανίζεται lime.</p>
+              </div>
+            </div>
             <BrandImagePreview url={branding.eshopBannerImageUrl} type="eshop-banner" />
             <Button type="button" variant="outline" onClick={() => eshopBannerInputRef.current?.click()} disabled={uploading !== null || loading}>{uploading === "eshop-banner" ? <LoaderCircle className="animate-spin" /> : <Upload />}{uploading === "eshop-banner" ? "Ανέβασμα..." : "Ανέβασε φωτογραφία banner"}</Button>
             <input ref={eshopBannerInputRef} type="file" accept=".jpg,.jpeg,.png" onChange={(event) => uploadBrandImage("eshop-banner", event)} className="hidden" />
             {branding.eshopEnabled && branding.eshopUrl && <div className="relative overflow-hidden rounded-[18px] bg-[var(--sp-emphasis)] p-5 text-[var(--sp-emphasis-foreground)]"><span className="absolute right-8 -top-4 h-28 w-3 -skew-x-[18deg] bg-accent" /><p className="relative text-lg font-extrabold">{branding.eshopBannerTitle || "Χρησιμοποίησε τους πόντους σου"}</p><p className="relative mt-1 max-w-md text-sm text-muted-foreground">{branding.eshopBannerText || "Εξαργύρωσέ τους σε κουπόνια για το eshop."}</p><span className="relative mt-4 inline-flex rounded-full bg-accent px-4 py-2 text-xs font-extrabold text-accent-foreground">{branding.eshopButtonText || "Πήγαινε στο eshop"}</span></div>}
           </CardContent>
-        </Card>
+        </Card>}
 
         <Card>
           <CardHeader>

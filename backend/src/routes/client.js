@@ -138,7 +138,7 @@ async function getUpdates(connection, clientId, limit = 12) {
   if (!updates.length) return [];
   const ids = updates.map((update) => update.id);
   const [answers] = await connection.query(`SELECT wa.update_id, wa.answer, q.question, q.type, q.standard_key FROM weekly_update_answers wa JOIN update_questions q ON q.id = wa.question_id WHERE wa.update_id IN (?) ORDER BY q.sort_order`, [ids]);
-  const [files] = await connection.query('SELECT update_id, question_id, file_url, file_type, original_name FROM weekly_update_files WHERE update_id IN (?) ORDER BY created_at DESC', [ids]);
+  const [files] = await connection.query('SELECT update_id, question_id, file_url, file_type, original_name, angle FROM weekly_update_files WHERE update_id IN (?) ORDER BY created_at DESC', [ids]);
   return updates.map((update) => summarizeUpdate({ ...update, answers: answers.filter((answer) => answer.update_id === update.id), files: files.filter((file) => file.update_id === update.id) }));
 }
 
@@ -629,8 +629,10 @@ router.post('/updates/submit', upload.array('files', 5), async (req, res) => {
     await ensureWeeklyUpdateSchema(connection);
     let answers;
     let fileQuestionIds;
+    let fileAngles;
     try { answers = JSON.parse(req.body.answers || '[]'); } catch { return res.status(400).json({ message: 'Invalid answers' }); }
     try { fileQuestionIds = JSON.parse(req.body.fileQuestionIds || '[]'); } catch { return res.status(400).json({ message: 'Invalid files' }); }
+    try { fileAngles = JSON.parse(req.body.fileAngles || '[]'); } catch { fileAngles = []; }
     const [[demoClient]] = await connection.query('SELECT is_demo, demo_updates_enabled FROM clients WHERE user_id = ? LIMIT 1', [req.user.id]);
     const demoUpdatesEnabled = Boolean(demoClient?.is_demo && demoClient?.demo_updates_enabled);
     const [schedules] = await connection.query('SELECT day_of_week FROM update_schedule WHERE client_id = ? ORDER BY updated_at DESC LIMIT 1', [req.user.id]);
@@ -658,7 +660,7 @@ router.post('/updates/submit', upload.array('files', 5), async (req, res) => {
       const value = typeof answer.answer === 'object' ? JSON.stringify(answer.answer) : String(answer.answer ?? '');
       await connection.query('INSERT INTO weekly_update_answers (update_id, question_id, answer) VALUES (?, ?, ?)', [result.insertId, answer.questionId, value]);
     }
-    if (req.files?.length) await connection.query('INSERT INTO weekly_update_files (update_id, question_id, file_url, file_type, original_name) VALUES ?', [req.files.map((file, index) => [result.insertId, Number(fileQuestionIds[index]) || null, file.path.replace(/\\/g, '/'), file.mimetype === 'application/pdf' ? 'pdf' : 'photo', file.originalname])]);
+    if (req.files?.length) await connection.query('INSERT INTO weekly_update_files (update_id, question_id, file_url, file_type, original_name, angle) VALUES ?', [req.files.map((file, index) => [result.insertId, Number(fileQuestionIds[index]) || null, file.path.replace(/\\/g, '/'), file.mimetype === 'application/pdf' ? 'pdf' : 'photo', file.originalname, file.mimetype === 'application/pdf' ? 'other' : (['front', 'side', 'back', 'other'].includes(fileAngles[index]) ? fileAngles[index] : 'other')])]);
     await connection.commit();
     try {
       await registerWeeklyUpdatePhotos(connection, req.user.id);

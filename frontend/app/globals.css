@@ -316,3 +316,15 @@
 [data-slot="progress-indicator"] {
   background-color: var(--sp-lime) !important;
 }
+
+/* Points hero: its diagonal is one continuous visual element, not Card's
+   generic lime accent rail. */
+[data-slot="card"][data-variant="lime"]:has([class*="right-[230px]"])::before {
+  display: none !important;
+}
+
+[data-slot="card"][data-variant="lime"]:has([class*="right-[230px]"]) [class*="right-[230px]"] {
+  top: -5rem !important;
+  bottom: -5rem !important;
+  height: auto !important;
+}

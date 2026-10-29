@@ -73,15 +73,34 @@ type WeightPoint = { submittedAt: string; weight: number; date: string }
 
 function ProgressWeightChart({ points, targetWeight }: { points: WeightPoint[]; targetWeight: number | null }) {
   if (points.length < 2) return <EmptyChart text="Χρειάζονται τουλάχιστον δύο καταγραφές βάρους για να εμφανιστεί η πορεία σου." />
+
   const values = [...points.map((point) => point.weight), ...(targetWeight === null ? [] : [targetWeight])]
-  const min = Math.min(...values) - 0.5
-  const max = Math.max(...values) + 0.5
-  const x = (index: number) => 28 + (index / Math.max(points.length - 1, 1)) * 560
-  const y = (value: number) => 24 + ((max - value) / Math.max(max - min, 0.1)) * 164
+  const minValue = Math.floor(Math.min(...values) - 1)
+  const maxValue = Math.ceil(Math.max(...values) + 1)
+  const range = Math.max(maxValue - minValue, 1)
+  const left = 44
+  const right = 604
+  const top = 26
+  const bottom = 196
+  const x = (index: number) => left + (index / Math.max(points.length - 1, 1)) * (right - left)
+  const y = (value: number) => top + ((maxValue - value) / range) * (bottom - top)
   const line = points.map((point, index) => `${index === 0 ? "M" : "L"}${x(index)} ${y(point.weight)}`).join(" ")
-  const fill = `${line} L ${x(points.length - 1)} 202 L ${x(0)} 202 Z`
+  const fill = `${line} L ${x(points.length - 1)} ${bottom} L ${x(0)} ${bottom} Z`
   const targetY = targetWeight === null ? null : y(targetWeight)
-  return <div className="relative h-[250px] w-full overflow-hidden"><svg viewBox="0 0 620 226" className="h-full w-full overflow-visible" role="img" aria-label="Διάγραμμα βάρους"><defs><linearGradient id="progress-weight-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#B0F90C" stopOpacity=".3" /><stop offset="100%" stopColor="#B0F90C" stopOpacity="0" /></linearGradient></defs>{[62, 106, 150].map((lineY) => <line key={lineY} x1="28" x2="588" y1={lineY} y2={lineY} stroke="currentColor" className="text-border" strokeDasharray="3 5" />)}{targetY !== null && <><line x1="28" x2="588" y1={targetY} y2={targetY} stroke="#B0F90C" strokeDasharray="6 5" /><text x="584" y={targetY - 7} textAnchor="end" fontSize="10" fontWeight="800" fill="#6A6A6A">στόχος {targetWeight} kg</text></>}<path d={fill} fill="url(#progress-weight-fill)" /><path d={line} fill="none" stroke="currentColor" className="text-foreground" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />{points.map((point, index) => <circle key={`${point.submittedAt}-${index}`} cx={x(index)} cy={y(point.weight)} r={index === points.length - 1 ? 5 : 3} fill={index === points.length - 1 ? "#B0F90C" : "currentColor"} className={index === points.length - 1 ? "" : "text-foreground"} />)}</svg><div className="absolute bottom-0 left-7 right-8 flex justify-between text-[10px] font-bold text-muted-foreground"><span>{points[0].date}</span><span>{points.at(-1)?.date}</span></div></div>
+  const ticks = Array.from({ length: 4 }, (_, index) => maxValue - (range * index) / 3)
+  const labels = [0, Math.round((points.length - 1) / 4), Math.round((points.length - 1) / 2), Math.round((points.length - 1) * .75), points.length - 1]
+
+  return <div className="relative h-[250px] w-full overflow-hidden">
+    <svg viewBox="0 0 620 230" className="h-full w-full overflow-visible" role="img" aria-label="Διάγραμμα βάρους">
+      <defs><linearGradient id="progress-weight-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#B0F90C" stopOpacity=".45" /><stop offset="100%" stopColor="#B0F90C" stopOpacity="0" /></linearGradient></defs>
+      {ticks.map((tick, index) => { const lineY = top + (index / 3) * (bottom - top); return <g key={tick}><line x1={left} x2={right} y1={lineY} y2={lineY} stroke="#ECECEA" strokeWidth="1" /><text x="36" y={lineY + 4} textAnchor="end" fontSize="11" fill="#8A8A8A" fontFamily="Commissioner, sans-serif">{tick.toLocaleString("el-GR", { maximumFractionDigits: 0 })}</text></g> })}
+      {targetY !== null && <><line x1={left} x2={right} y1={targetY} y2={targetY} stroke="#0B0B0B" strokeWidth="1.5" strokeDasharray="5 5" /><text x={right - 2} y={targetY - 7} textAnchor="end" fontSize="11" fontWeight="800" fill="#0B0B0B" fontFamily="Commissioner, sans-serif">Στόχος {targetWeight} kg</text></>}
+      <path d={fill} fill="url(#progress-weight-fill)" /><path d={line} fill="none" stroke="#0B0B0B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      {points.map((point, index) => <circle key={`${point.submittedAt}-${index}`} cx={x(index)} cy={y(point.weight)} r={index === points.length - 1 ? 7 : 3} fill={index === points.length - 1 ? "#B0F90C" : "#FFFFFF"} stroke="#0B0B0B" strokeWidth={index === points.length - 1 ? 2.5 : 2} />)}
+      <g transform={`translate(${Math.max(left, right - 78)},${Math.max(top, y(points.at(-1)!.weight) - 46)})`}><rect width="76" height="30" rx="8" fill="#0B0B0B" /><text x="38" y="20" textAnchor="middle" fontSize="13" fontWeight="800" fill="#B0F90C" fontFamily="Commissioner, sans-serif">{points.at(-1)!.weight.toLocaleString("el-GR")} kg</text></g>
+      {labels.map((index, labelIndex) => <text key={labelIndex} x={x(index)} y="218" textAnchor="middle" fontSize="11" fill="#8A8A8A" fontFamily="Commissioner, sans-serif">{labelIndex === labels.length - 1 ? "Σήμερα" : monthFormatter.format(new Date(points[index].submittedAt))}</text>)}
+    </svg>
+  </div>
 }
 
 function VolumeBars({ data }: { data: Array<{ month: string; volume: number }> }) {
@@ -213,7 +232,7 @@ function ClientProgressContent() {
   const paymentApproved = user?.status === "active"
 
   return <ClientShell title="Progress" user={user} logout={logout} paymentApproved={paymentApproved} active="progress">
-    <main className="mx-auto max-w-[var(--container-7xl)] space-y-6 p-4 sm:p-6 lg:p-8">
+    <main className="mx-auto max-w-[var(--container-7xl)] space-y-5 p-4 sm:p-6 lg:px-10 lg:py-8">
       <div className="hidden"><h1 className="text-2xl font-bold">Η πρόοδός μου</h1><p className="mt-1 text-sm text-muted-foreground">Οι μετρήσεις, τα check-ins και οι προπονήσεις σου σε ένα μέρος.</p></div>
       {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
       {loading ? <div className="space-y-6"><div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{Array.from({ length: 4 }, (_, index) => <Skeleton key={index} className="h-40 rounded-[20px]" />)}</div><Skeleton className="h-80 rounded-[20px]" /></div> : <>
@@ -226,7 +245,9 @@ function ClientProgressContent() {
         </div>
 
         <Tabs defaultValue="overview" className="space-y-6">
-          <TabsList className="h-auto w-full justify-start overflow-x-auto rounded-[14px] border border-border bg-card p-1 [&>button]:h-[38px] [&>button]:shrink-0 [&>button]:rounded-[10px] [&>button]:px-[18px] [&>button]:text-[13px] [&>button]:font-bold [&>button[data-state=active]]:bg-accent [&>button[data-state=active]]:text-accent-foreground [&>button[data-state=active]]:shadow-none"><TabsTrigger value="overview">Επισκόπηση</TabsTrigger><TabsTrigger value="weight">Βάρος & μετρήσεις</TabsTrigger><TabsTrigger value="workouts">Προπονήσεις</TabsTrigger><TabsTrigger value="records">Ρεκόρ</TabsTrigger><TabsTrigger value="checkins">Check-ins</TabsTrigger><TabsTrigger value="photos">Φωτογραφίες</TabsTrigger></TabsList>
+          <div className="-mx-4 overflow-x-auto px-4 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden">
+            <TabsList className="h-auto w-max min-w-full justify-start gap-0.5 rounded-[14px] border border-border bg-card p-1 sm:min-w-0 [&>button]:h-[38px] [&>button]:shrink-0 [&>button]:rounded-[10px] [&>button]:px-[18px] [&>button]:text-[13px] [&>button]:font-bold [&>button]:text-[#555555] [&>button[data-state=active]]:bg-accent [&>button[data-state=active]]:text-accent-foreground [&>button[data-state=active]]:shadow-none"><TabsTrigger value="overview">Επισκόπηση</TabsTrigger><TabsTrigger value="weight">Βάρος & μετρήσεις</TabsTrigger><TabsTrigger value="workouts">Προπονήσεις</TabsTrigger><TabsTrigger value="records">Ρεκόρ</TabsTrigger><TabsTrigger value="checkins">Check-ins</TabsTrigger><TabsTrigger value="photos">Φωτογραφίες</TabsTrigger></TabsList>
+          </div>
           <TabsContent value="overview" className="space-y-6">
             <ProgressReferenceOverview weights={weights} targetWeight={targetWeight} personalBests={personalBests} monthlyVolume={monthlyVolume} workouts={workouts} updates={recentUpdates} photos={data?.photos || []} onSelectPhoto={setPhoto} />
             <div className="hidden">

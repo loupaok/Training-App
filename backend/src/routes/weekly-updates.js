@@ -195,6 +195,12 @@ export async function ensureWeeklyUpdateSchema(connection) {
     )
   `);
 
+  try {
+    await connection.query("ALTER TABLE weekly_update_files ADD COLUMN angle ENUM('front', 'side', 'back', 'other') NOT NULL DEFAULT 'other' AFTER original_name");
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
+
   const [rows] = await connection.query('SELECT COUNT(*) AS total FROM update_questions');
   if (Number(rows[0]?.total || 0) === 0) {
     await connection.query(
@@ -539,6 +545,12 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
     } catch {
       fileQuestionIds = [];
     }
+    let fileAngles = [];
+    try {
+      fileAngles = req.body.fileAngles ? JSON.parse(req.body.fileAngles) : [];
+    } catch {
+      fileAngles = [];
+    }
 
     const [[demoClient]] = await connection.query(
       'SELECT is_demo, demo_updates_enabled FROM clients WHERE user_id = ? LIMIT 1',
@@ -602,13 +614,14 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
 
     if (req.files?.length) {
       await connection.query(
-        'INSERT INTO weekly_update_files (update_id, question_id, file_url, file_type, original_name) VALUES ?',
+        'INSERT INTO weekly_update_files (update_id, question_id, file_url, file_type, original_name, angle) VALUES ?',
         [req.files.map((file, index) => [
           updateId,
           fileQuestionIds[index] || null,
           file.path.replace(/\\/g, '/'),
           file.mimetype === 'application/pdf' ? 'pdf' : 'photo',
           file.originalname,
+          file.mimetype === 'application/pdf' ? 'other' : (['front', 'side', 'back', 'other'].includes(fileAngles[index]) ? fileAngles[index] : 'other'),
         ])]
       );
     }
@@ -684,7 +697,7 @@ async function attachAnswersAndFiles(connection, updates) {
     [ids]
   );
   const [fileRows] = await connection.query(
-    'SELECT update_id, question_id, file_url, file_type, original_name FROM weekly_update_files WHERE update_id IN (?)',
+    'SELECT update_id, question_id, file_url, file_type, original_name, angle FROM weekly_update_files WHERE update_id IN (?)',
     [ids]
   );
 

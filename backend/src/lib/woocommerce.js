@@ -50,3 +50,7 @@ export async function createCoupon({ code, amount, clientEmail, expiryDays = 30 
     description: `CoachApp Points Reward for ${clientEmail}`,
   });
 }
+
+export async function getCoupon(couponId) {
+  return wcRequest('GET', `/coupons/${encodeURIComponent(couponId)}`);
+}

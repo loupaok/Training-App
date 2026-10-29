@@ -39,6 +39,7 @@ export async function ensureBrandingSchema(connection) {
       ADD COLUMN IF NOT EXISTS eshop_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       ADD COLUMN IF NOT EXISTS eshop_url VARCHAR(500) NULL,
       ADD COLUMN IF NOT EXISTS eshop_banner_title VARCHAR(100) NULL,
+      ADD COLUMN IF NOT EXISTS eshop_banner_accent_text VARCHAR(100) NULL,
       ADD COLUMN IF NOT EXISTS eshop_banner_text VARCHAR(255) NULL,
       ADD COLUMN IF NOT EXISTS eshop_button_text VARCHAR(100) NULL,
       ADD COLUMN IF NOT EXISTS eshop_banner_image_url VARCHAR(255) NULL
@@ -61,6 +62,7 @@ function normalizeBranding(row) {
     eshopEnabled: Boolean(row.eshop_enabled),
     eshopUrl: row.eshop_url,
     eshopBannerTitle: row.eshop_banner_title,
+    eshopBannerAccentText: row.eshop_banner_accent_text,
     eshopBannerText: row.eshop_banner_text,
     eshopButtonText: row.eshop_button_text || 'Πήγαινε στο eshop',
     eshopBannerImageUrl: row.eshop_banner_image_url,
@@ -160,6 +162,7 @@ router.put('/', authenticateToken, authorizeRole(['coach']), [
   body('eshopEnabled').optional().isBoolean(),
   body('eshopUrl').optional({ nullable: true }).isURL({ protocols: ['https'], require_protocol: true }),
   body('eshopBannerTitle').optional({ nullable: true }).isString().isLength({ max: 100 }),
+  body('eshopBannerAccentText').optional({ nullable: true }).isString().isLength({ max: 100 }),
   body('eshopBannerText').optional({ nullable: true }).isString().isLength({ max: 255 }),
   body('eshopButtonText').optional({ nullable: true }).isString().isLength({ max: 100 }),
 ], async (req, res) => {
@@ -174,7 +177,7 @@ router.put('/', authenticateToken, authorizeRole(['coach']), [
       `UPDATE branding
        SET app_name = ?, primary_color = ?, font_color = ?, title_color = ?,
            button_color = ?, button_hover_color = ?, button_text_color = ?,
-           eshop_enabled = ?, eshop_url = ?, eshop_banner_title = ?,
+           eshop_enabled = ?, eshop_url = ?, eshop_banner_title = ?, eshop_banner_accent_text = ?,
            eshop_banner_text = ?, eshop_button_text = ?
        WHERE id = 1`,
       [
@@ -188,6 +191,7 @@ router.put('/', authenticateToken, authorizeRole(['coach']), [
         req.body.eshopEnabled ? 1 : 0,
         req.body.eshopUrl || null,
         req.body.eshopBannerTitle || null,
+        req.body.eshopBannerAccentText || null,
         req.body.eshopBannerText || null,
         req.body.eshopButtonText || 'Πήγαινε στο eshop',
       ]

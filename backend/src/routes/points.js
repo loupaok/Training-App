@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authenticateToken, authorizeRole } from '../middleware/auth.js';
-import { wcRequest, createCoupon } from '../lib/woocommerce.js';
+import { wcRequest, createCoupon, getCoupon } from '../lib/woocommerce.js';
 import { sendMail } from '../lib/mailer.js';
 
 const router = express.Router();
@@ -58,6 +58,17 @@ export async function ensurePointsSchema(connection) {
       FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+  for (const statement of [
+    "ALTER TABLE points_transactions ADD COLUMN coupon_expires_at DATETIME NULL",
+    "ALTER TABLE points_transactions ADD COLUMN coupon_status ENUM('active', 'used', 'expired', 'invalid') NULL",
+    "ALTER TABLE points_transactions ADD COLUMN coupon_checked_at DATETIME NULL",
+  ]) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+  }
 }
 
 // Best-effort points award — called after a payment is recorded as completed
@@ -171,6 +182,33 @@ async function getClientPointsPayload(connection, clientId, { limit = 50, offset
   };
 }
 
+function couponStatusFromLocal(transaction) {
+  if (transaction.coupon_status === 'used' || transaction.coupon_status === 'invalid') return transaction.coupon_status;
+  if (transaction.coupon_expires_at && new Date(transaction.coupon_expires_at).getTime() < Date.now()) return 'expired';
+  return 'active';
+}
+
+async function syncCouponStatus(connection, transaction) {
+  let status = couponStatusFromLocal(transaction);
+  let expiresAt = transaction.coupon_expires_at || null;
+
+  if (transaction.wc_coupon_id && status === 'active') {
+    const coupon = await getCoupon(transaction.wc_coupon_id);
+    const remoteExpiry = coupon?.date_expires_gmt || coupon?.date_expires || null;
+    expiresAt = remoteExpiry ? new Date(remoteExpiry) : expiresAt;
+    const remoteExpired = expiresAt && new Date(expiresAt).getTime() < Date.now();
+    const usageLimit = Number(coupon?.usage_limit || 0);
+    const usageCount = Number(coupon?.usage_count || 0);
+    status = remoteExpired ? 'expired' : usageLimit > 0 && usageCount >= usageLimit ? 'used' : 'active';
+  }
+
+  await connection.query(
+    'UPDATE points_transactions SET coupon_status = ?, coupon_expires_at = ?, coupon_checked_at = NOW() WHERE id = ?',
+    [status, expiresAt || null, transaction.id]
+  );
+  return { ...transaction, coupon_status: status, coupon_expires_at: expiresAt || null };
+}
+
 router.get('/my', authenticateToken, authorizeRole(['client']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
@@ -181,6 +219,39 @@ router.get('/my', authenticateToken, authorizeRole(['client']), async (req, res)
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/my/coupons', authenticateToken, authorizeRole(['client']), async (req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await ensurePointsSchema(connection);
+    const [transactions] = await connection.query(
+      `SELECT id, coupon_code, wc_coupon_id, points, created_at, coupon_expires_at, coupon_status
+       FROM points_transactions
+       WHERE client_id = ? AND type = 'redeemed' AND coupon_code IS NOT NULL
+       ORDER BY created_at DESC`,
+      [req.user.id]
+    );
+
+    let synced = true;
+    const coupons = [];
+    for (const transaction of transactions) {
+      try {
+        coupons.push(await syncCouponStatus(connection, transaction));
+      } catch (error) {
+        synced = false;
+        coupons.push({ ...transaction, coupon_status: couponStatusFromLocal(transaction) });
+        console.warn(`Coupon sync failed for ${transaction.id}:`, error.message);
+      }
+    }
+    res.json({ synced, coupons });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection?.release();
   }
 });
 
@@ -294,15 +365,14 @@ router.post('/redeem', authenticateToken, authorizeRole(['client']), [
     }
 
     await connection.query('UPDATE client_points SET used_points = used_points + ? WHERE client_id = ?', [pointsToRedeem, req.user.id]);
-    await connection.query(
-      `INSERT INTO points_transactions (client_id, type, points, description, coupon_code, wc_coupon_id)
-       VALUES (?, 'redeemed', ?, ?, ?, ?)`,
-      [req.user.id, pointsToRedeem, `Coupon ${couponCode}`, couponCode, coupon?.id || null]
-    );
-    await connection.commit();
-
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + settings.coupon_expiry_days);
+    await connection.query(
+      `INSERT INTO points_transactions (client_id, type, points, description, coupon_code, wc_coupon_id, coupon_expires_at, coupon_status)
+       VALUES (?, 'redeemed', ?, ?, ?, ?, ?, 'active')`,
+      [req.user.id, pointsToRedeem, `Coupon ${couponCode}`, couponCode, coupon?.id || null, expiryDate]
+    );
+    await connection.commit();
 
     try {
       await sendMail({

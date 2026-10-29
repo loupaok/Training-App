@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { LoaderCircle, Upload } from "lucide-react";
 import { CoachShell } from "@/components/shell/coach-shell";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
+import { BrandingData, useBranding } from "@/contexts/BrandingContext";
+import { resolveMediaUrl } from "@/lib/media";
 
 interface PointsSettings {
   points_per_euro: number;
@@ -38,7 +41,12 @@ interface ClientPoints {
 
 function CoachPointsContent() {
   const { user, logout } = useAuth();
+  const { refreshBranding } = useBranding();
   const [settings, setSettings] = useState<PointsSettings | null>(null);
+  const [eshopBranding, setEshopBranding] = useState<BrandingData | null>(null);
+  const [savingEshop, setSavingEshop] = useState(false);
+  const [uploadingEshopImage, setUploadingEshopImage] = useState(false);
+  const eshopImageInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -57,6 +65,7 @@ function CoachPointsContent() {
 
   useEffect(() => {
     api.get<PointsSettings>("/points/settings").then(setSettings).catch(() => {});
+    api.get<BrandingData>("/branding").then(setEshopBranding).catch(() => {});
     api
       .get<ClientRow[]>("/clients")
       .then((rows) => {
@@ -73,6 +82,51 @@ function CoachPointsContent() {
 
   const update = <K extends keyof PointsSettings>(key: K, value: PointsSettings[K]) =>
     setSettings((current) => (current ? { ...current, [key]: value } : current));
+
+  const updateEshop = <K extends keyof BrandingData>(key: K, value: BrandingData[K]) =>
+    setEshopBranding((current) => (current ? { ...current, [key]: value } : current));
+
+  const saveEshop = async () => {
+    if (!eshopBranding) return;
+    setSavingEshop(true);
+    setError("");
+    setMessage("");
+    try {
+      const saved = await api.put<BrandingData>("/branding", {
+        ...eshopBranding,
+        eshopUrl: eshopBranding.eshopUrl?.trim() || null,
+        eshopBannerTitle: eshopBranding.eshopBannerTitle?.trim() || null,
+        eshopBannerAccentText: eshopBranding.eshopBannerAccentText?.trim() || null,
+        eshopBannerText: eshopBranding.eshopBannerText?.trim() || null,
+        eshopButtonText: eshopBranding.eshopButtonText?.trim() || "Πήγαινε στο eshop",
+      });
+      setEshopBranding(saved);
+      await refreshBranding();
+      setMessage("Οι ρυθμίσεις eshop αποθηκεύτηκαν.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν αποθηκεύτηκαν οι ρυθμίσεις eshop.");
+    } finally {
+      setSavingEshop(false);
+    }
+  };
+
+  const uploadEshopImage = async (file?: File) => {
+    if (!file) return;
+    setUploadingEshopImage(true);
+    setError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const saved = await api.upload<BrandingData>("/branding/eshop-banner", formData);
+      setEshopBranding(saved);
+      await refreshBranding();
+      setMessage("Η εικόνα banner ανέβηκε.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Η μεταφόρτωση απέτυχε.");
+    } finally {
+      setUploadingEshopImage(false);
+    }
+  };
 
   const saveSettings = async () => {
     if (!settings) return;
@@ -185,6 +239,24 @@ function CoachPointsContent() {
               </Button>
             </div>
           )}
+        </Card>
+
+        <Card className="p-6">
+          <h2 className="text-xl font-extrabold">Eshop & κουπόνια</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Ρύθμισε ό,τι εμφανίζεται στους πελάτες στη σελίδα Πόντοι & Rewards.</p>
+          {eshopBranding && <div className="mt-5 space-y-4">
+            <div className="flex items-center justify-between gap-4 rounded-[14px] border border-border bg-muted/40 p-4"><div><Label htmlFor="points-eshop-enabled">Εμφάνιση eshop στους πελάτες</Label><p className="mt-1 text-xs text-muted-foreground">Χρειάζεται έγκυρο HTTPS link.</p></div><Switch id="points-eshop-enabled" checked={eshopBranding.eshopEnabled} onCheckedChange={(value) => updateEshop("eshopEnabled", value)} /></div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Label className="space-y-2 sm:col-span-2"><span>Link eshop</span><Input type="url" value={eshopBranding.eshopUrl || ""} onChange={(event) => updateEshop("eshopUrl", event.target.value)} placeholder="https://example.com" /></Label>
+              <Label className="space-y-2"><span>Λευκό κείμενο τίτλου</span><Input maxLength={100} value={eshopBranding.eshopBannerTitle || ""} onChange={(event) => updateEshop("eshopBannerTitle", event.target.value)} placeholder="ΧΡΗΣΙΜΟΠΟΙΗΣΕ ΤΟΥΣ ΠΟΝΤΟΥΣ ΣΟΥ ΣΤΟ" /></Label>
+              <Label className="space-y-2"><span>Lime κείμενο τίτλου</span><Input maxLength={100} value={eshopBranding.eshopBannerAccentText || ""} onChange={(event) => updateEshop("eshopBannerAccentText", event.target.value)} placeholder="ESHOP." /></Label>
+              <Label className="space-y-2"><span>Κείμενο banner</span><Input maxLength={255} value={eshopBranding.eshopBannerText || ""} onChange={(event) => updateEshop("eshopBannerText", event.target.value)} placeholder="Εξαργύρωσε τους πόντους σου σε κουπόνια." /></Label>
+              <Label className="space-y-2"><span>Κείμενο κουμπιού</span><Input maxLength={100} value={eshopBranding.eshopButtonText || ""} onChange={(event) => updateEshop("eshopButtonText", event.target.value)} placeholder="Πήγαινε στο eshop" /></Label>
+            </div>
+            {eshopBranding.eshopBannerImageUrl && <img src={resolveMediaUrl(eshopBranding.eshopBannerImageUrl)} alt="Προεπισκόπηση banner eshop" className="max-h-48 w-full rounded-[14px] border border-border object-cover" />}
+            <div className="flex flex-wrap gap-3"><Button type="button" variant="outline" onClick={() => eshopImageInputRef.current?.click()} disabled={uploadingEshopImage}>{uploadingEshopImage ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}{uploadingEshopImage ? "Ανέβασμα..." : "Φωτογραφία banner"}</Button><Button type="button" variant="lime" onClick={saveEshop} disabled={savingEshop}>{savingEshop ? "Αποθήκευση..." : "Αποθήκευση eshop"}</Button></div>
+            <input ref={eshopImageInputRef} type="file" accept=".jpg,.jpeg,.png" className="hidden" onChange={(event) => void uploadEshopImage(event.target.files?.[0])} />
+          </div>}
         </Card>
 
         <Card className="p-6">
