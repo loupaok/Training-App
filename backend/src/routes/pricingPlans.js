@@ -211,6 +211,73 @@ export async function ensurePricingPlansSchema(connection) {
   }
 }
 
+export async function ensurePaymentSettingsSchema(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS payment_settings (
+      id TINYINT PRIMARY KEY,
+      bank_transfer_enabled TINYINT(1) NOT NULL DEFAULT 1,
+      cash_enabled TINYINT(1) NOT NULL DEFAULT 1,
+      payment_reference VARCHAR(255) NULL,
+      payment_note TEXT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS bank_accounts (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      bank_name VARCHAR(160) NOT NULL,
+      account_holder VARCHAR(255) NOT NULL,
+      iban VARCHAR(64) NOT NULL,
+      is_default TINYINT(1) NOT NULL DEFAULT 0,
+      is_visible TINYINT(1) NOT NULL DEFAULT 1,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+  await connection.query('INSERT IGNORE INTO payment_settings (id) VALUES (1)');
+}
+
+function normalizeIban(value = '') {
+  return String(value).replace(/\s+/g, '').toUpperCase();
+}
+
+export function isValidIban(value) {
+  const iban = normalizeIban(value);
+  if (!/^[A-Z]{2}[0-9A-Z]+$/.test(iban) || (iban.startsWith('GR') && iban.length !== 27) || iban.length < 15 || iban.length > 34) return false;
+  const prepared = `${iban.slice(4)}${iban.slice(0, 4)}`.replace(/[A-Z]/g, (letter) => String(letter.charCodeAt(0) - 55));
+  let remainder = 0;
+  for (const digit of prepared) remainder = (remainder * 10 + Number(digit)) % 97;
+  return remainder === 1;
+}
+
+function normalizeAccount(row) {
+  return {
+    id: row.id,
+    bankName: row.bank_name,
+    accountHolder: row.account_holder,
+    iban: normalizeIban(row.iban),
+    isDefault: Boolean(row.is_default),
+    isVisible: Boolean(row.is_visible),
+    sortOrder: Number(row.sort_order || 0),
+  };
+}
+
+export async function getPaymentSettings(connection, { publicOnly = false } = {}) {
+  await ensurePaymentSettingsSchema(connection);
+  const [[settings]] = await connection.query('SELECT * FROM payment_settings WHERE id = 1');
+  const [accounts] = await connection.query(
+    `SELECT * FROM bank_accounts ${publicOnly ? 'WHERE is_visible = 1' : ''} ORDER BY is_default DESC, sort_order ASC, id ASC`
+  );
+  return {
+    bankTransferEnabled: Boolean(settings?.bank_transfer_enabled),
+    cashEnabled: Boolean(settings?.cash_enabled),
+    paymentReference: settings?.payment_reference || '',
+    paymentNote: settings?.payment_note || '',
+    bankAccounts: accounts.map(normalizeAccount),
+  };
+}
+
 function normalizePlan(row) {
   let features = [];
   try {
@@ -265,7 +332,7 @@ router.get('/', attachUserIfPresent, async (req, res) => {
 });
 
 // Coach only — always returns every plan (active + inactive) for the admin UI.
-router.get('/manage', authenticateToken, authorizeRole(['coach']), async (req, res) => {
+router.get('/manage', authenticateToken, authorizeRole(['coach', 'admin']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await ensurePricingPlansSchema(connection);
@@ -278,7 +345,70 @@ router.get('/manage', authenticateToken, authorizeRole(['coach']), async (req, r
   }
 });
 
-router.put('/reorder', authenticateToken, authorizeRole(['coach']), [
+router.get('/payment-options', async (_req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    res.json(await getPaymentSettings(connection, { publicOnly: true }));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally { connection?.release(); }
+});
+
+router.get('/payment-settings', authenticateToken, authorizeRole(['coach', 'admin']), async (_req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    res.json(await getPaymentSettings(connection));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally { connection?.release(); }
+});
+
+router.put('/payment-settings', authenticateToken, authorizeRole(['coach', 'admin']), async (req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await ensurePaymentSettingsSchema(connection);
+    const accounts = Array.isArray(req.body.bankAccounts) ? req.body.bankAccounts : [];
+    const normalized = accounts.map((account, index) => ({
+      bankName: String(account.bankName || '').trim(),
+      accountHolder: String(account.accountHolder || '').trim(),
+      iban: normalizeIban(account.iban),
+      isDefault: Boolean(account.isDefault),
+      isVisible: account.isVisible !== false,
+      sortOrder: index,
+    })).filter((account) => account.bankName || account.accountHolder || account.iban);
+    if (normalized.some((account) => !account.bankName || !account.accountHolder || !isValidIban(account.iban))) {
+      return res.status(400).json({ message: 'Συμπλήρωσε έγκυρα στοιχεία για κάθε τραπεζικό λογαριασμό.' });
+    }
+    if (normalized.length) {
+      const defaultIndex = normalized.findIndex((account) => account.isDefault);
+      const visibleIndex = normalized.findIndex((account) => account.isVisible);
+      normalized.forEach((account, index) => { account.isDefault = index === (defaultIndex >= 0 ? defaultIndex : (visibleIndex >= 0 ? visibleIndex : 0)); });
+    }
+    await connection.beginTransaction();
+    await connection.query(
+      `UPDATE payment_settings SET bank_transfer_enabled = ?, cash_enabled = ?, payment_reference = ?, payment_note = ? WHERE id = 1`,
+      [req.body.bankTransferEnabled !== false ? 1 : 0, req.body.cashEnabled !== false ? 1 : 0, String(req.body.paymentReference || '').trim() || null, String(req.body.paymentNote || '').trim() || null]
+    );
+    await connection.query('DELETE FROM bank_accounts');
+    if (normalized.length) await connection.query(
+      'INSERT INTO bank_accounts (bank_name, account_holder, iban, is_default, is_visible, sort_order) VALUES ?',
+      [normalized.map((account) => [account.bankName, account.accountHolder, account.iban, account.isDefault ? 1 : 0, account.isVisible ? 1 : 0, account.sortOrder])]
+    );
+    await connection.commit();
+    res.json(await getPaymentSettings(connection));
+  } catch (error) {
+    await connection?.rollback();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally { connection?.release(); }
+});
+
+router.put('/reorder', authenticateToken, authorizeRole(['coach', 'admin']), [
   body('ids').isArray({ min: 1 }),
 ], async (req, res) => {
   const errors = validationResult(req);
@@ -299,7 +429,7 @@ router.put('/reorder', authenticateToken, authorizeRole(['coach']), [
   }
 });
 
-router.post('/', authenticateToken, authorizeRole(['coach']), [
+router.post('/', authenticateToken, authorizeRole(['coach', 'admin']), [
   body('name').notEmpty(),
   body('price').isFloat({ min: 0 }),
 ], async (req, res) => {
@@ -317,6 +447,7 @@ router.post('/', authenticateToken, authorizeRole(['coach']), [
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '') || `plan-${Date.now()}`;
 
+    if (req.body.isPopular) await connection.query('UPDATE pricing_plans SET is_popular = 0');
     const [result] = await connection.query(
       `INSERT INTO pricing_plans
         (slug, name, badge, description, price, currency, period, theme_color, features_json, is_active, sort_order, is_popular, points_reward)
@@ -347,11 +478,12 @@ router.post('/', authenticateToken, authorizeRole(['coach']), [
   }
 });
 
-router.put('/:id', authenticateToken, authorizeRole(['coach']), async (req, res) => {
+router.put('/:id', authenticateToken, authorizeRole(['coach', 'admin']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await ensurePricingPlansSchema(connection);
 
+    if (req.body.isPopular) await connection.query('UPDATE pricing_plans SET is_popular = 0 WHERE id != ?', [req.params.id]);
     await connection.query(
       `UPDATE pricing_plans
        SET name = ?, badge = ?, description = ?, price = ?, currency = ?, period = ?,
@@ -384,10 +516,25 @@ router.put('/:id', authenticateToken, authorizeRole(['coach']), async (req, res)
   }
 });
 
-router.delete('/:id', authenticateToken, authorizeRole(['coach']), async (req, res) => {
+router.delete('/:id', authenticateToken, authorizeRole(['coach', 'admin']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await ensurePricingPlansSchema(connection);
+    const [plans] = await connection.query('SELECT name FROM pricing_plans WHERE id = ? LIMIT 1', [req.params.id]);
+    if (!plans.length) {
+      connection.release();
+      return res.status(404).json({ message: 'Plan not found' });
+    }
+    const [[usage]] = await connection.query(
+      `SELECT COUNT(*) AS total FROM subscriptions
+       WHERE plan_name = ? AND status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE()`,
+      [plans[0].name]
+    );
+    if (Number(usage?.total || 0) > 0) {
+      await connection.query('UPDATE pricing_plans SET is_active = 0 WHERE id = ?', [req.params.id]);
+      connection.release();
+      return res.json({ message: 'Το πλάνο κρύφτηκε επειδή έχει ενεργούς πελάτες.', softDeleted: true, activeClients: Number(usage.total) });
+    }
     await connection.query('DELETE FROM pricing_plans WHERE id = ?', [req.params.id]);
     connection.release();
     res.json({ message: 'Plan deleted' });

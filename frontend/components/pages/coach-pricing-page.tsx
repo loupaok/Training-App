@@ -1,406 +1,59 @@
-"use client";
+"use client"
 
-import { useEffect, useMemo, useState } from "react";
-import { CoachShell } from "@/components/shell/coach-shell";
-import { ProtectedRoute } from "@/components/auth/protected-route";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useAuth } from "@/lib/auth/auth-context";
-import { api } from "@/lib/api/client";
+import { DragEvent, useEffect, useMemo, useState } from "react"
+import { CheckCircle2, CreditCard, Eye, GripVertical, Landmark, MoreHorizontal, Plus, Star, X } from "lucide-react"
+import { toast } from "sonner"
+import { CoachShell } from "@/components/shell/coach-shell"
+import { ProtectedRoute } from "@/components/auth/protected-route"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Separator } from "@/components/ui/separator"
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import { Switch } from "@/components/ui/switch"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
+import { api } from "@/lib/api/client"
+import { useAuth } from "@/lib/auth/auth-context"
 
-interface PlanFeature {
-  text: string;
-  included: boolean;
-}
-
-interface PricingPlan {
-  id?: number | string;
-  name: string;
-  badge?: string;
-  description?: string;
-  price: number | string;
-  currency: string;
-  period: string;
-  themeColor: string;
-  features: PlanFeature[];
-  isActive: boolean;
-  isPopular: boolean;
-  sortOrder: number;
-  pointsReward: number;
-}
-
-const emptyPlan: PricingPlan = {
-  name: "Νέο Πλάνο",
-  badge: "",
-  description: "",
-  price: 49,
-  currency: "EUR",
-  period: "Μηνιαίο",
-  themeColor: "#EF4444",
-  features: [
-    { text: "Προπονητικό πλάνο", included: true },
-    { text: "Διατροφικό πλάνο", included: true },
-  ],
-  isActive: true,
-  isPopular: false,
-  sortOrder: 0,
-  pointsReward: 0,
-};
-
-function formatPlanPeriod(period?: string): string {
-  if (!period) return "μήνα";
-  const normalized = String(period).toLowerCase();
-  if (normalized.includes("μηνια") || normalized.includes("monthly")) return "μήνα";
-  return period;
-}
+type Feature = { text: string; included: boolean }
+type Plan = { id?: number; name: string; badge?: string; description?: string; price: number | string; currency: string; period: string; themeColor: string; features: Feature[]; isActive: boolean; isPopular: boolean; sortOrder: number; pointsReward: number }
+type BankAccount = { id?: number; bankName: string; accountHolder: string; iban: string; isDefault: boolean; isVisible: boolean; sortOrder: number }
+type PaymentSettings = { bankTransferEnabled: boolean; cashEnabled: boolean; paymentReference: string; paymentNote: string; bankAccounts: BankAccount[] }
+const blankPlan = (): Plan => ({ name: "Νέο πλάνο", badge: "", description: "", price: 0, currency: "EUR", period: "Μηνιαίο", themeColor: "#0B0B0B", features: [], isActive: true, isPopular: false, sortOrder: 0, pointsReward: 0 })
+const blankAccount = (): BankAccount => ({ bankName: "", accountHolder: "", iban: "", isDefault: false, isVisible: true, sortOrder: 0 })
+const colors = ["#EF4444", "#8B5CF6", "#0EA5E9", "#F59E0B", "#0B0B0B"]
+const money = (value: number | string, currency = "EUR") => new Intl.NumberFormat("el-GR", { style: "currency", currency }).format(Number(value || 0))
+const months = (period: string) => Math.max(1, Number(period.match(/\d+/)?.[0] || 1))
+const formatIban = (iban = "") => iban.replace(/\s/g, "").toUpperCase().replace(/(.{4})/g, "$1 ").trim()
+const validIban = (raw: string) => { const iban = raw.replace(/\s/g, "").toUpperCase(); if (!/^[A-Z]{2}[A-Z0-9]+$/.test(iban) || (iban.startsWith("GR") && iban.length !== 27)) return false; const prepared = `${iban.slice(4)}${iban.slice(0, 4)}`.replace(/[A-Z]/g, (char) => String(char.charCodeAt(0) - 55)); let rem = 0; for (const digit of prepared) rem = (rem * 10 + Number(digit)) % 97; return rem === 1 }
 
 function CoachPricingContent() {
-  const { user, logout } = useAuth();
-  const [plans, setPlans] = useState<PricingPlan[]>([]);
-  const [selectedId, setSelectedId] = useState<number | string | null>(null);
-  const [form, setForm] = useState<PricingPlan>(emptyPlan);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-
-  const selectedPlan = useMemo(() => plans.find((plan) => plan.id === selectedId) || null, [plans, selectedId]);
-
-  useEffect(() => {
-    loadPlans();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (selectedPlan) setForm(selectedPlan);
-  }, [selectedPlan]);
-
-  const loadPlans = async () => {
-    try {
-      const rows = await api.get<PricingPlan[]>("/pricing-plans/manage");
-      setPlans(rows);
-      if (rows.length) {
-        setSelectedId(rows[0].id ?? null);
-        setForm(rows[0]);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Δεν φορτώθηκαν τα πλάνα.");
-    }
-  };
-
-  const update = <K extends keyof PricingPlan>(key: K, value: PricingPlan[K]) => setForm((current) => ({ ...current, [key]: value }));
-
-  const updateFeature = (index: number, key: keyof PlanFeature, value: string | boolean) => {
-    update(
-      "features",
-      form.features.map((feature, featureIndex) => (featureIndex === index ? { ...feature, [key]: value } : feature)),
-    );
-  };
-
-  const savePlan = async () => {
-    setSaving(true);
-    setError("");
-    setMessage("");
-    try {
-      const payload = { ...form, price: Number(form.price || 0) };
-      const saved = form.id ? await api.put<PricingPlan>(`/pricing-plans/${form.id}`, payload) : await api.post<PricingPlan>("/pricing-plans", payload);
-      setMessage("Το πλάνο αποθηκεύτηκε.");
-      await loadPlans();
-      setSelectedId(saved.id ?? null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Δεν αποθηκεύτηκε το πλάνο.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const deletePlan = async () => {
-    if (!form.id || !window.confirm("Να διαγραφεί αυτό το πλάνο;")) return;
-    setSaving(true);
-    try {
-      await api.delete(`/pricing-plans/${form.id}`);
-      setMessage("Το πλάνο διαγράφηκε.");
-      setForm(emptyPlan);
-      setSelectedId(null);
-      await loadPlans();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Δεν διαγράφηκε το πλάνο.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const newPlan = () => {
-    setSelectedId(null);
-    setForm({ ...emptyPlan, sortOrder: plans.length + 1 });
-  };
-
-  if (!["coach", "admin"].includes(user?.role || "")) {
-    return <div className="grid min-h-screen place-items-center bg-slate-50 font-bold text-slate-500 dark:bg-slate-950 dark:text-slate-400">Δεν έχεις πρόσβαση σε αυτή τη σελίδα.</div>;
-  }
-
-  return (
-    <CoachShell title="Πλάνα & Τιμές" user={user} logout={logout}>
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold">Διαχείριση Πλάνων &amp; Τιμών</h2>
-          <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Δημιούργησε και διαχειρίσου τα πλάνα συνδρομής που βλέπουν οι πελάτες σου.</p>
-        </div>
-        <div className="flex gap-3">
-          <Button onClick={newPlan} className="h-11 px-5 font-bold shadow-lg shadow-red-200 dark:shadow-none">
-            + Νέο Πλάνο
-          </Button>
-          <Button
-            variant="outline"
-            className="h-11 px-5 font-bold text-slate-700 dark:text-slate-200"
-            onClick={() => window.open("/pricing-plans", "_blank", "noopener,noreferrer")}
-          >
-            Δείτε τη σελίδα πελατών
-          </Button>
-        </div>
-      </div>
-
-      {message && <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200">{message}</div>}
-      {error && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">{error}</div>}
-
-      <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="grid gap-6 xl:grid-cols-[290px_1fr]">
-          <aside className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
-            <h3 className="font-bold">Πλάνα Συνδρομής</h3>
-            <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Σύρε για αλλαγή σειράς εμφάνισης</p>
-            <div className="mt-5 space-y-3">
-              {plans.map((plan) => (
-                <Button
-                  key={plan.id}
-                  type="button"
-                  variant="outline"
-                  onClick={() => setSelectedId(plan.id ?? null)}
-                  className={`h-12 w-full justify-between px-4 text-left font-bold ${
-                    selectedId === plan.id
-                      ? "border-red-500 bg-red-50 text-slate-950 dark:bg-red-500/10 dark:text-slate-50"
-                      : "hover:border-red-200"
-                  }`}
-                >
-                  <span className="flex items-center gap-3">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: plan.themeColor }} />
-                    {plan.name}
-                  </span>
-                  <span className="text-slate-400 dark:text-slate-500">⋮⋮</span>
-                </Button>
-              ))}
-            </div>
-          </aside>
-
-          <div className="rounded-lg border border-slate-200 p-5 dark:border-slate-800">
-            <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-lg font-bold">Επεξεργασία Πλάνου</h3>
-              <div className="flex items-center gap-3">
-                <Label className="flex items-center gap-2 text-sm font-bold text-slate-600 dark:text-slate-400">
-                  Ενεργό
-                  <Checkbox checked={form.isActive} onCheckedChange={(checked) => update("isActive", checked === true)} className="h-5 w-5" />
-                </Label>
-                <Button
-                  variant="outline"
-                  onClick={deletePlan}
-                  disabled={!form.id || saving}
-                  className="h-10 px-4 text-sm font-bold text-slate-700 hover:border-red-200 hover:text-red-600 disabled:opacity-40 dark:text-slate-200"
-                >
-                  Διαγραφή
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid gap-6 lg:grid-cols-[1fr_1.1fr]">
-              <div className="space-y-4">
-                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  Όνομα Πλάνου
-                  <Input value={form.name} onChange={(event) => update("name", event.target.value)} />
-                </Label>
-                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  Badge / Ετικέτα
-                  <Input value={form.badge} onChange={(event) => update("badge", event.target.value)} placeholder="Πιο δημοφιλές" />
-                </Label>
-                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  Περιγραφή
-                  <Textarea value={form.description} onChange={(event) => update("description", event.target.value)} className="min-h-24" />
-                </Label>
-                <div className="grid grid-cols-3 gap-4">
-                  <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                    Τιμή
-                    <Input type="number" value={form.price} onChange={(event) => update("price", event.target.value)} />
-                  </Label>
-                  <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                    Νόμισμα
-                    <Select value={form.currency} onValueChange={(value) => value && update("currency", value)}>
-                      <SelectTrigger className="h-12 w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {["EUR", "USD", "GBP"].map((option) => (
-                          <SelectItem key={option} value={option}>
-                            {option}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Label>
-                  <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                    Περίοδος
-                    <Select value={form.period} onValueChange={(value) => value && update("period", value)}>
-                      <SelectTrigger className="h-12 w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {["Μηνιαίο", "2 μήνες", "3 μήνες", "4 μήνες", "Ετήσιο"].map((option) => (
-                          <SelectItem key={option} value={option}>
-                            {option}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </Label>
-                </div>
-                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  🎯 Πόντοι Reward
-                  <Input type="number" min={0} value={form.pointsReward} onChange={(event) => update("pointsReward", Number(event.target.value) || 0)} placeholder="π.χ. 150" />
-                  <span className="text-xs font-semibold text-slate-400">Οι πελάτες κερδίζουν αυτούς τους πόντους με κάθε πληρωμή.</span>
-                </Label>
-                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  Χρώμα Θέματος
-                  <div className="flex h-12 w-full items-center gap-3 rounded-md border border-slate-200 px-3 dark:border-slate-800">
-                    {/* No shadcn equivalent for a native color swatch picker */}
-                    <input type="color" value={form.themeColor} onChange={(event) => update("themeColor", event.target.value)} className="h-7 w-7 rounded border-0 p-0" />
-                    <Input
-                      value={form.themeColor}
-                      onChange={(event) => update("themeColor", event.target.value)}
-                      className="h-auto flex-1 border-none p-0 shadow-none focus-visible:ring-0"
-                    />
-                  </div>
-                </Label>
-                <Label className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  <Checkbox
-                    checked={form.isPopular}
-                    onCheckedChange={(checked) => update("isPopular", checked === true)}
-                    className="h-5 w-5"
-                  />
-                  Δημοφιλές πλάνο (εμφανίζεται με ειδική ένδειξη στη σελίδα πελατών)
-                </Label>
-              </div>
-
-              <div>
-                <h4 className="mb-4 font-bold">Χαρακτηριστικά Πλάνου</h4>
-                <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
-                  {form.features.map((feature, index) => (
-                    <div key={index} className="grid grid-cols-[28px_36px_1fr_34px] items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0 dark:border-slate-800">
-                      <span className="text-slate-400 dark:text-slate-500">⋮⋮</span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => updateFeature(index, "included", !feature.included)}
-                        className={`h-9 w-9 text-lg font-bold ${feature.included ? "text-emerald-600 hover:text-emerald-600" : "text-red-600 hover:text-red-600"}`}
-                      >
-                        {feature.included ? "✓" : "×"}
-                      </Button>
-                      <Input
-                        value={feature.text}
-                        onChange={(event) => updateFeature(index, "text", event.target.value)}
-                        className="h-10 border-transparent px-2 focus-visible:border-red-200"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => update("features", form.features.filter((_, i) => i !== index))}
-                        className="h-9 w-9 text-slate-400 hover:text-red-600 dark:text-slate-500"
-                      >
-                        ×
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-                <Button
-                  variant="outline"
-                  onClick={() => update("features", [...form.features, { text: "Νέο χαρακτηριστικό", included: true }])}
-                  className="mt-4 h-11 px-5 font-bold text-slate-700 hover:border-red-200 hover:text-red-600 dark:text-slate-200"
-                >
-                  + Προσθήκη χαρακτηριστικού
-                </Button>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end">
-              <Button onClick={savePlan} disabled={saving} className="h-11 px-6 font-bold disabled:bg-slate-400">
-                {saving ? "Αποθήκευση..." : "Αποθήκευση Πλάνου"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_420px]">
-        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <h3 className="font-bold">Προεπισκόπηση Κάρτας</h3>
-          <div className="mt-5 rounded-lg border border-slate-200 p-4 dark:border-slate-800">
-            <PlanPreview plan={form} />
-          </div>
-        </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <h3 className="font-bold">Συμβουλές</h3>
-          <div className="mt-5 space-y-4 text-sm leading-6 text-slate-600 dark:text-slate-400">
-            <p>• Σύρε τα πλάνα για να αλλάξεις τη σειρά εμφάνισης τους στη σελίδα εγγραφής.</p>
-            <p>• Η ετικέτα &ldquo;Δημοφιλές πλάνο&rdquo; θα εμφανίζεται στο πλάνο που επιλέγεις.</p>
-            <p>• Τα ανενεργά πλάνα δεν εμφανίζονται στη δημόσια σελίδα τιμών.</p>
-          </div>
-        </div>
-      </section>
-    </CoachShell>
-  );
+  const { user, logout } = useAuth(); const [plans, setPlans] = useState<Plan[]>([]); const [settings, setSettings] = useState<PaymentSettings>({ bankTransferEnabled: true, cashEnabled: true, paymentReference: "", paymentNote: "", bankAccounts: [] }); const [tab, setTab] = useState("plans"); const [editing, setEditing] = useState<Plan | null>(null); const [deleting, setDeleting] = useState<Plan | null>(null); const [saving, setSaving] = useState(false); const [dragged, setDragged] = useState<number | null>(null)
+  const load = async () => { try { const [planRows, paymentRows] = await Promise.all([api.get<Plan[]>("/pricing-plans/manage"), api.get<PaymentSettings>("/pricing-plans/payment-settings")]); setPlans(planRows); setSettings(paymentRows) } catch (error) { toast.error(error instanceof Error ? error.message : "Δεν φορτώθηκαν οι ρυθμίσεις.") } }
+  useEffect(() => { const current = new URLSearchParams(window.location.search).get("tab"); if (current === "payment") setTab("payment"); void load() }, [])
+  const setActiveTab = (value: string) => { setTab(value); const url = new URL(window.location.href); value === "payment" ? url.searchParams.set("tab", "payment") : url.searchParams.delete("tab"); window.history.replaceState({}, "", url) }
+  const savePlan = async () => { if (!editing) return; setSaving(true); try { const saved = editing.id ? await api.put<Plan>(`/pricing-plans/${editing.id}`, editing) : await api.post<Plan>("/pricing-plans", { ...editing, sortOrder: plans.length }); setEditing(null); await load(); toast.success(`Το πλάνο «${saved.name}» αποθηκεύτηκε.`) } catch (error) { toast.error(error instanceof Error ? error.message : "Η αποθήκευση απέτυχε.") } finally { setSaving(false) } }
+  const deletePlan = async () => { if (!deleting?.id) return; try { const result = await api.delete<{ message: string }>(`/pricing-plans/${deleting.id}`); setDeleting(null); await load(); toast.success(result.message) } catch (error) { toast.error(error instanceof Error ? error.message : "Η διαγραφή απέτυχε.") } }
+  const reorder = async (target: number) => { if (dragged === null || dragged === target) return; const next = [...plans]; const [moved] = next.splice(dragged, 1); next.splice(target, 0, moved); const ordered = next.map((plan, index) => ({ ...plan, sortOrder: index })); setPlans(ordered); setDragged(null); try { await api.put("/pricing-plans/reorder", { ids: ordered.map((plan) => plan.id) }); toast.success("Η σειρά αποθηκεύτηκε.") } catch { setPlans(plans); toast.error("Δεν αποθηκεύτηκε η σειρά.") } }
+  const saveSettings = async () => { if (settings.bankTransferEnabled && settings.bankAccounts.some((account) => account.bankName || account.accountHolder || account.iban) && settings.bankAccounts.some((account) => !validIban(account.iban))) { toast.error("Υπάρχει άκυρο IBAN."); return } setSaving(true); try { const saved = await api.put<PaymentSettings>("/pricing-plans/payment-settings", settings); setSettings(saved); toast.success("Τα στοιχεία πληρωμής αποθηκεύτηκαν.") } catch (error) { toast.error(error instanceof Error ? error.message : "Η αποθήκευση απέτυχε.") } finally { setSaving(false) } }
+  const moveAccount = (from: number, to: number) => setSettings((current) => { const rows = [...current.bankAccounts]; const [account] = rows.splice(from, 1); rows.splice(to, 0, account); return { ...current, bankAccounts: rows.map((row, index) => ({ ...row, sortOrder: index })) } })
+  return <CoachShell title="Πλάνα & Τιμές" user={user} logout={logout}><main className="mx-auto max-w-[var(--container-7xl)] space-y-6 p-4 sm:p-6 lg:px-10 lg:py-8"><header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h1 className="text-[30px] font-extrabold italic tracking-[-.6px]">Πλάνα & Τιμές</h1><p className="mt-1 text-sm text-muted-foreground">Τα πλάνα συνδρομής και πώς σε πληρώνουν οι πελάτες σου.</p></div><div className="flex flex-wrap gap-2"><Button variant="outline" className="h-11 rounded-full border-foreground px-5" onClick={() => window.open("/client-billing", "_blank", "noopener,noreferrer")}><Eye className="mr-2 h-4 w-4" />Σελίδα πελατών</Button><Button className="h-11 rounded-full bg-accent px-5 font-extrabold text-accent-foreground hover:bg-accent/85" onClick={() => setEditing(blankPlan())}><Plus className="mr-1 h-4 w-4" />Νέο πλάνο</Button></div></header><Tabs value={tab} onValueChange={setActiveTab}><TabsList className="rounded-full bg-muted p-1"><TabsTrigger value="plans" className="rounded-full px-5 data-active:!bg-foreground data-active:!text-background">Πλάνα <span className="rounded-full bg-background/15 px-1.5 text-[11px]">{plans.length}</span></TabsTrigger><TabsTrigger value="payment" className="rounded-full px-5 data-active:!bg-foreground data-active:!text-background">Στοιχεία πληρωμής</TabsTrigger></TabsList><TabsContent value="plans" className="mt-6 space-y-5"><div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">{plans.map((plan, index) => <AdminPlanCard key={plan.id || plan.name} plan={plan} dragProps={{ draggable: true, onDragStart: () => setDragged(index), onDragOver: (event: DragEvent) => event.preventDefault(), onDrop: () => void reorder(index) }} onEdit={() => setEditing({ ...plan })} onDelete={() => setDeleting(plan)} onDuplicate={() => setEditing({ ...plan, id: undefined, name: `${plan.name} αντίγραφο`, isPopular: false })} />)}</div><button type="button" onClick={() => setEditing(blankPlan())} className="flex min-h-28 w-full items-center justify-center rounded-[20px] border border-dashed border-border text-sm font-extrabold hover:bg-muted"><Plus className="mr-2 h-4 w-4" />Πρόσθεσε νέο πλάνο</button><p className="text-center text-xs text-muted-foreground">Σύρε τις κάρτες για να αλλάξεις τη σειρά. Οι κρυφές δεν φαίνονται στους πελάτες.</p><PaymentSummary settings={settings} onOpen={() => setActiveTab("payment")} /></TabsContent><TabsContent value="payment" className="mt-6"><PaymentSettingsForm settings={settings} setSettings={setSettings} onMove={moveAccount} onSave={() => void saveSettings()} saving={saving} /></TabsContent></Tabs></main><PlanEditor plan={editing} open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)} setPlan={setEditing} onSave={() => void savePlan()} saving={saving} /><AlertDialog open={Boolean(deleting)} onOpenChange={(open) => !open && setDeleting(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Διαγραφή πλάνου</AlertDialogTitle><AlertDialogDescription>Αν το πλάνο έχει ενεργούς πελάτες, θα κρυφτεί αντί να διαγραφεί.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Ακύρωση</AlertDialogCancel><AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => void deletePlan()}>Διαγραφή</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></CoachShell>
 }
 
-function PlanPreview({ plan }: { plan: PricingPlan }) {
-  return (
-    <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-      <div className="relative rounded-lg border p-6 text-center" style={{ borderColor: plan.themeColor }}>
-        {plan.badge && (
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-md px-3 py-1 text-xs font-bold text-white" style={{ backgroundColor: plan.themeColor }}>
-            {plan.badge}
-          </div>
-        )}
-        <div className="mx-auto grid h-12 w-12 place-items-center rounded-full text-2xl" style={{ backgroundColor: `${plan.themeColor}18`, color: plan.themeColor }}>
-          🏆
-        </div>
-        <h4 className="mt-4 text-2xl font-bold" style={{ color: plan.themeColor }}>
-          {plan.name || "Πλάνο"}
-        </h4>
-        <p className="mx-auto mt-3 max-w-56 text-sm leading-6 text-slate-600 dark:text-slate-400">{plan.description}</p>
-        <div className="mt-5 text-3xl font-bold">
-          €{plan.price}
-          <span className="text-base font-bold text-slate-500 dark:text-slate-400"> /{formatPlanPeriod(plan.period)}</span>
-        </div>
-        <Button type="button" className="mt-5 h-11 w-full font-bold text-white hover:opacity-90" style={{ backgroundColor: plan.themeColor }}>
-          Επιλέγω {plan.name}
-        </Button>
-      </div>
-      <div className="space-y-4 py-3">
-        {plan.features.map((feature, index) => (
-          <div key={index} className="flex items-center gap-4 text-sm font-semibold text-slate-700 dark:text-slate-200">
-            <span className={feature.included ? "text-emerald-600" : "text-red-600"}>{feature.included ? "✓" : "×"}</span>
-            {feature.text}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+function AdminPlanCard({ plan, dragProps, onEdit, onDelete, onDuplicate }: { plan: Plan; dragProps: React.HTMLAttributes<HTMLDivElement>; onEdit: () => void; onDelete: () => void; onDuplicate: () => void }) { const hidden = !plan.isActive; return <Card {...dragProps} className={`relative flex min-h-[330px] rounded-[20px] shadow-none ${plan.isPopular ? "border-foreground bg-foreground text-background" : "border-border bg-card"} ${hidden ? "opacity-55" : ""}`}><CardContent className="flex w-full flex-col gap-4 p-[22px]"><span className="absolute left-1/2 top-2 -translate-x-1/2 text-muted-foreground"><GripVertical className="h-4 w-4" /></span><div className="mt-2 flex items-center justify-between gap-2"><div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: plan.themeColor }} /><h2 className="font-extrabold">{plan.name}</h2></div><div className="flex gap-1">{plan.isPopular && <Badge className="bg-accent text-accent-foreground"><Star className="mr-1 h-3 w-3 fill-current" />Δημοφιλές</Badge>}{hidden && <Badge variant="secondary">Κρυφό</Badge>}</div></div><div><p className="text-[30px] font-extrabold italic leading-none">{money(plan.price, plan.currency)} <span className="text-sm font-semibold not-italic text-muted-foreground">/ {plan.period}</span></p><p className="mt-1 text-xs text-muted-foreground">{months(plan.period) > 1 ? `≈ ${money(Number(plan.price) / months(plan.period), plan.currency)} / μήνα` : "πληρωμή κάθε μήνα"}</p></div><Separator /><div className="space-y-2">{plan.features.filter((feature) => feature.included).slice(0, 3).map((feature) => <p key={feature.text} className="flex items-center gap-2 text-xs"><CheckCircle2 className="h-3.5 w-3.5 text-accent" />{feature.text}</p>)}{plan.features.filter((feature) => feature.included).length > 3 && <p className="text-xs text-muted-foreground">+{plan.features.filter((feature) => feature.included).length - 3} ακόμη</p>}</div><p className="text-xs font-extrabold"><Star className="mr-1 inline h-3.5 w-3.5 text-accent" />{plan.pointsReward} πόντοι ανά πληρωμή</p><div className="mt-auto flex gap-2"><Button className={`h-10 flex-1 rounded-full font-extrabold ${plan.isPopular ? "bg-accent text-accent-foreground hover:bg-accent/85" : "bg-foreground text-background"}`} onClick={onEdit}>Επεξεργασία</Button><DropdownMenu><DropdownMenuTrigger render={<Button size="icon" variant="outline" className="h-10 w-10 rounded-full" />}><MoreHorizontal className="h-4 w-4" /></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onClick={onEdit}>Επεξεργασία</DropdownMenuItem><DropdownMenuItem onClick={onDuplicate}>Διπλότυπο</DropdownMenuItem><DropdownMenuItem onClick={onDelete} variant="destructive">Διαγραφή</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div></CardContent></Card> }
 
-export default function CoachPricingPage() {
-  return (
-    <ProtectedRoute>
-      <CoachPricingContent />
-    </ProtectedRoute>
-  );
-}
+function PaymentSummary({ settings, onOpen }: { settings: PaymentSettings; onOpen: () => void }) { const account = settings.bankAccounts.find((item) => item.isDefault) || settings.bankAccounts[0]; return <Card className="rounded-[20px] border-border bg-card shadow-none"><CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center"><span className="grid h-11 w-11 place-items-center rounded-[14px] bg-foreground text-accent"><CreditCard className="h-5 w-5" /></span><div className="flex-1"><p className="font-extrabold">Πώς σε πληρώνουν</p><p className="mt-1 text-sm text-muted-foreground">{settings.bankTransferEnabled && account ? `Τραπεζικό έμβασμα · ${account.bankName} ${formatIban(account.iban).slice(0, 2)} •••• ${account.iban.slice(-4)}` : ""}{settings.bankTransferEnabled && settings.cashEnabled ? " · " : ""}{settings.cashEnabled ? "Μετρητά στον coach" : ""}</p></div><Button variant="outline" className="rounded-full border-foreground" onClick={onOpen}>Στοιχεία πληρωμής →</Button></CardContent></Card> }
+
+function PlanEditor({ plan, open, onOpenChange, setPlan, onSave, saving }: { plan: Plan | null; open: boolean; onOpenChange: (open: boolean) => void; setPlan: (plan: Plan | null) => void; onSave: () => void; saving: boolean }) { if (!plan) return null; const update = <K extends keyof Plan>(key: K, value: Plan[K]) => setPlan({ ...plan, [key]: value }); return <Sheet open={open} onOpenChange={onOpenChange}><SheetContent className="w-full overflow-y-auto p-0 sm:max-w-[520px]"><SheetHeader className="border-b border-border px-6 py-5"><SheetTitle>{plan.id ? "Επεξεργασία πλάνου" : "Νέο πλάνο"}</SheetTitle></SheetHeader><div className="space-y-5 p-6"><Field label="Όνομα"><Input className="h-12 rounded-2xl bg-muted" value={plan.name} onChange={(event) => update("name", event.target.value)} /></Field><div className="grid grid-cols-2 gap-3"><Field label="Τιμή"><Input className="h-12 rounded-2xl bg-muted" type="number" value={plan.price} onChange={(event) => update("price", event.target.value)} /></Field><Field label="Διάρκεια"><Select value={plan.period} onValueChange={(value) => update("period", value || "Μηνιαίο")}><SelectTrigger className="h-12 rounded-2xl bg-muted"><SelectValue /></SelectTrigger><SelectContent>{["Μηνιαίο", "2 μήνες", "3 μήνες", "4 μήνες", "Ετήσιο"].map((value) => <SelectItem key={value} value={value}>{value}</SelectItem>)}</SelectContent></Select></Field></div><Field label="Περιγραφή"><Textarea className="min-h-24 rounded-2xl bg-muted" value={plan.description || ""} onChange={(event) => update("description", event.target.value)} /></Field><Field label="Τι περιλαμβάνει"><div className="space-y-2">{plan.features.map((feature, index) => <div key={index} className="flex gap-2"><Input value={feature.text} onChange={(event) => update("features", plan.features.map((item, i) => i === index ? { ...item, text: event.target.value } : item))} /><Button size="icon" variant="ghost" onClick={() => update("features", plan.features.filter((_, i) => i !== index))}><X className="h-4 w-4" /></Button></div>)}<Button variant="outline" className="w-full rounded-xl border-dashed" onClick={() => update("features", [...plan.features, { text: "", included: true }])}>+ Πρόσθεσε κάτι</Button></div></Field><Separator /><SettingRow label="Δημοφιλές" detail="Ξεχωρίζει στη σελίδα πελατών"><Switch checked={plan.isPopular} onCheckedChange={(value) => update("isPopular", value)} /></SettingRow><SettingRow label="Πόντοι ανά πληρωμή" detail="Κερδίζονται με κάθε πληρωμή"><Input className="h-10 w-24" type="number" min={0} value={plan.pointsReward} onChange={(event) => update("pointsReward", Number(event.target.value) || 0)} /></SettingRow><SettingRow label="Χρώμα" detail="Εμφάνιση πλάνου"><div className="flex gap-2">{colors.map((color) => <button key={color} type="button" onClick={() => update("themeColor", color)} className={`h-6 w-6 rounded-full ${plan.themeColor === color ? "ring-2 ring-foreground ring-offset-2" : ""}`} style={{ backgroundColor: color }} />)}</div></SettingRow><SettingRow label="Ορατό στους πελάτες" detail="Τα κρυφά πλάνα δεν εμφανίζονται"><Switch checked={plan.isActive} onCheckedChange={(value) => update("isActive", value)} /></SettingRow></div><SheetFooter className="sticky bottom-0 border-t border-border bg-card p-4"><Button className="h-11 rounded-full bg-foreground px-6 text-background" disabled={saving || !plan.name.trim()} onClick={onSave}>{saving ? "Αποθήκευση..." : "Αποθήκευση"}</Button></SheetFooter></SheetContent></Sheet> }
+
+function PaymentSettingsForm({ settings, setSettings, onMove, onSave, saving }: { settings: PaymentSettings; setSettings: (settings: PaymentSettings) => void; onMove: (from: number, to: number) => void; onSave: () => void; saving: boolean }) { const updateAccount = (index: number, patch: Partial<BankAccount>) => setSettings({ ...settings, bankAccounts: settings.bankAccounts.map((account, i) => i === index ? { ...account, ...patch } : patch.isDefault ? { ...account, isDefault: false } : account) }); return <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]"><Card className="rounded-[20px] border-border bg-card shadow-none"><CardHeader><CardTitle>Πώς σε πληρώνουν οι πελάτες</CardTitle><CardDescription>Ισχύουν για όλα τα πλάνα και εμφανίζονται στον πελάτη.</CardDescription></CardHeader><CardContent className="space-y-6"><div className="grid gap-3 sm:grid-cols-2"><SettingCard icon={<Landmark className="h-5 w-5" />} title="Τραπεζικό έμβασμα" checked={settings.bankTransferEnabled} onCheckedChange={(value) => setSettings({ ...settings, bankTransferEnabled: value })} /><SettingCard icon={<CreditCard className="h-5 w-5" />} title="Μετρητά στον coach" checked={settings.cashEnabled} onCheckedChange={(value) => setSettings({ ...settings, cashEnabled: value })} /></div><div><div className="mb-3 flex items-center justify-between"><h3 className="font-extrabold">Τραπεζικοί λογαριασμοί</h3><Button variant="outline" className="rounded-full" onClick={() => setSettings({ ...settings, bankAccounts: [...settings.bankAccounts, blankAccount()] })}>+ Προσθήκη λογαριασμού</Button></div><div className="space-y-3">{settings.bankAccounts.map((account, index) => <Card key={account.id || index} className={`rounded-[16px] border ${account.isDefault ? "border-foreground" : "border-border"}`}><CardContent className="space-y-3 p-4"><div className="flex items-center justify-between"><span className="flex items-center gap-2 text-xs text-muted-foreground"><GripVertical className="h-4 w-4" />Λογαριασμός {index + 1}</span><div className="flex gap-2">{account.isDefault ? <Badge className="bg-foreground text-accent">Προεπιλογή</Badge> : <Button variant="outline" size="sm" className="rounded-full" onClick={() => updateAccount(index, { isDefault: true })}>Ορισμός ως προεπιλογή</Button>}<Button variant="ghost" size="icon" onClick={() => setSettings({ ...settings, bankAccounts: settings.bankAccounts.filter((_, i) => i !== index) })}><X className="h-4 w-4" /></Button></div></div><div className="grid gap-3 sm:grid-cols-2"><Field label="Τράπεζα"><Input value={account.bankName} onChange={(event) => updateAccount(index, { bankName: event.target.value })} /></Field><Field label="Δικαιούχος"><Input value={account.accountHolder} onChange={(event) => updateAccount(index, { accountHolder: event.target.value })} /></Field></div><Field label="IBAN"><Input value={formatIban(account.iban)} onChange={(event) => updateAccount(index, { iban: event.target.value.replace(/\s/g, "").toUpperCase() })} />{account.iban && <p className={`mt-1 text-xs ${validIban(account.iban) ? "text-emerald-600" : "text-destructive"}`}>{validIban(account.iban) ? "✓ Έγκυρο IBAN" : "Μη έγκυρο IBAN"}</p>}</Field><div className="flex items-center justify-between"><span className="text-sm font-semibold">Εμφάνιση στους πελάτες</span><Switch checked={account.isVisible} onCheckedChange={(value) => updateAccount(index, { isVisible: value })} /></div></CardContent></Card>)}</div></div><Field label="Οδηγία αιτιολογίας"><Input value={settings.paymentReference} onChange={(event) => setSettings({ ...settings, paymentReference: event.target.value })} placeholder="π.χ. Ονοματεπώνυμο πελάτη" /></Field><Field label="Σημείωση για πελάτες"><Textarea value={settings.paymentNote} onChange={(event) => setSettings({ ...settings, paymentNote: event.target.value })} /></Field><Button className="h-11 rounded-full bg-foreground text-background" disabled={saving} onClick={onSave}>{saving ? "Αποθήκευση..." : "Αποθήκευση στοιχείων"}</Button></CardContent></Card><div className="space-y-4"><Card className="rounded-[20px] border-border bg-card shadow-none"><CardHeader><CardTitle className="text-base">Προεπισκόπηση πελάτη</CardTitle></CardHeader><CardContent><p className="text-sm font-extrabold">Τραπεζικό έμβασμα</p>{settings.bankAccounts.filter((item) => item.isVisible).map((account) => <div key={account.id || account.iban} className="mt-3 rounded-[14px] bg-muted p-3"><p className="font-semibold">{account.bankName}</p><p className="text-xs text-muted-foreground">{account.accountHolder}</p><p className="mt-2 font-mono text-xs">{formatIban(account.iban)}</p></div>)}</CardContent></Card><Card className="rounded-[20px] border-border bg-card shadow-none"><CardContent className="p-5 text-sm text-muted-foreground">Οι πελάτες βλέπουν μόνο τους ενεργούς λογαριασμούς. Η αντιγραφή δίνει το IBAN χωρίς κενά.</CardContent></Card></div></div> }
+function Field({ label, children }: { label: string; children: React.ReactNode }) { return <Label className="flex flex-col items-start gap-2 text-sm font-bold">{label}{children}</Label> }
+function SettingRow({ label, detail, children }: { label: string; detail: string; children: React.ReactNode }) { return <div className="flex items-center justify-between gap-4"><div><p className="font-bold">{label}</p><p className="text-xs text-muted-foreground">{detail}</p></div>{children}</div> }
+function SettingCard({ icon, title, checked, onCheckedChange }: { icon: React.ReactNode; title: string; checked: boolean; onCheckedChange: (value: boolean) => void }) { return <div className="flex items-center justify-between rounded-[16px] border border-border p-4"><span className="flex items-center gap-3 font-extrabold">{icon}{title}</span><Switch checked={checked} onCheckedChange={onCheckedChange} /></div> }
+export default function CoachPricingPage() { return <ProtectedRoute><CoachPricingContent /></ProtectedRoute> }

@@ -9,7 +9,7 @@ import { ensureAuthSchema, generateAccessToken, generateRefreshToken, setAuthCoo
 import { getDefaultCoachId, notifyCoaches, ensureNotificationsSchema } from './clients.js';
 import { authenticateToken, authorizeRole } from '../middleware/auth.js';
 import { ensureQuestionnaireSchema } from './questionnaire.js';
-import { ensurePricingPlansSchema } from './pricingPlans.js';
+import { ensurePricingPlansSchema, getPaymentSettings } from './pricingPlans.js';
 import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { registrationEmail } from '../lib/email-templates.js';
 import { logClientActivity } from '../lib/client-activity-log.js';
@@ -179,14 +179,24 @@ router.post('/check-email', [body('email').isEmail()], async (req, res) => {
   }
 });
 
-router.get('/bank-details', (req, res) => {
-  res.json({
-    bankName: process.env.BANK_NAME || '',
-    beneficiary: process.env.BANK_BENEFICIARY || process.env.BANK_NAME || '',
-    iban: process.env.BANK_IBAN || '',
-    supportEmail: process.env.BANK_SUPPORT_EMAIL || '',
-    supportPhone: process.env.BANK_SUPPORT_PHONE || '',
-  });
+router.get('/bank-details', async (_req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    const settings = await getPaymentSettings(connection, { publicOnly: true });
+    const primary = settings.bankAccounts[0];
+    res.json({
+      ...settings,
+      bankName: primary?.bankName || process.env.BANK_NAME || '',
+      beneficiary: primary?.accountHolder || process.env.BANK_BENEFICIARY || process.env.BANK_NAME || '',
+      iban: primary?.iban || process.env.BANK_IBAN || '',
+      supportEmail: process.env.BANK_SUPPORT_EMAIL || '',
+      supportPhone: process.env.BANK_SUPPORT_PHONE || '',
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally { connection?.release(); }
 });
 
 router.get('/register/progress', authenticateToken, authorizeRole(['client']), async (req, res) => {
