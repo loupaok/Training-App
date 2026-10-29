@@ -185,30 +185,6 @@ export async function ensurePricingPlansSchema(connection) {
     );
   }
 
-  // Add the two new business plans alongside whatever already exists —
-  // never touches/replaces existing rows, only inserts if not already there.
-  for (const plan of newSeedPlans) {
-    const [existing] = await connection.query('SELECT id FROM pricing_plans WHERE slug = ? LIMIT 1', [plan.slug]);
-    if (existing.length) continue;
-    await connection.query(
-      `INSERT INTO pricing_plans
-        (slug, name, badge, description, price, currency, period, theme_color, features_json, is_active, sort_order, is_popular)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
-      [
-        plan.slug,
-        plan.name,
-        plan.badge,
-        plan.description,
-        plan.price,
-        plan.currency,
-        plan.period,
-        plan.themeColor,
-        JSON.stringify(plan.features),
-        plan.sortOrder,
-        plan.isPopular ? 1 : 0,
-      ]
-    );
-  }
 }
 
 export async function ensurePaymentSettingsSchema(connection) {
@@ -236,6 +212,19 @@ export async function ensurePaymentSettingsSchema(connection) {
     )
   `);
   await connection.query('INSERT IGNORE INTO payment_settings (id) VALUES (1)');
+  const migrations = [
+    'ALTER TABLE payment_settings ADD COLUMN stripe_enabled TINYINT(1) NOT NULL DEFAULT 0',
+    'ALTER TABLE payment_settings ADD COLUMN stripe_publishable_key VARCHAR(255) NULL',
+    'ALTER TABLE payment_settings ADD COLUMN stripe_secret_key TEXT NULL',
+    'ALTER TABLE payment_settings ADD COLUMN stripe_webhook_secret TEXT NULL',
+    'ALTER TABLE payment_settings ADD COLUMN paypal_enabled TINYINT(1) NOT NULL DEFAULT 0',
+    'ALTER TABLE payment_settings ADD COLUMN paypal_client_id VARCHAR(255) NULL',
+    'ALTER TABLE payment_settings ADD COLUMN paypal_secret TEXT NULL',
+    'ALTER TABLE payment_settings ADD COLUMN paypal_mode VARCHAR(16) NOT NULL DEFAULT \'sandbox\'',
+  ];
+  for (const statement of migrations) {
+    try { await connection.query(statement); } catch (error) { if (error.code !== 'ER_DUP_FIELDNAME') throw error; }
+  }
 }
 
 function normalizeIban(value = '') {
@@ -274,6 +263,13 @@ export async function getPaymentSettings(connection, { publicOnly = false } = {}
     cashEnabled: Boolean(settings?.cash_enabled),
     paymentReference: settings?.payment_reference || '',
     paymentNote: settings?.payment_note || '',
+    stripeEnabled: Boolean(settings?.stripe_enabled) && Boolean(process.env.STRIPE_SECRET_KEY),
+    paypalEnabled: Boolean(settings?.paypal_enabled) && Boolean(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET),
+    ...(publicOnly ? {} : {
+      stripeConfigured: Boolean(process.env.STRIPE_SECRET_KEY),
+      paypalConfigured: Boolean(process.env.PAYPAL_CLIENT_ID && process.env.PAYPAL_CLIENT_SECRET),
+      paypalMode: process.env.PAYPAL_MODE === 'live' ? 'live' : 'sandbox',
+    }),
     bankAccounts: accounts.map(normalizeAccount),
   };
 }
@@ -336,7 +332,7 @@ router.get('/manage', authenticateToken, authorizeRole(['coach', 'admin']), asyn
   try {
     const connection = await pool.getConnection();
     await ensurePricingPlansSchema(connection);
-    const [rows] = await connection.query('SELECT * FROM pricing_plans ORDER BY sort_order ASC, id ASC');
+    const [rows] = await connection.query('SELECT * FROM pricing_plans WHERE is_active = 1 ORDER BY sort_order ASC, id ASC');
     connection.release();
     res.json(rows.map(normalizePlan));
   } catch (error) {
@@ -391,8 +387,18 @@ router.put('/payment-settings', authenticateToken, authorizeRole(['coach', 'admi
     }
     await connection.beginTransaction();
     await connection.query(
-      `UPDATE payment_settings SET bank_transfer_enabled = ?, cash_enabled = ?, payment_reference = ?, payment_note = ? WHERE id = 1`,
-      [req.body.bankTransferEnabled !== false ? 1 : 0, req.body.cashEnabled !== false ? 1 : 0, String(req.body.paymentReference || '').trim() || null, String(req.body.paymentNote || '').trim() || null]
+      `UPDATE payment_settings
+       SET bank_transfer_enabled = ?, cash_enabled = ?, payment_reference = ?, payment_note = ?,
+           stripe_enabled = ?, paypal_enabled = ?
+       WHERE id = 1`,
+      [
+        req.body.bankTransferEnabled !== false ? 1 : 0,
+        req.body.cashEnabled !== false ? 1 : 0,
+        String(req.body.paymentReference || '').trim() || null,
+        String(req.body.paymentNote || '').trim() || null,
+        req.body.stripeEnabled === true ? 1 : 0,
+        req.body.paypalEnabled === true ? 1 : 0,
+      ]
     );
     await connection.query('DELETE FROM bank_accounts');
     if (normalized.length) await connection.query(
@@ -527,13 +533,14 @@ router.delete('/:id', authenticateToken, authorizeRole(['coach', 'admin']), asyn
     }
     const [[usage]] = await connection.query(
       `SELECT COUNT(*) AS total FROM subscriptions
-       WHERE plan_name = ? AND status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE()`,
+       WHERE LOWER(TRIM(plan_name)) = LOWER(TRIM(?))
+         AND status IN ('active', 'expiring_soon')
+         AND start_date <= CURDATE() AND end_date >= CURDATE()`,
       [plans[0].name]
     );
     if (Number(usage?.total || 0) > 0) {
-      await connection.query('UPDATE pricing_plans SET is_active = 0 WHERE id = ?', [req.params.id]);
       connection.release();
-      return res.json({ message: 'Το πλάνο κρύφτηκε επειδή έχει ενεργούς πελάτες.', softDeleted: true, activeClients: Number(usage.total) });
+      return res.status(409).json({ message: 'Το πλάνο δεν μπορεί να διαγραφεί όσο έχει ενεργούς πελάτες.' });
     }
     await connection.query('DELETE FROM pricing_plans WHERE id = ?', [req.params.id]);
     connection.release();

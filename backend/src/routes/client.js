@@ -618,7 +618,10 @@ router.get('/payments', async (req, res) => {
     const [subscriptions] = await connection.query("SELECT plan_name, price, status, start_date, end_date, DATEDIFF(end_date, CURDATE()) AS days_remaining FROM subscriptions WHERE client_id = ? AND status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE() ORDER BY end_date DESC LIMIT 1", [req.user.id]);
     const [pendingSubscriptions] = await connection.query("SELECT plan_name, price, status, start_date, end_date FROM subscriptions WHERE client_id = ? AND status = 'pending_payment' ORDER BY created_at DESC LIMIT 1", [req.user.id]);
     const [upcomingSubscriptions] = await connection.query("SELECT s.plan_name, s.price, s.currency, s.status, s.start_date, s.end_date FROM subscriptions s INNER JOIN payments p ON p.subscription_id = s.id AND p.status = 'completed' WHERE s.client_id = ? AND s.status = 'active' AND s.start_date > CURDATE() ORDER BY s.start_date ASC", [req.user.id]);
-    const [payments] = await connection.query('SELECT id, amount, currency, method, status, reference_number AS referenceNumber, paid_at AS paidAt, notes FROM payments WHERE client_id = ? ORDER BY created_at DESC', [req.user.id]);
+    const [payments] = await connection.query(`SELECT p.id, p.amount, p.currency, p.method, p.status, p.reference_number AS referenceNumber,
+      p.paid_at AS paidAt, p.notes, p.proof_url AS proofUrl, s.plan_name AS planName
+      FROM payments p LEFT JOIN subscriptions s ON s.id = p.subscription_id
+      WHERE p.client_id = ? ORDER BY p.created_at DESC`, [req.user.id]);
     res.json({ subscription: subscriptions[0] || null, pendingSubscription: pendingSubscriptions[0] || null, upcomingSubscriptions, payments });
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
 });

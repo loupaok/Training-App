@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole, authorizeRoleOrPermission } from '../middleware/auth.js';
@@ -17,6 +18,7 @@ import { awardPoints } from './points.js';
 import { ensureDiscordSchema } from './discord.js';
 import { addRole, getActiveRoleId, removeRole } from '../lib/discord.js';
 import { optimizeUploadedImage, optimizeUploadedImages } from '../utils/image-optimization.js';
+import { ensurePaymentSettingsSchema, getPaymentSettings } from './pricingPlans.js';
 
 const router = express.Router();
 const activeMessageTypers = new Map();
@@ -173,12 +175,13 @@ function monthsFromPeriod(period, fallback = 1) {
 async function getSelectedSubscriptionPlan(connection, slug) {
   await ensurePricingPlansSchema(connection);
   const [rows] = await connection.query(
-    'SELECT slug, name, price, currency, period FROM pricing_plans WHERE slug = ? AND is_active = 1 LIMIT 1',
+    'SELECT id, slug, name, price, currency, period FROM pricing_plans WHERE slug = ? AND is_active = 1 LIMIT 1',
     [slug]
   );
   if (rows.length) {
     return {
       label: rows[0].name,
+      planId: rows[0].id,
       months: monthsFromPeriod(rows[0].period),
       price: Number(rows[0].price),
       currency: rows[0].currency || 'EUR'
@@ -186,6 +189,131 @@ async function getSelectedSubscriptionPlan(connection, slug) {
   }
 
   return subscriptionPackages[slug] || null;
+}
+
+const paymentFrontendUrl = () => (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+
+async function finalizeOnlinePayment(paymentId, providerReference) {
+  const connection = await pool.getConnection();
+  try {
+    await ensureNotificationsSchema(connection);
+    await ensurePaymentProofColumns(connection);
+    const { ensureSubscriptionPlanIdColumn } = await import('./register.js');
+    await ensureSubscriptionPlanIdColumn(connection);
+    await connection.beginTransaction();
+
+    const [payments] = await connection.query(
+      `SELECT p.id, p.client_id, p.subscription_id, p.status, p.method, s.plan_type, s.plan_id
+       FROM payments p
+       LEFT JOIN subscriptions s ON s.id = p.subscription_id
+       WHERE p.id = ? FOR UPDATE`,
+      [paymentId]
+    );
+    const payment = payments[0];
+    if (!payment) throw new Error('Payment not found');
+    if (payment.status === 'completed' || payment.status === 'confirmed') {
+      await connection.commit();
+      return { alreadyCompleted: true, clientId: payment.client_id };
+    }
+    if (payment.status !== 'pending') throw new Error('Payment is no longer pending');
+
+    await connection.query(
+      `UPDATE payments
+       SET status = 'completed', paid_at = NOW(), reference_number = COALESCE(?, reference_number),
+           notes = CONCAT(COALESCE(notes, ''), '\nΕπιβεβαιώθηκε online από τον πάροχο.')
+       WHERE id = ? AND status = 'pending'`,
+      [providerReference || null, payment.id]
+    );
+
+    if (payment.subscription_id) {
+      const monthsByPlanType = { monthly: 1, quarterly: 3, semi_annual: 6, annual: 12, custom: 1 };
+      const months = monthsByPlanType[payment.plan_type] || 1;
+      const [currentSubscriptions] = await connection.query(
+        `SELECT end_date FROM subscriptions
+         WHERE client_id = ? AND id <> ? AND status IN ('active', 'expiring_soon')
+           AND start_date <= CURDATE() AND end_date >= CURDATE()
+         ORDER BY end_date DESC LIMIT 1`,
+        [payment.client_id, payment.subscription_id]
+      );
+      const currentEndDate = currentSubscriptions[0]?.end_date || null;
+      await connection.query(
+        `UPDATE subscriptions
+         SET start_date = CASE WHEN ? IS NULL THEN CURDATE() ELSE DATE_ADD(?, INTERVAL 1 DAY) END,
+             end_date = DATE_ADD(CASE WHEN ? IS NULL THEN CURDATE() ELSE DATE_ADD(?, INTERVAL 1 DAY) END, INTERVAL ? MONTH),
+             status = 'active'
+         WHERE id = ?`,
+        [currentEndDate, currentEndDate, currentEndDate, currentEndDate, months, payment.subscription_id]
+      );
+    }
+
+    await connection.query(
+      'UPDATE users SET status = "active", approved_at = NOW(), approved_by = NULL WHERE id = ?',
+      [payment.client_id]
+    );
+    const [[client]] = await connection.query(
+      'SELECT full_name, email FROM users WHERE id = ? LIMIT 1',
+      [payment.client_id]
+    );
+    await notifyUser(connection, payment.client_id, {
+      clientId: payment.client_id,
+      paymentId: payment.id,
+      type: 'payment_approved',
+      title: 'Η πληρωμή σου επιβεβαιώθηκε',
+      body: 'Η συνδρομή σου είναι ενεργή και τα προγράμματά σου ξεκλειδώθηκαν.',
+      linkUrl: '/client-dashboard',
+    });
+    await notifyCoaches(connection, {
+      clientId: payment.client_id,
+      paymentId: payment.id,
+      type: 'payment_approved',
+      title: 'Online πληρωμή επιβεβαιώθηκε',
+      body: `${client?.full_name || client?.email || 'Πελάτης'} ενεργοποιήθηκε αυτόματα μετά την επιβεβαίωση του παρόχου.`,
+      linkUrl: `/clients/${payment.client_id}`,
+    });
+    await logClientActivity(connection, {
+      clientId: payment.client_id,
+      action: 'Online payment confirmed',
+      details: `Payment #${payment.id} confirmed online`,
+    });
+    await connection.commit();
+    try { await syncDiscordSubscriptionRole(connection, payment.client_id); } catch (error) { console.error('Discord role sync after online payment failed:', error.message); }
+    if (payment.plan_id) await awardPoints(connection, { clientId: payment.client_id, planId: payment.plan_id, paymentId: payment.id });
+    return { alreadyCompleted: false, clientId: payment.client_id };
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+function verifyStripeSignature(rawBody, signature) {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!secret || !signature || !Buffer.isBuffer(rawBody)) return false;
+  const timestamp = signature.match(/(?:^|,)t=(\d+)/)?.[1];
+  const candidates = [...signature.matchAll(/(?:^|,)v1=([^,]+)/g)].map((match) => match[1]);
+  if (!timestamp || !candidates.length || Math.abs(Date.now() / 1000 - Number(timestamp)) > 300) return false;
+  const expected = crypto.createHmac('sha256', secret).update(`${timestamp}.${rawBody.toString('utf8')}`).digest('hex');
+  return candidates.some((candidate) => {
+    const candidateBuffer = Buffer.from(candidate, 'hex');
+    const expectedBuffer = Buffer.from(expected, 'hex');
+    return candidateBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(candidateBuffer, expectedBuffer);
+  });
+}
+
+export async function handleStripeWebhook(req, res) {
+  if (!verifyStripeSignature(req.body, req.headers['stripe-signature'])) return res.status(400).json({ message: 'Invalid Stripe signature' });
+  try {
+    const event = JSON.parse(req.body.toString('utf8'));
+    if (event.type === 'checkout.session.completed' && event.data?.object?.payment_status === 'paid') {
+      const paymentId = Number(String(event.data.object.client_reference_id || '').split(':')[0]);
+      if (paymentId) await finalizeOnlinePayment(paymentId, event.data.object.id);
+    }
+    return res.json({ received: true });
+  } catch (error) {
+    console.error('Stripe webhook error:', error);
+    return res.status(500).json({ message: 'Stripe webhook failed' });
+  }
 }
 
 async function ensureOnboardingSchema(connection) {
@@ -1332,7 +1460,7 @@ router.delete('/me/profile-photo', authorizeRole(['client']), async (req, res) =
 
 router.post('/me/billing', authorizeRole(['client']), [
   body('subscriptionPackage').notEmpty().withMessage('Subscription package required'),
-  body('paymentMethod').isIn(['bank_transfer', 'stripe_card']).withMessage('Valid payment method required')
+  body('paymentMethod').isIn(['bank_transfer', 'stripe_card', 'paypal', 'cash']).withMessage('Valid payment method required')
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -1344,6 +1472,13 @@ router.post('/me/billing', authorizeRole(['client']), [
 
   try {
     await ensureOnboardingSchema(connection);
+    await ensurePaymentSettingsSchema(connection);
+    const { ensureSubscriptionPlanIdColumn } = await import('./register.js');
+    await ensureSubscriptionPlanIdColumn(connection);
+    const paymentSettings = await getPaymentSettings(connection, { publicOnly: true });
+    if ((paymentMethod === 'bank_transfer' && !paymentSettings.bankTransferEnabled) || (paymentMethod === 'cash' && !paymentSettings.cashEnabled) || (paymentMethod === 'stripe_card' && !paymentSettings.stripeEnabled) || (paymentMethod === 'paypal' && !paymentSettings.paypalEnabled)) {
+      return res.status(400).json({ message: 'Ο επιλεγμένος τρόπος πληρωμής δεν είναι διαθέσιμος.' });
+    }
     const selectedPackage = await getSelectedSubscriptionPlan(connection, subscriptionPackage);
     if (!selectedPackage) {
       connection.release();
@@ -1371,18 +1506,19 @@ router.post('/me/billing', authorizeRole(['client']), [
     );
 
     const [subscriptionResult] = await connection.query(
-      `INSERT INTO subscriptions (client_id, coach_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?)`,
+      `INSERT INTO subscriptions (client_id, coach_id, plan_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?)`,
       [
         req.user.id,
         coachId,
+        selectedPackage.planId || null,
         selectedPackage.label,
         selectedPackage.months === 3 ? 'quarterly' : selectedPackage.months === 6 ? 'semi_annual' : selectedPackage.months === 12 ? 'annual' : 'monthly',
         selectedPackage.price,
         selectedPackage.currency || 'EUR',
         pendingDate,
         pendingDate,
-        paymentMethod === 'stripe_card' ? 'Η πληρωμή με κάρτα αναμένει έγκριση coach.' : 'Το τραπεζικό έμβασμα αναμένει έγκριση coach.'
+        paymentMethod === 'cash' ? 'Η πληρωμή με μετρητά αναμένει έγκριση coach.' : 'Η πληρωμή αναμένει επιβεβαίωση.'
       ]
     );
 
@@ -1395,9 +1531,9 @@ router.post('/me/billing', authorizeRole(['client']), [
         subscriptionResult.insertId,
         selectedPackage.price,
         selectedPackage.currency || 'EUR',
-        paymentMethod === 'stripe_card' ? 'stripe' : 'bank_transfer',
+        paymentMethod === 'stripe_card' ? 'stripe' : paymentMethod,
         referenceNumber,
-        paymentMethod === 'stripe_card' ? 'Stripe θα συνδεθεί αργότερα.' : 'Αναμένεται τραπεζικό έμβασμα.'
+        paymentMethod === 'cash' ? 'Αναμένεται επιβεβαίωση πληρωμής με μετρητά.' : paymentMethod === 'paypal' ? 'Αναμένεται επιβεβαίωση PayPal.' : paymentMethod === 'stripe_card' ? 'Αναμένεται επιβεβαίωση Stripe.' : 'Αναμένεται τραπεζικό έμβασμα.'
       ]
     );
 
@@ -1426,14 +1562,16 @@ router.post('/me/billing', authorizeRole(['client']), [
     );
     const clientName = clientUser?.full_name || clientUser?.email || 'Client';
 
-    await notifyCoaches(connection, {
-      clientId: req.user.id,
-      paymentId: paymentResult.insertId,
-      type: 'payment_request_created',
-      title: 'Νέο αίτημα πληρωμής',
-      body: `${clientName} επέλεξε ${selectedPackage.label} με ποσό ${Number(selectedPackage.price || 0).toFixed(2)} ${selectedPackage.currency || 'EUR'} (${paymentMethod === 'stripe_card' ? 'Stripe' : 'Τραπεζικό έμβασμα'}).`,
-      linkUrl: `/clients/${req.user.id}`,
-    });
+    if (paymentMethod === 'bank_transfer' || paymentMethod === 'cash') {
+      await notifyCoaches(connection, {
+        clientId: req.user.id,
+        paymentId: paymentResult.insertId,
+        type: 'payment_request_created',
+        title: 'Νέο αίτημα πληρωμής',
+        body: `${clientName} επέλεξε ${selectedPackage.label} με ποσό ${Number(selectedPackage.price || 0).toFixed(2)} ${selectedPackage.currency || 'EUR'} (${paymentMethod === 'cash' ? 'Μετρητά' : 'Τραπεζικό έμβασμα'}).`,
+        linkUrl: `/clients/${req.user.id}`,
+      });
+    }
 
     await connection.commit();
     connection.release();
@@ -1453,6 +1591,160 @@ router.post('/me/billing', authorizeRole(['client']), [
     console.error(error);
     res.status(500).json({ message: 'Server error' });
   }
+});
+
+// Online providers are intentionally server-side only. The client receives a hosted URL;
+// it never receives provider secret keys or calculates the amount itself.
+router.post('/me/billing/:paymentId/stripe-checkout', authorizeRole(['client']), async (req, res) => {
+  if (!process.env.STRIPE_SECRET_KEY) return res.status(503).json({ message: 'Η πληρωμή με κάρτα δεν έχει ρυθμιστεί ακόμη.' });
+  const paymentId = Number(req.params.paymentId);
+  const connection = await pool.getConnection();
+  try {
+    const [rows] = await connection.query(
+      `SELECT p.id, p.amount, p.currency, p.status, p.method, s.plan_name, u.email
+       FROM payments p JOIN subscriptions s ON s.id = p.subscription_id
+       JOIN users u ON u.id = p.client_id
+       WHERE p.id = ? AND p.client_id = ? LIMIT 1`,
+      [paymentId, req.user.id]
+    );
+    const payment = rows[0];
+    if (!payment || payment.status !== 'pending' || payment.method !== 'stripe') return res.status(400).json({ message: 'Η πληρωμή δεν είναι διαθέσιμη για Stripe Checkout.' });
+    const params = new URLSearchParams({
+      mode: 'payment',
+      success_url: `${paymentFrontendUrl()}/client-billing?stripe_payment_id=${payment.id}&stripe_session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${paymentFrontendUrl()}/client-billing?payment=cancelled&payment_id=${payment.id}`,
+      client_reference_id: `${payment.id}:${req.user.id}`,
+      customer_email: payment.email || '',
+      'line_items[0][price_data][currency]': String(payment.currency || 'EUR').toLowerCase(),
+      'line_items[0][price_data][product_data][name]': payment.plan_name,
+      'line_items[0][price_data][unit_amount]': String(Math.round(Number(payment.amount) * 100)),
+      'line_items[0][quantity]': '1',
+      'metadata[payment_id]': String(payment.id),
+      'metadata[client_id]': String(req.user.id),
+    });
+    const stripeResponse = await fetch('https://api.stripe.com/v1/checkout/sessions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params,
+    });
+    const stripeSession = await stripeResponse.json();
+    if (!stripeResponse.ok || !stripeSession.url) {
+      console.error('Stripe Checkout creation failed:', stripeSession);
+      return res.status(502).json({ message: 'Δεν ήταν δυνατή η έναρξη της πληρωμής με κάρτα.' });
+    }
+    await connection.query('UPDATE payments SET reference_number = ? WHERE id = ?', [stripeSession.id, payment.id]);
+    return res.json({ checkoutUrl: stripeSession.url });
+  } catch (error) {
+    console.error('Stripe Checkout error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  } finally { connection.release(); }
+});
+
+router.post('/me/billing/:paymentId/stripe-confirm', authorizeRole(['client']), async (req, res) => {
+  if (!process.env.STRIPE_SECRET_KEY) return res.status(503).json({ message: 'Η πληρωμή με κάρτα δεν έχει ρυθμιστεί ακόμη.' });
+  const paymentId = Number(req.params.paymentId);
+  const sessionId = String(req.body?.sessionId || '');
+  if (!paymentId || !sessionId.startsWith('cs_')) return res.status(400).json({ message: 'Μη έγκυρη συνεδρία πληρωμής.' });
+  try {
+    const stripeResponse = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sessionId)}`, { headers: { Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}` } });
+    const session = await stripeResponse.json();
+    if (!stripeResponse.ok || session.payment_status !== 'paid' || session.client_reference_id !== `${paymentId}:${req.user.id}`) return res.status(400).json({ message: 'Η πληρωμή δεν έχει επιβεβαιωθεί.' });
+    await finalizeOnlinePayment(paymentId, session.id);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Stripe confirmation error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/me/billing/:paymentId/cancel-online', authorizeRole(['client']), async (req, res) => {
+  const paymentId = Number(req.params.paymentId);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
+    const [payments] = await connection.query(
+      `SELECT id, subscription_id FROM payments
+       WHERE id = ? AND client_id = ? AND status = 'pending' AND method IN ('stripe', 'paypal') FOR UPDATE`,
+      [paymentId, req.user.id]
+    );
+    if (!payments.length) {
+      await connection.rollback();
+      return res.status(400).json({ message: 'Δεν υπάρχει εκκρεμής online πληρωμή προς ακύρωση.' });
+    }
+    await connection.query("UPDATE payments SET status = 'failed', notes = CONCAT(COALESCE(notes, ''), '\nΑκυρώθηκε από τον πελάτη.') WHERE id = ?", [paymentId]);
+    await connection.query("UPDATE subscriptions SET status = 'cancelled' WHERE id = ? AND status = 'pending_payment'", [payments[0].subscription_id]);
+    const [activeSubscriptions] = await connection.query(
+      `SELECT id FROM subscriptions WHERE client_id = ? AND status IN ('active', 'expiring_soon')
+       AND start_date <= CURDATE() AND end_date >= CURDATE() LIMIT 1`,
+      [req.user.id]
+    );
+    if (!activeSubscriptions.length) await connection.query('UPDATE users SET status = "inactive" WHERE id = ? AND role = "client"', [req.user.id]);
+    await connection.commit();
+    return res.json({ success: true });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Online payment cancellation error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  } finally { connection.release(); }
+});
+
+async function getPayPalAccessToken() {
+  const mode = process.env.PAYPAL_MODE === 'live' ? 'live' : 'sandbox';
+  const baseUrl = mode === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
+  const auth = Buffer.from(`${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_CLIENT_SECRET}`).toString('base64');
+  const response = await fetch(`${baseUrl}/v1/oauth2/token`, { method: 'POST', headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'grant_type=client_credentials' });
+  const payload = await response.json();
+  if (!response.ok || !payload.access_token) throw new Error('PayPal authentication failed');
+  return { baseUrl, accessToken: payload.access_token };
+}
+
+router.post('/me/billing/:paymentId/paypal-order', authorizeRole(['client']), async (req, res) => {
+  if (!process.env.PAYPAL_CLIENT_ID || !process.env.PAYPAL_CLIENT_SECRET) return res.status(503).json({ message: 'Το PayPal δεν έχει ρυθμιστεί ακόμη.' });
+  const paymentId = Number(req.params.paymentId);
+  const connection = await pool.getConnection();
+  try {
+    const [rows] = await connection.query(
+      `SELECT p.id, p.amount, p.currency, p.status, p.method, s.plan_name
+       FROM payments p JOIN subscriptions s ON s.id = p.subscription_id
+       WHERE p.id = ? AND p.client_id = ? LIMIT 1`, [paymentId, req.user.id]
+    );
+    const payment = rows[0];
+    if (!payment || payment.status !== 'pending' || payment.method !== 'paypal') return res.status(400).json({ message: 'Η πληρωμή δεν είναι διαθέσιμη για PayPal.' });
+    const { baseUrl, accessToken } = await getPayPalAccessToken();
+    const response = await fetch(`${baseUrl}/v2/checkout/orders`, {
+      method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'PayPal-Request-Id': `payment-${payment.id}` },
+      body: JSON.stringify({ intent: 'CAPTURE', purchase_units: [{ reference_id: String(payment.id), description: payment.plan_name, amount: { currency_code: String(payment.currency || 'EUR').toUpperCase(), value: Number(payment.amount).toFixed(2) } }], application_context: { return_url: `${paymentFrontendUrl()}/client-billing?paypal_payment_id=${payment.id}`, cancel_url: `${paymentFrontendUrl()}/client-billing?payment=cancelled&payment_id=${payment.id}`, user_action: 'PAY_NOW' } }),
+    });
+    const order = await response.json();
+    const approvalUrl = order.links?.find((link) => link.rel === 'approve')?.href;
+    if (!response.ok || !order.id || !approvalUrl) return res.status(502).json({ message: 'Δεν ήταν δυνατή η έναρξη της πληρωμής PayPal.' });
+    await connection.query('UPDATE payments SET reference_number = ? WHERE id = ?', [order.id, payment.id]);
+    return res.json({ checkoutUrl: approvalUrl });
+  } catch (error) {
+    console.error('PayPal order error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  } finally { connection.release(); }
+});
+
+router.post('/me/billing/:paymentId/paypal-capture', authorizeRole(['client']), async (req, res) => {
+  if (!process.env.PAYPAL_CLIENT_ID || !process.env.PAYPAL_CLIENT_SECRET) return res.status(503).json({ message: 'Το PayPal δεν έχει ρυθμιστεί ακόμη.' });
+  const paymentId = Number(req.params.paymentId);
+  const orderId = String(req.body?.orderId || '');
+  if (!paymentId || !orderId) return res.status(400).json({ message: 'Μη έγκυρη παραγγελία PayPal.' });
+  const connection = await pool.getConnection();
+  try {
+    const [rows] = await connection.query('SELECT id FROM payments WHERE id = ? AND client_id = ? AND status = "pending" AND method = "paypal" AND reference_number = ? LIMIT 1', [paymentId, req.user.id, orderId]);
+    if (!rows.length) return res.status(400).json({ message: 'Η παραγγελία PayPal δεν βρέθηκε.' });
+    const { baseUrl, accessToken } = await getPayPalAccessToken();
+    const response = await fetch(`${baseUrl}/v2/checkout/orders/${encodeURIComponent(orderId)}/capture`, { method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } });
+    const order = await response.json();
+    if (!response.ok || order.status !== 'COMPLETED') return res.status(400).json({ message: 'Η πληρωμή PayPal δεν ολοκληρώθηκε.' });
+    await finalizeOnlinePayment(paymentId, orderId);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('PayPal capture error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  } finally { connection.release(); }
 });
 
 // GET /clients — coaches see their own clients, admins see all

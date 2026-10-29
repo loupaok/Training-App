@@ -7,7 +7,7 @@ import mysql from 'mysql2/promise';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import coachRoutes from './routes/coaches.js';
-import clientRoutes from './routes/clients.js';
+import clientRoutes, { handleStripeWebhook } from './routes/clients.js';
 import adminRoutes from './routes/admin.js';
 import subscriptionRoutes from './routes/subscriptions.js';
 import progressRoutes from './routes/progress.js';
@@ -105,6 +105,9 @@ app.use('/api', apiLimiter);
 app.use(['/api/auth/login', '/api/register'], authenticationLimiter);
 app.use('/api', uploadLimiter);
 const bodyLimit = process.env.JSON_BODY_LIMIT || '1mb';
+// Stripe signs the exact raw request body. This route must remain before
+// express.json(), otherwise signature verification becomes unsafe/impossible.
+app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' }), handleStripeWebhook);
 app.use(express.json({ limit: bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
 
