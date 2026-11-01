@@ -188,11 +188,23 @@ function couponStatusFromLocal(transaction) {
   return 'active';
 }
 
+const COUPON_STATUS_SYNC_INTERVAL_MS = Math.max(
+  1,
+  Number(process.env.COUPON_STATUS_SYNC_MINUTES || 10)
+) * 60 * 1000;
+
+function couponSyncIsDue(checkedAt) {
+  if (!checkedAt) return true;
+  const checkedAtMs = new Date(checkedAt).getTime();
+  return !Number.isFinite(checkedAtMs) || Date.now() - checkedAtMs >= COUPON_STATUS_SYNC_INTERVAL_MS;
+}
+
 async function syncCouponStatus(connection, transaction) {
   let status = couponStatusFromLocal(transaction);
   let expiresAt = transaction.coupon_expires_at || null;
+  const shouldSyncRemotely = transaction.wc_coupon_id && status === 'active' && couponSyncIsDue(transaction.coupon_checked_at);
 
-  if (transaction.wc_coupon_id && status === 'active') {
+  if (shouldSyncRemotely) {
     const coupon = await getCoupon(transaction.wc_coupon_id);
     const remoteExpiry = coupon?.date_expires_gmt || coupon?.date_expires || null;
     expiresAt = remoteExpiry ? new Date(remoteExpiry) : expiresAt;
@@ -202,10 +214,13 @@ async function syncCouponStatus(connection, transaction) {
     status = remoteExpired ? 'expired' : usageLimit > 0 && usageCount >= usageLimit ? 'used' : 'active';
   }
 
-  await connection.query(
-    'UPDATE points_transactions SET coupon_status = ?, coupon_expires_at = ?, coupon_checked_at = NOW() WHERE id = ?',
-    [status, expiresAt || null, transaction.id]
-  );
+  const localStatusChanged = status !== transaction.coupon_status || String(expiresAt || '') !== String(transaction.coupon_expires_at || '');
+  if (shouldSyncRemotely || localStatusChanged) {
+    await connection.query(
+      'UPDATE points_transactions SET coupon_status = ?, coupon_expires_at = ?, coupon_checked_at = CASE WHEN ? THEN NOW() ELSE coupon_checked_at END WHERE id = ?',
+      [status, expiresAt || null, shouldSyncRemotely ? 1 : 0, transaction.id]
+    );
+  }
   return { ...transaction, coupon_status: status, coupon_expires_at: expiresAt || null };
 }
 
@@ -228,10 +243,15 @@ router.get('/my/coupons', authenticateToken, authorizeRole(['client']), async (r
     connection = await pool.getConnection();
     await ensurePointsSchema(connection);
     const [transactions] = await connection.query(
-      `SELECT id, coupon_code, wc_coupon_id, points, created_at, coupon_expires_at, coupon_status
+      `SELECT id, coupon_code, wc_coupon_id, points, created_at, coupon_expires_at, coupon_status, coupon_checked_at
        FROM points_transactions
-       WHERE client_id = ? AND type = 'redeemed' AND coupon_code IS NOT NULL
-       ORDER BY created_at DESC`,
+       WHERE client_id = ?
+         AND type = 'redeemed'
+         AND coupon_code IS NOT NULL
+         AND (coupon_status IS NULL OR coupon_status = 'active')
+         AND (coupon_expires_at IS NULL OR coupon_expires_at >= NOW())
+       ORDER BY created_at DESC
+       LIMIT 20`,
       [req.user.id]
     );
 

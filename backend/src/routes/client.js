@@ -22,6 +22,19 @@ async function ensureSubscriptionCancellationSchema(connection) {
   }
 }
 
+async function ensurePaymentConsentColumns(connection) {
+  for (const statement of [
+    'ALTER TABLE payments ADD COLUMN privacy_policy_accepted_at TIMESTAMP NULL',
+    'ALTER TABLE payments ADD COLUMN privacy_policy_version VARCHAR(32) NULL',
+  ]) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+  }
+}
+
 const upload = multer({
   storage: multer.diskStorage({
     destination: (req, file, callback) => {
@@ -615,11 +628,12 @@ router.get('/progress', async (req, res) => {
 router.get('/payments', async (req, res) => {
   const connection = await pool.getConnection();
   try {
+    await ensurePaymentConsentColumns(connection);
     const [subscriptions] = await connection.query("SELECT plan_name, price, status, start_date, end_date, DATEDIFF(end_date, CURDATE()) AS days_remaining FROM subscriptions WHERE client_id = ? AND status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE() ORDER BY end_date DESC LIMIT 1", [req.user.id]);
     const [pendingSubscriptions] = await connection.query("SELECT plan_name, price, status, start_date, end_date FROM subscriptions WHERE client_id = ? AND status = 'pending_payment' ORDER BY created_at DESC LIMIT 1", [req.user.id]);
     const [upcomingSubscriptions] = await connection.query("SELECT s.plan_name, s.price, s.currency, s.status, s.start_date, s.end_date FROM subscriptions s INNER JOIN payments p ON p.subscription_id = s.id AND p.status = 'completed' WHERE s.client_id = ? AND s.status = 'active' AND s.start_date > CURDATE() ORDER BY s.start_date ASC", [req.user.id]);
     const [payments] = await connection.query(`SELECT p.id, p.amount, p.currency, p.method, p.status, p.reference_number AS referenceNumber,
-      p.paid_at AS paidAt, p.notes, p.proof_url AS proofUrl, s.plan_name AS planName
+      p.paid_at AS paidAt, p.created_at AS createdAt, p.notes, p.proof_url AS proofUrl, p.privacy_policy_accepted_at AS privacyPolicyAcceptedAt, p.privacy_policy_version AS privacyPolicyVersion, s.plan_name AS planName
       FROM payments p LEFT JOIN subscriptions s ON s.id = p.subscription_id
       WHERE p.client_id = ? ORDER BY p.created_at DESC`, [req.user.id]);
     res.json({ subscription: subscriptions[0] || null, pendingSubscription: pendingSubscriptions[0] || null, upcomingSubscriptions, payments });

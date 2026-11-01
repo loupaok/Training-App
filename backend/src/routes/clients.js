@@ -128,9 +128,9 @@ const paymentProofStorage = multer.diskStorage({
 
 const paymentProofUpload = multer({
   storage: paymentProofStorage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowed = /^image\/(jpeg|png|webp)$/.test(file.mimetype) || file.mimetype === 'application/pdf';
+    const allowed = /^image\/(jpeg|png)$/.test(file.mimetype) || file.mimetype === 'application/pdf';
     cb(null, allowed);
   }
 });
@@ -675,7 +675,9 @@ async function ensurePaymentProofColumns(connection) {
   await ensureNotificationsSchema(connection);
   for (const statement of [
     'ALTER TABLE payments ADD COLUMN proof_url VARCHAR(500)',
-    'ALTER TABLE payments ADD COLUMN proof_uploaded_at TIMESTAMP NULL'
+    'ALTER TABLE payments ADD COLUMN proof_uploaded_at TIMESTAMP NULL',
+    'ALTER TABLE payments ADD COLUMN privacy_policy_accepted_at TIMESTAMP NULL',
+    'ALTER TABLE payments ADD COLUMN privacy_policy_version VARCHAR(32) NULL'
   ]) {
     try {
       await connection.query(statement);
@@ -941,6 +943,17 @@ router.post('/me/onboarding', authorizeRole(['client']), (req, res, next) => {
     await ensureOnboardingSchema(connection);
 
     await connection.beginTransaction();
+
+    const [pendingPayments] = await connection.query(
+      `SELECT id FROM payments
+       WHERE client_id = ? AND status = 'pending'
+       LIMIT 1 FOR UPDATE`,
+      [req.user.id]
+    );
+    if (pendingPayments.length) {
+      await connection.rollback();
+      return res.status(409).json({ message: 'Υπάρχει ήδη μία πληρωμή σε εκκρεμότητα.' });
+    }
 
     const coachId = await getDefaultCoachId(connection);
     const fullPhone = `${countryCode || ''}${phone}`.trim();
@@ -1460,19 +1473,22 @@ router.delete('/me/profile-photo', authorizeRole(['client']), async (req, res) =
 
 router.post('/me/billing', authorizeRole(['client']), [
   body('subscriptionPackage').notEmpty().withMessage('Subscription package required'),
-  body('paymentMethod').isIn(['bank_transfer', 'stripe_card', 'paypal', 'cash']).withMessage('Valid payment method required')
+  body('paymentMethod').isIn(['bank_transfer', 'stripe_card', 'paypal', 'cash']).withMessage('Valid payment method required'),
+  body('note').optional({ nullable: true }).isString().trim().isLength({ max: 500 }).withMessage('Η σημείωση είναι πολύ μεγάλη.'),
+  body('privacyPolicyAccepted').custom((value) => value === true).withMessage('Η αποδοχή της Πολιτικής Απορρήτου είναι υποχρεωτική.')
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const { subscriptionPackage, paymentMethod } = req.body;
+  const { subscriptionPackage, paymentMethod, note } = req.body;
   const connection = await pool.getConnection();
 
   try {
     await ensureOnboardingSchema(connection);
     await ensurePaymentSettingsSchema(connection);
+    await ensurePaymentProofColumns(connection);
     const { ensureSubscriptionPlanIdColumn } = await import('./register.js');
     await ensureSubscriptionPlanIdColumn(connection);
     const paymentSettings = await getPaymentSettings(connection, { publicOnly: true });
@@ -1523,8 +1539,8 @@ router.post('/me/billing', authorizeRole(['client']), [
     );
 
     const [paymentResult] = await connection.query(
-      `INSERT INTO payments (client_id, coach_id, subscription_id, amount, currency, method, status, reference_number, notes)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      `INSERT INTO payments (client_id, coach_id, subscription_id, amount, currency, method, status, reference_number, notes, privacy_policy_accepted_at, privacy_policy_version)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, NOW(), ?)`,
       [
         req.user.id,
         coachId,
@@ -1533,7 +1549,8 @@ router.post('/me/billing', authorizeRole(['client']), [
         selectedPackage.currency || 'EUR',
         paymentMethod === 'stripe_card' ? 'stripe' : paymentMethod,
         referenceNumber,
-        paymentMethod === 'cash' ? 'Αναμένεται επιβεβαίωση πληρωμής με μετρητά.' : paymentMethod === 'paypal' ? 'Αναμένεται επιβεβαίωση PayPal.' : paymentMethod === 'stripe_card' ? 'Αναμένεται επιβεβαίωση Stripe.' : 'Αναμένεται τραπεζικό έμβασμα.'
+        paymentMethod === 'cash' ? 'Αναμένεται επιβεβαίωση πληρωμής με μετρητά.' : paymentMethod === 'paypal' ? 'Αναμένεται επιβεβαίωση PayPal.' : paymentMethod === 'stripe_card' ? 'Αναμένεται επιβεβαίωση Stripe.' : ['Αναμένεται τραπεζικό έμβασμα.', String(note || '').trim()].filter(Boolean).join('\n'),
+        process.env.PRIVACY_POLICY_VERSION || 'current'
       ]
     );
 
@@ -1686,6 +1703,57 @@ router.post('/me/billing/:paymentId/cancel-online', authorizeRole(['client']), a
     console.error('Online payment cancellation error:', error);
     return res.status(500).json({ message: 'Server error' });
   } finally { connection.release(); }
+});
+
+// A client can withdraw an unpaid offline request. Accounting rows are retained;
+// the failed status plus the cancellation note makes the action auditable.
+router.post('/me/billing/:paymentId/cancel', authorizeRole(['client']), async (req, res) => {
+  const paymentId = Number(req.params.paymentId);
+  const connection = await pool.getConnection();
+  try {
+    await ensureNotificationsSchema(connection);
+    await connection.beginTransaction();
+    const [payments] = await connection.query(
+      `SELECT p.id, p.subscription_id, p.amount, p.currency, p.method, s.plan_name
+       FROM payments p
+       LEFT JOIN subscriptions s ON s.id = p.subscription_id
+       WHERE p.id = ? AND p.client_id = ? AND p.status = 'pending'
+         AND p.method IN ('cash', 'bank_transfer', 'bank')
+       FOR UPDATE`,
+      [paymentId, req.user.id]
+    );
+    const payment = payments[0];
+    if (!payment) {
+      await connection.rollback();
+      return res.status(400).json({ message: 'Δεν υπάρχει εκκρεμές αίτημα που μπορεί να ακυρωθεί.' });
+    }
+
+    await connection.query(
+      "UPDATE payments SET status = 'failed', notes = CONCAT(COALESCE(notes, ''), '\\nΑκυρώθηκε από τον πελάτη.') WHERE id = ?",
+      [payment.id]
+    );
+    if (payment.subscription_id) {
+      await connection.query("UPDATE subscriptions SET status = 'cancelled' WHERE id = ? AND status = 'pending_payment'", [payment.subscription_id]);
+    }
+    await refreshClientPaymentStatus(connection, req.user.id);
+    const [[client]] = await connection.query('SELECT full_name, email FROM users WHERE id = ? LIMIT 1', [req.user.id]);
+    await notifyCoaches(connection, {
+      clientId: req.user.id,
+      paymentId: payment.id,
+      type: 'payment_request_cancelled',
+      title: 'Ακυρώθηκε αίτημα πληρωμής',
+      body: `${client?.full_name || client?.email || 'Πελάτης'} ακύρωσε αίτημα ${payment.method === 'cash' ? 'μετρητών' : 'εμβάσματος'} ${Number(payment.amount || 0).toFixed(2)} ${payment.currency || 'EUR'}${payment.plan_name ? ` · ${payment.plan_name}` : ''}.`,
+      linkUrl: `/clients/${req.user.id}`,
+    });
+    await connection.commit();
+    return res.json({ success: true });
+  } catch (error) {
+    await connection.rollback();
+    console.error('Offline payment cancellation error:', error);
+    return res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
 });
 
 async function getPayPalAccessToken() {

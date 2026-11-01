@@ -9,15 +9,32 @@ import {
   Copy,
   CreditCard,
   Download,
+  FileText,
+  FileUp,
   Landmark,
+  LockKeyhole,
+  WalletCards,
   ReceiptText,
   Repeat2,
+  X,
 } from "lucide-react";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { ClientShell } from "@/components/shell/client-shell";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Card,
   CardContent,
@@ -58,6 +75,9 @@ type Payment = {
   notes?: string | null;
   proofUrl?: string | null;
   planName?: string | null;
+  createdAt?: string | null;
+  privacyPolicyAcceptedAt?: string | null;
+  privacyPolicyVersion?: string | null;
 };
 type PaymentData = {
   subscription: Subscription | null;
@@ -119,11 +139,14 @@ const paymentStatuses: Record<string, string> = {
   completed: "Εγκρίθηκε",
   confirmed: "Εγκρίθηκε",
   failed: "Απορρίφθηκε",
+  cancelled: "Ακυρώθηκε",
 };
 const formatDate = (value?: string | null) =>
   value ? dateFormat.format(new Date(value)) : "-";
 const formatShortDate = (value?: string | null) =>
   value ? shortDateFormat.format(new Date(value)) : "-";
+const formatDateTime = (value?: string | null) =>
+  value ? new Intl.DateTimeFormat("el-GR", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value)) : "-";
 const money = (value: number | string | null | undefined, currency = "EUR") =>
   new Intl.NumberFormat("el-GR", {
     style: "currency",
@@ -144,9 +167,15 @@ function paymentStatusClass(status: string) {
   return "bg-muted text-muted-foreground";
 }
 
+function paymentStatusLabel(payment: Payment) {
+  if (payment.status === "failed" && /ακυρώθηκε/i.test(payment.notes || "")) return "Ακυρώθηκε";
+  return paymentStatuses[payment.status] || payment.status;
+}
+
 function ClientBillingModernContent() {
   const { user, logout } = useAuth();
   const plansRef = useRef<HTMLElement>(null);
+  const paymentRef = useRef<HTMLDivElement>(null);
   const [data, setData] = useState<PaymentData>({
     subscription: null,
     payments: [],
@@ -164,9 +193,10 @@ function ClientBillingModernContent() {
   const [paymentMethod, setPaymentMethod] = useState<
     "bank_transfer" | "stripe_card" | "paypal" | "cash"
   >("bank_transfer");
-  const [renewing, setRenewing] = useState(false);
+  const [paymentIntent, setPaymentIntent] = useState<"renew" | "change" | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [cancellingPayment, setCancellingPayment] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -279,7 +309,10 @@ function ClientBillingModernContent() {
     : 0;
   const progress = Math.min(100, Math.max(0, (elapsedDays / totalDays) * 100));
 
-  const beginPayment = async () => {
+  const beginPayment = async (
+    privacyPolicyAccepted: boolean,
+    bankTransfer?: { proof?: File | null; note?: string },
+  ) => {
     if (!plan) return;
     setSaving(true);
     setError("");
@@ -288,6 +321,8 @@ function ClientBillingModernContent() {
       const payment = await api.post<{ paymentId: number }>("/clients/me/billing", {
         subscriptionPackage: plan.slug,
         paymentMethod,
+        privacyPolicyAccepted,
+        note: bankTransfer?.note?.trim() || undefined,
       });
       if (paymentMethod === "stripe_card") {
         const checkout = await api.post<{ checkoutUrl: string }>(`/clients/me/billing/${payment.paymentId}/stripe-checkout`, {});
@@ -299,10 +334,15 @@ function ClientBillingModernContent() {
         window.location.assign(checkout.checkoutUrl);
         return;
       }
+      if (paymentMethod === "bank_transfer" && bankTransfer?.proof) {
+        const proofData = new FormData();
+        proofData.append("proof", bankTransfer.proof);
+        await api.upload("/clients/me/billing-proof", proofData);
+      }
       setMessage(
         "Η πληρωμή καταχωρήθηκε και αναμένει επιβεβαίωση από τον coach.",
       );
-      setRenewing(false);
+      setPaymentIntent(null);
       await load();
     } catch (submitError) {
       setError(
@@ -315,13 +355,13 @@ function ClientBillingModernContent() {
     }
   };
 
-  const copyIban = async () => {
-    if (bankDetails?.iban)
-      await navigator.clipboard.writeText(bankDetails.iban);
+  const copyIban = async (iban = bankDetails?.iban) => {
+    if (iban)
+      await navigator.clipboard.writeText(iban.replace(/\s/g, ""));
   };
   const openPlans = (planSlug?: string) => {
     if (planSlug) setSelectedPlan(planSlug);
-    setRenewing(true);
+    setPaymentIntent("change");
     window.setTimeout(
       () =>
         plansRef.current?.scrollIntoView({
@@ -333,7 +373,32 @@ function ClientBillingModernContent() {
   };
   const selectForRenewal = (planSlug?: string) => {
     if (planSlug) setSelectedPlan(planSlug);
-    setRenewing(true);
+    setPaymentIntent("renew");
+    window.setTimeout(
+      () => paymentRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }),
+      0,
+    );
+  };
+  const selectPlanForPayment = (planSlug: string) => {
+    setSelectedPlan(planSlug);
+    setPaymentIntent("change");
+    window.setTimeout(
+      () => paymentRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }),
+      350,
+    );
+  };
+  const cancelPendingPayment = async (paymentId: number) => {
+    setCancellingPayment(true);
+    setError("");
+    try {
+      await api.post(`/clients/me/billing/${paymentId}/cancel`, {});
+      setMessage("Το αίτημα πληρωμής ακυρώθηκε.");
+      await load();
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : "Δεν ήταν δυνατή η ακύρωση του αιτήματος.");
+    } finally {
+      setCancellingPayment(false);
+    }
   };
 
   return (
@@ -379,6 +444,7 @@ function ClientBillingModernContent() {
                     progress={progress}
                     pointsReward={Number(activePlan?.pointsReward || 0)}
                     payments={data.payments}
+                    paymentSettings={paymentSettings}
                     onRenew={() => selectForRenewal(activePlan?.slug)}
                     onChangePlan={openPlans}
                   />
@@ -388,6 +454,9 @@ function ClientBillingModernContent() {
                   subscription={pendingSubscription || subscription}
                   bankDetails={bankDetails}
                   onCopyIban={() => void copyIban()}
+                  onCancel={() => void cancelPendingPayment(pendingPayment.id)}
+                  cancelling={cancellingPayment}
+                  pointsReward={Number(activePlan?.pointsReward || 0)}
                 />
               </>
             ) : active ? (
@@ -396,9 +465,10 @@ function ClientBillingModernContent() {
                 progress={progress}
                 pointsReward={Number(activePlan?.pointsReward || 0)}
                 payments={data.payments}
+                paymentSettings={paymentSettings}
                 onRenew={() => selectForRenewal(activePlan?.slug)}
                 onChangePlan={openPlans}
-                renewalSlot={<RenewalForm plans={plans} paymentSettings={paymentSettings} selectedPlan={selectedPlan} onPlanChange={setSelectedPlan} paymentMethod={paymentMethod} onMethodChange={setPaymentMethod} saving={saving} onSubmit={() => void beginPayment()} hidePlanPicker />}
+                renewalSlot={<RenewalForm sectionRef={paymentRef} intent={paymentIntent} plans={plans} paymentSettings={paymentSettings} bankDetails={bankDetails} selectedPlan={selectedPlan} onPlanChange={setSelectedPlan} paymentMethod={paymentMethod} onMethodChange={setPaymentMethod} saving={saving} onSubmit={(accepted, bankTransfer) => void beginPayment(accepted, bankTransfer)} onCopyIban={(iban) => void copyIban(iban)} hidePlanPicker />}
               />
             ) : (
               <ExpiredSubscription
@@ -416,22 +486,25 @@ function ClientBillingModernContent() {
                 plansRef={plansRef}
                 plans={plans}
                 subscription={subscription}
-                onSelect={(slug) => {
-                  setSelectedPlan(slug);
-                  setRenewing(true);
-                }}
+                selectedPlan={selectedPlan}
+                onSelect={selectPlanForPayment}
+                intent={paymentIntent}
               />
             )}
             {(!active && !pendingPayment) && (
               <RenewalForm
+                sectionRef={paymentRef}
+                intent={paymentIntent}
                 plans={plans}
                 paymentSettings={paymentSettings}
+                bankDetails={bankDetails}
                 selectedPlan={selectedPlan}
                 onPlanChange={setSelectedPlan}
                 paymentMethod={paymentMethod}
                 onMethodChange={setPaymentMethod}
                 saving={saving}
-                onSubmit={() => void beginPayment()}
+                onSubmit={(accepted, bankTransfer) => void beginPayment(accepted, bankTransfer)}
+                onCopyIban={(iban) => void copyIban(iban)}
               />
             )}
             <PaymentHistory payments={data.payments} />
@@ -442,11 +515,26 @@ function ClientBillingModernContent() {
   );
 }
 
-function RenewalHowItWorks() {
+function RenewalHowItWorks({ paymentSettings }: { paymentSettings: PaymentSettings }) {
+  const enabledMethods = [
+    paymentSettings.stripeEnabled && "κάρτα",
+    paymentSettings.paypalEnabled && "PayPal",
+    paymentSettings.bankTransferEnabled && "έμβασμα",
+    paymentSettings.cashEnabled && "μετρητά",
+  ].filter(Boolean).join(", ");
+  const hasOnlineMethod = paymentSettings.stripeEnabled || paymentSettings.paypalEnabled;
+  const hasCoachApprovalMethod = paymentSettings.bankTransferEnabled || paymentSettings.cashEnabled;
   const steps = [
     ["Διαλέγεις πλάνο", "ανανέωση ή αλλαγή από τα διαθέσιμα πλάνα"],
-    ["Πληρώνεις", "με τραπεζικό έμβασμα ή μετρητά στον coach"],
-    ["Εγκρίνει ο coach", "η συνδρομή ενεργοποιείται μόλις εγκριθεί η πληρωμή"],
+    ["Πληρώνεις", `με ${enabledMethods || "τον διαθέσιμο τρόπο πληρωμής"}`],
+    [
+      "Ενεργοποιείται",
+      hasOnlineMethod && hasCoachApprovalMethod
+        ? "Κάρτα / PayPal: αμέσως · Έμβασμα / μετρητά: μόλις εγκρίνει ο coach"
+        : hasOnlineMethod
+          ? "Μόλις ολοκληρωθεί η ασφαλής online πληρωμή"
+          : "Μόλις εγκρίνει ο coach την πληρωμή",
+    ],
   ];
   return (
     <Card className="rounded-[20px] border-border bg-card shadow-none">
@@ -469,7 +557,7 @@ function RenewalHowItWorks() {
         </div>
         <Separator className="mt-auto bg-border" />
         <p className="text-xs text-muted-foreground">
-          Θα λάβεις ειδοποίηση μόλις εγκριθεί.
+          Θα λάβεις ειδοποίηση για κάθε πληρωμή.
         </p>
       </CardContent>
     </Card>
@@ -484,6 +572,7 @@ function ActiveSubscription({
   onRenew,
   onChangePlan,
   renewalSlot,
+  paymentSettings,
 }: {
   subscription: Subscription;
   progress: number;
@@ -492,6 +581,7 @@ function ActiveSubscription({
   onRenew: () => void;
   onChangePlan: () => void;
   renewalSlot?: React.ReactNode;
+  paymentSettings: PaymentSettings;
 }) {
   const days = Number(subscription.days_remaining ?? 0);
   const expiring = subscription.status === "expiring_soon";
@@ -601,7 +691,7 @@ function ActiveSubscription({
       </Card>
       {renewalSlot}
       </div>
-      <RenewalHowItWorks />
+      <RenewalHowItWorks paymentSettings={paymentSettings} />
     </section>
   );
 }
@@ -648,11 +738,15 @@ function UpcomingSubscriptions({
 function AvailablePlans({
   plans,
   subscription,
+  selectedPlan,
+  intent,
   onSelect,
   plansRef,
 }: {
   plans: PricingPlan[];
   subscription: Subscription | null;
+  selectedPlan: string;
+  intent: "renew" | "change" | null;
   onSelect: (slug: string) => void;
   plansRef: React.RefObject<HTMLElement | null>;
 }) {
@@ -685,17 +779,21 @@ function AvailablePlans({
         <p className="mt-1 text-[13px] text-muted-foreground">
           Η αλλαγή ενεργοποιείται μετά την έγκριση του coach.
         </p>
+        {intent === "change" && selectedPlan && (
+          <p aria-live="polite" className="mt-3 inline-flex items-center gap-2 rounded-full bg-[color:var(--sp-lime-soft)] px-3 py-1.5 text-[12px] font-extrabold text-foreground"><Check className="h-3.5 w-3.5" />Επίλεξε πλάνο και συνέχισε στην πληρωμή.</p>
+        )}
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {plans.map((plan) => {
           const isCurrent =
             plan.name.trim().toLocaleLowerCase("el-GR") === currentName;
+          const isSelected = selectedPlan === plan.slug;
           const planMonths = periodMonths(plan.period);
           const isBestValue = !isCurrent && bestValue?.slug === plan.slug;
           return (
             <Card
               key={plan.slug}
-              className={`flex min-h-[280px] rounded-[20px] bg-card shadow-none ${isCurrent ? "border-2 border-foreground ring-4 ring-accent/45" : "border-border"}`}
+              className={`flex min-h-[280px] rounded-[20px] bg-card shadow-none transition-all duration-200 ${isCurrent ? "border-2 border-foreground ring-4 ring-accent/45" : isSelected ? "border-2 border-foreground ring-4 ring-accent/30" : "border-border hover:-translate-y-0.5 hover:border-foreground/40"}`}
             >
               <CardContent className="flex w-full flex-col gap-[14px] p-[22px]">
                 <div className="flex min-h-6 items-center justify-between gap-2">
@@ -705,6 +803,8 @@ function AvailablePlans({
                       <Check className="mr-1 h-3 w-3" />
                       Τρέχον πλάνο
                     </Badge>
+                  ) : isSelected ? (
+                    <Badge className="h-6 rounded-full bg-accent px-2.5 text-[11px] font-extrabold text-accent-foreground hover:bg-accent"><Check className="mr-1 h-3 w-3" />Επιλεγμένο</Badge>
                   ) : isBestValue ? (
                     <Badge className="h-6 rounded-full bg-accent px-2.5 text-[11px] font-extrabold text-accent-foreground hover:bg-accent">
                       Καλύτερη τιμή
@@ -733,7 +833,7 @@ function AvailablePlans({
                   variant={isCurrent ? "outline" : "default"}
                   onClick={() => onSelect(plan.slug)}
                 >
-                  {isCurrent ? "Ανανέωση πλάνου" : "Επιλογή πλάνου"}
+                  {isCurrent ? "Ανανέωση πλάνου" : isSelected ? "Συνέχεια στην πληρωμή" : "Επιλογή πλάνου"}
                 </Button>
               </CardContent>
             </Card>
@@ -749,13 +849,22 @@ function PendingSubscription({
   subscription,
   bankDetails,
   onCopyIban,
+  onCancel,
+  cancelling,
+  pointsReward,
 }: {
   payment: Payment;
   subscription: Subscription | null;
   bankDetails: BankDetails | null;
   onCopyIban: () => void;
+  onCancel: () => void;
+  cancelling: boolean;
+  pointsReward: number;
 }) {
   const bank = payment.method === "bank_transfer" || payment.method === "bank";
+  if (payment.method === "cash") {
+    return <PendingPaymentCard payment={payment} subscription={subscription} onCancel={onCancel} cancelling={cancelling} pointsReward={pointsReward} />;
+  }
   return (
     <div className="space-y-5">
       <Card className="rounded-[20px] border-border bg-card shadow-none">
@@ -842,6 +951,58 @@ function PendingSubscription({
   );
 }
 
+function PendingPaymentCard({
+  payment,
+  subscription,
+  onCancel,
+  cancelling,
+  pointsReward,
+}: {
+  payment: Payment;
+  subscription: Subscription | null;
+  onCancel: () => void;
+  cancelling: boolean;
+  pointsReward: number;
+}) {
+  const duration = subscription?.start_date && subscription?.end_date
+    ? Math.max(1, Math.round((new Date(subscription.end_date).getTime() - new Date(subscription.start_date).getTime()) / 2629800000))
+    : null;
+  return (
+    <Card className="rounded-[20px] border-border bg-card shadow-none">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-[18px] font-extrabold">Πληρωμή ανανέωσης</CardTitle>
+        <CardDescription>Έχεις μια πληρωμή σε εκκρεμότητα</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="flex gap-3 rounded-[14px] bg-[color:var(--sp-lime-soft)] p-4">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-foreground text-accent"><Clock3 className="h-4 w-4" /></span>
+          <div><p className="font-extrabold">Η συνδρομή σου περιμένει την πληρωμή</p><p className="mt-1 text-[13px] text-muted-foreground">Μετρητά στον coach · {money(payment.amount, payment.currency || "EUR")} · από {formatDateTime(payment.createdAt || payment.paidAt)}</p></div>
+        </div>
+        <div className="grid gap-4 md:grid-cols-3 md:gap-0">
+          <PendingStep icon={<Check className="h-4 w-4" />} tone="lime" title="Επέλεξες μετρητά" detail={formatDateTime(payment.createdAt || payment.paidAt)} />
+          <PendingStep icon={<Clock3 className="h-4 w-4" />} tone="dark" title="Παράδοση στον coach" detail="από κοντά" />
+          <PendingStep icon="○" tone="muted" title="Ενεργοποίηση" detail={`${duration ? `+${duration} μήνες` : ""}${pointsReward > 0 ? ` · +${pointsReward} πόντοι` : ""}` || "μετά την παραλαβή"} />
+        </div>
+        <div className="flex flex-col gap-3 border-t border-border pt-4 text-[12px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+          <p>Ο coach θα πατήσει «Παρελήφθη» μόλις πάρει τα χρήματα.</p>
+          <AlertDialog>
+            <AlertDialogTrigger render={<button type="button" className="font-extrabold text-foreground underline underline-offset-4" />}>Ακύρωση αιτήματος</AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader><AlertDialogTitle>Ακύρωση αιτήματος;</AlertDialogTitle><AlertDialogDescription>Το αίτημα μετρητών θα ακυρωθεί και ο coach θα ενημερωθεί.</AlertDialogDescription></AlertDialogHeader>
+              <AlertDialogFooter><AlertDialogCancel>Πίσω</AlertDialogCancel><AlertDialogAction className="bg-foreground text-background hover:bg-foreground/90" onClick={onCancel} disabled={cancelling}>{cancelling ? "Ακύρωση..." : "Ναι, ακύρωση"}</AlertDialogAction></AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function PendingStep({ icon, tone, title, detail }: { icon: React.ReactNode; tone: "lime" | "dark" | "muted"; title: string; detail: string }) {
+  const toneClass = tone === "lime" ? "bg-accent text-accent-foreground" : tone === "dark" ? "bg-foreground text-accent" : "bg-muted text-muted-foreground";
+  return <div className="relative flex items-center gap-3 md:flex-col md:items-start md:pr-4 md:after:absolute md:after:right-0 md:after:top-5 md:after:h-px md:after:w-4 md:after:bg-border last:after:hidden"><span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-[13px] font-extrabold ${toneClass}`}>{icon}</span><div><p className="text-[13px] font-extrabold">{title}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{detail}</p></div></div>;
+}
+
 function ExpiredSubscription({
   subscription,
   onRenew,
@@ -878,27 +1039,50 @@ function ExpiredSubscription({
 }
 
 function RenewalForm({
+  sectionRef,
+  intent,
   plans,
   paymentSettings,
+  bankDetails,
   selectedPlan,
   onPlanChange,
   paymentMethod,
   onMethodChange,
   saving,
   onSubmit,
+  onCopyIban,
   hidePlanPicker = false,
 }: {
+  sectionRef?: React.RefObject<HTMLDivElement | null>;
+  intent: "renew" | "change" | null;
   plans: PricingPlan[];
   paymentSettings: PaymentSettings;
+  bankDetails: BankDetails | null;
   selectedPlan: string;
   onPlanChange: (value: string) => void;
   paymentMethod: "bank_transfer" | "stripe_card" | "paypal" | "cash";
   onMethodChange: (value: "bank_transfer" | "stripe_card" | "paypal" | "cash") => void;
   saving: boolean;
-  onSubmit: () => void;
+  onSubmit: (
+    privacyPolicyAccepted: boolean,
+    bankTransfer?: { proof?: File | null; note?: string },
+  ) => void;
+  onCopyIban: (iban?: string) => void;
   hidePlanPicker?: boolean;
 }) {
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [bankDialogOpen, setBankDialogOpen] = useState(false);
   const selected = plans.find((plan) => plan.slug === selectedPlan) || plans[0];
+  const selectedBankAccount = paymentSettings.bankAccounts
+    .filter((account) => account.isVisible)
+    .sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.sortOrder - right.sortOrder)[0];
+  const bankAccount = selectedBankAccount
+    ? {
+        beneficiary: selectedBankAccount.accountHolder,
+        bankName: selectedBankAccount.bankName,
+        iban: selectedBankAccount.iban,
+      }
+    : bankDetails;
   const methods = [
     {
       value: "bank_transfer" as const,
@@ -930,7 +1114,8 @@ function RenewalForm({
     },
   ].filter((method) => method.enabled);
   return (
-    <Card className="rounded-[20px] border-border bg-card shadow-none">
+    <div ref={sectionRef} className="scroll-mt-6">
+    <Card className="rounded-[20px] border-border bg-card shadow-none transition-[box-shadow,border-color] duration-300 data-[intent=true]:border-foreground data-[intent=true]:ring-4 data-[intent=true]:ring-accent/25" data-intent={intent ? "true" : undefined}>
       <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0 p-5 pb-3 sm:p-6 sm:pb-3">
         <div>
           <CardTitle className="text-[16px] font-extrabold">Πληρωμή ανανέωσης</CardTitle>
@@ -939,6 +1124,7 @@ function RenewalForm({
         {selected && <p className="shrink-0 text-sm text-muted-foreground"><span className="font-semibold text-foreground">{selected.name}</span> · <b className="text-[16px] text-foreground">{money(selected.price, selected.currency)}</b></p>}
       </CardHeader>
       <CardContent className="space-y-5 p-5 pt-2 sm:p-6 sm:pt-2">
+        {selected && intent && <div aria-live="polite" className="flex items-center gap-2 rounded-[12px] bg-[color:var(--sp-lime-soft)] px-3 py-2.5 text-[13px] font-bold text-foreground"><span className="grid h-5 w-5 place-items-center rounded-full bg-accent text-accent-foreground"><Check className="h-3.5 w-3.5" /></span>{intent === "change" ? `Επιλέχθηκε το ${selected.name}. Διάλεξε τρόπο πληρωμής.` : `Ανανέωση του ${selected.name}. Διάλεξε τρόπο πληρωμής.`}</div>}
         {!hidePlanPicker && <div className="grid gap-3 md:grid-cols-3">
           {plans.map((plan) => (
             <button
@@ -971,15 +1157,203 @@ function RenewalForm({
             );
           })}
         </div>
-        <Button
-          className="h-[46px] rounded-full bg-foreground px-6 font-extrabold text-background hover:bg-foreground/90"
-          disabled={!selectedPlan || !methods.length || saving}
-          onClick={onSubmit}
-        >
-          {saving ? "Καταχώριση..." : paymentMethod === "stripe_card" || paymentMethod === "paypal" ? "Συνέχεια στην πληρωμή" : "Καταχώρηση αιτήματος"}
-        </Button>
+        <PaymentMethodDetails
+          method={paymentMethod}
+          selected={selected}
+          bankAccount={bankAccount}
+          paymentReference={paymentSettings.paymentReference}
+          paymentNote={paymentSettings.paymentNote}
+          onCopyIban={onCopyIban}
+          saving={saving}
+          disabled={!selectedPlan || !methods.length || !privacyAccepted}
+          onSubmit={() => {
+            if (paymentMethod === "bank_transfer") {
+              setBankDialogOpen(true);
+              return;
+            }
+            onSubmit(privacyAccepted);
+          }}
+        />
+        <label className="flex cursor-pointer items-start gap-3 rounded-[12px] border border-border p-3 text-[13px] leading-5">
+          <Checkbox checked={privacyAccepted} onCheckedChange={(checked) => setPrivacyAccepted(checked === true)} className="mt-0.5 data-checked:border-accent data-checked:bg-accent data-checked:text-accent-foreground" />
+          <span>Έχω διαβάσει και αποδέχομαι την <a href="/privacy" target="_blank" className="font-extrabold underline underline-offset-2">Πολιτική Απορρήτου</a> <span className="text-destructive">*</span></span>
+        </label>
       </CardContent>
     </Card>
+    <BankTransferDialog
+      open={bankDialogOpen}
+      onOpenChange={setBankDialogOpen}
+      plan={selected}
+      paymentReference={paymentSettings.paymentReference}
+      saving={saving}
+      onConfirm={(bankTransfer) => onSubmit(privacyAccepted, bankTransfer)}
+    />
+    </div>
+  );
+}
+
+function BankTransferDialog({
+  open,
+  onOpenChange,
+  plan,
+  paymentReference,
+  saving,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  plan?: PricingPlan;
+  paymentReference?: string;
+  saving: boolean;
+  onConfirm: (bankTransfer: { proof?: File | null; note?: string }) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [proof, setProof] = useState<File | null>(null);
+  const [note, setNote] = useState("");
+  const [fileError, setFileError] = useState("");
+  const close = (nextOpen: boolean) => {
+    if (!nextOpen && !saving) {
+      setProof(null);
+      setNote("");
+      setFileError("");
+    }
+    onOpenChange(nextOpen);
+  };
+  const chooseProof = (file?: File) => {
+    if (!file) return;
+    const validType = ["image/jpeg", "image/png", "application/pdf"].includes(file.type);
+    if (!validType || file.size > 10 * 1024 * 1024) {
+      setProof(null);
+      setFileError("Επίλεξε JPG, PNG ή PDF έως 10 MB.");
+      return;
+    }
+    setFileError("");
+    setProof(file);
+  };
+
+  return (
+    <AlertDialog open={open} onOpenChange={close}>
+      <AlertDialogContent className="max-w-[520px] gap-4 rounded-[24px] border-border bg-card p-5 shadow-[0_30px_80px_rgba(0,0,0,0.25)] sm:p-[26px]">
+        <AlertDialogHeader className="relative space-y-1 pr-10 text-left">
+          <AlertDialogTitle className="text-[20px] font-extrabold">Επιβεβαίωση κατάθεσης</AlertDialogTitle>
+          <AlertDialogDescription className="text-[13px] leading-5 text-muted-foreground">Ο coach θα ελέγξει την κατάθεση και θα ενεργοποιήσει τη συνδρομή σου.</AlertDialogDescription>
+          <Button type="button" variant="ghost" size="icon" aria-label="Κλείσιμο" disabled={saving} onClick={() => close(false)} className="absolute right-0 top-0 h-[34px] w-[34px] rounded-full bg-muted hover:bg-muted/80"><X className="h-4 w-4" /></Button>
+        </AlertDialogHeader>
+
+        <div className="rounded-[14px] bg-muted px-3.5 py-2">
+          <DialogSummaryRow label="Πλάνο" value={plan ? `${plan.name}${plan.period ? ` · ${plan.period}` : ""}` : "—"} />
+          <DialogSummaryRow label="Ποσό" value={plan ? money(plan.price, plan.currency) : "—"} />
+          <DialogSummaryRow label="Αιτιολογία" value={paymentReference || "Ονοματεπώνυμο + πλάνο"} />
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-[13px] font-extrabold">Αποδεικτικό <span className="font-medium text-muted-foreground">(προαιρετικό)</span></p>
+          <input ref={inputRef} type="file" accept="image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf" className="sr-only" onChange={(event) => chooseProof(event.target.files?.[0])} />
+          <button type="button" disabled={saving} onClick={() => inputRef.current?.click()} className="flex w-full flex-col items-center gap-2 rounded-[16px] border-[1.5px] border-dashed border-[#cfcfcb] bg-muted/45 px-4 py-[22px] text-center transition-colors hover:bg-muted disabled:cursor-not-allowed dark:border-border">
+            <span className="grid h-11 w-11 place-items-center rounded-[13px] bg-[color:var(--sp-lime-soft)] text-foreground"><FileUp className="h-5 w-5" /></span>
+            <span className="text-[14px] font-extrabold">Σύρε εδώ το αποδεικτικό ή <u>επίλεξε αρχείο</u></span>
+            <span className="text-[12px] text-muted-foreground">JPG, PNG, PDF · έως 10 MB · προαιρετικό</span>
+          </button>
+          {fileError && <p className="text-[12px] font-semibold text-destructive">{fileError}</p>}
+          {proof && <div className="flex items-center gap-3 rounded-[12px] bg-muted px-3 py-2.5"><span className="grid h-[34px] w-[34px] place-items-center rounded-[9px] border border-border bg-card"><FileText className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-extrabold">{proof.name}</span><span className="block text-[11px] text-muted-foreground">{Math.max(1, Math.round(proof.size / 1024))} KB</span></span><Button type="button" variant="ghost" size="icon" aria-label="Αφαίρεση αρχείου" disabled={saving} onClick={() => { setProof(null); if (inputRef.current) inputRef.current.value = ""; }} className="h-8 w-8 rounded-full text-muted-foreground"><X className="h-4 w-4" /></Button></div>}
+        </div>
+
+        <label className="space-y-2">
+          <span className="block text-[13px] font-extrabold">Σημείωση για τον coach <span className="font-medium text-muted-foreground">(προαιρετικό)</span></span>
+          <textarea value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} placeholder="π.χ. «Η κατάθεση έγινε από τον λογαριασμό της συζύγου μου»" className="h-16 w-full resize-none rounded-[14px] border border-border bg-card px-3.5 py-3 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus:border-ring focus:ring-4 focus:ring-[var(--sp-lime-glow)]" />
+        </label>
+
+        <AlertDialogFooter className="gap-2 sm:gap-2">
+          <AlertDialogCancel disabled={saving} onClick={() => close(false)} className="h-[46px] rounded-full border-border px-5 font-bold">Ακύρωση</AlertDialogCancel>
+          <Button type="button" disabled={saving} onClick={() => onConfirm({ proof, note })} className="h-[46px] rounded-full bg-foreground px-[22px] font-extrabold text-background hover:bg-foreground/90"><Check className="mr-2 h-4 w-4" />{saving ? "Καταχώριση..." : "Επιβεβαίωση"}</Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function DialogSummaryRow({ label, value }: { label: string; value: string }) {
+  return <div className="flex items-center justify-between gap-4 border-b border-border/70 py-1.5 text-[13px] last:border-b-0"><span className="text-muted-foreground">{label}</span><b className="text-right">{value}</b></div>;
+}
+
+function PaymentMethodDetails({
+  method,
+  selected,
+  bankAccount,
+  paymentReference,
+  paymentNote,
+  onCopyIban,
+  saving,
+  disabled,
+  onSubmit,
+}: {
+  method: "bank_transfer" | "stripe_card" | "paypal" | "cash";
+  selected?: PricingPlan;
+  bankAccount: BankDetails | null;
+  paymentReference?: string;
+  paymentNote?: string;
+  onCopyIban: (iban?: string) => void;
+  saving: boolean;
+  disabled: boolean;
+  onSubmit: () => void;
+}) {
+  const amount = selected ? money(selected.price, selected.currency) : "";
+  const isOnline = method === "stripe_card" || method === "paypal";
+  const actionLabel = saving
+    ? "Μετάβαση στην πληρωμή..."
+    : method === "stripe_card"
+      ? `Πλήρωσε ${amount}`
+      : method === "paypal"
+        ? "Συνέχεια στο PayPal"
+        : "Καταχώρηση αιτήματος";
+
+  if (method === "cash") {
+    return (
+      <div className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-[14px] bg-muted p-4"><p className="text-[11px] font-bold uppercase tracking-[.8px] text-muted-foreground">Ποσό</p><p className="mt-1 text-[22px] font-extrabold italic">{amount}</p></div>
+          <div className="rounded-[14px] bg-muted p-4"><p className="text-[11px] font-bold uppercase tracking-[.8px] text-muted-foreground">Σε ποιον</p><p className="mt-1 text-[16px] font-extrabold">Στον coach σου</p></div>
+        </div>
+        <div className="flex flex-col gap-4 rounded-[14px] border-[1.5px] border-dashed border-[#D6D6D2] p-4 sm:flex-row sm:items-center sm:justify-between dark:border-border">
+          <div><p className="font-extrabold">Θα πληρώσεις μετρητά στον coach;</p><p className="mt-1 text-[13px] leading-5 text-muted-foreground">Θα του τα δώσεις από κοντά. Η συνδρομή ενεργοποιείται μόλις τα παραλάβει.</p></div>
+          <Button className="h-[46px] w-full shrink-0 rounded-full bg-foreground px-5 font-extrabold text-background hover:bg-foreground/90 sm:w-auto" disabled={disabled || saving} onClick={onSubmit}><Check className="mr-2 h-4 w-4" />{saving ? "Καταχώριση..." : "Θα πληρώσω μετρητά"}</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4 rounded-[16px] bg-muted p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0 space-y-2">
+        {method === "stripe_card" ? (
+          <>
+            <div className="flex flex-wrap gap-1.5">
+              {["VISA", "Mastercard", "Apple Pay", "Google Pay"].map((item) => (
+                <span key={item} className="rounded-[7px] border border-border bg-card px-2 py-1 text-[11px] font-extrabold tracking-[.2px]">{item}</span>
+              ))}
+            </div>
+            <p className="flex items-center gap-1.5 text-[12px] leading-5 text-muted-foreground"><LockKeyhole className="h-3.5 w-3.5 shrink-0" />Ασφαλής πληρωμή μέσω Stripe. Η συνδρομή ενεργοποιείται αμέσως.</p>
+          </>
+        ) : method === "paypal" ? (
+          <p className="flex items-center gap-1.5 text-[12px] leading-5 text-muted-foreground"><WalletCards className="h-4 w-4 shrink-0" />Θα μεταφερθείς στο PayPal για να ολοκληρώσεις την πληρωμή.</p>
+        ) : method === "bank_transfer" && bankAccount?.iban ? (
+          <div className="space-y-2">
+            <p className="text-[12px] font-bold text-foreground">Στοιχεία κατάθεσης{bankAccount.bankName ? ` · ${bankAccount.bankName}` : ""}</p>
+            <div className="flex flex-wrap items-center gap-2 rounded-[12px] border border-border bg-card px-3 py-2">
+              <span className="min-w-0 flex-1 font-mono text-[12px] font-bold tabular-nums">{bankAccount.iban}</span>
+              <Button type="button" size="sm" variant="outline" className="h-8 rounded-full px-3 text-[11px]" onClick={() => onCopyIban(bankAccount.iban)}><Copy className="mr-1 h-3.5 w-3.5" />Αντιγραφή</Button>
+            </div>
+            <p className="text-[12px] leading-5 text-muted-foreground">Στην αιτιολογία γράψε <b className="text-foreground">{paymentReference || "ονοματεπώνυμο + πλάνο"}</b>{paymentNote ? ` · ${paymentNote}` : ""}.</p>
+          </div>
+        ) : (
+          <p className="text-[12px] leading-5 text-muted-foreground">Θα λάβεις οδηγίες από τον coach μόλις καταχωρηθεί το αίτημα.</p>
+        )}
+      </div>
+      <Button className={`h-[50px] shrink-0 rounded-full px-6 font-extrabold ${isOnline ? "bg-accent text-accent-foreground hover:bg-accent/85" : "bg-foreground text-background hover:bg-foreground/90"}`} disabled={disabled || saving} onClick={onSubmit}>
+        {method === "stripe_card" ? <CreditCard className="mr-2 h-4 w-4" /> : method === "paypal" ? <WalletCards className="mr-2 h-4 w-4" /> : null}
+        {actionLabel}
+      </Button>
+    </div>
   );
 }
 
@@ -1041,10 +1415,13 @@ function PaymentHistory({ payments }: { payments: Payment[] }) {
                       className="border-border hover:bg-muted/50"
                     >
                       <TableCell className="px-6 py-3.5 font-bold">
-                        {formatDate(payment.paidAt)}
+                        {formatDate(payment.paidAt || payment.createdAt)}
                       </TableCell>
                       <TableCell className="py-3.5">
-        {payment.planName || payment.notes || "-"}
+                        <div>
+                          <p>{payment.planName || "-"}</p>
+                          {payment.privacyPolicyAcceptedAt && <p className="mt-1 text-[11px] text-muted-foreground">Πολιτική Απορρήτου · {formatDateTime(payment.privacyPolicyAcceptedAt)}</p>}
+                        </div>
                       </TableCell>
                       <TableCell className="py-3.5 text-muted-foreground">
                         {paymentMethods[payment.method] || payment.method}
@@ -1059,7 +1436,7 @@ function PaymentHistory({ payments }: { payments: Payment[] }) {
                           {["completed", "confirmed"].includes(
                             payment.status,
                           ) && <Check className="mr-1 h-3 w-3" />}
-                          {paymentStatuses[payment.status] || payment.status}
+                          {paymentStatusLabel(payment)}
                         </Badge>
                       </TableCell>
                       <TableCell className="py-3.5 pr-6">
@@ -1094,23 +1471,21 @@ function PaymentHistory({ payments }: { payments: Payment[] }) {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <p className="font-extrabold">
-                      {formatDate(payment.paidAt)}
+                      {formatDate(payment.paidAt || payment.createdAt)}
                     </p>
                     <p className="font-extrabold">
                       {money(payment.amount, payment.currency || "EUR")}
                     </p>
                   </div>
                   <div className="mt-3 flex items-center justify-between gap-3">
-                    <p className="text-sm text-muted-foreground">
-                      {paymentMethods[payment.method] || payment.method}
-                    </p>
+                    <div><p className="text-sm text-muted-foreground">{paymentMethods[payment.method] || payment.method}</p>{payment.privacyPolicyAcceptedAt && <p className="mt-1 text-[10px] text-muted-foreground">Πολιτική Απορρήτου · {formatDateTime(payment.privacyPolicyAcceptedAt)}</p>}</div>
                     <Badge
                       className={`h-6 rounded-full px-2.5 text-[11px] font-extrabold ${paymentStatusClass(payment.status)}`}
                     >
                       {["completed", "confirmed"].includes(payment.status) && (
                         <Check className="mr-1 h-3 w-3" />
                       )}
-                      {paymentStatuses[payment.status] || payment.status}
+                      {paymentStatusLabel(payment)}
                     </Badge>
                   </div>
                 </div>

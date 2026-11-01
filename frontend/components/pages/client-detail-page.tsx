@@ -2543,7 +2543,7 @@ function PaymentsTab({
                       variant="lime"
                       className="h-9 px-4 text-sm font-extrabold"
                     >
-                      {approvingPayment ? "Έγκριση..." : "Έγκριση"}
+                      {approvingPayment ? "Έγκριση..." : payment.method === "cash" ? "Παρελήφθη" : "Έγκριση"}
                     </Button>
                     <Button
                       type="button"
@@ -2556,9 +2556,6 @@ function PaymentsTab({
                     </Button>
                     </>
                   )}
-                  <Button type="button" variant="ghost" size="icon" onClick={() => setPaymentToDelete(payment)} className="text-destructive hover:bg-destructive/10 hover:text-destructive" aria-label="Διαγραφή πληρωμής">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
                 </div>
               </TableCell>
             </TableRow>

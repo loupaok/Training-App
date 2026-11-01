@@ -46,6 +46,9 @@ const pointsTypeMeta: Record<string, { label: string; dotClass: string }> = {
 }
 
 const PAGE_SIZE = 10
+// Kept for a short, safe transition while the legacy layout remains in source.
+// A typed flag avoids mounting/reconciling its large tree at runtime.
+const renderLegacyPointsView: boolean = false
 
 type PointsReferenceProps = {
   points: PointsData
@@ -110,14 +113,15 @@ function ClientPointsContent() {
     setLoading(true)
     setError("")
     try {
-      const [pointsResponse, settingsResponse, couponsResponse] = await Promise.all([
+      const [pointsResponse, settingsResponse] = await Promise.all([
         api.get<PointsData>(`/points/my?limit=${PAGE_SIZE}&offset=0`),
         api.get<PointsSettings>("/points/settings"),
-        api.get<CouponsResponse>("/points/my/coupons").catch(() => ({ synced: false, coupons: [] })),
       ])
       setPoints(pointsResponse)
       setSettings(settingsResponse)
-      setCoupons(couponsResponse.coupons)
+      void api.get<CouponsResponse>("/points/my/coupons")
+        .then((response) => setCoupons(response.coupons))
+        .catch(() => setCoupons([]))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Δεν φορτώθηκαν οι πόντοι σου.")
     } finally {
@@ -194,7 +198,7 @@ function ClientPointsContent() {
         ) : points && settings && Boolean(settings.is_active) ? (
           <>
             <PointsReferenceLayout points={points} settings={settings} couponOptions={couponOptions} availableEuro={availableEuro} eshopUrl={eshopUrl} branding={branding} redeemAmount={redeemAmount} discountPreview={discountPreview} canRedeem={canRedeem} coupons={coupons} copied={copied} onCopy={copyCoupon} onOpenRedeem={openDialog} onAmountChange={setRedeemAmount} historyFilter={historyFilter} onHistoryFilter={setHistoryFilter} onLoadMore={loadMore} loadingMore={loadingMore} />
-            <div className="hidden">
+            {points && settings && renderLegacyPointsView && <div className="hidden">
             <section className="grid gap-5 lg:grid-cols-[minmax(0,1.45fr)_minmax(19rem,.8fr)]">
               <Card variant="lime" className="min-h-[246px]"><CardContent className="flex h-full flex-col p-[22px]"><div className="flex items-start justify-between gap-4"><span className="grid h-11 w-11 place-items-center rounded-[14px] bg-black/10"><Trophy className="h-5 w-5 text-[#0B0B0B]" /></span><span className="rounded-full bg-[#0B0B0B] px-3 py-1 text-[11px] font-extrabold uppercase tracking-[.7px] text-[#B0F90C]">Διαθέσιμοι</span></div><div className="mt-auto"><p className="text-[13px] font-bold text-black/70">Οι πόντοι σου</p><div className="mt-1 flex flex-wrap items-baseline gap-2"><p className="text-[54px] font-extrabold italic leading-none tracking-[-1.8px] tabular-nums text-[#0B0B0B]">{points.availablePoints}</p><span className="text-[14px] font-bold text-black/70">πόντοι</span></div><p className="mt-2 text-[13px] font-semibold text-black/75">Αξία εξαργύρωσης: {availableEuro.toFixed(2)}€</p></div></CardContent></Card>
               <Card variant="dark"><CardContent className="flex h-full flex-col p-[22px]"><p className="text-[11px] font-extrabold uppercase tracking-[1px] text-neutral-300">Εξαργύρωση</p><p className="mt-2 text-[19px] font-extrabold leading-tight">Μετέτρεψε πόντους σε έκπτωση.</p><p className="mt-2 text-[13px] leading-5 text-neutral-300">{canRedeem ? `Μπορείς να εξαργυρώσεις από ${settings.min_points_redeem} πόντους.` : `Χρειάζεσαι ακόμη ${Math.max(0, settings.min_points_redeem - points.availablePoints)} πόντους.`}</p><Button onClick={() => openDialog()} disabled={!canRedeem} variant="lime" className="mt-auto h-11 w-full rounded-full"><Gift className="mr-2 h-4 w-4" />Εξαργύρωση πόντων</Button></CardContent></Card>
@@ -253,7 +257,7 @@ function ClientPointsContent() {
                   </div>
                 )}
             </CardContent></Card>
-            </div>
+            </div>}
           </>
         ) : settings && !settings.is_active ? <Card><CardContent className="flex min-h-52 flex-col items-center justify-center gap-3 p-6 text-center"><span className="grid h-12 w-12 place-items-center rounded-full bg-muted"><Trophy className="h-5 w-5 text-muted-foreground" /></span><div><p className="font-extrabold">Οι πόντοι δεν είναι διαθέσιμοι ακόμη</p><p className="mt-1 text-sm text-muted-foreground">Ο coach σου θα ενεργοποιήσει το πρόγραμμα rewards όταν είναι έτοιμο.</p></div></CardContent></Card> : null}
       </main>
