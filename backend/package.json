@@ -17,7 +17,7 @@
     "seed:media-assets": "node scripts/seed-media-assets.js",
     "backup": "node scripts/backup.js",
     "backup:verify": "node scripts/verify-backup.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test"
   },
   "keywords": [
     "coach",

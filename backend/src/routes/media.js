@@ -154,6 +154,64 @@ async function registerWeeklyUpdatePhotos(connection, clientId) {
   return photos.length;
 }
 
+async function registerPaymentProofs(connection) {
+  await ensureMediaTable(connection);
+  const [proofs] = await connection.query(
+    `SELECT p.id, p.proof_url, p.created_at, u.id AS client_id, u.full_name, u.email
+     FROM payments p
+     INNER JOIN users u ON u.id = p.client_id
+     WHERE p.proof_url IS NOT NULL AND TRIM(p.proof_url) <> ''
+     ORDER BY p.created_at DESC`
+  );
+  if (!proofs.length) return 0;
+
+  let [[rootFolder]] = await connection.query(
+    'SELECT id FROM media_folders WHERE parent_id IS NULL AND LOWER(name) = LOWER(?) LIMIT 1',
+    ['Αποδεικτικά Πληρωμών']
+  );
+  if (!rootFolder) {
+    const [created] = await connection.query(
+      'INSERT INTO media_folders (name, parent_id) VALUES (?, NULL)',
+      ['Αποδεικτικά Πληρωμών']
+    );
+    rootFolder = { id: created.insertId };
+  }
+
+  const foldersByClient = new Map();
+  for (const proof of proofs) {
+    const clientName = String(proof.full_name || proof.email || `Πελάτης ${proof.client_id}`).trim().slice(0, 220);
+    let folderId = foldersByClient.get(proof.client_id);
+    if (!folderId) {
+      let [[clientFolder]] = await connection.query(
+        'SELECT id FROM media_folders WHERE parent_id = ? AND name = ? LIMIT 1',
+        [rootFolder.id, clientName]
+      );
+      if (!clientFolder) {
+        const [created] = await connection.query(
+          'INSERT INTO media_folders (name, parent_id) VALUES (?, ?)',
+          [clientName, rootFolder.id]
+        );
+        clientFolder = { id: created.insertId };
+      }
+      folderId = clientFolder.id;
+      foldersByClient.set(proof.client_id, folderId);
+    }
+
+    const rawUrl = String(proof.proof_url || '');
+    const url = rawUrl.startsWith('/') ? rawUrl : `/${rawUrl}`;
+    const title = `${clientName} - Αποδεικτικό πληρωμής - ${path.basename(rawUrl)}`.slice(0, 255);
+    await connection.query(
+      `INSERT INTO media_assets (title, asset_type, url, source, folder_id)
+       SELECT ?, 'photo', ?, 'payment_proof', ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM media_assets WHERE source = 'payment_proof' AND url IN (?, ?)
+       )`,
+      [title, url, folderId, url, rawUrl]
+    );
+  }
+  return proofs.length;
+}
+
 export { ensureMediaCategories, registerWeeklyUpdatePhotos };
 
 router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
@@ -166,6 +224,7 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
   try {
     connection = await pool.getConnection();
     await ensureMediaTable(connection);
+    await registerPaymentProofs(connection);
 
     const params = [];
     let filter = '';
@@ -199,6 +258,7 @@ router.get('/folders', authorizeRole(['coach', 'admin', 'moderator']), async (re
   try {
     const connection = await pool.getConnection();
     await ensureMediaTable(connection);
+    await registerPaymentProofs(connection);
 
     const [folders] = await connection.query(
       `SELECT mf.id, mf.name, mf.parent_id AS parentId, NULL AS category,
@@ -458,6 +518,13 @@ router.delete('/:kind/:id', authorizeRole(['coach', 'admin']), async (req, res) 
     }
 
     const [[asset]] = await connection.query('SELECT url, source FROM media_assets WHERE id = ?', [id]);
+    if (asset?.source === 'payment_proof') {
+      const withoutLeadingSlash = asset.url.replace(/^\//, '');
+      await connection.query(
+        'UPDATE payments SET proof_url = NULL, proof_uploaded_at = NULL WHERE proof_url IN (?, ?)',
+        [asset.url, withoutLeadingSlash]
+      );
+    }
     await connection.query('DELETE FROM media_assets WHERE id = ?', [id]);
     if (asset?.source === 'weekly_update') {
       const withoutLeadingSlash = asset.url.replace(/^\//, '');
@@ -465,8 +532,13 @@ router.delete('/:kind/:id', authorizeRole(['coach', 'admin']), async (req, res) 
     }
     connection.release();
 
-    if (asset?.url?.startsWith('/uploads/media/')) {
-      const filePath = path.join(process.cwd(), asset.url.replace(/^\//, ''));
+    const removableUpload = asset?.url && /^(\/)?uploads\/(media|payments)\//.test(asset.url);
+    if (removableUpload) {
+      const filePath = path.resolve(process.cwd(), asset.url.replace(/^\//, ''));
+      const uploadsRoot = path.resolve(process.cwd(), 'uploads');
+      if (!filePath.startsWith(`${uploadsRoot}${path.sep}`)) {
+        return res.status(400).json({ message: 'Invalid media path' });
+      }
       fs.unlink(filePath, () => {});
     }
 

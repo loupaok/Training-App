@@ -13,6 +13,7 @@ import {
   FileUp,
   Landmark,
   LockKeyhole,
+  Paperclip,
   WalletCards,
   ReceiptText,
   Repeat2,
@@ -56,6 +57,7 @@ import { api } from "@/lib/api/client";
 import { useAuth } from "@/lib/auth/auth-context";
 
 type Subscription = {
+  id?: number | string;
   plan_name: string;
   price: number | string;
   currency?: string | null;
@@ -86,6 +88,7 @@ type PaymentData = {
   payments: Payment[];
 };
 type PricingPlan = {
+  id?: number;
   slug: string;
   name: string;
   price: number | string;
@@ -95,7 +98,12 @@ type PricingPlan = {
   badge?: string;
   pointsReward?: number | string;
   isPopular?: boolean;
+  features?: string[];
 };
+type PackageDuration = { id: number; months: number; basePriceCents: number; label?: string | null; isActive: boolean };
+type CoachingPackageOffer = { id: number; months: number; priceCents: number; features: string[]; isActive: boolean };
+type CoachingPackage = { id: number; key: string; name: string; monthlyAddonCents: number; label?: string | null; features: { id: number; text: string }[]; offers?: CoachingPackageOffer[] };
+type PackageCatalog = { packages: CoachingPackage[]; durations: PackageDuration[]; commonFeatures: { id: number; text: string }[]; pointsPerEuro: number };
 type BankDetails = { beneficiary?: string; bankName?: string; iban?: string };
 type BankAccount = {
   id: number;
@@ -180,7 +188,8 @@ function ClientBillingModernContent() {
     subscription: null,
     payments: [],
   });
-  const [plans, setPlans] = useState<PricingPlan[]>([]);
+  const [catalog, setCatalog] = useState<PackageCatalog | null>(null);
+  const [selectedDurationMonths, setSelectedDurationMonths] = useState(1);
   const [bankDetails, setBankDetails] = useState<BankDetails | null>(null);
   const [paymentSettings, setPaymentSettings] = useState<PaymentSettings>({
     bankTransferEnabled: true,
@@ -197,15 +206,16 @@ function ClientBillingModernContent() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [cancellingPayment, setCancellingPayment] = useState(false);
+  const [uploadingProof, setUploadingProof] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   const load = async () => {
     setLoading(true);
     try {
-      const [payments, planRows, bank, settings] = await Promise.all([
+      const [payments, packageCatalog, bank, settings] = await Promise.all([
         api.get<PaymentData>("/client/payments"),
-        api.get<PricingPlan[]>("/pricing-plans?active=true").catch(() => []),
+        api.get<PackageCatalog>("/pricing-plans/packages").catch(() => null),
         api.get<BankDetails>("/bank-details").catch(() => null),
         api
           .get<PaymentSettings>("/pricing-plans/payment-options")
@@ -217,7 +227,7 @@ function ClientBillingModernContent() {
         upcomingSubscriptions: payments.upcomingSubscriptions || [],
         payments: payments.payments || [],
       });
-      setPlans(Array.isArray(planRows) ? planRows : []);
+      setCatalog(packageCatalog);
       setBankDetails(bank);
       if (settings) {
         setPaymentSettings(settings);
@@ -232,7 +242,8 @@ function ClientBillingModernContent() {
               : null;
       if (firstAvailable) setPaymentMethod(firstAvailable);
       }
-      setSelectedPlan((current) => current || planRows[0]?.slug || "");
+      setSelectedDurationMonths((current) => packageCatalog?.durations.some((item) => item.months === current) ? current : (packageCatalog?.durations[0]?.months || 1));
+      setSelectedPlan((current) => current || (packageCatalog?.packages[0] ? String(packageCatalog.packages[0].id) : ""));
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -276,6 +287,30 @@ function ClientBillingModernContent() {
     void confirm();
   }, []);
 
+  const plans = useMemo<PricingPlan[]>(() => {
+    const duration = catalog?.durations.find((item) => item.months === selectedDurationMonths) || catalog?.durations[0];
+    if (!duration) return [];
+    return (catalog?.packages || []).filter((item) => {
+      const offer = item.offers?.find((entry) => entry.months === duration.months);
+      return !offer || offer.isActive !== false;
+    }).map((item) => {
+      const offer = item.offers?.find((entry) => entry.months === duration.months && entry.isActive !== false);
+      const priceCents = offer?.priceCents ?? duration.basePriceCents + item.monthlyAddonCents * duration.months;
+      const offerFeatures = offer?.features?.length ? offer.features : item.features.map((feature) => feature.text);
+      return {
+        id: item.id,
+        slug: String(item.id),
+        name: item.name,
+        price: priceCents / 100,
+        currency: "EUR",
+        period: `${duration.months} ${duration.months === 1 ? "μήνας" : "μήνες"}`,
+        badge: item.label || "",
+        description: offerFeatures.slice(0, 2).join(" · "),
+        features: [...(catalog?.commonFeatures || []).map((feature) => feature.text), ...offerFeatures],
+        isPopular: Boolean(item.label),
+      };
+    });
+  }, [catalog, selectedDurationMonths]);
   const subscription = data.subscription;
   const pendingSubscription = data.pendingSubscription || null;
   const pendingPayment =
@@ -319,7 +354,8 @@ function ClientBillingModernContent() {
     setMessage("");
     try {
       const payment = await api.post<{ paymentId: number }>("/clients/me/billing", {
-        subscriptionPackage: plan.slug,
+        packageId: plan.id,
+        durationMonths: selectedDurationMonths,
         paymentMethod,
         privacyPolicyAccepted,
         note: bankTransfer?.note?.trim() || undefined,
@@ -337,7 +373,11 @@ function ClientBillingModernContent() {
       if (paymentMethod === "bank_transfer" && bankTransfer?.proof) {
         const proofData = new FormData();
         proofData.append("proof", bankTransfer.proof);
-        await api.upload("/clients/me/billing-proof", proofData);
+        try {
+          await api.upload("/clients/me/billing-proof", proofData);
+        } catch (proofError) {
+          setError(proofError instanceof Error ? `${proofError.message} Μπορείς να το προσθέσεις αργότερα.` : "Η πληρωμή καταχωρήθηκε, αλλά το αποδεικτικό μπορείς να το προσθέσεις αργότερα.");
+        }
       }
       setMessage(
         "Η πληρωμή καταχωρήθηκε και αναμένει επιβεβαίωση από τον coach.",
@@ -352,6 +392,22 @@ function ClientBillingModernContent() {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const uploadBankProof = async (file: File) => {
+    setUploadingProof(true);
+    setError("");
+    try {
+      const proofData = new FormData();
+      proofData.append("proof", file);
+      await api.upload("/clients/me/billing-proof", proofData);
+      setMessage("Το αποδεικτικό στάλθηκε. Ακολουθεί έλεγχος από τον coach.");
+      await load();
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Δεν ήταν δυνατή η αποστολή του αποδεικτικού.");
+    } finally {
+      setUploadingProof(false);
     }
   };
 
@@ -447,17 +503,25 @@ function ClientBillingModernContent() {
                     paymentSettings={paymentSettings}
                     onRenew={() => selectForRenewal(activePlan?.slug)}
                     onChangePlan={openPlans}
+                    showHowItWorks={false}
                   />
                 )}
-                <PendingSubscription
-                  payment={pendingPayment}
-                  subscription={pendingSubscription || subscription}
-                  bankDetails={bankDetails}
-                  onCopyIban={() => void copyIban()}
-                  onCancel={() => void cancelPendingPayment(pendingPayment.id)}
-                  cancelling={cancellingPayment}
-                  pointsReward={Number(activePlan?.pointsReward || 0)}
-                />
+                <section className="grid items-start gap-4 lg:grid-cols-3">
+                  <div className="lg:col-span-2">
+                    <PendingSubscription
+                      payment={pendingPayment}
+                      subscription={pendingSubscription || subscription}
+                      bankDetails={bankDetails}
+                      onCopyIban={() => void copyIban()}
+                      onCancel={() => void cancelPendingPayment(pendingPayment.id)}
+                      cancelling={cancellingPayment}
+                      pointsReward={Number(activePlan?.pointsReward || 0)}
+                      onUploadProof={(file) => void uploadBankProof(file)}
+                      uploadingProof={uploadingProof}
+                    />
+                  </div>
+                  <div className="lg:sticky lg:top-6"><RenewalHowItWorks paymentSettings={paymentSettings} /></div>
+                </section>
               </>
             ) : active ? (
               <ActiveSubscription
@@ -482,14 +546,26 @@ function ClientBillingModernContent() {
               />
             )}
             {!pendingPayment && (
-              <AvailablePlans
-                plansRef={plansRef}
-                plans={plans}
-                subscription={subscription}
-                selectedPlan={selectedPlan}
-                onSelect={selectPlanForPayment}
-                intent={paymentIntent}
-              />
+              <>
+                {!!catalog?.durations.length && (
+                  <section className="flex flex-wrap items-center gap-2 rounded-[20px] border border-border bg-card p-3" aria-label="Διάρκεια πακέτου">
+                    <span className="mr-1 text-sm font-extrabold">Διάρκεια</span>
+                    {catalog.durations.map((duration) => (
+                      <Button key={duration.id} type="button" size="sm" onClick={() => setSelectedDurationMonths(duration.months)} className={`h-9 rounded-full px-4 font-extrabold ${selectedDurationMonths === duration.months ? "bg-foreground text-background hover:bg-foreground/90" : "border border-border bg-transparent text-foreground hover:bg-muted"}`}>
+                        {duration.months} {duration.months === 1 ? "μήνας" : "μήνες"}{duration.label ? ` · ${duration.label}` : ""}
+                      </Button>
+                    ))}
+                  </section>
+                )}
+                <AvailablePlans
+                  plansRef={plansRef}
+                  plans={plans}
+                  subscription={subscription}
+                  selectedPlan={selectedPlan}
+                  onSelect={selectPlanForPayment}
+                  intent={paymentIntent}
+                />
+              </>
             )}
             {(!active && !pendingPayment) && (
               <RenewalForm
@@ -515,50 +591,17 @@ function ClientBillingModernContent() {
   );
 }
 
-function RenewalHowItWorks({ paymentSettings }: { paymentSettings: PaymentSettings }) {
-  const enabledMethods = [
-    paymentSettings.stripeEnabled && "κάρτα",
-    paymentSettings.paypalEnabled && "PayPal",
-    paymentSettings.bankTransferEnabled && "έμβασμα",
-    paymentSettings.cashEnabled && "μετρητά",
-  ].filter(Boolean).join(", ");
-  const hasOnlineMethod = paymentSettings.stripeEnabled || paymentSettings.paypalEnabled;
-  const hasCoachApprovalMethod = paymentSettings.bankTransferEnabled || paymentSettings.cashEnabled;
-  const steps = [
-    ["Διαλέγεις πλάνο", "ανανέωση ή αλλαγή από τα διαθέσιμα πλάνα"],
-    ["Πληρώνεις", `με ${enabledMethods || "τον διαθέσιμο τρόπο πληρωμής"}`],
-    [
-      "Ενεργοποιείται",
-      hasOnlineMethod && hasCoachApprovalMethod
-        ? "Κάρτα / PayPal: αμέσως · Έμβασμα / μετρητά: μόλις εγκρίνει ο coach"
-        : hasOnlineMethod
-          ? "Μόλις ολοκληρωθεί η ασφαλής online πληρωμή"
-          : "Μόλις εγκρίνει ο coach την πληρωμή",
-    ],
-  ];
+function RenewalHowItWorks({ paymentSettings: _paymentSettings }: { paymentSettings: PaymentSettings }) {
   return (
     <Card className="rounded-[20px] border-border bg-card shadow-none">
-      <CardContent className="flex h-full flex-col gap-4 p-[22px]">
+      <CardContent className="flex flex-col gap-4 p-[22px]">
         <h2 className="text-[16px] font-extrabold">Πώς γίνεται η ανανέωση</h2>
         <div className="space-y-4">
-          {steps.map(([title, detail], index) => (
-            <div key={title} className="flex gap-3">
-              <span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full bg-foreground text-[13px] font-extrabold text-accent">
-                {index + 1}
-              </span>
-              <div className="pt-1">
-                <p className="text-sm font-extrabold">{title}</p>
-                <p className="mt-0.5 text-xs leading-[1.45] text-muted-foreground">
-                  {detail}
-                </p>
-              </div>
-            </div>
-          ))}
+          <div className="flex gap-3"><span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full bg-foreground text-[13px] font-extrabold text-accent">1</span><div className="flex flex-col gap-0.5 pt-1"><p className="text-sm font-extrabold">Διαλέγεις πλάνο</p><p className="text-xs leading-[1.45] text-muted-foreground">ανανέωση ή αλλαγή από τα διαθέσιμα πλάνα</p></div></div>
+          <div className="flex gap-3"><span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full bg-foreground text-[13px] font-extrabold text-accent">2</span><div className="flex flex-col gap-0.5 pt-1"><p className="text-sm font-extrabold">Πληρώνεις</p><p className="text-xs leading-[1.45] text-muted-foreground">με κάρτα, PayPal, έμβασμα ή μετρητά</p></div></div>
+          <div className="flex gap-3"><span className="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full bg-foreground text-[13px] font-extrabold text-accent">3</span><div className="flex flex-col gap-0.5 pt-1"><p className="text-sm font-extrabold">Ενεργοποιείται</p><p className="text-xs leading-[1.45] text-muted-foreground"><b className="text-foreground">Κάρτα / PayPal:</b> αμέσως<br /><b className="text-foreground">Έμβασμα / μετρητά:</b> μόλις εγκρίνει ο coach</p></div></div>
         </div>
-        <Separator className="mt-auto bg-border" />
-        <p className="text-xs text-muted-foreground">
-          Θα λάβεις ειδοποίηση για κάθε πληρωμή.
-        </p>
+        <p className="border-t border-border pt-2.5 text-xs text-muted-foreground">Θα λάβεις ειδοποίηση για κάθε πληρωμή.</p>
       </CardContent>
     </Card>
   );
@@ -573,6 +616,7 @@ function ActiveSubscription({
   onChangePlan,
   renewalSlot,
   paymentSettings,
+  showHowItWorks = true,
 }: {
   subscription: Subscription;
   progress: number;
@@ -582,6 +626,7 @@ function ActiveSubscription({
   onChangePlan: () => void;
   renewalSlot?: React.ReactNode;
   paymentSettings: PaymentSettings;
+  showHowItWorks?: boolean;
 }) {
   const days = Number(subscription.days_remaining ?? 0);
   const expiring = subscription.status === "expiring_soon";
@@ -601,7 +646,7 @@ function ActiveSubscription({
         )
       : null;
   return (
-    <section className="grid gap-4 lg:grid-cols-3">
+    <section className="grid items-start gap-4 lg:grid-cols-3">
       <div className="space-y-5 lg:col-span-2">
       <Card className="relative overflow-hidden rounded-[20px] border-border bg-card shadow-none">
         <span
@@ -691,7 +736,7 @@ function ActiveSubscription({
       </Card>
       {renewalSlot}
       </div>
-      <RenewalHowItWorks paymentSettings={paymentSettings} />
+      {showHowItWorks && <RenewalHowItWorks paymentSettings={paymentSettings} />}
     </section>
   );
 }
@@ -713,9 +758,9 @@ function UpcomingSubscriptions({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {subscriptions.map((subscription) => (
+        {subscriptions.map((subscription, index) => (
           <div
-            key={`${subscription.plan_name}-${subscription.start_date}`}
+            key={subscription.id ?? `${subscription.plan_name}-${subscription.start_date}-${index}`}
             className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] bg-muted p-4"
           >
             <div>
@@ -814,6 +859,14 @@ function AvailablePlans({
                 <p className="min-h-[58px] text-[13px] leading-5 text-muted-foreground">
                   {plan.description || " "}
                 </p>
+                {!!plan.features?.length && (
+                  <details className="text-xs text-muted-foreground">
+                    <summary className="cursor-pointer font-extrabold text-foreground">Τι περιλαμβάνει</summary>
+                    <ul className="mt-2 space-y-1.5">
+                      {plan.features.map((feature) => <li key={feature} className="flex gap-1.5"><Check className="mt-0.5 h-3 w-3 shrink-0 text-accent" />{feature}</li>)}
+                    </ul>
+                  </details>
+                )}
                 <div>
                   <p className="text-[30px] font-extrabold italic leading-none tracking-[-.8px]">
                     {money(plan.price, plan.currency || "EUR")}
@@ -852,6 +905,8 @@ function PendingSubscription({
   onCancel,
   cancelling,
   pointsReward,
+  onUploadProof,
+  uploadingProof,
 }: {
   payment: Payment;
   subscription: Subscription | null;
@@ -860,10 +915,15 @@ function PendingSubscription({
   onCancel: () => void;
   cancelling: boolean;
   pointsReward: number;
+  onUploadProof: (file: File) => void;
+  uploadingProof: boolean;
 }) {
   const bank = payment.method === "bank_transfer" || payment.method === "bank";
   if (payment.method === "cash") {
     return <PendingPaymentCard payment={payment} subscription={subscription} onCancel={onCancel} cancelling={cancelling} pointsReward={pointsReward} />;
+  }
+  if (bank) {
+    return <PendingBankTransfer payment={payment} subscription={subscription} bankDetails={bankDetails} onCopyIban={onCopyIban} onUploadProof={onUploadProof} uploadingProof={uploadingProof} onCancel={onCancel} cancelling={cancelling} pointsReward={pointsReward} />;
   }
   return (
     <div className="space-y-5">
@@ -951,6 +1011,89 @@ function PendingSubscription({
   );
 }
 
+function PendingBankTransfer({
+  payment,
+  subscription,
+  bankDetails,
+  onCopyIban,
+  onUploadProof,
+  uploadingProof,
+  onCancel,
+  cancelling,
+  pointsReward,
+}: {
+  payment: Payment;
+  subscription: Subscription | null;
+  bankDetails: BankDetails | null;
+  onCopyIban: () => void;
+  onUploadProof: (file: File) => void;
+  uploadingProof: boolean;
+  onCancel: () => void;
+  cancelling: boolean;
+  pointsReward: number;
+}) {
+  const proofInputRef = useRef<HTMLInputElement>(null);
+  const [uploadError, setUploadError] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const proofUploaded = Boolean(payment.proofUrl);
+  const dateLabel = formatDateTime(payment.createdAt || payment.paidAt);
+  const duration = subscription?.start_date && subscription?.end_date
+    ? Math.max(1, Math.round((new Date(subscription.end_date).getTime() - new Date(subscription.start_date).getTime()) / 2629800000))
+    : null;
+  const selectProof = (file?: File) => {
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "application/pdf"].includes(file.type) || file.size > 10 * 1024 * 1024) {
+      setUploadError("Επίλεξε JPG, PNG ή PDF έως 10 MB.");
+      return;
+    }
+    setUploadError("");
+    onUploadProof(file);
+  };
+
+  return (
+    <Card className="rounded-[20px] border-border bg-card shadow-none">
+      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0 px-6 pb-3 pt-5">
+        <div>
+          <CardTitle className="text-[16px] font-extrabold">Πληρωμή ανανέωσης</CardTitle>
+          <CardDescription className="mt-1 text-[12px]">Έχεις μια πληρωμή σε εκκρεμότητα</CardDescription>
+        </div>
+        <p className="shrink-0 text-[13px] text-muted-foreground">{subscription?.plan_name || "Πλάνο"} · <b className="text-[16px] text-foreground">{money(payment.amount, payment.currency || "EUR")}</b></p>
+      </CardHeader>
+      <CardContent className="space-y-4 px-6 pb-5 pt-2">
+        <div className="flex items-center gap-[14px] rounded-[16px] bg-[color:var(--sp-lime-soft)] p-[18px]">
+          <span className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-full bg-foreground text-accent"><Clock3 className="h-[22px] w-[22px]" /></span>
+          <div className="min-w-0"><p className="text-[16px] font-extrabold">{proofUploaded ? "Έλεγχος από coach" : "Η κατάθεσή σου περιμένει έγκριση"}</p><p className="mt-0.5 text-[13px] text-foreground/80">Τραπεζικό έμβασμα · {money(payment.amount, payment.currency || "EUR")} · δηλώθηκε {dateLabel}</p></div>
+        </div>
+
+        <div className="grid gap-4 px-0.5 py-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:gap-2.5">
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex items-center gap-2"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent text-accent-foreground"><Check className="h-[13px] w-[13px] stroke-[3.2]" /></span><span className="hidden h-[3px] flex-1 rounded-full bg-accent sm:block" /></div>
+            <p className="text-[13px] font-extrabold">Δήλωσες την κατάθεση</p><p className="text-[11px] text-muted-foreground">{dateLabel}</p>
+          </div>
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex items-center gap-2"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-foreground text-accent"><Clock3 className="h-[14px] w-[14px]" /></span><span className="hidden h-[3px] flex-1 rounded-full bg-muted sm:block" /></div>
+            <p className="text-[13px] font-extrabold">Έλεγχος από τον coach</p><p className="text-[11px] text-muted-foreground">{proofUploaded ? "Έλεγχος αποδεικτικού" : "συνήθως εντός 24 ωρών"}</p>
+          </div>
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex items-center gap-2"><span className="h-7 w-7 shrink-0 rounded-full border-[1.5px] border-[#d6d6d2] dark:border-border" /></div>
+            <p className="text-[13px] font-extrabold text-muted-foreground">Ενεργοποίηση</p><p className="text-[11px] text-muted-foreground">{`${duration ? `+${duration} μήνες` : ""}${pointsReward > 0 ? ` · +${pointsReward} πόντοι` : ""}` || "μετά την έγκριση"}</p>
+          </div>
+        </div>
+
+        {!proofUploaded && <div className="flex flex-col gap-[14px] rounded-[14px] border-[1.5px] border-dashed border-[#d6d6d2] px-4 py-[14px] sm:flex-row sm:items-center dark:border-border"><span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[11px] bg-muted"><FileUp className="h-[17px] w-[17px]" /></span><div className="min-w-0 flex-1"><p className="text-[14px] font-extrabold">Δεν έχεις στείλει αποδεικτικό</p><p className="text-[12px] text-muted-foreground">Προαιρετικό · βοηθά τον coach να εγκρίνει πιο γρήγορα.</p></div><input ref={proofInputRef} type="file" accept="image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf" className="sr-only" onChange={(event) => selectProof(event.target.files?.[0])} /><Button type="button" disabled={uploadingProof} onClick={() => proofInputRef.current?.click()} className="h-[42px] shrink-0 rounded-full bg-foreground px-4 text-[13px] font-extrabold text-background hover:bg-foreground/90"><FileUp className="mr-2 h-[15px] w-[15px]" />{uploadingProof ? "Αποστολή..." : "Πρόσθεσε αποδεικτικό"}</Button></div>}
+        {proofUploaded && <div className="flex items-center gap-[14px] rounded-[14px] border border-border bg-muted/60 px-4 py-[14px]"><span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[11px] bg-[color:var(--sp-lime-soft)]"><Check className="h-[17px] w-[17px]" /></span><div><p className="text-[14px] font-extrabold">Το αποδεικτικό στάλθηκε</p><p className="text-[12px] text-muted-foreground">Ο coach ελέγχει την κατάθεσή σου.</p></div></div>}
+        {uploadError && <p className="text-[12px] font-semibold text-destructive">{uploadError}</p>}
+
+        <div className="flex flex-col gap-3 text-[13px] sm:flex-row sm:items-center sm:justify-between">
+          <button type="button" onClick={() => setDetailsOpen((open) => !open)} className="inline-flex w-fit items-center gap-1.5 font-extrabold text-foreground">Δες τα στοιχεία κατάθεσης <ChevronDown className={`h-[15px] w-[15px] transition-transform ${detailsOpen ? "rotate-180" : ""}`} /></button>
+          <AlertDialog><AlertDialogTrigger render={<button type="button" className="w-fit text-muted-foreground underline underline-offset-4 hover:text-foreground" />}>Ακύρωση αιτήματος</AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Ακύρωση αιτήματος;</AlertDialogTitle><AlertDialogDescription>Το αίτημα εμβάσματος θα ακυρωθεί και ο coach θα ενημερωθεί.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Πίσω</AlertDialogCancel><AlertDialogAction className="bg-foreground text-background hover:bg-foreground/90" onClick={onCancel} disabled={cancelling}>{cancelling ? "Ακύρωση..." : "Ναι, ακύρωση"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+        </div>
+        {detailsOpen && <div className="grid gap-3 rounded-[14px] bg-muted p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"><div className="space-y-1.5"><p className="text-[11px] font-bold uppercase tracking-[.8px] text-muted-foreground">Στοιχεία εμβάσματος</p><p className="text-[13px] font-extrabold">{bankDetails?.beneficiary || "-"}</p><p className="text-[12px] text-muted-foreground">{bankDetails?.bankName || ""}</p>{bankDetails?.iban && <p className="rounded-[10px] bg-card px-3 py-2 font-mono text-[12px] font-bold">{bankDetails.iban}</p>}{payment.referenceNumber && <p className="text-[12px] text-muted-foreground">Αιτιολογία: <b className="text-foreground">{payment.referenceNumber}</b></p>}</div>{bankDetails?.iban && <Button size="sm" variant="outline" className="h-10 rounded-full px-4" onClick={onCopyIban}><Copy className="mr-2 h-3.5 w-3.5" />Αντιγραφή IBAN</Button>}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
 function PendingPaymentCard({
   payment,
   subscription,
@@ -967,26 +1110,41 @@ function PendingPaymentCard({
   const duration = subscription?.start_date && subscription?.end_date
     ? Math.max(1, Math.round((new Date(subscription.end_date).getTime() - new Date(subscription.start_date).getTime()) / 2629800000))
     : null;
+  const dateLabel = formatDateTime(payment.createdAt || payment.paidAt);
   return (
     <Card className="rounded-[20px] border-border bg-card shadow-none">
-      <CardHeader className="pb-3">
-        <CardTitle className="text-[18px] font-extrabold">Πληρωμή ανανέωσης</CardTitle>
-        <CardDescription>Έχεις μια πληρωμή σε εκκρεμότητα</CardDescription>
+      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0 px-6 pb-3 pt-5">
+        <div>
+          <CardTitle className="text-[16px] font-extrabold">Πληρωμή ανανέωσης</CardTitle>
+          <CardDescription className="mt-1 text-[12px]">Έχεις μια πληρωμή σε εκκρεμότητα</CardDescription>
+        </div>
+        <p className="shrink-0 text-[13px] text-muted-foreground">{subscription?.plan_name || "Πλάνο"} · <b className="text-[16px] text-foreground">{money(payment.amount, payment.currency || "EUR")}</b></p>
       </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="flex gap-3 rounded-[14px] bg-[color:var(--sp-lime-soft)] p-4">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-foreground text-accent"><Clock3 className="h-4 w-4" /></span>
-          <div><p className="font-extrabold">Η συνδρομή σου περιμένει την πληρωμή</p><p className="mt-1 text-[13px] text-muted-foreground">Μετρητά στον coach · {money(payment.amount, payment.currency || "EUR")} · από {formatDateTime(payment.createdAt || payment.paidAt)}</p></div>
+      <CardContent className="space-y-4 px-6 pb-5 pt-2">
+        <div className="flex items-center gap-[14px] rounded-[16px] bg-[color:var(--sp-lime-soft)] p-[18px]">
+          <span className="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-full bg-foreground text-accent"><Clock3 className="h-[22px] w-[22px]" /></span>
+          <div className="min-w-0"><p className="text-[16px] font-extrabold">Η πληρωμή με μετρητά περιμένει έγκριση</p><p className="mt-0.5 text-[13px] text-foreground/80">Μετρητά στον coach · {money(payment.amount, payment.currency || "EUR")} · δηλώθηκε {dateLabel}</p></div>
         </div>
-        <div className="grid gap-4 md:grid-cols-3 md:gap-0">
-          <PendingStep icon={<Check className="h-4 w-4" />} tone="lime" title="Επέλεξες μετρητά" detail={formatDateTime(payment.createdAt || payment.paidAt)} />
-          <PendingStep icon={<Clock3 className="h-4 w-4" />} tone="dark" title="Παράδοση στον coach" detail="από κοντά" />
-          <PendingStep icon="○" tone="muted" title="Ενεργοποίηση" detail={`${duration ? `+${duration} μήνες` : ""}${pointsReward > 0 ? ` · +${pointsReward} πόντοι` : ""}` || "μετά την παραλαβή"} />
+
+        <div className="grid gap-4 px-0.5 py-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:gap-2.5">
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex items-center gap-2"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent text-accent-foreground"><Check className="h-[13px] w-[13px] stroke-[3.2]" /></span><span className="hidden h-[3px] flex-1 rounded-full bg-accent sm:block" /></div>
+            <p className="text-[13px] font-extrabold">Δήλωσες μετρητά</p><p className="text-[11px] text-muted-foreground">{dateLabel}</p>
+          </div>
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex items-center gap-2"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-foreground text-accent"><Clock3 className="h-[14px] w-[14px]" /></span><span className="hidden h-[3px] flex-1 rounded-full bg-muted sm:block" /></div>
+            <p className="text-[13px] font-extrabold">Παραλαβή από τον coach</p><p className="text-[11px] text-muted-foreground">από κοντά</p>
+          </div>
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex items-center gap-2"><span className="h-7 w-7 shrink-0 rounded-full border-[1.5px] border-[#d6d6d2] dark:border-border" /></div>
+            <p className="text-[13px] font-extrabold text-muted-foreground">Ενεργοποίηση</p><p className="text-[11px] text-muted-foreground">{`${duration ? `+${duration} μήνες` : ""}${pointsReward > 0 ? ` · +${pointsReward} πόντοι` : ""}` || "μετά την έγκριση"}</p>
+          </div>
         </div>
-        <div className="flex flex-col gap-3 border-t border-border pt-4 text-[12px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+
+        <div className="flex flex-col gap-3 text-[13px] sm:flex-row sm:items-center sm:justify-between">
           <p>Ο coach θα πατήσει «Παρελήφθη» μόλις πάρει τα χρήματα.</p>
           <AlertDialog>
-            <AlertDialogTrigger render={<button type="button" className="font-extrabold text-foreground underline underline-offset-4" />}>Ακύρωση αιτήματος</AlertDialogTrigger>
+            <AlertDialogTrigger render={<button type="button" className="w-fit text-muted-foreground underline underline-offset-4 hover:text-foreground" />}>Ακύρωση αιτήματος</AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader><AlertDialogTitle>Ακύρωση αιτήματος;</AlertDialogTitle><AlertDialogDescription>Το αίτημα μετρητών θα ακυρωθεί και ο coach θα ενημερωθεί.</AlertDialogDescription></AlertDialogHeader>
               <AlertDialogFooter><AlertDialogCancel>Πίσω</AlertDialogCancel><AlertDialogAction className="bg-foreground text-background hover:bg-foreground/90" onClick={onCancel} disabled={cancelling}>{cancelling ? "Ακύρωση..." : "Ναι, ακύρωση"}</AlertDialogAction></AlertDialogFooter>
@@ -1247,15 +1405,16 @@ function BankTransferDialog({
         </div>
 
         <div className="space-y-2">
-          <p className="text-[13px] font-extrabold">Αποδεικτικό <span className="font-medium text-muted-foreground">(προαιρετικό)</span></p>
+          <p className="text-[13px] font-extrabold">Αποδεικτικό <span className="text-destructive">*</span></p>
           <input ref={inputRef} type="file" accept="image/jpeg,image/png,application/pdf,.jpg,.jpeg,.png,.pdf" className="sr-only" onChange={(event) => chooseProof(event.target.files?.[0])} />
           <button type="button" disabled={saving} onClick={() => inputRef.current?.click()} className="flex w-full flex-col items-center gap-2 rounded-[16px] border-[1.5px] border-dashed border-[#cfcfcb] bg-muted/45 px-4 py-[22px] text-center transition-colors hover:bg-muted disabled:cursor-not-allowed dark:border-border">
             <span className="grid h-11 w-11 place-items-center rounded-[13px] bg-[color:var(--sp-lime-soft)] text-foreground"><FileUp className="h-5 w-5" /></span>
             <span className="text-[14px] font-extrabold">Σύρε εδώ το αποδεικτικό ή <u>επίλεξε αρχείο</u></span>
-            <span className="text-[12px] text-muted-foreground">JPG, PNG, PDF · έως 10 MB · προαιρετικό</span>
+            <span className="text-[12px] text-muted-foreground">JPG, PNG, PDF · έως 10 MB</span>
           </button>
           {fileError && <p className="text-[12px] font-semibold text-destructive">{fileError}</p>}
           {proof && <div className="flex items-center gap-3 rounded-[12px] bg-muted px-3 py-2.5"><span className="grid h-[34px] w-[34px] place-items-center rounded-[9px] border border-border bg-card"><FileText className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-extrabold">{proof.name}</span><span className="block text-[11px] text-muted-foreground">{Math.max(1, Math.round(proof.size / 1024))} KB</span></span><Button type="button" variant="ghost" size="icon" aria-label="Αφαίρεση αρχείου" disabled={saving} onClick={() => { setProof(null); if (inputRef.current) inputRef.current.value = ""; }} className="h-8 w-8 rounded-full text-muted-foreground"><X className="h-4 w-4" /></Button></div>}
+          {!proof && <p className="pt-1 text-[12px] font-semibold text-muted-foreground">Ανέβασε το αποδεικτικό για να συνεχίσεις.</p>}
         </div>
 
         <label className="space-y-2">
@@ -1265,7 +1424,7 @@ function BankTransferDialog({
 
         <AlertDialogFooter className="gap-2 sm:gap-2">
           <AlertDialogCancel disabled={saving} onClick={() => close(false)} className="h-[46px] rounded-full border-border px-5 font-bold">Ακύρωση</AlertDialogCancel>
-          <Button type="button" disabled={saving} onClick={() => onConfirm({ proof, note })} className="h-[46px] rounded-full bg-foreground px-[22px] font-extrabold text-background hover:bg-foreground/90"><Check className="mr-2 h-4 w-4" />{saving ? "Καταχώριση..." : "Επιβεβαίωση"}</Button>
+          <Button type="button" disabled={saving || !proof} onClick={() => onConfirm({ proof, note })} className="h-[46px] rounded-full bg-foreground px-[22px] font-extrabold text-background hover:bg-foreground/90"><Check className="mr-2 h-4 w-4" />{saving ? "Καταχώριση..." : "Επιβεβαίωση"}</Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
@@ -1306,6 +1465,33 @@ function PaymentMethodDetails({
       : method === "paypal"
         ? "Συνέχεια στο PayPal"
         : "Καταχώρηση αιτήματος";
+
+  if (method === "bank_transfer") {
+    const referenceHint = paymentReference || "το ονοματεπώνυμό σου + το πλάνο";
+    return (
+      <div className="flex flex-col gap-[10px]">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[13px] font-extrabold">Στοιχεία κατάθεσης</p>
+          {bankAccount?.bankName && <span className="inline-flex h-[26px] items-center rounded-full bg-muted px-2.5 text-[12px] font-extrabold">{bankAccount.bankName}</span>}
+        </div>
+        <div className="grid gap-[10px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+          <div className="flex min-w-0 items-center gap-[10px] rounded-[14px] bg-muted px-[14px] py-3">
+            <div className="min-w-0 flex-1"><p className="text-[11px] text-muted-foreground">Δικαιούχος</p><p className="truncate text-[14px] font-extrabold">{bankAccount?.beneficiary || "—"}</p></div>
+            {bankAccount?.beneficiary && <Button type="button" variant="outline" size="icon" aria-label="Αντιγραφή δικαιούχου" onClick={() => onCopyIban(bankAccount.beneficiary)} className="h-[34px] w-[34px] shrink-0 rounded-[10px] border-border bg-card"><Copy className="h-[15px] w-[15px]" /></Button>}
+          </div>
+          <div className="flex min-w-0 items-center gap-[10px] rounded-[14px] bg-muted px-[14px] py-3">
+            <div className="min-w-0 flex-1"><p className="text-[11px] text-muted-foreground">IBAN</p><p className="truncate text-[14px] font-extrabold tracking-[.3px] tabular-nums">{bankAccount?.iban || "—"}</p></div>
+            {bankAccount?.iban && <Button type="button" variant="outline" size="icon" aria-label="Αντιγραφή IBAN" onClick={() => onCopyIban(bankAccount.iban)} className="h-[34px] w-[34px] shrink-0 rounded-[10px] border-border bg-card"><Copy className="h-[15px] w-[15px]" /></Button>}
+          </div>
+        </div>
+        <p className="text-[13px] text-muted-foreground">Στην αιτιολογία γράψε <b className="text-foreground">{referenceHint}</b>.</p>
+        <div className="flex flex-col gap-[14px] rounded-[14px] border-[1.5px] border-dashed border-[#d6d6d2] px-4 py-[14px] sm:flex-row sm:items-center dark:border-border">
+          <div className="min-w-0 flex-1"><p className="text-[14px] font-extrabold">Έκανες την κατάθεση;</p><p className="mt-0.5 flex items-start gap-1.5 text-[12px] leading-5 text-muted-foreground"><Paperclip className="mt-0.5 h-[14px] w-[14px] shrink-0" />Επισύναψε προαιρετικά το αποδεικτικό (φωτογραφία ή PDF) για γρηγορότερη έγκριση.</p></div>
+          <Button className="h-11 w-full shrink-0 rounded-full bg-foreground px-[18px] text-[13px] font-extrabold text-background hover:bg-foreground/90 sm:w-auto" disabled={disabled || saving} onClick={onSubmit}><Check className="mr-2 h-4 w-4" />{saving ? "Καταχώριση..." : "Έκανα την κατάθεση"}</Button>
+        </div>
+      </div>
+    );
+  }
 
   if (method === "cash") {
     return (

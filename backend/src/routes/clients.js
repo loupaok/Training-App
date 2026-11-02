@@ -9,6 +9,7 @@ import { pool } from '../index.js';
 import { authorizeRole, authorizeRoleOrPermission } from '../middleware/auth.js';
 import { getVapidPublicKey, sendPushToUser, sendPushToUsers } from '../lib/webPush.js';
 import { sendPushNotification } from '../utils/sendPushNotification.js';
+import { sendMail } from '../lib/mailer.js';
 import { insertTrainingPlanDays } from './trainingPlans.js';
 import { insertNutritionPlanMeals } from './nutritionPlans.js';
 import { getFullTrainingTemplate, getFullNutritionTemplate } from './templates.js';
@@ -18,7 +19,7 @@ import { awardPoints } from './points.js';
 import { ensureDiscordSchema } from './discord.js';
 import { addRole, getActiveRoleId, removeRole } from '../lib/discord.js';
 import { optimizeUploadedImage, optimizeUploadedImages } from '../utils/image-optimization.js';
-import { ensurePaymentSettingsSchema, getPaymentSettings } from './pricingPlans.js';
+import { ensurePaymentSettingsSchema, ensurePackagesSchema, getPackageQuote, getPaymentSettings } from './pricingPlans.js';
 
 const router = express.Router();
 const activeMessageTypers = new Map();
@@ -203,7 +204,7 @@ async function finalizeOnlinePayment(paymentId, providerReference) {
     await connection.beginTransaction();
 
     const [payments] = await connection.query(
-      `SELECT p.id, p.client_id, p.subscription_id, p.status, p.method, s.plan_type, s.plan_id
+      `SELECT p.id, p.client_id, p.subscription_id, p.status, p.method, p.package_id, p.duration_months, p.price_cents, p.package_name_snapshot, s.plan_type, s.plan_id
        FROM payments p
        LEFT JOIN subscriptions s ON s.id = p.subscription_id
        WHERE p.id = ? FOR UPDATE`,
@@ -227,7 +228,7 @@ async function finalizeOnlinePayment(paymentId, providerReference) {
 
     if (payment.subscription_id) {
       const monthsByPlanType = { monthly: 1, quarterly: 3, semi_annual: 6, annual: 12, custom: 1 };
-      const months = monthsByPlanType[payment.plan_type] || 1;
+      const months = Number(payment.duration_months) || monthsByPlanType[payment.plan_type] || 1;
       const [currentSubscriptions] = await connection.query(
         `SELECT end_date FROM subscriptions
          WHERE client_id = ? AND id <> ? AND status IN ('active', 'expiring_soon')
@@ -277,7 +278,10 @@ async function finalizeOnlinePayment(paymentId, providerReference) {
     });
     await connection.commit();
     try { await syncDiscordSubscriptionRole(connection, payment.client_id); } catch (error) { console.error('Discord role sync after online payment failed:', error.message); }
-    if (payment.plan_id) await awardPoints(connection, { clientId: payment.client_id, planId: payment.plan_id, paymentId: payment.id });
+    if (payment.package_id) {
+      const quote = await getPackageQuote(connection, payment.package_id, payment.duration_months, { visibleOnly: false, includeDeleted: true });
+      if (quote) await awardPoints(connection, { clientId: payment.client_id, paymentId: payment.id, pointsOverride: quote.points, planNameOverride: payment.package_name_snapshot || quote.package.name });
+    } else if (payment.plan_id) await awardPoints(connection, { clientId: payment.client_id, planId: payment.plan_id, paymentId: payment.id });
     return { alreadyCompleted: false, clientId: payment.client_id };
   } catch (error) {
     await connection.rollback();
@@ -671,6 +675,35 @@ async function ensureProfilePhotoFolder(connection) {
   return result.insertId;
 }
 
+async function ensurePaymentProofMediaFolder(connection, clientId, clientName) {
+  await ensureMediaTable(connection);
+  let [[rootFolder]] = await connection.query(
+    'SELECT id FROM media_folders WHERE parent_id IS NULL AND LOWER(name) = LOWER(?) LIMIT 1',
+    ['Αποδεικτικά Πληρωμών']
+  );
+  if (!rootFolder) {
+    const [created] = await connection.query(
+      'INSERT INTO media_folders (name, parent_id) VALUES (?, NULL)',
+      ['Αποδεικτικά Πληρωμών']
+    );
+    rootFolder = { id: created.insertId };
+  }
+
+  const clientFolderName = String(clientName || `Πελάτης ${clientId}`).trim().slice(0, 220);
+  let [[clientFolder]] = await connection.query(
+    'SELECT id FROM media_folders WHERE parent_id = ? AND name = ? LIMIT 1',
+    [rootFolder.id, clientFolderName]
+  );
+  if (!clientFolder) {
+    const [created] = await connection.query(
+      'INSERT INTO media_folders (name, parent_id) VALUES (?, ?)',
+      [clientFolderName, rootFolder.id]
+    );
+    clientFolder = { id: created.insertId };
+  }
+  return clientFolder.id;
+}
+
 async function ensurePaymentProofColumns(connection) {
   await ensureNotificationsSchema(connection);
   for (const statement of [
@@ -760,6 +793,61 @@ export async function ensureNotificationsSchema(connection) {
       if (error.code !== 'ER_DUP_FIELDNAME') throw error;
     }
   }
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS notification_preferences (
+      user_id INT NOT NULL,
+      category VARCHAR(40) NOT NULL,
+      push_enabled TINYINT(1) NOT NULL DEFAULT 1,
+      email_enabled TINYINT(1) NOT NULL DEFAULT 0,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, category),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+}
+
+const notificationPreferenceCategories = new Set(['payments', 'programs', 'nutrition', 'messages', 'points']);
+
+function notificationCategory(type = '') {
+  if (type.includes('payment') || type.includes('subscription')) return 'payments';
+  if (type.includes('training')) return 'programs';
+  if (type.includes('nutrition') || type.includes('supplement') || type.includes('cycle')) return 'nutrition';
+  if (type.includes('message')) return 'messages';
+  if (type.includes('points')) return 'points';
+  return null;
+}
+
+function defaultNotificationPreferences() {
+  return ['payments', 'programs', 'nutrition', 'messages', 'points'].map((category) => ({
+    category,
+    pushEnabled: true,
+    emailEnabled: category === 'payments',
+  }));
+}
+
+function escapeNotificationEmailHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[character]));
+}
+
+async function notificationPreferenceFor(connection, userId, type) {
+  const category = notificationCategory(type);
+  if (!category) return { pushEnabled: true, emailEnabled: false };
+  const [[row]] = await connection.query(
+    'SELECT push_enabled, email_enabled FROM notification_preferences WHERE user_id = ? AND category = ? LIMIT 1',
+    [userId, category],
+  );
+  const fallback = defaultNotificationPreferences().find((item) => item.category === category);
+  return {
+    pushEnabled: row ? Boolean(row.push_enabled) : Boolean(fallback?.pushEnabled),
+    emailEnabled: category === 'payments' && (row ? Boolean(row.email_enabled) : Boolean(fallback?.emailEnabled)),
+  };
 }
 
 export async function notifyCoaches(connection, notification) {
@@ -811,21 +899,40 @@ export async function notifyUser(connection, userId, notification) {
     ]
   );
 
-  try {
-    await sendPushToUser(userId, {
-      title: notification.title,
-      body: notification.body || '',
-      url: notification.linkUrl || '/'
-    });
-  } catch (error) {
-    console.error('Push notification failed:', error.message);
+  const preferences = await notificationPreferenceFor(connection, userId, notification.type || '');
+
+  if (preferences.pushEnabled) {
+    try {
+      await sendPushToUser(userId, {
+        title: notification.title,
+        body: notification.body || '',
+        url: notification.linkUrl || '/'
+      });
+    } catch (error) {
+      console.error('Push notification failed:', error.message);
+    }
+
+    try {
+      const [[user]] = await connection.query('SELECT push_token FROM users WHERE id = ? LIMIT 1', [userId]);
+      await sendPushNotification(user?.push_token, notification.title, notification.body || '');
+    } catch (error) {
+      console.error('Native push notification failed:', error.message);
+    }
   }
 
-  try {
-    const [[user]] = await connection.query('SELECT push_token FROM users WHERE id = ? LIMIT 1', [userId]);
-    await sendPushNotification(user?.push_token, notification.title, notification.body || '');
-  } catch (error) {
-    console.error('Native push notification failed:', error.message);
+  if (preferences.emailEnabled) {
+    try {
+      const [[user]] = await connection.query('SELECT email FROM users WHERE id = ? LIMIT 1', [userId]);
+      if (user?.email) {
+        await sendMail({
+          to: user.email,
+          subject: notification.title,
+          html: `<p>${escapeNotificationEmailHtml(notification.body || notification.title).replace(/\n/g, '<br>')}</p>`,
+        });
+      }
+    } catch (error) {
+      console.error('Notification email failed:', error.message);
+    }
   }
 }
 
@@ -1472,7 +1579,9 @@ router.delete('/me/profile-photo', authorizeRole(['client']), async (req, res) =
 });
 
 router.post('/me/billing', authorizeRole(['client']), [
-  body('subscriptionPackage').notEmpty().withMessage('Subscription package required'),
+  body('subscriptionPackage').optional().isString(),
+  body('packageId').optional().isInt({ min: 1 }),
+  body('durationMonths').optional().isInt({ min: 1, max: 12 }),
   body('paymentMethod').isIn(['bank_transfer', 'stripe_card', 'paypal', 'cash']).withMessage('Valid payment method required'),
   body('note').optional({ nullable: true }).isString().trim().isLength({ max: 500 }).withMessage('Η σημείωση είναι πολύ μεγάλη.'),
   body('privacyPolicyAccepted').custom((value) => value === true).withMessage('Η αποδοχή της Πολιτικής Απορρήτου είναι υποχρεωτική.')
@@ -1482,12 +1591,16 @@ router.post('/me/billing', authorizeRole(['client']), [
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const { subscriptionPackage, paymentMethod, note } = req.body;
+  const { subscriptionPackage, packageId, durationMonths, paymentMethod, note } = req.body;
+  if ((!packageId || !durationMonths) && !subscriptionPackage) {
+    return res.status(400).json({ message: 'Επίλεξε πακέτο και διάρκεια.' });
+  }
   const connection = await pool.getConnection();
 
   try {
     await ensureOnboardingSchema(connection);
     await ensurePaymentSettingsSchema(connection);
+    await ensurePackagesSchema(connection);
     await ensurePaymentProofColumns(connection);
     const { ensureSubscriptionPlanIdColumn } = await import('./register.js');
     await ensureSubscriptionPlanIdColumn(connection);
@@ -1495,7 +1608,22 @@ router.post('/me/billing', authorizeRole(['client']), [
     if ((paymentMethod === 'bank_transfer' && !paymentSettings.bankTransferEnabled) || (paymentMethod === 'cash' && !paymentSettings.cashEnabled) || (paymentMethod === 'stripe_card' && !paymentSettings.stripeEnabled) || (paymentMethod === 'paypal' && !paymentSettings.paypalEnabled)) {
       return res.status(400).json({ message: 'Ο επιλεγμένος τρόπος πληρωμής δεν είναι διαθέσιμος.' });
     }
-    const selectedPackage = await getSelectedSubscriptionPlan(connection, subscriptionPackage);
+    const packageQuote = packageId && durationMonths
+      ? await getPackageQuote(connection, Number(packageId), Number(durationMonths))
+      : null;
+    const selectedPackage = packageQuote
+      ? {
+          label: `${packageQuote.package.name} · ${packageQuote.duration.months} ${packageQuote.duration.months === 1 ? 'μήνας' : 'μήνες'}`,
+          planId: null,
+          packageId: packageQuote.package.id,
+          months: packageQuote.duration.months,
+          price: packageQuote.price,
+          priceCents: packageQuote.priceCents,
+          features: [...packageQuote.commonFeatures, ...packageQuote.features],
+          points: packageQuote.points,
+          currency: 'EUR',
+        }
+      : await getSelectedSubscriptionPlan(connection, subscriptionPackage);
     if (!selectedPackage) {
       connection.release();
       return res.status(400).json({ message: 'Μη έγκυρο πακέτο συνδρομής.' });
@@ -1512,18 +1640,18 @@ router.post('/me/billing', authorizeRole(['client']), [
       `UPDATE onboarding_forms
        SET selected_package = ?, payment_method = ?
        WHERE client_id = ?`,
-      [subscriptionPackage, paymentMethod, req.user.id]
+      [packageQuote ? String(packageQuote.package.id) : subscriptionPackage || null, paymentMethod, req.user.id]
     );
     await connection.query(
       `UPDATE client_onboarding
        SET selected_package = ?, payment_method = ?
        WHERE client_id = ?`,
-      [subscriptionPackage, paymentMethod, req.user.id]
+      [packageQuote ? String(packageQuote.package.id) : subscriptionPackage || null, paymentMethod, req.user.id]
     );
 
     const [subscriptionResult] = await connection.query(
-      `INSERT INTO subscriptions (client_id, coach_id, plan_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?)`,
+      `INSERT INTO subscriptions (client_id, coach_id, plan_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes, package_id, duration_months, price_cents, package_name_snapshot, features_snapshot)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?, ?, ?, ?, ?, ?)`,
       [
         req.user.id,
         coachId,
@@ -1534,13 +1662,18 @@ router.post('/me/billing', authorizeRole(['client']), [
         selectedPackage.currency || 'EUR',
         pendingDate,
         pendingDate,
-        paymentMethod === 'cash' ? 'Η πληρωμή με μετρητά αναμένει έγκριση coach.' : 'Η πληρωμή αναμένει επιβεβαίωση.'
+        paymentMethod === 'cash' ? 'Η πληρωμή με μετρητά αναμένει έγκριση coach.' : 'Η πληρωμή αναμένει επιβεβαίωση.',
+        selectedPackage.packageId || null,
+        selectedPackage.months || null,
+        selectedPackage.priceCents || null,
+        packageQuote?.package.name || null,
+        selectedPackage.features ? JSON.stringify(selectedPackage.features) : null
       ]
     );
 
     const [paymentResult] = await connection.query(
-      `INSERT INTO payments (client_id, coach_id, subscription_id, amount, currency, method, status, reference_number, notes, privacy_policy_accepted_at, privacy_policy_version)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, NOW(), ?)`,
+      `INSERT INTO payments (client_id, coach_id, subscription_id, amount, currency, method, status, reference_number, notes, privacy_policy_accepted_at, privacy_policy_version, package_id, duration_months, price_cents, package_name_snapshot, features_snapshot)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, NOW(), ?, ?, ?, ?, ?, ?)`,
       [
         req.user.id,
         coachId,
@@ -1550,7 +1683,12 @@ router.post('/me/billing', authorizeRole(['client']), [
         paymentMethod === 'stripe_card' ? 'stripe' : paymentMethod,
         referenceNumber,
         paymentMethod === 'cash' ? 'Αναμένεται επιβεβαίωση πληρωμής με μετρητά.' : paymentMethod === 'paypal' ? 'Αναμένεται επιβεβαίωση PayPal.' : paymentMethod === 'stripe_card' ? 'Αναμένεται επιβεβαίωση Stripe.' : ['Αναμένεται τραπεζικό έμβασμα.', String(note || '').trim()].filter(Boolean).join('\n'),
-        process.env.PRIVACY_POLICY_VERSION || 'current'
+        process.env.PRIVACY_POLICY_VERSION || 'current',
+        selectedPackage.packageId || null,
+        selectedPackage.months || null,
+        selectedPackage.priceCents || null,
+        packageQuote?.package.name || null,
+        selectedPackage.features ? JSON.stringify(selectedPackage.features) : null
       ]
     );
 
@@ -1595,6 +1733,7 @@ router.post('/me/billing', authorizeRole(['client']), [
 
     res.status(201).json({
       message: 'Η πληρωμή καταχωρήθηκε ως εκκρεμής.',
+      paymentId: paymentResult.insertId,
       paymentStatus: 'pending',
       paymentMethod,
       referenceNumber,
@@ -1859,6 +1998,16 @@ router.post('/me/billing-proof', authorizeRole(['client']), (req, res, next) => 
       [req.user.id]
     );
     const clientName = clientUser?.full_name || clientUser?.email || 'Πελάτης';
+    const paymentProofFolderId = await ensurePaymentProofMediaFolder(connection, req.user.id, clientName);
+    const proofTitle = `${clientName} - Αποδεικτικό πληρωμής - ${path.basename(proofUrl)}`.slice(0, 255);
+    await connection.query(
+      `INSERT INTO media_assets (title, asset_type, url, source, folder_id)
+       SELECT ?, 'photo', ?, 'payment_proof', ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM media_assets WHERE source = 'payment_proof' AND url = ?
+       )`,
+      [proofTitle, proofUrl, paymentProofFolderId, proofUrl]
+    );
 
     await notifyCoaches(connection, {
       clientId: req.user.id,
@@ -2150,6 +2299,66 @@ router.post('/notifications/:notificationId/read', authorizeRole(['coach', 'admi
       [req.user.id]
     );
     res.json({ id: notificationId, unread: Number(count?.unread || 0) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.get('/me/notification-preferences', authorizeRole(['client']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    await ensureNotificationsSchema(connection);
+    const [rows] = await connection.query(
+      'SELECT category, push_enabled, email_enabled FROM notification_preferences WHERE user_id = ?',
+      [req.user.id],
+    );
+    const stored = new Map(rows.map((row) => [row.category, row]));
+    const preferences = defaultNotificationPreferences().map((fallback) => {
+      const row = stored.get(fallback.category);
+      return {
+        category: fallback.category,
+        pushEnabled: row ? Boolean(row.push_enabled) : fallback.pushEnabled,
+        emailEnabled:
+          fallback.category === 'payments' &&
+          (row ? Boolean(row.email_enabled) : fallback.emailEnabled),
+      };
+    });
+    res.json({ preferences });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+router.put('/me/notification-preferences', authorizeRole(['client']), async (req, res) => {
+  const preferences = Array.isArray(req.body?.preferences) ? req.body.preferences : [];
+  const sanitized = preferences
+    .filter((item) => item && notificationPreferenceCategories.has(String(item.category)))
+    .map((item) => ({
+      category: String(item.category),
+      pushEnabled: Boolean(item.pushEnabled),
+      emailEnabled: String(item.category) === 'payments' && Boolean(item.emailEnabled),
+    }));
+
+  if (!sanitized.length) return res.status(400).json({ message: 'Δεν υπάρχουν έγκυρες προτιμήσεις ειδοποιήσεων.' });
+
+  const connection = await pool.getConnection();
+  try {
+    await ensureNotificationsSchema(connection);
+    for (const preference of sanitized) {
+      await connection.query(
+        `INSERT INTO notification_preferences (user_id, category, push_enabled, email_enabled)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE push_enabled = VALUES(push_enabled), email_enabled = VALUES(email_enabled)`,
+        [req.user.id, preference.category, preference.pushEnabled ? 1 : 0, preference.emailEnabled ? 1 : 0],
+      );
+    }
+    res.json({ preferences: sanitized });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -2805,8 +3014,11 @@ router.get('/:id/payments', authorizeRoleOrPermission(['coach', 'admin'], 'view_
     const access = await canAccessClientActivity(connection, req.user, clientId);
     if (!access.allowed) return res.status(access.status).json({ message: access.message });
 
+    await ensurePaymentProofColumns(connection);
+
     const [payments] = await connection.query(
-      `SELECT id, subscription_id, amount, currency, method, status, notes, paid_at, created_at
+      `SELECT id, subscription_id, amount, currency, method, status, notes, reference_number,
+              proof_url, proof_uploaded_at, paid_at, created_at
        FROM payments
        WHERE client_id = ?
        ORDER BY created_at DESC`,
@@ -2893,8 +3105,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
        WHERE s.client_id = ?
          AND s.status = 'active'
          AND s.start_date > CURDATE()
-       ORDER BY s.start_date ASC
-       LIMIT 1`,
+       ORDER BY s.start_date ASC`,
       [req.params.id]
     );
     const [scheduleRows] = await connection.query(
@@ -2943,6 +3154,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
       subscription: subscriptionRows[0]
         ? { ...subscriptionRows[0], daysRemaining: subscriptionRows[0].days_remaining }
         : null,
+      upcomingSubscriptions: upcomingSubscriptionRows,
       upcomingSubscription: upcomingSubscriptionRows[0] || null,
       payments: paymentRows,
       updateSchedule: scheduleRows[0] || null,
@@ -3308,11 +3520,14 @@ router.get('/me/messages/typing', authorizeRole(['client']), (req, res) => {
 });
 
 router.post('/me/messages', authorizeRole(['client']), [
-  body('message').isString().notEmpty()
+  body('message').isString().trim().isLength({ min: 1, max: 2000 })
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
+  }
+  if (req.files?.length || req.file || ['attachment', 'attachments', 'file', 'files', 'image', 'images'].some((key) => req.body?.[key] !== undefined)) {
+    return res.status(400).json({ message: 'Οι πελάτες δεν μπορούν να στείλουν αρχεία στα μηνύματα.' });
   }
   if (/(data:image\/|<img\b|base64,)/i.test(req.body.message)) {
     return res.status(400).json({ message: 'Images are not supported in messages' });
@@ -3334,13 +3549,13 @@ router.post('/me/messages', authorizeRole(['client']), [
 
     await connection.query(
       `INSERT INTO messages (client_id, coach_id, sender_role, body) VALUES (?, ?, 'client', ?)`,
-      [req.user.id, coachId, req.body.message]
+      [req.user.id, coachId, req.body.message.trim()]
     );
     await notifyUser(connection, coachId, {
       clientId: req.user.id,
       type: 'client_message',
       title: 'Νέο μήνυμα από πελάτη',
-      body: req.body.message,
+      body: req.body.message.trim(),
       title: `Μήνυμα από τον/την ${clientName}`,
       linkUrl: `/clients/${req.user.id}?tab=messages`
     });
@@ -3352,7 +3567,7 @@ router.post('/me/messages', authorizeRole(['client']), [
       clientId: req.user.id,
       type: 'client_message',
       title: 'Νέο μήνυμα από πελάτη',
-      body: req.body.message,
+      body: req.body.message.trim(),
       title: `Μήνυμα από τον/την ${clientName}`,
       linkUrl: `/clients/${req.user.id}?tab=messages`
     })));
@@ -3367,6 +3582,88 @@ router.post('/me/messages', authorizeRole(['client']), [
 });
 
 // GET/POST /clients/:id/messages — coach-side view/send for one client's thread
+// Files are collected by reference from the existing upload tables. Nothing is
+// copied into messages, and this route is intentionally unavailable to clients.
+router.get('/:id/files', authorizeRoleOrPermission(['coach', 'admin'], 'messages'), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    const files = [];
+    const addRows = (rows, type, section) => rows.forEach((row) => {
+      if (!row.url) return;
+      const resolvedType = row.file_type === 'video' ? 'video' : row.file_type === 'pdf' ? 'other' : type;
+      files.push({
+        id: `${section}-${row.id}`,
+        type: resolvedType,
+        url: row.url.startsWith('/') ? row.url : `/${row.url}`,
+        name: row.name || row.original_name || null,
+        createdAt: row.created_at || row.submitted_at || null,
+        updateId: row.update_id || null,
+        paymentId: row.payment_id || null,
+        weightKg: row.weight_kg ?? null,
+        linkUrl: type === 'proof' ? `/clients/${clientId}?tab=payments` : `/clients/${clientId}?tab=progress`,
+      });
+    });
+
+    try {
+      const [rows] = await connection.query(
+        `SELECT wuf.id, wuf.file_url AS url, wuf.file_type, wuf.original_name, wuf.created_at, wuf.update_id,
+                wu.submitted_at, wu.weight_kg
+         FROM weekly_update_files wuf
+         LEFT JOIN weekly_updates wu ON wu.id = wuf.update_id
+         WHERE wu.client_id = ?
+         ORDER BY wuf.created_at DESC`,
+        [clientId]
+      );
+      addRows(rows, 'photo', 'update-file');
+    } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+
+    try {
+      const [rows] = await connection.query(
+        `SELECT pp.id, pp.photo_url AS url, pp.created_at, pp.progress_update_id AS update_id,
+                pu.submitted_at, pu.weight_kg
+         FROM progress_photos pp
+         LEFT JOIN progress_updates pu ON pu.id = pp.progress_update_id
+         WHERE pp.client_id = ?
+         ORDER BY pp.created_at DESC`,
+        [clientId]
+      );
+      addRows(rows, 'photo', 'progress-photo');
+    } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+
+    try {
+      await ensurePaymentProofColumns(connection);
+      const [rows] = await connection.query(
+        `SELECT id, proof_url AS url, proof_uploaded_at AS created_at, id AS payment_id
+         FROM payments WHERE client_id = ? AND proof_url IS NOT NULL AND TRIM(proof_url) <> ''
+         ORDER BY proof_uploaded_at DESC`,
+        [clientId]
+      );
+      addRows(rows, 'proof', 'payment-proof');
+    } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+
+    try {
+      const [rows] = await connection.query(
+        `SELECT id, file_url AS url, original_name, created_at
+         FROM client_intake_files WHERE client_id = ? ORDER BY created_at DESC`,
+        [clientId]
+      );
+      addRows(rows, 'other', 'intake');
+    } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+
+    const seen = new Set();
+    res.json(files.filter((file) => !seen.has(file.url) && seen.add(file.url)).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
 router.get('/:id/messages', authorizeRoleOrPermission(['coach', 'admin'], 'messages'), async (req, res) => {
   const connection = await pool.getConnection();
   try {
@@ -3419,7 +3716,7 @@ router.get('/:id/messages/typing', authorizeRoleOrPermission(['coach', 'admin'],
 });
 
 router.post('/:id/messages', authorizeRoleOrPermission(['coach', 'admin'], 'messages'), [
-  body('message').isString().notEmpty()
+  body('message').isString().trim().isLength({ min: 1, max: 2000 })
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -3436,12 +3733,12 @@ router.post('/:id/messages', authorizeRoleOrPermission(['coach', 'admin'], 'mess
     const coachName = coachRow?.full_name || 'coach';
     await connection.query(
       `INSERT INTO messages (client_id, coach_id, sender_role, body) VALUES (?, ?, 'coach', ?)`,
-      [req.params.id, req.user.id, req.body.message]
+      [req.params.id, req.user.id, req.body.message.trim()]
     );
     await notifyUser(connection, req.params.id, {
       type: 'coach_message',
       title: 'Νέο μήνυμα από τον coach',
-      body: req.body.message,
+      body: req.body.message.trim(),
       title: `Μήνυμα από τον/την ${coachName}`,
       linkUrl: '/client-messages'
     });
@@ -3756,7 +4053,7 @@ router.post('/:id/approve-payment', authorizeRoleOrPermission(['coach', 'admin']
     }
 
     const [payments] = await connection.query(
-      `SELECT p.id, p.subscription_id, p.amount, p.currency, p.method, p.status, p.proof_url, s.plan_type, s.plan_id
+      `SELECT p.id, p.subscription_id, p.amount, p.currency, p.method, p.status, p.proof_url, p.package_id, p.duration_months, p.price_cents, p.package_name_snapshot, s.plan_type, s.plan_id
        FROM payments p
        LEFT JOIN subscriptions s ON s.id = p.subscription_id
        WHERE p.client_id = ? AND p.status = 'pending' AND (? IS NULL OR p.id = ?)
@@ -3781,7 +4078,7 @@ router.post('/:id/approve-payment', authorizeRoleOrPermission(['coach', 'admin']
 
     if (payments[0].subscription_id) {
       const monthsByPlanType = { monthly: 1, quarterly: 3, semi_annual: 6, annual: 12, custom: 1 };
-      const months = monthsByPlanType[payments[0].plan_type] || 1;
+      const months = Number(payments[0].duration_months) || monthsByPlanType[payments[0].plan_type] || 1;
       const [currentSubscriptions] = await connection.query(
         `SELECT end_date
          FROM subscriptions
@@ -3845,7 +4142,10 @@ router.post('/:id/approve-payment', authorizeRoleOrPermission(['coach', 'admin']
     } catch (discordError) {
       console.error('Discord role sync after payment approval failed:', discordError.message);
     }
-    if (payments[0].plan_id) await awardPoints(connection, { clientId, planId: payments[0].plan_id, paymentId: payments[0].id });
+    if (payments[0].package_id) {
+      const quote = await getPackageQuote(connection, payments[0].package_id, payments[0].duration_months, { visibleOnly: false, includeDeleted: true });
+      if (quote) await awardPoints(connection, { clientId, paymentId: payments[0].id, pointsOverride: quote.points, planNameOverride: payments[0].package_name_snapshot || quote.package.name });
+    } else if (payments[0].plan_id) await awardPoints(connection, { clientId, planId: payments[0].plan_id, paymentId: payments[0].id });
     connection.release();
 
     res.json({

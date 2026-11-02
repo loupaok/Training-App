@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Bell, CheckCheck, ChevronRight, Inbox, type LucideIcon } from "lucide-react"
+import { Bell, CheckCheck, ChevronRight, Inbox, Settings2, type LucideIcon } from "lucide-react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { ClientShell } from "@/components/shell/client-shell"
 import { Badge } from "@/components/ui/badge"
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Switch } from "@/components/ui/switch"
 import { clearUnreadNotifications } from "@/lib/notification-count"
 import { useAuth } from "@/lib/auth/auth-context"
 import { api } from "@/lib/api/client"
@@ -17,6 +18,15 @@ import { buildClientNotifications, type ClientNotificationRow, type ClientNotifi
 
 type FilterValue = "all" | "payments" | "programs" | "announcements"
 const filters: { label: string; value: FilterValue }[] = [{ label: "Όλες", value: "all" }, { label: "Πληρωμές", value: "payments" }, { label: "Προγράμματα", value: "programs" }, { label: "Ανακοινώσεις", value: "announcements" }]
+type NotificationPreference = { category: "payments" | "programs" | "nutrition" | "messages" | "points"; pushEnabled: boolean; emailEnabled: boolean }
+const defaultPreferences: NotificationPreference[] = [
+  { category: "payments", pushEnabled: true, emailEnabled: true },
+  { category: "programs", pushEnabled: true, emailEnabled: false },
+  { category: "nutrition", pushEnabled: true, emailEnabled: false },
+  { category: "messages", pushEnabled: true, emailEnabled: false },
+  { category: "points", pushEnabled: true, emailEnabled: false },
+]
+const preferenceLabels: Record<NotificationPreference["category"], string> = { payments: "Πληρωμές & συνδρομή", programs: "Αλλαγές προγράμματος", nutrition: "Διατροφή & συμπληρώματα", messages: "Μηνύματα", points: "Πόντοι" }
 
 function ClientNotificationsContent() {
   const { user, logout } = useAuth()
@@ -25,10 +35,19 @@ function ClientNotificationsContent() {
   const [filter, setFilter] = useState<FilterValue>("all")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
+  const [preferences, setPreferences] = useState<NotificationPreference[]>(defaultPreferences)
+  const [savingPreferences, setSavingPreferences] = useState(false)
 
   const load = async () => {
     setLoading(true); setError("")
-    try { setData(await api.get<ClientNotificationsResponse>("/clients/me/notifications")) }
+    try {
+      const [notificationData, preferenceData] = await Promise.all([
+        api.get<ClientNotificationsResponse>("/clients/me/notifications"),
+        api.get<{ preferences?: NotificationPreference[] }>("/clients/me/notification-preferences"),
+      ])
+      setData(notificationData)
+      if (preferenceData.preferences?.length) setPreferences(preferenceData.preferences)
+    }
     catch (err) { setError(err instanceof Error ? err.message : "Δεν φορτώθηκαν οι ειδοποιήσεις.") }
     finally { setLoading(false) }
   }
@@ -52,14 +71,30 @@ function ClientNotificationsContent() {
     setData((current) => current ? { ...current, unreadNotifications: 0, notifications: current.notifications?.map((item) => ({ ...item, read_at: item.read_at || new Date().toISOString() })) } : current)
   }
 
+  const updatePreference = async (category: NotificationPreference["category"], field: "pushEnabled" | "emailEnabled", value: boolean) => {
+    const next = preferences.map((preference) => preference.category === category ? { ...preference, [field]: value } : preference)
+    setPreferences(next)
+    setSavingPreferences(true)
+    try { await api.put("/clients/me/notification-preferences", { preferences: next }) }
+    catch (err) { setPreferences(preferences); setError(err instanceof Error ? err.message : "Δεν αποθηκεύτηκαν οι προτιμήσεις.") }
+    finally { setSavingPreferences(false) }
+  }
+
   return <ClientShell title="Ειδοποιήσεις" user={user} logout={logout} paymentApproved={Boolean(data?.paymentApproved)} unreadNotifications={unread} active="notifications">
     <main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
       <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><div className="mb-3 grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary"><Bell className="h-5 w-5" /></div><h1 className="text-2xl font-bold">Κέντρο ειδοποιήσεων</h1><p className="mt-1 text-sm text-muted-foreground">Πληρωμές, προγράμματα και ανακοινώσεις από την ομάδα σου.</p></div><Button variant="outline" disabled={!unread} onClick={() => void markAll()}><CheckCheck className="mr-2 h-4 w-4" />Όλα ως αναγνωσμένα</Button></section>
-      <Card><CardHeader className="gap-4 border-b"><div className="flex items-center justify-between gap-3"><div><CardTitle>Ιστορικό</CardTitle><CardDescription>{unread ? `${unread} νέες ειδοποιήσεις` : "Είσαι ενημερωμένος"}</CardDescription></div>{unread > 0 && <Badge>Νέες</Badge>}</div><Tabs value={filter} onValueChange={(value) => setFilter(value as FilterValue)}><TabsList className="h-auto max-w-full flex-wrap justify-start"><>{filters.map((item) => <TabsTrigger key={item.value} value={item.value}>{item.label}</TabsTrigger>)}</></TabsList></Tabs></CardHeader><CardContent className="p-0">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <Card className="rounded-[20px] border-border bg-card shadow-none"><CardHeader className="gap-4 border-b"><div className="flex items-center justify-between gap-3"><div><CardTitle>Ιστορικό</CardTitle><CardDescription>{unread ? `${unread} νέες ειδοποιήσεις` : "Είσαι ενημερωμένος"}</CardDescription></div>{unread > 0 && <Badge className="rounded-full bg-accent text-accent-foreground">Νέες</Badge>}</div><Tabs value={filter} onValueChange={(value) => setFilter(value as FilterValue)}><TabsList className="h-auto max-w-full flex-wrap justify-start"><>{filters.map((item) => <TabsTrigger key={item.value} value={item.value}>{item.label}</TabsTrigger>)}</></TabsList></Tabs></CardHeader><CardContent className="p-0">
         {loading ? <div className="space-y-4 p-6">{Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className="h-20 w-full" />)}</div> : error ? <p className="p-6 text-sm text-destructive">{error}</p> : visible.length ? <div>{visible.map((item) => <NotificationRow key={item.id} item={item} onOpen={open} />)}</div> : <div className="p-14 text-center"><Inbox className="mx-auto h-9 w-9 text-muted-foreground" /><p className="mt-4 font-semibold">Δεν υπάρχουν ειδοποιήσεις</p><p className="mt-1 text-sm text-muted-foreground">Οι νέες ενημερώσεις από τον coach θα εμφανίζονται εδώ.</p></div>}
       </CardContent></Card>
+      <NotificationPreferences preferences={preferences} saving={savingPreferences} onChange={updatePreference} />
+      </div>
     </main>
   </ClientShell>
+}
+
+function NotificationPreferences({ preferences, saving, onChange }: { preferences: NotificationPreference[]; saving: boolean; onChange: (category: NotificationPreference["category"], field: "pushEnabled" | "emailEnabled", value: boolean) => void }) {
+  return <Card className="rounded-[20px] border-border bg-card shadow-none lg:sticky lg:top-6"><CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-[15px] font-extrabold"><Settings2 className="h-4 w-4" />Τι θέλεις να λαμβάνεις</CardTitle></CardHeader><CardContent className="px-5 pb-4 pt-0"><div className="grid grid-cols-[minmax(0,1fr)_44px_44px] gap-2 border-b border-border pb-2 text-center text-[10px] font-extrabold tracking-[1px] text-muted-foreground"><span /><span>PUSH</span><span>EMAIL</span></div>{preferences.map((preference) => <div key={preference.category} className="grid grid-cols-[minmax(0,1fr)_44px_44px] items-center gap-2 border-b border-border py-3 last:border-b-0"><p className="text-[13px] font-semibold leading-4">{preferenceLabels[preference.category]}</p><div className="flex justify-center"><Switch aria-label={`Push: ${preferenceLabels[preference.category]}`} checked={preference.pushEnabled} disabled={saving} onCheckedChange={(checked) => void onChange(preference.category, "pushEnabled", checked)} /></div><div className="flex justify-center">{preference.category === "payments" ? <Switch aria-label="Email: Πληρωμές & συνδρομή" checked={preference.emailEnabled} disabled={saving} onCheckedChange={(checked) => void onChange(preference.category, "emailEnabled", checked)} /> : <span className="text-xs text-muted-foreground">—</span>}</div></div>)}</CardContent></Card>
 }
 
 function NotificationRow({ item, onOpen }: { item: ClientNotificationRow; onOpen: (item: ClientNotificationRow) => void }) {

@@ -74,13 +74,20 @@ export async function ensurePointsSchema(connection) {
 // Best-effort points award — called after a payment is recorded as completed
 // (manual entry or bank-transfer approval). Never throws: a points-system
 // hiccup must not undo or fail the payment it's attached to.
-export async function awardPoints(connection, { clientId, planId, paymentId }) {
+export async function awardPoints(connection, { clientId, planId, paymentId, pointsOverride = null, planNameOverride = null }) {
   try {
-    if (!planId) return;
+    if (!planId && !Number.isFinite(Number(pointsOverride))) return;
     await ensurePointsSchema(connection);
-    const [plans] = await connection.query('SELECT name, points_reward FROM pricing_plans WHERE id = ?', [planId]);
-    const reward = Number(plans[0]?.points_reward) || 0;
+    const [plans] = planId ? await connection.query('SELECT name, points_reward FROM pricing_plans WHERE id = ?', [planId]) : [[]];
+    const reward = Number.isFinite(Number(pointsOverride)) ? Number(pointsOverride) : (Number(plans[0]?.points_reward) || 0);
     if (reward <= 0) return;
+    if (paymentId) {
+      const [[existing]] = await connection.query(
+        "SELECT id FROM points_transactions WHERE reference_type = 'payment' AND reference_id = ? LIMIT 1",
+        [paymentId],
+      );
+      if (existing) return;
+    }
 
     await connection.query(
       `INSERT INTO client_points (client_id, total_points) VALUES (?, ?)

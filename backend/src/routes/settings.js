@@ -57,6 +57,13 @@ const defaultMenuItems = [
   'settings',
   'management',
 ];
+const allowedMenuItems = [...new Set([
+  ...defaultMenuItems,
+  'messages',
+  'admin-panel',
+  'manual-notifications',
+  'pages',
+])];
 
 export async function ensureSettingsSchema(connection) {
   await connection.query(`
@@ -159,10 +166,7 @@ function renderTestTemplate(value) {
 function normalizeMenuItems(items) {
   if (!Array.isArray(items)) return null;
   const uniqueItems = [...new Set(items)];
-  if (
-    uniqueItems.length !== defaultMenuItems.length
-    || uniqueItems.some((item) => typeof item !== 'string' || !defaultMenuItems.includes(item))
-  ) {
+  if (!uniqueItems.length || uniqueItems.some((item) => typeof item !== 'string' || !allowedMenuItems.includes(item))) {
     return null;
   }
   return uniqueItems;
@@ -177,7 +181,7 @@ function parseMenuItems(value) {
   }
 }
 
-router.use(authenticateToken, authorizeRole(['coach']));
+router.use(authenticateToken, authorizeRole(['coach', 'admin']));
 
 router.get('/menu', async (req, res) => {
   const connection = await pool.getConnection();

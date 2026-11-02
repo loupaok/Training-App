@@ -235,6 +235,7 @@ interface ClientRecord {
   intakeFiles?: IntakeFile[];
   subscription?: Subscription;
   upcomingSubscription?: Subscription;
+  upcomingSubscriptions?: Subscription[];
   updateSchedule?: UpdateSchedule;
 }
 
@@ -1527,6 +1528,9 @@ function OverviewTab({
 
   const latestPayment = client.payments?.[0];
   const pendingPayment = client.payments?.find((payment) => ["pending", "pending_payment"].includes(payment.status || "")) || null;
+  const upcomingSubscriptions = client.upcomingSubscriptions?.length
+    ? client.upcomingSubscriptions
+    : client.upcomingSubscription ? [client.upcomingSubscription] : [];
   const selectedUpdateDay = String(client.updateSchedule?.day_of_week ?? onboarding.update_day ?? "");
 
   const sectionsMap: Record<string, ReactNode> = {
@@ -1692,7 +1696,7 @@ function OverviewTab({
         </CardContent>
       </Card>
     ),
-    subscription: (client.subscription || client.upcomingSubscription) ? (
+    subscription: (client.subscription || upcomingSubscriptions.length) ? (
       <Card className="overflow-hidden">
         <CardHeader className="space-y-3 pb-4">
           <CardTitle className="text-lg">Συνδρομή</CardTitle>
@@ -1740,24 +1744,41 @@ function OverviewTab({
             </div>
           </div>
 
-          {client.upcomingSubscription && (
+          {upcomingSubscriptions.length > 0 && (
             <>
               <Separator />
-              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold">Επόμενο πλάνο</p>
-                  <Badge variant="secondary">Πληρωμένο</Badge>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3 px-1">
+                  <p className="text-sm font-semibold">Επόμενες ενεργές συνδρομές</p>
+                  <Badge variant="secondary">{upcomingSubscriptions.length}</Badge>
                 </div>
-                <p className="mt-2 text-sm font-medium">{client.upcomingSubscription.plan_name}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Ξεκινά {shortDate(client.upcomingSubscription.start_date)} · {money(client.upcomingSubscription.price, client.upcomingSubscription.currency || "EUR")}</p>
+                {upcomingSubscriptions.map((upcoming) => (
+                  <div key={upcoming.id} className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold">{upcoming.plan_name}</p>
+                      <Badge variant="secondary">Πληρωμένο</Badge>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">Ξεκινά {shortDate(upcoming.start_date)} · {money(upcoming.price, upcoming.currency || "EUR")}</p>
+                  </div>
+                ))}
               </div>
             </>
           )}
 
           {pendingPayment && (
-            <Button type="button" variant="lime" onClick={() => onApprovePayment(pendingPayment.id)} disabled={approvingPayment} className="h-10 w-full font-extrabold">
-              {approvingPayment ? "Έγκριση..." : "Έγκριση πληρωμής"}
-            </Button>
+            <div className="space-y-2">
+              <p className="px-1 text-xs font-bold text-muted-foreground">Τρόπος: {paymentMethodLabel(pendingPayment.method)}</p>
+              {pendingPayment.method === "bank_transfer" || pendingPayment.method === "bank" ? (
+                pendingPayment.proof_url ? (
+                  <Button asChild type="button" variant="outline" className="h-10 w-full rounded-full font-extrabold">
+                    <a href={resolveMediaUrl(pendingPayment.proof_url)} target="_blank" rel="noreferrer"><FileText className="mr-2 h-4 w-4" />Προβολή αποδεικτικού εμβάσματος</a>
+                  </Button>
+                ) : <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">Δεν έχει ανέβει αποδεικτικό τραπεζικού εμβάσματος.</p>
+              ) : <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">Δεν απαιτείται αποδεικτικό για αυτόν τον τρόπο πληρωμής.</p>}
+              <Button type="button" variant="lime" onClick={() => onApprovePayment(pendingPayment.id)} disabled={approvingPayment} className="h-10 w-full font-extrabold">
+                {approvingPayment ? "Έγκριση..." : "Έγκριση πληρωμής"}
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -2361,6 +2382,9 @@ function PaymentsTab({
   const subscriptionMeta = client.subscription
     ? subscriptionStatusMeta(client.subscription.status, client.subscription.end_date)
     : null;
+  const upcomingSubscriptions = client.upcomingSubscriptions?.length
+    ? client.upcomingSubscriptions
+    : client.upcomingSubscription ? [client.upcomingSubscription] : [];
 
   const openPaymentDialog = (nextOpen: boolean) => {
     if (nextOpen) {
@@ -2407,6 +2431,26 @@ function PaymentsTab({
       </div>
 
       <SubscriptionManagement clientId={clientId} subscription={client.subscription} onUpdated={onUpdated} />
+
+      {upcomingSubscriptions.length > 0 && (
+        <Card className="border-border">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Επόμενες ενεργές συνδρομές</CardTitle>
+            <p className="text-sm text-muted-foreground">Έχουν πληρωθεί και θα ενεργοποιηθούν με τη σειρά που εμφανίζονται.</p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {upcomingSubscriptions.map((upcoming, index) => (
+              <div key={upcoming.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
+                <div>
+                  <p className="text-sm font-extrabold">{index + 1}. {upcoming.plan_name}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Ξεκινά {shortDate(upcoming.start_date)} · λήγει {shortDate(upcoming.end_date)}</p>
+                </div>
+                <div className="flex items-center gap-3"><p className="text-sm font-bold">{money(upcoming.price, upcoming.currency || "EUR")}</p><Badge variant="secondary">Πληρωμένο</Badge></div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="overflow-hidden p-0">
         <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-800">
@@ -2509,6 +2553,7 @@ function PaymentsTab({
             <TableHead className="px-5 py-4">Ποσό</TableHead>
             <TableHead className="px-5 py-4">Τρόπος</TableHead>
             <TableHead className="px-5 py-4">Status</TableHead>
+            <TableHead className="px-5 py-4">Αποδεικτικό</TableHead>
             <TableHead className="px-5 py-4">Σημειώσεις</TableHead>
             <TableHead className="px-5 py-4">Ενέργειες</TableHead>
           </TableRow>
@@ -2523,6 +2568,13 @@ function PaymentsTab({
               </TableCell>
               <TableCell className="whitespace-normal px-5 py-4">
                 <PaymentStatus status={payment.status} />
+              </TableCell>
+              <TableCell className="whitespace-normal px-5 py-4">
+                {payment.proof_url ? (
+                  <Button asChild type="button" variant="outline" size="sm" className="h-8 rounded-full px-3 text-xs font-bold">
+                    <a href={resolveMediaUrl(payment.proof_url)} target="_blank" rel="noreferrer"><FileText className="mr-1.5 h-3.5 w-3.5" />Έμβασμα</a>
+                  </Button>
+                ) : payment.method === "bank_transfer" || payment.method === "bank" ? <span className="text-xs text-muted-foreground">Δεν ανέβηκε αποδεικτικό εμβάσματος</span> : <span className="text-xs text-muted-foreground">—</span>}
               </TableCell>
               <TableCell className="max-w-44 whitespace-normal px-5 py-4">
                 {payment.notes ? (
@@ -2562,7 +2614,7 @@ function PaymentsTab({
           ))}
           {!payments.length && (
             <TableRow>
-              <TableCell colSpan={6} className="whitespace-normal px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
+              <TableCell colSpan={7} className="whitespace-normal px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
                 Δεν υπάρχουν πληρωμές ακόμα.
               </TableCell>
             </TableRow>

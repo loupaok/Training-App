@@ -16,6 +16,7 @@ import {
   Pencil,
   Save,
   ImagePlus,
+  FileText,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,6 +77,10 @@ interface MediaAssetItem {
 
 function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+function isPdf(url?: string | null): boolean {
+  return /\.pdf(?:$|[?#])/i.test(url || "");
 }
 
 function flattenFolderOptions(folders: MediaFolder[]): Array<{ id: number; label: string }> {
@@ -655,6 +660,7 @@ function GalleryCard({
 }) {
   const src = resolveMediaUrl(item.url);
   const [failed, setFailed] = useState(false);
+  const document = isPdf(item.url);
 
   return (
     <ContextMenu>
@@ -674,7 +680,9 @@ function GalleryCard({
           onKeyDown={(event) => { if (event.key === "Enter") (selectMode ? onToggleSelect : onPreview)(); }}
           className="relative block aspect-square w-full overflow-hidden bg-slate-100 dark:bg-slate-800"
         >
-          {!src || failed ? (
+          {document ? (
+            <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-muted text-muted-foreground"><FileText className="h-10 w-10" /><span className="rounded-full bg-card px-2.5 py-1 text-[11px] font-extrabold text-foreground">PDF</span></div>
+          ) : !src || failed ? (
             <div className="flex h-full w-full items-center justify-center">
               <ImageOff className="h-8 w-8 text-slate-300 dark:text-slate-600" />
             </div>
@@ -748,6 +756,7 @@ function PreviewDialog({
 
   if (!item || index === null) return null;
   const src = resolveMediaUrl(item.url);
+  const document = isPdf(item.url);
 
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
@@ -760,8 +769,7 @@ function PreviewDialog({
           <X className="h-5 w-5 text-white" />
         </button>
         <div className="relative flex h-[80vh] items-center justify-center">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={src} alt={item.title} className="max-h-full max-w-full object-contain" />
+          {document ? <iframe title={item.title} src={src} className="h-full w-full bg-white" /> : <img src={src} alt={item.title} className="max-h-full max-w-full object-contain" />}
           {index > 0 && (
             <button type="button" onClick={() => onNavigate(index - 1)} aria-label="Previous" className="absolute left-3 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/10 hover:bg-white/20">
               <ChevronLeft className="h-5 w-5 text-white" />

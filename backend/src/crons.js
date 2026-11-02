@@ -2,8 +2,9 @@ import cron from 'node-cron';
 import fs from 'fs';
 import { pool } from './index.js';
 import { getEmailTemplate, sendMail } from './lib/mailer.js';
-import { updateReminderEmail, subscriptionExpiryEmail } from './lib/email-templates.js';
+import { updateReminderEmail } from './lib/email-templates.js';
 import { ensureSettingsSchema } from './routes/settings.js';
+import { notifyUser } from './routes/clients.js';
 
 // ─── CRON 1 ──────────────────────────────────────────────────────────────────
 // Daily 00:05 — update subscription statuses
@@ -118,34 +119,13 @@ cron.schedule('0 1 * * *', async () => {
 });
 
 // ─── CRON 3 ──────────────────────────────────────────────────────────────────
-// Daily 09:00 — send expiry notification emails
-// - Client: notified on 7 days before expiry
-// - Coach: notified on 3 days before expiry
+// Daily 09:00 — coach reminder for subscriptions expiring in 3 days.
+// Client reminders are managed by the configurable subscription_expiry job,
+// which respects the client's Push/Email preferences.
 cron.schedule('0 9 * * *', async () => {
   console.log('[CRON] Running expiry notifications...');
   try {
     const connection = await pool.getConnection();
-
-    // Subscriptions expiring in exactly 7 days → notify client
-    const [clientSubs] = await connection.query(
-      `SELECT s.id, s.plan_name, s.end_date,
-              uc.email AS client_email, uc.full_name AS client_name
-       FROM subscriptions s
-       JOIN users uc ON uc.id = s.client_id
-       WHERE s.end_date = DATE_ADD(CURDATE(), INTERVAL 7 DAY)
-         AND s.status IN ('active', 'expiring_soon')`
-    );
-
-    for (const sub of clientSubs) {
-      await sendMail(
-        sub.client_email,
-        'Your subscription is expiring soon',
-        `<p>Hi ${sub.client_name},</p>
-         <p>Your <strong>${sub.plan_name}</strong> subscription expires on <strong>${new Date(sub.end_date).toLocaleDateString('el-GR')}</strong>.</p>
-         <p>Please contact your coach to renew.</p>`
-      );
-      console.log(`[CRON] Expiry email sent to client: ${sub.client_email}`);
-    }
 
     // Subscriptions expiring in exactly 3 days → notify coach
     const [coachSubs] = await connection.query(
@@ -171,7 +151,7 @@ cron.schedule('0 9 * * *', async () => {
     }
 
     connection.release();
-    console.log(`[CRON] Expiry notifications — clients: ${clientSubs.length}, coaches: ${coachSubs.length}`);
+    console.log(`[CRON] Expiry notifications — coaches: ${coachSubs.length}`);
   } catch (err) {
     console.error('[CRON] Expiry notifications failed:', err.message);
   }
@@ -244,8 +224,8 @@ async function runUpdateReminder() {
 }
 
 // ─── CRON 5 ──────────────────────────────────────────────────────────────────
-// Daily 08:00 — email clients whose subscription expires in exactly 7 days
-// (separate from CRON 3's existing 09:00 expiry notifications, left untouched).
+// Configurable daily reminder — clients whose subscription expires in exactly 7 days.
+// notifyUser records the in-app notification and honours the client's Push/Email choices.
 async function runSubscriptionExpiry() {
   console.log('[CRON] Running subscription expiry reminders...');
   let connection;
@@ -253,7 +233,8 @@ async function runSubscriptionExpiry() {
     connection = await pool.getConnection();
 
     const [expiringSubs] = await connection.query(
-      `SELECT uc.email AS client_email, uc.full_name AS client_name
+      `SELECT uc.id AS client_id, uc.email AS client_email, uc.full_name AS client_name,
+              s.plan_name, s.end_date
        FROM subscriptions s
        JOIN users uc ON uc.id = s.client_id
        WHERE s.end_date = DATE_ADD(CURDATE(), INTERVAL 7 DAY)
@@ -261,17 +242,13 @@ async function runSubscriptionExpiry() {
     );
 
     for (const sub of expiringSubs) {
-      const name = sub.client_name || sub.client_email;
       try {
-        const renewUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client-billing`;
-        const template = await getEmailTemplate('subscription_expiry', {
-          clientName: name,
-          daysLeft: 7,
-          renewUrl,
-        }, connection);
-        await sendMail({
-          to: sub.client_email,
-          ...(template || subscriptionExpiryEmail(name, 7)),
+        await notifyUser(connection, sub.client_id, {
+          clientId: sub.client_id,
+          type: 'subscription_expiring',
+          title: 'Η συνδρομή σου λήγει σε 7 ημέρες',
+          body: `Το πλάνο «${sub.plan_name}» λήγει στις ${new Date(sub.end_date).toLocaleDateString('el-GR')}. Ανανεώσέ το έγκαιρα για να συνεχίσεις χωρίς διακοπή.`,
+          linkUrl: '/client-billing',
         });
       } catch (e) {
         console.error('Email failed', e);
