@@ -1,6 +1,12 @@
 import { getNativePreference, nativeStorageKeys } from "@/lib/native/preferences";
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "/api";
+const localBrowserApiBase = typeof window !== "undefined"
+  && window.location.protocol === "http:"
+  && window.location.hostname === "localhost"
+  ? "http://localhost:5000/api"
+  : "/api";
+
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || localBrowserApiBase;
 
 export interface ApiRequestOptions extends RequestInit {
   headers?: Record<string, string>;

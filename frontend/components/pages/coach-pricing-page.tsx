@@ -3,6 +3,8 @@
 import { DragEvent, useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock3,
   Copy,
   CreditCard,
@@ -14,6 +16,7 @@ import {
   Plus,
   Pencil,
   Star,
+  Trash2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -105,9 +108,9 @@ type PaymentSettings = {
   paymentNote: string;
   bankAccounts: BankAccount[];
 };
-type PackageDuration = { id: number; months: number; basePriceCents: number; label?: string | null; isActive: boolean; sortOrder: number };
+type PackageDuration = { id: number; months: number; title?: string | null; basePriceCents: number; label?: string | null; isActive: boolean; sortOrder: number; duplicateFromMonths?: number };
 type PackageOffer = { id?: number; months: number; priceCents: number; features: string[]; isActive: boolean };
-type AdminPackage = { id: number; key: string; name: string; monthlyAddonCents: number; label?: string | null; sortOrder: number; isVisible: boolean; isUpgradable: boolean; features: { id?: number; text: string; sortOrder?: number }[]; offers?: PackageOffer[] };
+type AdminPackage = { id: number; key: string; name: string; monthlyAddonCents: number; label?: string | null; sortOrder: number; parentPackageId?: number | null; isVisible: boolean; isUpgradable: boolean; features: { id?: number; text: string; sortOrder?: number }[]; offers?: PackageOffer[] };
 type PackageCatalog = { packages: AdminPackage[]; durations: PackageDuration[]; commonFeatures: { id?: number; text: string; sortOrder?: number }[]; pointsPerEuro: number };
 const blankPlan = (): Plan => ({
   name: "Νέο πλάνο",
@@ -304,7 +307,7 @@ function CoachPricingContent() {
   return (
     <CoachShell title="Πλάνα & Τιμές" user={user} logout={logout}>
       <main className="mx-auto max-w-[var(--container-7xl)] space-y-6 p-4 sm:p-6 lg:px-10 lg:py-8">
-        <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <header>
           <div>
             <h1 className="text-[30px] font-extrabold italic tracking-[-.6px]">
               Πλάνα & Τιμές
@@ -312,25 +315,6 @@ function CoachPricingContent() {
             <p className="mt-1 text-sm text-muted-foreground">
               Τα πλάνα συνδρομής και πώς σε πληρώνουν οι πελάτες σου.
             </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              className="h-11 rounded-full border-foreground px-5"
-              onClick={() =>
-                window.open("/client-billing", "_blank", "noopener,noreferrer")
-              }
-            >
-              <Eye className="mr-2 h-4 w-4" />
-              Σελίδα πελατών
-            </Button>
-            <Button
-              className="h-11 rounded-full bg-accent px-5 font-extrabold text-accent-foreground hover:bg-accent/85"
-              onClick={() => document.getElementById("package-builder")?.scrollIntoView({ behavior: "smooth", block: "start" })}
-            >
-              <Plus className="mr-1 h-4 w-4" />
-              Νέο πλάνο
-            </Button>
           </div>
         </header>
         <Tabs value={tab} onValueChange={setActiveTab}>
@@ -441,10 +425,12 @@ function CoachPricingContent() {
 
 function PackageBuilder({ catalog, onSaved }: { catalog: PackageCatalog | null; onSaved: () => Promise<void> }) {
   const [editing, setEditing] = useState<AdminPackage | null>(null);
+  const [editingDuration, setEditingDuration] = useState<number | null>(null);
   const [durations, setDurations] = useState<PackageDuration[]>([]);
   const [common, setCommon] = useState<string[]>([]);
   const [pointsRate, setPointsRate] = useState(5);
   const [saving, setSaving] = useState(false);
+  const [draftPackages, setDraftPackages] = useState<AdminPackage[]>([]);
 
   useEffect(() => {
     if (!catalog) return;
@@ -458,14 +444,23 @@ function PackageBuilder({ catalog, onSaved }: { catalog: PackageCatalog | null; 
   const saveSettings = async () => {
     setSaving(true);
     try {
-      await Promise.all([
-        api.put("/pricing-plans/package-durations", { durations }),
-        api.put("/pricing-plans/common-features", { features: common }),
-        api.put("/pricing-plans/points-rate", { pointsPerEuro: pointsRate }),
-      ]);
+      await api.put("/pricing-plans/package-durations", { durations });
+      await api.put("/pricing-plans/common-features", { features: common });
+      await api.put("/pricing-plans/points-rate", { pointsPerEuro: pointsRate });
+      const pendingDrafts = [...draftPackages];
+      const createdIds = new Map<number, number>();
+      while (pendingDrafts.length) {
+        const nextIndex = pendingDrafts.findIndex((draft) => !draft.parentPackageId || draft.parentPackageId > 0 || createdIds.has(draft.parentPackageId));
+        if (nextIndex < 0) throw new Error("Υπάρχει κυκλική επέκταση μεταξύ πρόχειρων πακέτων.");
+        const [draft] = pendingDrafts.splice(nextIndex, 1);
+        const created = await api.post<AdminPackage>("/pricing-plans/packages", { ...draft, id: undefined, parentPackageId: draft.parentPackageId && draft.parentPackageId < 0 ? createdIds.get(draft.parentPackageId) || null : draft.parentPackageId });
+        createdIds.set(draft.id, created.id);
+      }
+      setDraftPackages([]);
       await onSaved();
       toast.success("Οι ρυθμίσεις πακέτων αποθηκεύτηκαν.");
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Δεν αποθηκεύτηκαν οι ρυθμίσεις."); }
+      return true;
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Δεν αποθηκεύτηκαν οι ρυθμίσεις."); return false; }
     finally { setSaving(false); }
   };
   const savePackage = async () => {
@@ -479,6 +474,14 @@ function PackageBuilder({ catalog, onSaved }: { catalog: PackageCatalog | null; 
           ? editing.features.filter((feature) => feature.text.trim())
           : firstOfferFeatures.map((text, index) => ({ text, sortOrder: index + 1 })),
       };
+      const selectedDurationIsDraft = editingDuration != null && (durations.find((duration) => duration.months === editingDuration)?.id ?? 0) < 0;
+      if (editing.id < 0 || (!editing.id && selectedDurationIsDraft)) {
+        const draft = { ...payload, id: editing.id < 0 ? editing.id : -Date.now() };
+        setDraftPackages((items) => items.some((item) => item.id === draft.id) ? items.map((item) => item.id === draft.id ? draft : item) : [...items, draft]);
+        setEditing(null);
+        toast.success("Το πακέτο προστέθηκε ως πρόχειρο. Θα αποθηκευτεί με τις ρυθμίσεις.");
+        return;
+      }
       if (editing.id) await api.put(`/pricing-plans/packages/${editing.id}`, payload);
       else await api.post("/pricing-plans/packages", payload);
       setEditing(null);
@@ -489,11 +492,37 @@ function PackageBuilder({ catalog, onSaved }: { catalog: PackageCatalog | null; 
   };
   const removePackage = async (item: AdminPackage) => {
     if (!window.confirm(`Διαγραφή του πακέτου «${item.name}»;`)) return;
+    if (item.id < 0) { setDraftPackages((items) => items.filter((entry) => entry.id !== item.id)); toast.success("Το πρόχειρο πακέτο αφαιρέθηκε."); return; }
     try { const result = await api.delete<{ message: string }>(`/pricing-plans/packages/${item.id}`); await onSaved(); toast.success(result.message); }
     catch (error) { toast.error(error instanceof Error ? error.message : "Δεν διαγράφηκε το πακέτο."); }
   };
+  const openPackage = (item: AdminPackage | null, months?: number) => {
+    setEditingDuration(months || null);
+    setEditing(item);
+  };
+  const copyDurationFromPrevious = async (months: number) => {
+    const ordered = [...durations].sort((a, b) => a.months - b.months);
+    const previous = ordered[ordered.findIndex((item) => item.months === months) - 1];
+    if (!previous) return;
+    setSaving(true);
+    try {
+      await Promise.all(catalog.packages.map((pkg) => {
+        const source = pkg.offers?.find((offer) => offer.months === previous.months);
+        const target = pkg.offers?.find((offer) => offer.months === months);
+        const offers = (pkg.offers || []).map((offer) => offer.months === months && source ? {
+          ...offer, priceCents: source.priceCents, features: [...source.features], isActive: source.isActive,
+        } : offer);
+        if (!target || !source) return Promise.resolve();
+        return api.put(`/pricing-plans/packages/${pkg.id}`, { ...pkg, offers });
+      }));
+      await onSaved();
+      toast.success(`Τα πακέτα των ${previous.months} ${previous.months === 1 ? "μηνός" : "μηνών"} αντιγράφηκαν.`);
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Η αντιγραφή δεν ολοκληρώθηκε."); }
+    finally { setSaving(false); }
+  };
+  const catalogWithDrafts: PackageCatalog = { ...catalog, packages: [...catalog.packages, ...draftPackages] };
   return <PackageReferenceLayout
-    catalog={catalog}
+    catalog={catalogWithDrafts}
     durations={durations}
     setDurations={setDurations}
     common={common}
@@ -502,11 +531,13 @@ function PackageBuilder({ catalog, onSaved }: { catalog: PackageCatalog | null; 
     setPointsRate={setPointsRate}
     saving={saving}
     onSaveSettings={saveSettings}
-    onEditPackage={setEditing}
+    onEditPackage={openPackage}
     onRemovePackage={removePackage}
     editing={editing}
     setEditing={setEditing}
     onSavePackage={savePackage}
+    onCopyDuration={copyDurationFromPrevious}
+    editingDuration={editingDuration}
   />;
   /* Legacy builder retained below temporarily while its Sheet editor remains shared.
   <section id="package-builder" className="space-y-5 scroll-mt-6">
@@ -522,6 +553,89 @@ function PackageBuilder({ catalog, onSaved }: { catalog: PackageCatalog | null; 
 }
 
 function PackageReferenceLayout({
+  catalog, durations, setDurations, common, setCommon, pointsRate, setPointsRate, saving, onSaveSettings, onEditPackage, onRemovePackage, editing, setEditing, onSavePackage, onCopyDuration, editingDuration,
+}: {
+  catalog: PackageCatalog;
+  durations: PackageDuration[];
+  setDurations: React.Dispatch<React.SetStateAction<PackageDuration[]>>;
+  common: string[];
+  setCommon: React.Dispatch<React.SetStateAction<string[]>>;
+  pointsRate: number;
+  setPointsRate: React.Dispatch<React.SetStateAction<number>>;
+  saving: boolean;
+  onSaveSettings: () => Promise<boolean>;
+  onEditPackage: (item: AdminPackage | null, months?: number) => void;
+  onRemovePackage: (item: AdminPackage) => Promise<void>;
+  editing: AdminPackage | null;
+  setEditing: React.Dispatch<React.SetStateAction<AdminPackage | null>>;
+  onSavePackage: () => Promise<void>;
+  onCopyDuration: (months: number) => Promise<void>;
+  editingDuration: number | null;
+}) {
+  const [durationAction, setDurationAction] = useState<{ type: "duplicate" | "delete"; duration: PackageDuration } | null>(null);
+  const orderedDurations = [...durations].sort((a, b) => a.sortOrder - b.sortOrder || a.months - b.months);
+  const updateDuration = (months: number, patch: Partial<PackageDuration>) => setDurations((rows) => rows.map((row) => row.months === months ? { ...row, ...patch } : row));
+  const moveDuration = (months: number, direction: -1 | 1) => setDurations((rows) => {
+    const ordered = [...rows].sort((a, b) => a.sortOrder - b.sortOrder || a.months - b.months);
+    const index = ordered.findIndex((item) => item.months === months);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= ordered.length) return rows;
+    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+    return ordered.map((item, itemIndex) => ({ ...item, sortOrder: itemIndex + 1 }));
+  });
+  const duplicateDuration = (duration: PackageDuration) => {
+    const months = Math.max(0, ...orderedDurations.map((item) => item.months)) + 1;
+    if (months > 24) return toast.error("Μπορείς να έχεις διάρκεια έως 24 μήνες.");
+    setDurations((rows) => {
+      const ordered = [...rows].sort((a, b) => a.sortOrder - b.sortOrder || a.months - b.months);
+      const index = ordered.findIndex((item) => item.months === duration.months);
+      ordered.splice(index + 1, 0, { ...duration, id: -Date.now(), months, title: `Αντίγραφο · ${duration.title || `${duration.months} μήνες`}`, duplicateFromMonths: duration.months });
+      return ordered.map((item, itemIndex) => ({ ...item, sortOrder: itemIndex + 1 }));
+    });
+    toast.success("Δημιουργήθηκε αντίγραφο διάρκειας. Αποθήκευσε τις ρυθμίσεις για να διατηρηθεί.");
+  };
+  const deleteDuration = (months: number) => setDurations((rows) => {
+    if (rows.length <= 1) { toast.error("Χρειάζεται τουλάχιστον μία διάρκεια."); return rows; }
+    return rows.filter((item) => item.months !== months).map((item, index) => ({ ...item, sortOrder: index + 1 }));
+  });
+  const openPackage = (pkg: AdminPackage, months: number) => onEditPackage({ ...pkg, features: pkg.features.map((feature) => ({ ...feature })), offers: pkg.offers?.map((offer) => ({ ...offer, features: [...offer.features] })) }, months);
+  const newPackage = (months?: number) => {
+    onEditPackage({ id: 0, key: "", name: "Νέο πακέτο", monthlyAddonCents: 0, label: null, sortOrder: catalog.packages.length + 1, isVisible: true, isUpgradable: true, features: [{ text: "", sortOrder: 1 }], offers: orderedDurations.map((duration) => ({ months: duration.months, priceCents: duration.basePriceCents, features: [], isActive: months ? duration.months === months : duration.isActive })) }, months);
+  };
+  const addDuration = () => {
+    const months = Math.max(0, ...orderedDurations.map((duration) => duration.months)) + 1;
+    setDurations((rows) => [...rows, { id: -Date.now(), months, title: `Νέα διάρκεια · ${months} μήνες`, basePriceCents: 0, label: null, isActive: true, sortOrder: rows.length + 1 }]);
+  };
+
+  return <section id="package-builder" className="scroll-mt-6 space-y-5">
+    <div><h2 className="text-xl font-extrabold">Πακέτα ανά διάρκεια</h2><p className="mt-1 text-sm text-muted-foreground">Άνοιξε τη διάρκεια που θες. Κάθε πακέτο έχει δική του τιμή και παροχές.</p></div>
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-start">
+      <div className="space-y-5">
+        <Card className="rounded-[20px] border-border bg-card shadow-none"><CardContent className="p-[18px] sm:p-[22px]">
+          <Accordion multiple defaultValue={[String(orderedDurations[0]?.months || 1)]} className="space-y-3">
+            {orderedDurations.map((duration, durationIndex) => <AccordionItem key={duration.id} value={String(duration.months)} className="overflow-hidden rounded-[18px] border border-border bg-card px-0">
+              <AccordionTrigger className="px-4 py-4 sm:px-5"><span className="flex min-w-0 items-center gap-3 text-left"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-foreground text-[13px] font-extrabold text-accent">{duration.months}</span><span><b className="block text-[16px]">{duration.title || `${duration.months} ${duration.months === 1 ? "μήνας" : "μήνες"}`}</b><small className="text-xs font-medium text-muted-foreground">{catalog.packages.length} πακέτα · τιμές και παροχές ανεξάρτητες</small></span>{duration.label && <Badge className="ml-1 bg-accent text-accent-foreground">{duration.label}</Badge>}</span></AccordionTrigger>
+              <AccordionContent className="border-t border-border px-4 pb-5 pt-4 sm:px-5">
+                <div className="mb-4 flex flex-col gap-3 rounded-[14px] bg-muted p-3 sm:flex-row sm:items-center"><div className="flex min-w-0 flex-1 items-center gap-3"><Switch checked={duration.isActive} onCheckedChange={(value) => updateDuration(duration.months, { isActive: value })} /><div><b className="block text-sm">{duration.isActive ? "Διαθέσιμη στους πελάτες" : "Μη διαθέσιμη στους πελάτες"}</b><span className="text-xs text-muted-foreground">Αν κλείσει, δεν μπορούν να επιλέξουν αυτή τη διάρκεια.</span></div></div><Select value={duration.label || undefined} onValueChange={(value) => updateDuration(duration.months, { label: value === "clear" ? null : value })}><SelectTrigger className="h-10 w-full rounded-xl bg-card sm:w-[172px]">{duration.label ? <span className="rounded-full bg-accent px-2 py-1 text-[11px] font-extrabold text-accent-foreground">{duration.label}</span> : <SelectValue placeholder="Ετικέτα" />}</SelectTrigger><SelectContent><SelectItem value="clear">Χωρίς ετικέτα</SelectItem><SelectItem value="Δημοφιλές">Δημοφιλές</SelectItem><SelectItem value="Καλύτερη τιμή">Καλύτερη τιμή</SelectItem></SelectContent></Select></div>
+                <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]"><Field label="Τίτλος accordion"><Input className="h-10 rounded-xl bg-muted font-semibold" value={duration.title || `${duration.months} ${duration.months === 1 ? "μήνας" : "μήνες"}`} onChange={(event) => updateDuration(duration.months, { title: event.target.value })} /></Field><div className="flex items-end gap-1"><Button type="button" size="icon" variant="outline" className="h-10 w-10 rounded-xl" disabled={durationIndex === 0} onClick={() => moveDuration(duration.months, -1)} aria-label="Μετακίνηση πάνω"><ChevronUp className="h-4 w-4" /></Button><Button type="button" size="icon" variant="outline" className="h-10 w-10 rounded-xl" disabled={durationIndex === orderedDurations.length - 1} onClick={() => moveDuration(duration.months, 1)} aria-label="Μετακίνηση κάτω"><ChevronDown className="h-4 w-4" /></Button><Button type="button" size="icon" variant="outline" className="h-10 w-10 rounded-xl" onClick={() => setDurationAction({ type: "duplicate", duration })} aria-label="Διπλότυπο διάρκειας"><Copy className="h-4 w-4" /></Button><Button type="button" size="icon" variant="outline" className="h-10 w-10 rounded-xl text-destructive hover:text-destructive" disabled={orderedDurations.length <= 1} onClick={() => setDurationAction({ type: "delete", duration })} aria-label="Διαγραφή διάρκειας"><Trash2 className="h-4 w-4" /></Button></div></div>
+                <div className="grid gap-3 lg:grid-cols-2">{catalog.packages.filter((pkg) => pkg.offers?.find((item) => item.months === duration.months)?.isActive).map((pkg, packageIndex) => { const offer = pkg.offers?.find((item) => item.months === duration.months); const features = offer?.features?.filter(Boolean) || []; const parent = pkg.parentPackageId ? catalog.packages.find((item) => item.id === pkg.parentPackageId) : null; const parentFeatures = parent?.offers?.find((item) => item.months === duration.months)?.features || []; const ownFeatures = parent ? features.slice(parentFeatures.length) : features; const firstOffer = pkg.offers?.find((item) => item.months === 1); const threeOffer = pkg.offers?.find((item) => item.months === 3); return <div key={pkg.id} className="flex min-h-[290px] flex-col rounded-[18px] border border-border bg-card p-[18px]"><div className="flex items-center gap-2"><GripVertical className="h-4 w-4 text-[#c8c8c4]" /><b className="text-[17px]">{pkg.name}</b>{pkg.label && <Badge className={pkg.label === "Πλήρης πρόσβαση" ? "bg-foreground text-accent" : "bg-accent text-accent-foreground"}>{pkg.label}</Badge>}<span className="ml-auto flex gap-[3px]">{[0, 1, 2, 3].map((level) => <i key={level} className={`h-[5px] w-[14px] rounded-full ${level <= packageIndex ? "bg-accent" : "bg-muted"}`} />)}</span></div><div className="mt-3 flex h-[42px] items-center justify-between gap-3"><p className="text-[25px] font-extrabold italic leading-none tracking-[-.6px]">{money((offer?.priceCents || 0) / 100)}</p>{parent ? <span className="rounded-xl border border-border px-2.5 py-1.5 text-right text-[12px] font-extrabold">επέκταση<br />{parent.name}</span> : <span className="text-right text-[12px] font-bold text-muted-foreground">Αυτόνομο<br />πακέτο</span>}</div><div className="mt-3 space-y-1.5 border-t border-border pt-3"><p className="text-[12px] font-extrabold text-foreground">{parent ? <>Όλα του {parent.name}, και: <small className="text-[10px] text-muted-foreground">αυτόματα</small></> : "Περιλαμβάνει:"}</p>{ownFeatures.slice(0, 5).map((feature) => <p key={feature} className="flex gap-2 text-[13px] leading-[1.4]"><span className="mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full bg-accent text-accent-foreground"><CheckCircle2 className="h-2.5 w-2.5" /></span>{feature}</p>)}</div><div className="mt-auto flex items-center justify-between gap-2 pt-3"><span className="text-[12px] text-muted-foreground">{firstOffer ? `1μ ${money(firstOffer.priceCents / 100)}` : ""}{threeOffer ? ` · 3μ ${money(threeOffer.priceCents / 100)}` : ""}</span><Button type="button" variant="outline" className="h-9 rounded-full border-border px-3 text-[12px] font-extrabold" onClick={() => openPackage(pkg, duration.months)}><Pencil className="mr-1 h-3.5 w-3.5" />Επεξεργασία</Button></div></div>; })}</div>
+                {!catalog.packages.some((pkg) => pkg.offers?.find((item) => item.months === duration.months)?.isActive) && <p className="mt-4 rounded-[14px] border border-dashed border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">Δεν έχεις προσθέσει ακόμη πακέτο σε αυτή τη διάρκεια.</p>}
+                <Button type="button" variant="outline" className="mt-4 h-10 rounded-full border-[1.5px] border-foreground font-extrabold" onClick={() => newPackage(duration.months)}><Plus className="mr-1.5 h-4 w-4" />Νέο πακέτο σε αυτή τη διάρκεια</Button>
+              </AccordionContent>
+            </AccordionItem>)}
+          </Accordion>
+          <Button type="button" variant="outline" className="mt-4 h-11 w-full rounded-[14px] border-dashed border-border font-extrabold" onClick={addDuration}><Plus className="mr-1.5 h-4 w-4" />Προσθήκη νέας διάρκειας</Button>
+        </CardContent></Card>
+        <Card className="rounded-[20px] border-border bg-card shadow-none"><CardContent className="space-y-3 p-[22px]"><div className="flex items-center justify-between gap-3"><div><h3 className="text-[16px] font-extrabold">Κοινές παροχές όλων των πακέτων</h3><p className="text-xs text-muted-foreground">Εμφανίζονται σε κάθε επιλογή, ανεξάρτητα από διάρκεια.</p></div><Badge className="bg-muted text-foreground">{common.filter(Boolean).length}</Badge></div><Textarea className="min-h-40 rounded-[14px] bg-muted" value={common.join("\n")} onChange={(event) => setCommon(event.target.value.split("\n").map((item) => item.trim()))} /><div className="flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Μία παροχή σε κάθε γραμμή.</p><Button type="button" variant="outline" className="h-9 rounded-full border-border text-xs font-extrabold" onClick={() => setCommon((items) => [...items, ""])}><Plus className="mr-1.5 h-3.5 w-3.5" />Πρόσθεσε παροχή</Button></div></CardContent></Card>
+      </div>
+      <aside className="space-y-4 xl:sticky xl:top-6"><Card className="rounded-[20px] border-border bg-card shadow-none"><CardContent className="space-y-3 p-5"><h3 className="text-[15px] font-extrabold">Πόντοι από πληρωμές</h3><div className="flex items-center gap-3"><Input type="number" min={0} className="h-[42px] w-20 rounded-xl text-center text-lg font-extrabold" value={pointsRate} onChange={(event) => setPointsRate(Number(event.target.value || 0))} /><p className="text-sm font-bold">πόντοι ανά 1 €</p></div><p className="text-xs leading-5 text-muted-foreground">Οι πόντοι υπολογίζονται όταν εγκριθεί η πληρωμή.</p></CardContent></Card><Button className="h-[48px] w-full rounded-full bg-accent font-extrabold text-accent-foreground hover:bg-accent/85" disabled={saving} onClick={() => void onSaveSettings()}>{saving ? "Αποθήκευση..." : "Αποθήκευση ρυθμίσεων"}</Button><a href="/client-billing" target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-[20px] bg-foreground p-4 text-background transition-transform hover:-translate-y-0.5"><span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[11px] bg-accent text-accent-foreground"><Eye className="h-[17px] w-[17px]" /></span><span className="min-w-0 flex-1"><b className="block text-sm">Δες όπως ο πελάτης</b><small className="block text-xs text-[#9a9a9a]">Εγγραφή & Συνδρομή</small></span><span aria-hidden="true" className="text-lg">→</span></a></aside>
+    </div>
+    <PackageBuilderSheetReference editing={editing} setEditing={setEditing} saving={saving} onSave={onSavePackage} packages={catalog.packages} durations={orderedDurations} onDelete={onRemovePackage} initialDuration={editingDuration} />
+    <AlertDialog open={Boolean(durationAction)} onOpenChange={(open) => !open && setDurationAction(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{durationAction?.type === "duplicate" ? "Αντιγραφή διάρκειας;" : "Διαγραφή διάρκειας;"}</AlertDialogTitle><AlertDialogDescription>{durationAction?.type === "duplicate" ? `Θα δημιουργηθεί νέο accordion ως αντίγραφο του «${durationAction.duration.title || `${durationAction.duration.months} μήνες`}», με τις ίδιες τιμές και παροχές.` : `Θα αφαιρεθεί η διάρκεια «${durationAction?.duration.title || `${durationAction?.duration.months} μήνες`}» και οι προσφορές της. Η ενέργεια εφαρμόζεται όταν αποθηκεύσεις τις ρυθμίσεις.`}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Άκυρο</AlertDialogCancel><AlertDialogAction className={durationAction?.type === "delete" ? "bg-destructive text-white hover:bg-destructive/90" : "bg-foreground text-background hover:bg-foreground/90"} onClick={() => { if (!durationAction) return; if (durationAction.type === "duplicate") duplicateDuration(durationAction.duration); else deleteDuration(durationAction.duration.months); setDurationAction(null); }}>{durationAction?.type === "duplicate" ? "Ναι, αντιγραφή" : "Ναι, διαγραφή"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  </section>;
+}
+
+function LegacyPackageReferenceLayout({
   catalog, durations, setDurations, common, setCommon, pointsRate, setPointsRate, saving, onSaveSettings, onEditPackage, onRemovePackage, editing, setEditing, onSavePackage,
 }: {
   catalog: PackageCatalog;
@@ -562,11 +676,83 @@ function PackageReferenceLayout({
       </div>
       <aside className="space-y-5 xl:sticky xl:top-6"><Card className="rounded-[20px] border-border bg-card shadow-none"><CardContent className="space-y-3 p-5"><div className="flex items-baseline justify-between"><h2 className="text-[15px] font-extrabold">Τελικές τιμές (€)</h2><span className="text-[11px] font-extrabold tracking-[1px] text-muted-foreground">ΑΥΤΟΜΑΤΑ</span></div><div className="overflow-x-auto"><table className="w-full min-w-[285px] text-[13px]"><thead className="text-[10px] font-extrabold text-muted-foreground"><tr><th></th>{catalog.packages.map((pkg) => <th key={pkg.id} className="pb-1 text-right">{pkg.name.toUpperCase().slice(0, 6)}</th>)}</tr></thead><tbody>{durations.map((duration) => <tr key={duration.id}><td className="py-[7px] font-extrabold">{duration.months}μ</td>{catalog.packages.map((pkg) => <td key={pkg.id} className="py-[7px] text-right font-medium">{money(priceFor(pkg, duration)).replace("€", "").trim()}</td>)}</tr>)}</tbody></table></div><p className="text-xs leading-5 text-muted-foreground">Τιμή Βασικού + αναβάθμιση × μήνες. Έτσι ακριβώς τις βλέπει ο πελάτης.</p></CardContent></Card><Card className="rounded-[20px] border-border bg-card shadow-none"><CardContent className="space-y-3 p-5"><h2 className="text-[15px] font-extrabold">Πόντοι από πληρωμές</h2><div className="flex items-center gap-3"><Input type="number" min={0} className="h-[42px] w-20 rounded-xl text-center text-lg font-extrabold" value={pointsRate} onChange={(event) => setPointsRate(Number(event.target.value || 0))}/><p className="text-sm font-bold">πόντοι ανά 1 € πληρωμής</p></div>{durations[2] && catalog.packages[1] && <div className="rounded-xl bg-[color:var(--sp-lime-soft)] p-3 text-[13px]"><p>{money(priceFor(catalog.packages[1], durations[2]))} → <b>{new Intl.NumberFormat("el-GR").format(Math.round(priceFor(catalog.packages[1], durations[2]) / 100 * pointsRate))} πόντοι</b></p><p className="mt-1 text-[#3f6b00] dark:text-accent">= κουπόνι eshop</p></div>}</CardContent></Card><Button className="h-[46px] w-full rounded-full bg-accent font-extrabold text-accent-foreground hover:bg-accent/85" disabled={saving} onClick={() => void onSaveSettings()}>{saving ? "Αποθήκευση..." : "Αποθήκευση"}</Button><a href="/client-billing" target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-[20px] bg-foreground p-4 text-background"><span className="grid h-[38px] w-[38px] place-items-center rounded-[11px] bg-accent text-accent-foreground"><Eye className="h-[17px] w-[17px]"/></span><span className="flex-1"><b className="block text-sm">Δες όπως ο πελάτης</b><small className="text-xs text-muted-foreground">Εγγραφή & Συνδρομή</small></span></a></aside>
     </div>
-    <PackageBuilderSheetReference editing={editing} setEditing={setEditing} saving={saving} onSave={onSavePackage} packages={catalog.packages} durations={durations} onDelete={onRemovePackage} />
+    <PackageBuilderSheetReference editing={editing} setEditing={setEditing} saving={saving} onSave={onSavePackage} packages={catalog.packages} durations={durations} onDelete={onRemovePackage} initialDuration={null} />
   </section>;
 }
 
-function PackageBuilderSheetReference({ editing, setEditing, saving, onSave, packages, durations, onDelete }: { editing: AdminPackage | null; setEditing: React.Dispatch<React.SetStateAction<AdminPackage | null>>; saving: boolean; onSave: () => Promise<void>; packages: AdminPackage[]; durations: PackageDuration[]; onDelete: (item: AdminPackage) => Promise<void> }) {
+function PackageBuilderSheetReference({ editing, setEditing, saving, onSave, packages, durations, onDelete, initialDuration }: { editing: AdminPackage | null; setEditing: React.Dispatch<React.SetStateAction<AdminPackage | null>>; saving: boolean; onSave: () => Promise<void>; packages: AdminPackage[]; durations: PackageDuration[]; onDelete: (item: AdminPackage) => Promise<void>; initialDuration: number | null }) {
+  const [parentChange, setParentChange] = useState<{ parentId: number | null } | null>(null);
+  const packageIndex = editing ? packages.findIndex((item) => item.id === editing.id) : -1;
+  const selectedMonths = initialDuration || durations[0]?.months;
+  const fallbackParent = packageIndex > 0 ? packages[packageIndex - 1] : null;
+  const configuredParent = editing?.parentPackageId === undefined
+    ? fallbackParent
+    : (editing?.parentPackageId ? packages.find((item) => item.id === editing.parentPackageId) || null : null);
+  const previous = configuredParent?.offers?.find((offer) => offer.months === selectedMonths && offer.isActive) ? configuredParent : null;
+  const parentOptions = packages.filter((item) => item.id !== editing?.id && item.offers?.find((offer) => offer.months === selectedMonths && offer.isActive) && (packageIndex < 0 || item.sortOrder < (editing?.sortOrder || 0)));
+  const offers = (editing ? durations.map((duration) => editing.offers?.find((offer) => offer.months === duration.months) || ({
+    months: duration.months,
+    priceCents: duration.basePriceCents + editing.monthlyAddonCents * duration.months,
+    features: editing.features.map((feature) => feature.text).filter(Boolean),
+    isActive: duration.isActive,
+  })) : []) as PackageOffer[];
+  const activeOffer = offers.find((offer) => offer.months === initialDuration) || offers[0];
+  const activeDuration = durations.find((duration) => duration.months === activeOffer?.months);
+  const inheritedFeatures = previous && activeOffer
+    ? (previous.offers?.find((offer) => offer.months === activeOffer.months)?.features || [])
+    : [];
+  const ownFeatures = activeOffer
+    ? (previous ? activeOffer.features.slice(inheritedFeatures.length) : activeOffer.features)
+    : [];
+  const updateOffer = (patch: Partial<PackageOffer>) => editing && activeOffer && setEditing({
+    ...editing,
+    offers: offers.map((offer) => offer.months === activeOffer.months ? { ...offer, ...patch } : offer),
+  });
+  const updateOwnFeatures = (features: string[]) => updateOffer({
+    features: previous ? [...inheritedFeatures, ...features] : features,
+  });
+  const changeParent = (parentId: number | null) => {
+    if (!editing) return;
+    const nextParent = parentId ? packages.find((item) => item.id === parentId) || null : null;
+    setEditing({
+      ...editing,
+      parentPackageId: parentId,
+      offers: offers.map((offer) => {
+        const oldBase = previous?.offers?.find((item) => item.months === offer.months)?.features || [];
+        const extras = previous ? offer.features.slice(oldBase.length) : offer.features;
+        const newBase = nextParent?.offers?.find((item) => item.months === offer.months)?.features || [];
+        return { ...offer, features: nextParent ? [...newBase, ...extras] : extras };
+      }),
+    });
+  };
+
+  return <Sheet open={Boolean(editing)} onOpenChange={(open) => !open && setEditing(null)}>
+    <SheetContent className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-[520px]">
+      <SheetHeader className="flex-row items-center gap-3 border-b border-border px-7 py-[22px]">
+        <span className="flex gap-[3px]">{[0, 1, 2, 3].map((item) => <i key={item} className={`h-[5px] w-[14px] rounded-full ${item <= Math.max(packageIndex, 0) ? "bg-accent" : "bg-muted"}`} />)}</span>
+        <SheetTitle className="text-xl">{editing?.id ? "Επεξεργασία πακέτου" : "Νέο πακέτο"}</SheetTitle>
+      </SheetHeader>
+      {editing && activeOffer && <div className="flex-1 overflow-y-auto px-7 py-[22px]"><div className="space-y-5">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Όνομα"><Input className="h-12 rounded-[14px] bg-muted text-[15px] font-semibold" value={editing.name} onChange={(event) => setEditing({ ...editing, name: event.target.value })} /></Field>
+          <Field label="Ετικέτα"><Select value={editing.label || undefined} onValueChange={(value) => setEditing({ ...editing, label: value === "clear" ? null : value })}><SelectTrigger className="h-12 rounded-[14px] bg-muted">{editing.label ? <span className="rounded-full bg-accent px-2 py-1 text-[11px] font-extrabold text-accent-foreground">{editing.label}</span> : <SelectValue placeholder="" />}</SelectTrigger><SelectContent><SelectItem value="clear">—</SelectItem><SelectItem value="Δημοφιλές">Δημοφιλές</SelectItem><SelectItem value="Καλύτερη τιμή">Καλύτερη τιμή</SelectItem><SelectItem value="Πλήρης πρόσβαση">Πλήρης πρόσβαση</SelectItem></SelectContent></Select></Field>
+        </div>
+        <Field label="Επέκταση του πακέτου"><Select value={previous ? String(previous.id) : "none"} onValueChange={(value) => setParentChange({ parentId: value === "none" ? null : Number(value) })}><SelectTrigger className="h-12 rounded-[14px] bg-muted"><span className="flex flex-1 text-left font-semibold">{previous?.name || "Χωρίς βασικό πακέτο"}</span></SelectTrigger><SelectContent><SelectItem value="none">Χωρίς βασικό πακέτο</SelectItem>{parentOptions.map((item) => <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>)}</SelectContent></Select></Field>
+        <div className="rounded-[14px] bg-muted px-4 py-3 text-xs leading-5 text-muted-foreground">{previous ? <><p>Το {editing.name || "πακέτο"} περιλαμβάνει αυτόματα όλα του «{previous.name}». Παρακάτω αλλάζεις μόνο τις επιπλέον παροχές του.</p><div className="mt-2 space-y-1 border-t border-border pt-2"><b className="text-foreground">Παροχές που κληρονομεί</b>{inheritedFeatures.length ? inheritedFeatures.map((feature, index) => <p key={`${previous.id}-${index}-${feature}`} className="flex gap-2"><CheckCircle2 className="mt-0.5 h-3 w-3 shrink-0 text-accent" />{feature}</p>) : <p>Δεν υπάρχουν ακόμη παροχές σε αυτό το πακέτο.</p>}</div></> : "Ορίζεις τις παροχές που περιλαμβάνει το βασικό πακέτο."}</div>
+        <div className="space-y-3">
+          <div className="flex items-end justify-between gap-3"><div><Label>Τιμή · {activeDuration?.title || `${activeOffer.months} ${activeOffer.months === 1 ? "μήνας" : "μήνες"}`}</Label><p className="mt-1 text-xs text-muted-foreground">Μόνο για την επιλεγμένη διάρκεια.</p></div><Switch checked={activeOffer.isActive} onCheckedChange={(value) => updateOffer({ isActive: value })} /></div>
+          <div className="relative"><Input type="number" min={0} className="h-12 rounded-[14px] bg-muted pr-8 text-[16px] font-extrabold" value={(activeOffer.priceCents / 100).toFixed(2)} onChange={(event) => updateOffer({ priceCents: Math.round(Number(event.target.value || 0) * 100) })} /><span className="pointer-events-none absolute right-4 top-[14px] font-extrabold text-muted-foreground">€</span></div>
+        </div>
+        <div className="space-y-2"><Label>{previous ? "Επιπλέον παροχές" : "Παροχές"}</Label>{previous && <p className="-mt-1 text-xs text-muted-foreground">Ο πελάτης βλέπει: «Όλα του {previous.name}, και:»</p>}<div className="space-y-2">{ownFeatures.map((feature, index) => <div key={`${activeOffer.months}-${index}`} className="flex min-h-10 items-center gap-2 rounded-xl bg-muted px-3"><GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" /><Input className="h-8 border-0 bg-transparent p-0 text-sm font-semibold shadow-none focus-visible:ring-0" value={feature} onChange={(event) => updateOwnFeatures(ownFeatures.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} /><Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0 text-muted-foreground" onClick={() => updateOwnFeatures(ownFeatures.filter((_, itemIndex) => itemIndex !== index))}><X className="h-4 w-4" /></Button></div>)}<Button type="button" variant="outline" className="h-10 w-full justify-start rounded-xl border-dashed text-xs font-bold text-muted-foreground" onClick={() => updateOwnFeatures([...ownFeatures, ""])}><Plus className="mr-1.5 h-3.5 w-3.5" />Πρόσθεσε παροχή</Button></div></div>
+        <div className="border-t border-border"><SettingRow label="Ορατό στους πελάτες" detail="Τα κρυφά πακέτα δεν εμφανίζονται σε Εγγραφή & Συνδρομή"><Switch checked={editing.isVisible} onCheckedChange={(value) => setEditing({ ...editing, isVisible: value })} /></SettingRow><SettingRow label="Διαθέσιμο για αναβάθμιση" detail="Ο πελάτης μπορεί να το επιλέξει στην ανανέωση"><Switch checked={editing.isUpgradable} onCheckedChange={(value) => setEditing({ ...editing, isUpgradable: value })} /></SettingRow></div>
+      </div></div>}
+      <SheetFooter className="flex-row items-center justify-between border-t border-border px-7 py-[18px]"><Button variant="ghost" className="p-0 font-extrabold text-destructive hover:bg-transparent hover:text-destructive" onClick={() => { if (!editing?.id) return setEditing(null); void onDelete(editing).then(() => setEditing(null)); }}>Διαγραφή</Button><div className="flex gap-2"><Button variant="outline" className="rounded-full" onClick={() => setEditing(null)}>Ακύρωση</Button><Button className="h-12 rounded-full bg-foreground px-7 text-background hover:bg-foreground/90" disabled={saving} onClick={() => void onSave()}>{saving ? "Αποθήκευση..." : "Αποθήκευση"}</Button></div></SheetFooter>
+    </SheetContent>
+    <AlertDialog open={Boolean(parentChange)} onOpenChange={(open) => !open && setParentChange(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Αλλαγή επέκτασης πακέτου;</AlertDialogTitle><AlertDialogDescription>{`Το πακέτο θα κληρονομεί τις παροχές του «${parentChange?.parentId ? packages.find((item) => item.id === parentChange.parentId)?.name || "επιλεγμένου πακέτου" : "χωρίς βασικό πακέτο"}». Οι επιπλέον παροχές που έχεις ήδη ορίσει θα διατηρηθούν.`}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Άκυρο</AlertDialogCancel><AlertDialogAction className="bg-foreground text-background hover:bg-foreground/90" onClick={() => { if (!parentChange) return; changeParent(parentChange.parentId); setParentChange(null); }}>Ναι, συνέχεια</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  </Sheet>;
+}
+
+function OldPackageBuilderSheetReference({ editing, setEditing, saving, onSave, packages, durations, onDelete, initialDuration }: { editing: AdminPackage | null; setEditing: React.Dispatch<React.SetStateAction<AdminPackage | null>>; saving: boolean; onSave: () => Promise<void>; packages: AdminPackage[]; durations: PackageDuration[]; onDelete: (item: AdminPackage) => Promise<void>; initialDuration: number | null }) {
   const packageIndex = editing ? packages.findIndex((item) => item.id === editing.id) : -1;
   const previous = packageIndex > 0 ? packages[packageIndex - 1] : null;
   const offers = (editing ? durations.map((duration) => editing.offers?.find((offer) => offer.months === duration.months) || ({
@@ -575,6 +761,7 @@ function PackageBuilderSheetReference({ editing, setEditing, saving, onSave, pac
     features: editing.features.map((feature) => feature.text).filter(Boolean),
     isActive: duration.isActive,
   })) : []) as PackageOffer[];
+  const visibleOffers = initialDuration ? offers.filter((offer) => offer.months === initialDuration) : offers;
   const updateOffer = (months: number, patch: Partial<PackageOffer>) => editing && setEditing({
     ...editing,
     offers: offers.map((offer) => offer.months === months ? { ...offer, ...patch } : offer),
@@ -600,9 +787,9 @@ function PackageBuilderSheetReference({ editing, setEditing, saving, onSave, pac
             <Field label="Ετικέτα"><Select value={editing.label || undefined} onValueChange={(value) => setEditing({ ...editing, label: value === "clear" ? null : value })}><SelectTrigger className="h-12 rounded-[14px] bg-muted">{editing.label ? <span className="rounded-full bg-accent px-2 py-1 text-[11px] font-extrabold text-accent-foreground">{editing.label}</span> : <SelectValue placeholder="" />}</SelectTrigger><SelectContent><SelectItem value="clear">—</SelectItem><SelectItem value="Δημοφιλές">Δημοφιλές</SelectItem><SelectItem value="Καλύτερη τιμή">Καλύτερη τιμή</SelectItem><SelectItem value="Πλήρης πρόσβαση">Πλήρης πρόσβαση</SelectItem></SelectContent></Select></Field>
           </div>
           <div className="rounded-[14px] bg-muted px-4 py-3 text-xs text-muted-foreground">{previous ? `Το ${editing.name || "πακέτο"} χτίζεται μετά το «${previous.name}». Οι παροχές παρακάτω ορίζονται ξεχωριστά για κάθε διάρκεια.` : "Ορίζεις ξεχωριστά τιμή και παροχές για κάθε διάρκεια."}</div>
-          <div className="space-y-2"><Label>Παροχές και τιμή ανά διάρκεια</Label><p className="-mt-1 text-xs text-muted-foreground">Άνοιξε μία διάρκεια, κάνε αντιγραφή από την προηγούμενη και άλλαξε μόνο ό,τι διαφέρει.</p>
-            <Accordion multiple defaultValue={[String(offers[0]?.months || 1)]} className="space-y-2">
-              {offers.map((offer, index) => <AccordionItem key={offer.months} value={String(offer.months)} className="overflow-hidden rounded-[14px] border border-border bg-card px-0">
+          <div className="space-y-2"><Label>{initialDuration ? "Τιμή και παροχές επιλεγμένης διάρκειας" : "Παροχές και τιμή ανά διάρκεια"}</Label><p className="-mt-1 text-xs text-muted-foreground">{initialDuration ? "Επεξεργάζεσαι μόνο το πακέτο και τη διάρκεια που επέλεξες." : "Άνοιξε μία διάρκεια, κάνε αντιγραφή από την προηγούμενη και άλλαξε μόνο ό,τι διαφέρει."}</p>
+            <Accordion key={`${editing.id}-${initialDuration || offers[0]?.months || 1}`} multiple defaultValue={[String(initialDuration || offers[0]?.months || 1)]} className="space-y-2">
+              {visibleOffers.map((offer, index) => <AccordionItem key={offer.months} value={String(offer.months)} className="overflow-hidden rounded-[14px] border border-border bg-card px-0">
                 <AccordionTrigger className="px-4 py-3 hover:no-underline"><span className="flex min-w-0 items-center gap-3 text-left"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-foreground text-[11px] font-extrabold text-accent">{offer.months}</span><span><b className="block text-sm">{offer.months} {offer.months === 1 ? "μήνας" : "μήνες"}</b><small className="text-xs font-medium text-muted-foreground">{offer.features.filter(Boolean).length} παροχές · {money(offer.priceCents / 100)}</small></span></span></AccordionTrigger>
                 <AccordionContent className="border-t border-border px-4 pb-4 pt-3">
                   <div className="mb-3 grid grid-cols-[1fr_auto] gap-3"><Field label="Τελική τιμή"><div className="relative"><Input type="number" min={0} className="h-11 rounded-xl bg-muted pr-7 font-extrabold" value={(offer.priceCents / 100).toFixed(2)} onChange={(event) => updateOffer(offer.months, { priceCents: Math.round(Number(event.target.value || 0) * 100) })} /><span className="pointer-events-none absolute right-3 top-3 text-sm font-semibold text-muted-foreground">€</span></div></Field><div className="pt-[23px]"><Switch checked={offer.isActive} onCheckedChange={(value) => updateOffer(offer.months, { isActive: value })} /></div></div>
@@ -698,8 +885,8 @@ function AdminPlanCard({
           {plan.features
             .filter((feature) => feature.included)
             .slice(0, 3)
-            .map((feature) => (
-              <p key={feature.text} className="flex items-center gap-2 text-xs">
+            .map((feature, index) => (
+              <p key={`${feature.text}-${index}`} className="flex items-center gap-2 text-xs">
                 <CheckCircle2 className="h-3.5 w-3.5 text-accent" />
                 {feature.text}
               </p>
@@ -974,6 +1161,7 @@ function PaymentSettingsForm({
   onSave: () => void;
   saving: boolean;
 }) {
+  const [openBankAccounts, setOpenBankAccounts] = useState<string[]>([]);
   const updateAccount = (index: number, patch: Partial<BankAccount>) =>
     setSettings({
       ...settings,
@@ -1052,7 +1240,7 @@ function PaymentSettingsForm({
                 + Προσθήκη λογαριασμού
               </Button>
             </div>
-            <Accordion defaultValue={settings.bankAccounts.length ? ["account-0"] : []} className="gap-3">
+            <Accordion value={openBankAccounts} onValueChange={setOpenBankAccounts} className="gap-3">
               {settings.bankAccounts.map((account, index) => (
                 <AccordionItem
                   key={account.id || index}

@@ -5,6 +5,9 @@ const BACKEND_ORIGIN = process.env.BACKEND_ORIGIN || "http://localhost:5000";
 const scriptSources = process.env.NODE_ENV === "production"
   ? "'self' 'unsafe-inline'"
   : "'self' 'unsafe-inline' 'unsafe-eval'";
+const connectSources = process.env.NODE_ENV === "production"
+  ? "'self' https: wss:"
+  : "'self' https: wss: http://localhost:5000";
 
 const securityHeaders = [
   {
@@ -20,7 +23,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       `script-src ${scriptSources}`,
       "font-src 'self' data: https://fonts.gstatic.com",
-      "connect-src 'self' https: wss:",
+      `connect-src ${connectSources}`,
     ].join("; "),
   },
   { key: "X-Content-Type-Options", value: "nosniff" },

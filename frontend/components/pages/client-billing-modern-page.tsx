@@ -100,7 +100,7 @@ type PricingPlan = {
   isPopular?: boolean;
   features?: string[];
 };
-type PackageDuration = { id: number; months: number; basePriceCents: number; label?: string | null; isActive: boolean };
+type PackageDuration = { id: number; months: number; title?: string | null; basePriceCents: number; label?: string | null; isActive: boolean };
 type CoachingPackageOffer = { id: number; months: number; priceCents: number; features: string[]; isActive: boolean };
 type CoachingPackage = { id: number; key: string; name: string; monthlyAddonCents: number; label?: string | null; features: { id: number; text: string }[]; offers?: CoachingPackageOffer[] };
 type PackageCatalog = { packages: CoachingPackage[]; durations: PackageDuration[]; commonFeatures: { id: number; text: string }[]; pointsPerEuro: number };
@@ -306,7 +306,8 @@ function ClientBillingModernContent() {
         period: `${duration.months} ${duration.months === 1 ? "μήνας" : "μήνες"}`,
         badge: item.label || "",
         description: offerFeatures.slice(0, 2).join(" · "),
-        features: [...(catalog?.commonFeatures || []).map((feature) => feature.text), ...offerFeatures],
+        features: offerFeatures,
+        pointsReward: Math.round((priceCents / 100) * (catalog?.pointsPerEuro || 0)),
         isPopular: Boolean(item.label),
       };
     });
@@ -547,22 +548,17 @@ function ClientBillingModernContent() {
             )}
             {!pendingPayment && (
               <>
-                {!!catalog?.durations.length && (
-                  <section className="flex flex-wrap items-center gap-2 rounded-[20px] border border-border bg-card p-3" aria-label="Διάρκεια πακέτου">
-                    <span className="mr-1 text-sm font-extrabold">Διάρκεια</span>
-                    {catalog.durations.map((duration) => (
-                      <Button key={duration.id} type="button" size="sm" onClick={() => setSelectedDurationMonths(duration.months)} className={`h-9 rounded-full px-4 font-extrabold ${selectedDurationMonths === duration.months ? "bg-foreground text-background hover:bg-foreground/90" : "border border-border bg-transparent text-foreground hover:bg-muted"}`}>
-                        {duration.months} {duration.months === 1 ? "μήνας" : "μήνες"}{duration.label ? ` · ${duration.label}` : ""}
-                      </Button>
-                    ))}
-                  </section>
-                )}
                 <AvailablePlans
                   plansRef={plansRef}
                   plans={plans}
                   subscription={subscription}
                   selectedPlan={selectedPlan}
-                  onSelect={selectPlanForPayment}
+                  durations={catalog?.durations || []}
+                  selectedDurationMonths={selectedDurationMonths}
+                  onDurationChange={setSelectedDurationMonths}
+                  commonFeatures={(catalog?.commonFeatures || []).map((feature) => feature.text)}
+                  onSelect={(slug) => { setSelectedPlan(slug); setPaymentIntent("change"); }}
+                  onContinue={() => selectPlanForPayment(selectedPlan)}
                   intent={paymentIntent}
                 />
               </>
@@ -781,6 +777,51 @@ function UpcomingSubscriptions({
 }
 
 function AvailablePlans({
+  plans, subscription, selectedPlan, intent, onSelect, onContinue, plansRef, durations, selectedDurationMonths, onDurationChange, commonFeatures,
+}: {
+  plans: PricingPlan[];
+  subscription: Subscription | null;
+  selectedPlan: string;
+  intent: "renew" | "change" | null;
+  onSelect: (slug: string) => void;
+  onContinue: () => void;
+  plansRef: React.RefObject<HTMLElement | null>;
+  durations: PackageDuration[];
+  selectedDurationMonths: number;
+  onDurationChange: (months: number) => void;
+  commonFeatures: string[];
+}) {
+  const currentName = subscription?.plan_name?.trim().toLocaleLowerCase("el-GR") || "";
+  const current = plans.find((plan) => plan.name.trim().toLocaleLowerCase("el-GR") === currentName);
+  const selected = plans.find((plan) => plan.slug === selectedPlan) || current || plans[0];
+  const selectedPrice = Number(selected?.price || 0);
+  const selectedPoints = Number(selected?.pointsReward || 0);
+  const selectedMonths = periodMonths(selected?.period);
+  const oneMonth = durations.find((duration) => duration.months === 1);
+  const currentDuration = durations.find((duration) => duration.months === selectedDurationMonths);
+  const saving = oneMonth && currentDuration ? Math.max(0, oneMonth.basePriceCents * selectedDurationMonths - currentDuration.basePriceCents) / 100 : 0;
+  if (!plans.length) return null;
+
+  return <section ref={plansRef} id="available-plans" aria-labelledby="available-plans-heading" className="scroll-mt-6">
+    <Card className="rounded-[20px] border-border bg-card shadow-none"><CardContent className="space-y-[18px] p-4 sm:p-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><h2 id="available-plans-heading" className="text-[20px] font-extrabold">Ανανέωση ή αλλαγή πακέτου</h2><p className="mt-1 text-[13px] text-muted-foreground">Η αλλαγή ισχύει από την επόμενη περίοδο.</p>{intent === "change" && <p className="mt-2 text-[12px] font-bold text-muted-foreground">Επίλεξε πακέτο και συνέχισε στην πληρωμή.</p>}</div>
+        <div className="w-full lg:max-w-[520px]"><div className="grid grid-cols-2 gap-1 rounded-[16px] border border-border bg-card p-[5px] sm:grid-cols-4">{durations.map((duration) => { const discount = duration.months > 1 && oneMonth ? Math.round((1 - duration.basePriceCents / Math.max(1, oneMonth.basePriceCents * duration.months)) * 100) : 0; const active = selectedDurationMonths === duration.months; return <Button key={duration.id} type="button" variant="ghost" onClick={() => onDurationChange(duration.months)} className={`h-[46px] rounded-[12px] px-2 text-[13px] font-extrabold ${active ? "bg-foreground text-background hover:bg-foreground/90" : "text-[#3a3a3a] hover:bg-muted dark:text-foreground"}`}>{duration.title || `${duration.months} ${duration.months === 1 ? "μήνας" : "μήνες"}`}{discount > 0 && <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold ${active ? "bg-accent text-accent-foreground" : "bg-[color:var(--sp-lime-soft)] text-[#3f6b00] dark:text-accent"}`}>−{discount}%</span>}</Button>; })}</div></div>
+      </div>
+      <div className="grid items-stretch gap-[14px] pt-2 md:grid-cols-2 xl:grid-cols-4">{plans.map((plan, index) => { const isCurrent = plan.name.trim().toLocaleLowerCase("el-GR") === currentName; const isSelected = selected?.slug === plan.slug; const months = periodMonths(plan.period); const addon = Number(plan.price || 0) - Number(plans[0]?.price || 0); return <button key={plan.slug} type="button" role="radio" aria-checked={isSelected} onClick={() => onSelect(plan.slug)} className={`relative flex min-h-[360px] flex-col gap-3 rounded-[20px] border bg-card p-5 text-left transition-all focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--sp-lime-glow)] ${isSelected ? "border-2 border-foreground ring-4 ring-accent/50" : "border-border hover:border-foreground/45"}`}>
+        {plan.badge && <span className={`absolute -top-[11px] left-[18px] rounded-full px-2.5 py-1 text-[10px] font-extrabold ${plan.badge === "Πλήρης πρόσβαση" ? "bg-foreground text-accent" : "bg-accent text-accent-foreground"}`}>{plan.badge}</span>}
+        <div className="flex items-center gap-2.5"><span className={`grid h-[22px] w-[22px] shrink-0 place-items-center rounded-full border-2 ${isSelected ? "border-foreground" : "border-[#cfcfcb]"}`}>{isSelected && <span className="h-2.5 w-2.5 rounded-full bg-foreground" />}</span><span className="text-[18px] font-extrabold">{plan.name}</span><span className="ml-auto flex gap-[3px]">{[0, 1, 2, 3].map((level) => <i key={level} className={`h-[5px] w-[14px] rounded-full ${level <= index ? "bg-accent" : "bg-muted"}`} />)}</span>{isCurrent && <Badge className="bg-foreground text-[10px] text-accent">Τρέχον</Badge>}</div>
+        <div><p className="text-[36px] font-extrabold italic leading-none tracking-[-1px]">{money(plan.price, plan.currency || "EUR")}</p><p className="mt-1 text-[12px] text-muted-foreground">για {months} {months === 1 ? "μήνα" : "μήνες"} · {money(Number(plan.price || 0) / Math.max(1, months), plan.currency || "EUR")} / μήνα · {saving ? <b className="text-[#3f6b00] dark:text-accent">−{money(saving, plan.currency || "EUR")}</b> : ""}</p><p className="mt-1 text-[12px] text-muted-foreground">{index === 0 ? "η βάση της συνεργασίας" : `+${money(addon / Math.max(1, months), plan.currency || "EUR")} / μήνα από το Βασικό`}</p></div>
+        <div className="space-y-2 border-t border-border pt-3"><p className="text-[12px] font-extrabold text-[#3a3a3a] dark:text-foreground">{index === 0 ? "Περιλαμβάνει:" : `Όλα του ${plans[index - 1]?.name || "προηγούμενου"}, και:`}</p>{(plan.features || []).slice(0, 5).map((feature) => <span key={feature} className="flex items-start gap-2 text-[13px] leading-[1.4]"><span className="mt-0.5 grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full bg-accent text-accent-foreground"><Check className="h-2.5 w-2.5 stroke-[3]" /></span>{feature}</span>)}</div>
+        {index === 0 && <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); document.getElementById("common-package-features")?.scrollIntoView({ behavior: "smooth", block: "start" }); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); document.getElementById("common-package-features")?.scrollIntoView({ behavior: "smooth", block: "start" }); } }} className="mt-auto cursor-pointer pl-[26px] text-[12px] font-extrabold underline underline-offset-2">Δες και τις {commonFeatures.length} παροχές</span>}
+      </button>; })}</div>
+      <div className="space-y-2 rounded-[14px] bg-muted p-4 text-[13px] leading-[1.5] text-[#3a3a3a] dark:text-foreground"><p>Οι βιντεοκλήσεις χρησιμοποιούνται για ανασκόπηση προόδου, διευκρινίσεις, επίλυση δυσκολιών και οργάνωση των επόμενων βημάτων.</p><p>Στο <b>DIRECT</b>, μπορείς να στέλνεις τις απορίες σου στο WhatsApp και λαμβάνεις απάντηση εντός μίας εργάσιμης ημέρας, στο συμφωνημένο ωράριο υποστήριξης.</p></div>
+      <div id="common-package-features" className="scroll-mt-6 rounded-[18px] border border-border bg-muted/50 p-5"><h3 className="text-[16px] font-extrabold">Όλες οι διάρκειες περιλαμβάνουν τις ίδιες παροχές</h3><p className="mt-1 text-[12px] text-muted-foreground">Εξατομικευμένη καθοδήγηση στην προπόνηση, στη διατροφή και στα συμπληρώματα, με τακτική αξιολόγηση της προόδου σου.</p><div className="mt-4 grid gap-x-5 gap-y-2 sm:grid-cols-2">{commonFeatures.map((feature) => <span key={feature} className="flex items-start gap-2 text-[13px] leading-[1.45]"><span className="mt-0.5 grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full bg-accent text-accent-foreground"><Check className="h-2.5 w-2.5 stroke-[3]" /></span>{feature}</span>)}</div><p className="mt-3 flex items-center rounded-xl bg-muted px-3 py-2 text-[12px] text-muted-foreground">Η ημέρα update συμφωνείται από Δευτέρα έως Σάββατο. Η Κυριακή εξαιρείται.</p></div>
+      {selected && <div className="flex flex-col gap-3 rounded-[16px] bg-foreground p-4 text-background sm:flex-row sm:items-center"><div><p className="text-[12px] text-[#9a9a9a]">Η επιλογή σου</p><p className="text-[15px] font-extrabold"><span className="text-accent">{selected.name}</span> · {selectedMonths} {selectedMonths === 1 ? "μήνας" : "μήνες"}</p></div><div className="sm:ml-auto sm:text-right"><p className="text-[26px] font-extrabold leading-none text-accent">{money(selectedPrice, selected.currency || "EUR")}</p><p className="mt-1 text-[12px] text-[#9a9a9a]">≈ {money(selectedPrice / Math.max(1, selectedMonths), selected.currency || "EUR")} / μήνα · +{new Intl.NumberFormat("el-GR").format(selectedPoints)} πόντοι</p></div><Button type="button" onClick={onContinue} className="h-12 rounded-full bg-accent px-5 font-extrabold text-accent-foreground hover:bg-accent/85">Συνέχεια στην πληρωμή →</Button></div>}
+    </CardContent></Card>
+  </section>;
+}
+
+function LegacyAvailablePlans({
   plans,
   subscription,
   selectedPlan,
