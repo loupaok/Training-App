@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authenticateToken, authorizeRole } from '../middleware/auth.js';
-import { wcRequest, createCoupon, getCoupon } from '../lib/woocommerce.js';
+import { wcRequest, createCoupon, getCoupon, deleteCoupon } from '../lib/woocommerce.js';
 import { sendMail } from '../lib/mailer.js';
 
 const router = express.Router();
@@ -225,13 +225,15 @@ export async function awardPoints(connection, { clientId, planId, paymentId, poi
   }
 }
 
-export async function awardWeeklyUpdatePoints(connection, { clientId, updateId, weekStart }) {
+export async function awardWeeklyUpdatePoints(connection, { clientId, updateId, weekStart, timely = false }) {
   try {
+    // Late updates remain visible to the coach, but never earn points or add to a streak.
+    if (!timely) return;
     await ensurePointsSchema(connection);
     const [[settings]] = await connection.query('SELECT * FROM points_settings WHERE id = 1');
     if (!settings?.is_active) return;
     const [updates] = await connection.query(
-      'SELECT id, week_start FROM weekly_updates WHERE client_id = ? ORDER BY week_start DESC, id DESC LIMIT 4',
+      'SELECT id, week_start FROM weekly_updates WHERE client_id = ? AND is_timely = 1 ORDER BY week_start DESC, id DESC LIMIT 4',
       [clientId],
     );
     let streak = 0;
@@ -349,6 +351,14 @@ async function getClientPointsPayload(connection, clientId, { limit = 50, offset
   const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 100);
   const safeOffset = Math.max(parseInt(offset, 10) || 0, 0);
 
+  await connection.query(
+    `UPDATE points_transactions
+     SET coupon_status = 'expired', description = 'Κουπόνι έληξε'
+     WHERE client_id = ? AND type = 'redeemed' AND coupon_code IS NOT NULL
+       AND (coupon_status IS NULL OR coupon_status = 'active')
+       AND coupon_expires_at IS NOT NULL AND coupon_expires_at < NOW()`,
+    [clientId]
+  );
   const [pointsRows] = await connection.query('SELECT * FROM client_points WHERE client_id = ?', [clientId]);
   const [rows] = await connection.query(
     `SELECT * FROM points_transactions WHERE client_id = ? ORDER BY created_at DESC LIMIT ${safeLimit + 1} OFFSET ${safeOffset}`,
@@ -386,6 +396,7 @@ function couponSyncIsDue(checkedAt) {
 async function syncCouponStatus(connection, transaction) {
   let status = couponStatusFromLocal(transaction);
   let expiresAt = transaction.coupon_expires_at || null;
+  const locallyExpired = status === 'expired';
   const shouldSyncRemotely = transaction.wc_coupon_id && status === 'active' && couponSyncIsDue(transaction.coupon_checked_at);
 
   if (shouldSyncRemotely) {
@@ -398,14 +409,55 @@ async function syncCouponStatus(connection, transaction) {
     status = remoteExpired ? 'expired' : usageLimit > 0 && usageCount >= usageLimit ? 'used' : 'active';
   }
 
+  // Expired coupons are removed from WooCommerce; used coupons remain there
+  // for audit and are shown as “used” in the client's points history.
+  let expiredCouponHandled = !locallyExpired || !transaction.wc_coupon_id;
+  if (locallyExpired && transaction.wc_coupon_id) {
+    try {
+      await deleteCoupon(transaction.wc_coupon_id);
+      expiredCouponHandled = true;
+    } catch (error) {
+      console.warn(`Unable to delete expired WooCommerce coupon ${transaction.wc_coupon_id}:`, error.message);
+    }
+  }
+
   const localStatusChanged = status !== transaction.coupon_status || String(expiresAt || '') !== String(transaction.coupon_expires_at || '');
-  if (shouldSyncRemotely || localStatusChanged) {
+  if (shouldSyncRemotely || localStatusChanged || (locallyExpired && expiredCouponHandled)) {
+    const description = status === 'used'
+      ? 'Κουπόνι χρησιμοποιήθηκε'
+      : status === 'expired'
+        ? 'Κουπόνι έληξε'
+        : transaction.description;
     await connection.query(
-      'UPDATE points_transactions SET coupon_status = ?, coupon_expires_at = ?, coupon_checked_at = CASE WHEN ? THEN NOW() ELSE coupon_checked_at END WHERE id = ?',
-      [status, expiresAt || null, shouldSyncRemotely ? 1 : 0, transaction.id]
+      'UPDATE points_transactions SET coupon_status = ?, coupon_expires_at = ?, description = ?, coupon_checked_at = CASE WHEN ? THEN NOW() ELSE coupon_checked_at END WHERE id = ?',
+      [status, expiresAt || null, description, (shouldSyncRemotely || (locallyExpired && expiredCouponHandled)) ? 1 : 0, transaction.id]
     );
   }
   return { ...transaction, coupon_status: status, coupon_expires_at: expiresAt || null };
+}
+
+function syncClientCouponsInBackground(clientId) {
+  void (async () => {
+    let connection;
+    try {
+      connection = await pool.getConnection();
+      const [transactions] = await connection.query(
+        `SELECT id, coupon_code, wc_coupon_id, points, created_at, coupon_expires_at, coupon_status, coupon_checked_at
+         FROM points_transactions
+         WHERE client_id = ? AND type = 'redeemed' AND coupon_code IS NOT NULL
+           AND (coupon_status IS NULL OR coupon_status = 'active' OR (coupon_status = 'expired' AND coupon_checked_at IS NULL))
+         ORDER BY created_at DESC LIMIT 20`,
+        [clientId]
+      );
+      await Promise.all(transactions.map((transaction) => syncCouponStatus(connection, transaction).catch((error) => {
+        console.warn(`Coupon background sync failed for ${transaction.id}:`, error.message);
+      })));
+    } catch (error) {
+      console.warn('Coupon background sync failed:', error.message);
+    } finally {
+      connection?.release();
+    }
+  })();
 }
 
 router.get('/my', authenticateToken, authorizeRole(['client']), async (req, res) => {
@@ -426,6 +478,14 @@ router.get('/my/coupons', authenticateToken, authorizeRole(['client']), async (r
   try {
     connection = await pool.getConnection();
     await ensurePointsSchema(connection);
+    await connection.query(
+      `UPDATE points_transactions
+       SET coupon_status = 'expired', description = 'Κουπόνι έληξε'
+       WHERE client_id = ? AND type = 'redeemed' AND coupon_code IS NOT NULL
+         AND (coupon_status IS NULL OR coupon_status = 'active')
+         AND coupon_expires_at IS NOT NULL AND coupon_expires_at < NOW()`,
+      [req.user.id]
+    );
     const [transactions] = await connection.query(
       `SELECT id, coupon_code, wc_coupon_id, points, created_at, coupon_expires_at, coupon_status, coupon_checked_at
        FROM points_transactions
@@ -439,18 +499,12 @@ router.get('/my/coupons', authenticateToken, authorizeRole(['client']), async (r
       [req.user.id]
     );
 
-    let synced = true;
-    const coupons = [];
-    for (const transaction of transactions) {
-      try {
-        coupons.push(await syncCouponStatus(connection, transaction));
-      } catch (error) {
-        synced = false;
-        coupons.push({ ...transaction, coupon_status: couponStatusFromLocal(transaction) });
-        console.warn(`Coupon sync failed for ${transaction.id}:`, error.message);
-      }
-    }
-    res.json({ synced, coupons });
+    // Do not make the client wait for one WooCommerce request per coupon.
+    // The current local status is safe to display; remote usage sync continues
+    // independently and is reflected on the next load.
+    const coupons = transactions.map((transaction) => ({ ...transaction, coupon_status: couponStatusFromLocal(transaction) }));
+    res.json({ synced: false, coupons });
+    syncClientCouponsInBackground(req.user.id);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
@@ -474,8 +528,9 @@ router.get('/client/:id', authenticateToken, authorizeRole(['coach', 'admin']), 
 
 router.post('/award', authenticateToken, authorizeRole(['coach', 'admin']), [
   body('clientId').isInt({ gt: 0 }),
-  body('points').isInt(),
+  body('points').isInt().custom((value) => value !== 0),
   body('description').optional({ nullable: true }).isString(),
+  body('notifyClient').optional().isBoolean(),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -483,7 +538,18 @@ router.post('/award', authenticateToken, authorizeRole(['coach', 'admin']), [
   try {
     const connection = await pool.getConnection();
     await ensurePointsSchema(connection);
-    const { clientId, points, description } = req.body;
+    const { clientId, points, description, notifyClient } = req.body;
+
+    // Manual removal may never take the balance below zero. The balance is a
+    // generated value (total - used), so reduce total only after this check.
+    const [[currentPoints]] = await connection.query(
+      'SELECT total_points, used_points, available_points FROM client_points WHERE client_id = ? FOR UPDATE',
+      [clientId]
+    );
+    if (points < 0 && (!currentPoints || Number(currentPoints.available_points) < Math.abs(points))) {
+      connection.release();
+      return res.status(400).json({ message: 'Δεν μπορείς να αφαιρέσεις περισσότερους πόντους από τους διαθέσιμους.' });
+    }
 
     await connection.query(
       `INSERT INTO client_points (client_id, total_points) VALUES (?, ?)
@@ -493,16 +559,18 @@ router.post('/award', authenticateToken, authorizeRole(['coach', 'admin']), [
     await connection.query(
       `INSERT INTO points_transactions (client_id, type, points, description)
        VALUES (?, 'adjusted', ?, ?)`,
-      [clientId, points, description || 'Χειροκίνητη προσθήκη από coach']
+      [clientId, points, description || (points > 0 ? 'Χειροκίνητη προσθήκη από coach' : 'Χειροκίνητη αφαίρεση από coach')]
     );
 
-    if (points > 0) {
+    if (notifyClient !== false) {
       const { notifyUser } = await import('./clients.js');
       await notifyUser(connection, clientId, {
         clientId,
-        type: 'points_earned',
-        title: '🎯 Κέρδισες πόντους!',
-        body: description ? `Κέρδισες ${points} πόντους: ${description}` : `Κέρδισες ${points} πόντους από τον coach σου.`,
+        type: points > 0 ? 'points_earned' : 'points_adjusted',
+        title: points > 0 ? '🎯 Κέρδισες πόντους!' : 'Ενημέρωση πόντων',
+        body: points > 0
+          ? (description ? `Κέρδισες ${points} πόντους: ${description}` : `Κέρδισες ${points} πόντους από τον coach σου.`)
+          : (description ? `Αφαιρέθηκαν ${Math.abs(points)} πόντοι: ${description}` : `Αφαιρέθηκαν ${Math.abs(points)} πόντοι από τον coach σου.`),
         linkUrl: '/client-points',
       });
     }

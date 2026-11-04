@@ -206,12 +206,46 @@ router.get('/', authorizeRole(['coach', 'admin']), async (req, res) => {
       `SELECT ${FOOD_COLUMNS} FROM foods ${where} ORDER BY name_gr LIMIT ? OFFSET ?`,
       [...values, limit, offset]
     );
+    const [categoryCountRows] = await connection.query(
+      `SELECT category, COUNT(*) AS total
+       FROM foods WHERE is_active = 1 GROUP BY category`
+    );
+    const [[customCountRow]] = await connection.query(
+      `SELECT COUNT(*) AS total FROM foods WHERE is_active = 1 AND source = 'custom'`
+    );
     connection.release();
 
-    res.json({ items: rows.map(mapFoodRow), total: Number(total), page, limit });
+    res.json({
+      items: rows.map(mapFoodRow), total: Number(total), page, limit,
+      categoryCounts: Object.fromEntries(categoryCountRows.map((row) => [String(row.category || '').trim(), Number(row.total || 0)])),
+      customCount: Number(customCountRow?.total || 0),
+    });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/categories/counts', authorizeRole(['coach', 'admin']), async (req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await ensureFoodsSchema(connection);
+    const [categories] = await connection.query(
+      'SELECT category, COUNT(*) AS total FROM foods WHERE is_active = 1 GROUP BY category'
+    );
+    const [[custom]] = await connection.query(
+      "SELECT COUNT(*) AS total FROM foods WHERE is_active = 1 AND source = 'custom'"
+    );
+    res.json({
+      categoryCounts: Object.fromEntries(categories.map((row) => [String(row.category || '').trim(), Number(row.total || 0)])),
+      customCount: Number(custom?.total || 0),
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection?.release();
   }
 });
 

@@ -86,6 +86,13 @@ interface FoodsResponse {
   total: number;
   page: number;
   limit: number;
+  categoryCounts: Record<string, number>;
+  customCount: number;
+}
+
+interface FoodCategoryCountsResponse {
+  categoryCounts: Record<string, number>;
+  customCount: number;
 }
 
 interface FoodForm {
@@ -170,6 +177,9 @@ function FoodsContent() {
 
   const [items, setItems] = useState<Food[]>([]);
   const [total, setTotal] = useState(0);
+  const [catalogTotal, setCatalogTotal] = useState(0);
+  const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
+  const [customCount, setCustomCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -185,6 +195,22 @@ function FoodsContent() {
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [formMessage, setFormMessage] = useState("");
+  const categoryTabsRef = useRef<HTMLDivElement>(null);
+  const [categoryScroll, setCategoryScroll] = useState({ left: false, right: false });
+
+  useEffect(() => {
+    const element = categoryTabsRef.current;
+    if (!element) return;
+    const updateControls = () => setCategoryScroll({
+      left: element.scrollLeft > 2,
+      right: element.scrollLeft + element.clientWidth < element.scrollWidth - 2,
+    });
+    updateControls();
+    element.addEventListener("scroll", updateControls, { passive: true });
+    const observer = new ResizeObserver(updateControls);
+    observer.observe(element);
+    return () => { element.removeEventListener("scroll", updateControls); observer.disconnect(); };
+  }, []);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerFolders, setPickerFolders] = useState<MediaFolder[]>([]);
@@ -203,6 +229,35 @@ function FoodsContent() {
     const timeoutId = window.setTimeout(() => setDebouncedSearch(search), 300);
     return () => window.clearTimeout(timeoutId);
   }, [search]);
+
+  useEffect(() => {
+    let ignore = false;
+    const applyCounts = (counts: Record<string, number>, custom: number, totalCount: number) => {
+      if (ignore) return;
+      setCategoryCounts(counts);
+      setCustomCount(custom);
+      setCatalogTotal(totalCount);
+    };
+    const loadCounts = async () => {
+      try {
+        const data = await api.get<FoodCategoryCountsResponse>("/foods/categories/counts");
+        const counts = data.categoryCounts || {};
+        applyCounts(counts, data.customCount || 0, Object.values(counts).reduce((sum, count) => sum + Number(count || 0), 0));
+      } catch {
+        // Compatible with a running backend that has not yet reloaded the
+        // dedicated endpoint: aggregate the complete library once.
+        const data = await api.get<FoodsResponse>("/foods?limit=500");
+        const counts = data.items.reduce<Record<string, number>>((result, item) => {
+          const category = String(item.category || "").trim();
+          result[category] = (result[category] || 0) + 1;
+          return result;
+        }, {});
+        applyCounts(counts, data.items.filter((item) => item.source === "custom").length, data.total);
+      }
+    };
+    void loadCounts();
+    return () => { ignore = true; };
+  }, []);
 
   // Reset to page 1 whenever the filters actually change.
   useEffect(() => {
@@ -227,6 +282,14 @@ function FoodsContent() {
         if (ignore) return;
         setItems(data.items);
         setTotal(data.total);
+        if (Object.keys(data.categoryCounts || {}).length > 0) {
+          const counts = data.categoryCounts || {};
+          setCategoryCounts(counts);
+          setCustomCount(data.customCount || 0);
+          setCatalogTotal(Object.values(counts).reduce((sum, count) => sum + Number(count || 0), 0));
+        } else if (!categoryFilter && !debouncedSearch) {
+          setCatalogTotal(data.total);
+        }
       })
       .catch((err) => {
         if (!ignore) setError(getErrorMessage(err, "Δεν φορτώθηκαν τα τρόφιμα."));
@@ -447,7 +510,7 @@ function FoodsContent() {
       <section className="mx-auto w-full max-w-[var(--container-7xl)] pb-8">
       <div className="mb-[18px] flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="flex items-center gap-3 text-[28px] font-extrabold tracking-[-.5px]">Τρόφιμα & συμπληρώματα <span className="rounded-full bg-[#0b0b0b] px-2.5 py-1 text-[13px] text-accent">{total}</span></h1>
+          <h1 className="flex items-center gap-3 text-[28px] font-extrabold tracking-[-.5px]">Τρόφιμα & συμπληρώματα <span className="rounded-full bg-[#0b0b0b] px-2.5 py-1 text-[13px] text-accent">{catalogTotal}</span></h1>
           <p className="mt-1 text-sm text-[#6a6a6a]">Τιμές ανά 100g. Χρησιμοποιούνται στα πλάνα διατροφής των πελατών.</p>
         </div>
         <Button type="button" className="h-[46px] rounded-full bg-[#0b0b0b] px-5 text-white hover:bg-[#1f1f1f]" onClick={openCreate}>
@@ -455,7 +518,7 @@ function FoodsContent() {
             Νέο τρόφιμο
         </Button>
       </div>
-      <div className="mb-[18px] flex flex-wrap items-center justify-between gap-4"><div className="flex rounded-[14px] border border-border bg-white p-1"><span className="flex h-[38px] items-center gap-2 rounded-[10px] bg-accent px-4 text-[13px] font-extrabold">Τρόφιμα <span className="rounded-full bg-[#0b0b0b] px-1.5 text-[11px] text-accent">{total}</span></span><Link href="/coach/supplements" className="flex h-[38px] items-center gap-2 rounded-[10px] px-4 text-[13px] font-bold text-[#555]">Συμπληρώματα</Link></div></div>
+      <div className="mb-[18px] flex flex-wrap items-center justify-between gap-4"><div className="flex rounded-[14px] border border-border bg-white p-1"><span className="flex h-[38px] items-center gap-2 rounded-[10px] bg-accent px-4 text-[13px] font-extrabold">Τρόφιμα <span className="rounded-full bg-[#0b0b0b] px-1.5 text-[11px] text-accent">{catalogTotal}</span></span><Link href="/coach/supplements" className="flex h-[38px] items-center gap-2 rounded-[10px] px-4 text-[13px] font-bold text-[#555]">Συμπληρώματα</Link></div></div>
       <div className="flex flex-wrap gap-2">
       <div className="flex h-12 min-w-[220px] flex-1 items-center rounded-xl border border-border bg-white px-4">
         <Search className="mr-3 h-4 w-4 shrink-0 text-[#8a8a8a]" />
@@ -468,7 +531,7 @@ function FoodsContent() {
       </div>
       <Button variant="outline" className="h-12 rounded-xl px-4">Α → Ω</Button></div>
 
-      <div className="relative mt-4 overflow-hidden"><div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+      <div className="relative mt-4 overflow-hidden"><button type="button" aria-label="Προηγούμενες κατηγορίες" onClick={() => categoryTabsRef.current?.scrollBy({ left: -260, behavior: "smooth" })} className={`absolute left-1 top-1/2 z-10 h-8 w-8 -translate-y-1/2 place-items-center rounded-full border border-border bg-card text-lg font-extrabold shadow-sm ${categoryScroll.left ? "hidden sm:grid" : "hidden"}`}>‹</button><div ref={categoryTabsRef} className="flex gap-2 overflow-x-auto scroll-smooth px-0 pb-1 [scrollbar-width:none]">
         {CATEGORY_TABS.map((tab) => (
           <button
             key={tab.value || "all"}
@@ -481,10 +544,10 @@ function FoodsContent() {
                 : "border-border bg-white text-[#333] hover:border-[#0b0b0b]",
             )}
           >
-            {tab.emoji ? `${tab.emoji} ${tab.label}` : tab.label}
+            {tab.label} <span className="ml-1.5 text-[11px] opacity-60">{tab.value === "" ? Object.values(categoryCounts).reduce((sum, count) => sum + count, 0) : tab.value === CUSTOM_FILTER ? customCount : (categoryCounts[tab.value] || 0)}</span>
           </button>
         ))}
-      </div><span className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background to-transparent" /></div>
+      </div>{categoryScroll.right && <span className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-background to-transparent" />}<button type="button" aria-label="Επόμενες κατηγορίες" onClick={() => categoryTabsRef.current?.scrollBy({ left: 260, behavior: "smooth" })} className={`absolute right-1 top-1/2 z-10 h-8 w-8 -translate-y-1/2 place-items-center rounded-full border border-border bg-card text-lg font-extrabold shadow-sm ${categoryScroll.right ? "hidden sm:grid" : "hidden"}`}>›</button></div>
 
       {error && (
         <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">

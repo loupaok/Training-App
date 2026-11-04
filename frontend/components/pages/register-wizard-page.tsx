@@ -75,6 +75,7 @@ interface PricingPlan {
   price: number | string;
   currency: string;
   period: string;
+  pointsReward?: number;
   features: PlanFeature[];
   isActive: boolean;
   isPopular: boolean;
@@ -102,6 +103,7 @@ interface CoachingPackage {
 interface PackageCatalog {
   packages: CoachingPackage[];
   durations: PackageDuration[];
+  pointsPerEuro: number;
 }
 
 interface BankDetails {
@@ -312,6 +314,7 @@ function RegisterWizardContent() {
               name: pkg.name,
               description: "",
               price: offer.priceCents / 100,
+              pointsReward: Math.round((offer.priceCents / 100) * Number(catalog.pointsPerEuro || 0)),
               currency: "EUR",
               period: duration.title || `${duration.months} ${duration.months === 1 ? "μήνας" : "μήνες"}`,
               features: features.map((text) => ({ text, included: true })),
@@ -1457,6 +1460,7 @@ function PlanOption({ plan, selected, onSelect }: { plan: PricingPlan; selected:
       )}
       <div className="font-bold text-slate-950 dark:text-slate-50">{plan.name}</div>
       <div className="mt-2">
+        {Number(plan.pointsReward || 0) > 0 && <span className="mb-1.5 inline-flex rounded-full bg-[color:var(--sp-lime-soft)] px-2 py-1 text-[10px] font-extrabold text-slate-950 dark:text-slate-50">+{new Intl.NumberFormat("el-GR").format(Number(plan.pointsReward))} πόντοι με την έγκριση</span>}
         <span className="text-2xl font-bold text-slate-950 dark:text-slate-50">€{Number(plan.price).toFixed(0)}</span>
         <span className="ml-1 text-xs text-muted-foreground">/{formatPeriodLabel(plan.period)}</span>
       </div>

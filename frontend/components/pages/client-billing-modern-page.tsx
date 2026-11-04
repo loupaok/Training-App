@@ -919,6 +919,11 @@ function LegacyAvailablePlans({
                   </details>
                 )}
                 <div>
+                  {Number(plan.pointsReward || 0) > 0 && (
+                    <span className="mb-2 inline-flex h-6 items-center rounded-full bg-[color:var(--sp-lime-soft)] px-2.5 text-[11px] font-extrabold text-foreground">
+                      +{new Intl.NumberFormat("el-GR").format(Number(plan.pointsReward))} πόντοι με την έγκριση
+                    </span>
+                  )}
                   <p className="text-[30px] font-extrabold italic leading-none tracking-[-.8px]">
                     {money(plan.price, plan.currency || "EUR")}
                     <span className="text-sm font-semibold not-italic tracking-normal text-muted-foreground">

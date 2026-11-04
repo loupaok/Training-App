@@ -54,3 +54,7 @@ export async function createCoupon({ code, amount, clientEmail, expiryDays = 30 
 export async function getCoupon(couponId) {
   return wcRequest('GET', `/coupons/${encodeURIComponent(couponId)}`);
 }
+
+export async function deleteCoupon(couponId) {
+  return wcRequest('DELETE', `/coupons/${encodeURIComponent(couponId)}?force=true`);
+}

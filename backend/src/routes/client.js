@@ -4,7 +4,8 @@ import path from 'path';
 import fs from 'fs';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
-import { ensureWeeklyUpdateSchema } from './weekly-updates.js';
+import { ensureWeeklyUpdateSchema, getWeeklyUpdateTiming, getWeekStart } from './weekly-updates.js';
+import { awardWeeklyUpdatePoints } from './points.js';
 import { notifyCoaches, ensureSupplementsSchema } from './clients.js';
 import { registerWeeklyUpdatePhotos } from './media.js';
 import { getEmailTemplate, sendMail } from '../lib/mailer.js';
@@ -101,10 +102,7 @@ const today = (value = new Date()) => {
 };
 
 function currentWeekStart(value = new Date()) {
-  const date = new Date(value);
-  const day = date.getDay();
-  date.setDate(date.getDate() - (day === 0 ? 6 : day - 1));
-  return today(date);
+  return getWeekStart(value);
 }
 
 function nextScheduledDate(day) {
@@ -147,7 +145,7 @@ function summarizeUpdate(update) {
 }
 
 async function getUpdates(connection, clientId, limit = 12) {
-  const [updates] = await connection.query('SELECT id, submitted_at, week_start, is_read FROM weekly_updates WHERE client_id = ? ORDER BY submitted_at DESC LIMIT ?', [clientId, limit]);
+  const [updates] = await connection.query('SELECT id, submitted_at, week_start, is_timely, is_read FROM weekly_updates WHERE client_id = ? ORDER BY submitted_at DESC LIMIT ?', [clientId, limit]);
   if (!updates.length) return [];
   const ids = updates.map((update) => update.id);
   const [answers] = await connection.query(`SELECT wa.update_id, wa.answer, q.question, q.type, q.standard_key FROM weekly_update_answers wa JOIN update_questions q ON q.id = wa.question_id WHERE wa.update_id IN (?) ORDER BY q.sort_order`, [ids]);
@@ -193,7 +191,7 @@ async function getPlans(connection, clientId) {
 }
 
 function streakFor(updates) {
-  const weeks = new Set(updates.map((update) => today(new Date(update.weekStart))));
+  const weeks = new Set(updates.filter((update) => update.is_timely !== 0 && update.is_timely !== false).map((update) => today(new Date(update.weekStart))));
   let streak = 0;
   let cursor = updates[0]?.weekStart ? new Date(updates[0].weekStart) : new Date(`${currentWeekStart()}T00:00:00`);
   while (weeks.has(today(cursor))) { streak += 1; cursor.setDate(cursor.getDate() - 7); }
@@ -236,7 +234,8 @@ router.get('/dashboard', async (req, res) => {
     const schedule = schedules[0] || null;
     const subscription = subscriptions[0] || null;
     const demoUpdatesEnabled = Boolean(users[0]?.is_demo && users[0]?.demo_updates_enabled);
-    const todayIsUpdateDay = schedule ? Number(schedule.day_of_week) === new Date().getDay() : false;
+    const updateTiming = getWeeklyUpdateTiming(schedule);
+    const todayIsUpdateDay = updateTiming.isTimely;
     const alreadySubmittedThisWeek = updates.some((update) => today(new Date(update.weekStart)) === currentWeekStart());
     const lastUpdate = updates[0] || null;
     const lastWeightUpdate = updates.find((update) => update.weight !== null) || null;
@@ -244,7 +243,10 @@ router.get('/dashboard', async (req, res) => {
     const averageRating = ratings.length ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length : null;
     res.json({
       client: { firstName: String(users[0]?.full_name || '').trim().split(/\s+/)[0] || 'Client', currentWeight: lastWeightUpdate?.weight ?? users[0]?.weight_kg ?? null, subscriptionStatus: subscription?.status || null, daysRemaining: subscription?.days_remaining ?? null, planName: subscription?.plan_name || null, subscriptionStartDate: subscription?.start_date || null, subscriptionEndDate: subscription?.end_date || null, subscriptionCancelledAt: subscription?.cancelled_at || null, demoUpdatesEnabled, birthdayToday: Boolean(users[0]?.birthday_today) },
-      todayIsUpdateDay: demoUpdatesEnabled || todayIsUpdateDay, alreadySubmittedThisWeek: demoUpdatesEnabled ? false : alreadySubmittedThisWeek, nextUpdateDate: schedule?.next_due_date || nextScheduledDate(schedule?.day_of_week), streak: streakFor(updates), updatesCount: updates.length,
+      todayIsUpdateDay: demoUpdatesEnabled || todayIsUpdateDay,
+      canSubmitUpdate: demoUpdatesEnabled || (updateTiming.canSubmit && !alreadySubmittedThisWeek),
+      lateUpdateSubmission: !demoUpdatesEnabled && updateTiming.isLate && !alreadySubmittedThisWeek,
+      alreadySubmittedThisWeek: demoUpdatesEnabled ? false : alreadySubmittedThisWeek, nextUpdateDate: schedule?.next_due_date || nextScheduledDate(schedule?.day_of_week), streak: streakFor(updates), updatesCount: updates.length,
       lastUpdate: lastUpdate ? { submittedAt: lastUpdate.submittedAt, averageRating } : null,
       lastWeightUpdate: lastWeightUpdate ? { submittedAt: lastWeightUpdate.submittedAt } : null,
       trainingPlan: training ? { id: training.id, title: training.title } : null, nutritionPlan: nutrition ? { id: nutrition.id, title: nutrition.title } : null,
@@ -261,8 +263,9 @@ router.get('/update-status', async (req, res) => {
     const [updates] = await connection.query('SELECT submitted_at FROM weekly_updates WHERE client_id = ? AND week_start = ? LIMIT 1', [req.user.id, currentWeekStart()]);
     const schedule = schedules[0] || null;
     const demoUpdatesEnabled = Boolean(clients[0]?.is_demo && clients[0]?.demo_updates_enabled);
-    const todayIsUpdateDay = schedule ? Number(schedule.day_of_week) === new Date().getDay() : false;
-    res.json({ canSubmit: demoUpdatesEnabled || (todayIsUpdateDay && !updates.length), todayIsUpdateDay: demoUpdatesEnabled || todayIsUpdateDay, alreadySubmittedThisWeek: demoUpdatesEnabled ? false : Boolean(updates.length), nextUpdateDate: schedule?.next_due_date || nextScheduledDate(schedule?.day_of_week), lastSubmission: updates[0]?.submitted_at || null });
+    const updateTiming = getWeeklyUpdateTiming(schedule);
+    const todayIsUpdateDay = updateTiming.isTimely;
+    res.json({ canSubmit: demoUpdatesEnabled || (updateTiming.canSubmit && !updates.length), todayIsUpdateDay: demoUpdatesEnabled || todayIsUpdateDay, lateUpdateSubmission: !demoUpdatesEnabled && updateTiming.isLate && !updates.length, alreadySubmittedThisWeek: demoUpdatesEnabled ? false : Boolean(updates.length), nextUpdateDate: schedule?.next_due_date || nextScheduledDate(schedule?.day_of_week), lastSubmission: updates[0]?.submitted_at || null });
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
 });
 
@@ -653,7 +656,8 @@ router.post('/updates/submit', upload.array('files', 5), async (req, res) => {
     const [[demoClient]] = await connection.query('SELECT is_demo, demo_updates_enabled FROM clients WHERE user_id = ? LIMIT 1', [req.user.id]);
     const demoUpdatesEnabled = Boolean(demoClient?.is_demo && demoClient?.demo_updates_enabled);
     const [schedules] = await connection.query('SELECT day_of_week FROM update_schedule WHERE client_id = ? ORDER BY updated_at DESC LIMIT 1', [req.user.id]);
-    if (!demoUpdatesEnabled && (!schedules.length || Number(schedules[0].day_of_week) !== new Date().getDay())) return res.status(403).json({ message: 'Updates are available on the scheduled day only.' });
+    const updateTiming = getWeeklyUpdateTiming(schedules[0] || null);
+    if (!demoUpdatesEnabled && !updateTiming.canSubmit) return res.status(403).json({ message: 'Updates are available from the scheduled day until the end of the week.' });
     const weekStart = currentWeekStart();
     const [existing] = await connection.query('SELECT id FROM weekly_updates WHERE client_id = ? AND week_start = ?', [req.user.id, weekStart]);
     if (!demoUpdatesEnabled && existing.length) return res.status(400).json({ message: 'You have already submitted an update this week.' });
@@ -671,7 +675,7 @@ router.post('/updates/submit', upload.array('files', 5), async (req, res) => {
       return res.status(400).json({ message: 'One of the uploaded photos is invalid.' });
     }
     await connection.beginTransaction();
-    const [result] = await connection.query('INSERT INTO weekly_updates (client_id, week_start, is_read) VALUES (?, ?, 0)', [req.user.id, weekStart]);
+    const [result] = await connection.query('INSERT INTO weekly_updates (client_id, week_start, is_timely, is_read) VALUES (?, ?, ?, 0)', [req.user.id, weekStart, updateTiming.isTimely ? 1 : 0]);
     for (const answer of answers) {
       if (!answer || answer.questionId === undefined) continue;
       const value = typeof answer.answer === 'object' ? JSON.stringify(answer.answer) : String(answer.answer ?? '');
@@ -679,6 +683,7 @@ router.post('/updates/submit', upload.array('files', 5), async (req, res) => {
     }
     if (req.files?.length) await connection.query('INSERT INTO weekly_update_files (update_id, question_id, file_url, file_type, original_name, angle) VALUES ?', [req.files.map((file, index) => [result.insertId, Number(fileQuestionIds[index]) || null, file.path.replace(/\\/g, '/'), file.mimetype === 'application/pdf' ? 'pdf' : 'photo', file.originalname, file.mimetype === 'application/pdf' ? 'other' : (['front', 'side', 'back', 'other'].includes(fileAngles[index]) ? fileAngles[index] : 'other')])]);
     await connection.commit();
+    await awardWeeklyUpdatePoints(connection, { clientId: req.user.id, updateId: result.insertId, weekStart, timely: updateTiming.isTimely });
     try {
       await registerWeeklyUpdatePhotos(connection, req.user.id);
     } catch (mediaError) {

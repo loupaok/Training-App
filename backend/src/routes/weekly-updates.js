@@ -134,10 +134,17 @@ export async function ensureWeeklyUpdateSchema(connection) {
       client_id INT NOT NULL,
       submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       week_start DATE NOT NULL,
+      is_timely BOOLEAN NOT NULL DEFAULT TRUE,
       is_read BOOLEAN DEFAULT FALSE,
       FOREIGN KEY (client_id) REFERENCES users(id)
     )
   `);
+
+  try {
+    await connection.query('ALTER TABLE weekly_updates ADD COLUMN is_timely BOOLEAN NOT NULL DEFAULT TRUE AFTER week_start');
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
 
   // The application enforces one update per week for normal clients. Removing the
   // legacy database constraint lets demo accounts submit multiple test updates.
@@ -282,24 +289,43 @@ function normalizeQuestion(row) {
   };
 }
 
+function athensDateParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Athens', year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short',
+  }).formatToParts(date);
+  const get = (type) => parts.find((part) => part.type === type)?.value;
+  const weekday = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[get('weekday')];
+  return { year: Number(get('year')), month: Number(get('month')), day: Number(get('day')), weekday };
+}
+
 function toLocalDateString(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const { year, month, day } = athensDateParts(date);
   return `${year}-${month}-${day}`;
 }
 
-function getWeekStart(date = new Date()) {
-  const current = new Date(date);
-  const day = current.getDay();
-  const diff = current.getDate() - day + (day === 0 ? -6 : 1);
-  current.setDate(diff);
-  return toLocalDateString(current);
+export function getWeekStart(date = new Date()) {
+  const athens = athensDateParts(date);
+  const current = new Date(Date.UTC(athens.year, athens.month - 1, athens.day));
+  current.setUTCDate(current.getUTCDate() - (athens.weekday === 0 ? 6 : athens.weekday - 1));
+  return current.toISOString().slice(0, 10);
 }
 
-function isUpdateDay(schedule) {
-  if (!schedule || schedule.day_of_week === undefined || schedule.day_of_week === null) return false;
-  return Number(schedule.day_of_week) === new Date().getDay();
+// Calculated server-side in Europe/Athens: timely means 00:00–23:59:59 on
+// the selected day. Later in the same Monday–Sunday week is allowed, but late.
+export function getWeeklyUpdateTiming(schedule, date = new Date()) {
+  if (!schedule || schedule.day_of_week === undefined || schedule.day_of_week === null) {
+    return { canSubmit: false, isTimely: false, isLate: false };
+  }
+  const scheduledDay = Number(schedule.day_of_week);
+  if (!Number.isInteger(scheduledDay) || scheduledDay < 0 || scheduledDay > 6) {
+    return { canSubmit: false, isTimely: false, isLate: false };
+  }
+  const { weekday } = athensDateParts(date);
+  const todayIndex = weekday === 0 ? 6 : weekday - 1;
+  const scheduledIndex = scheduledDay === 0 ? 6 : scheduledDay - 1;
+  const isTimely = todayIndex === scheduledIndex;
+  const isLate = todayIndex > scheduledIndex;
+  return { canSubmit: isTimely || isLate, isTimely, isLate };
 }
 
 function nextDateForWeekday(day) {
@@ -516,8 +542,11 @@ router.get('/can-submit/:clientId', async (req, res) => {
       ? nextDateForWeekday(schedule.day_of_week)
       : null;
 
+    const timing = getWeeklyUpdateTiming(schedule);
     res.json({
-      canSubmit: demoUpdatesEnabled || (isUpdateDay(schedule) && !alreadySubmittedThisWeek),
+      canSubmit: demoUpdatesEnabled || (timing.canSubmit && !alreadySubmittedThisWeek),
+      isTimely: timing.isTimely,
+      isLate: timing.isLate,
       nextSubmitDate,
       alreadySubmittedThisWeek: demoUpdatesEnabled ? false : alreadySubmittedThisWeek,
     });
@@ -564,9 +593,10 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
       [req.user.id]
     );
     const schedule = scheduleRows[0] || null;
-    if (!demoUpdatesEnabled && !isUpdateDay(schedule)) {
+    const timing = getWeeklyUpdateTiming(schedule);
+    if (!demoUpdatesEnabled && !timing.canSubmit) {
       connection.release();
-      return res.status(403).json({ message: 'Το εβδομαδιαίο update ανοίγει μόνο την ημέρα που έχει επιλεγεί.' });
+      return res.status(403).json({ message: 'Το εβδομαδιαίο update ανοίγει από την προγραμματισμένη ημέρα και έως το τέλος της εβδομάδας.' });
     }
 
     const weekStart = getWeekStart();
@@ -599,7 +629,10 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
 
     await connection.beginTransaction();
 
-    const [result] = await connection.query('INSERT INTO weekly_updates (client_id, week_start) VALUES (?, ?)', [req.user.id, weekStart]);
+    const [result] = await connection.query(
+      'INSERT INTO weekly_updates (client_id, week_start, is_timely) VALUES (?, ?, ?)',
+      [req.user.id, weekStart, timing.isTimely ? 1 : 0]
+    );
     const updateId = result.insertId;
 
     for (const entry of answers) {
@@ -631,7 +664,7 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
     const clientName = userRows[0]?.full_name || userRows[0]?.email || 'Πελάτης';
 
     await connection.commit();
-    await awardWeeklyUpdatePoints(connection, { clientId: req.user.id, updateId, weekStart });
+    await awardWeeklyUpdatePoints(connection, { clientId: req.user.id, updateId, weekStart, timely: timing.isTimely });
     try {
       await registerWeeklyUpdatePhotos(connection, req.user.id);
     } catch (mediaError) {

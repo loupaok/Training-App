@@ -4,6 +4,7 @@ import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authenticateToken, authorizeRole } from '../middleware/auth.js';
 import { COMMON_FEATURE_SEED, PACKAGE_DURATION_SEED, PACKAGE_SEED, calculateDurationDiscount, calculateDurationSavingCents, calculatePackagePriceCents } from '../lib/packages.js';
+import { ensurePointsSchema } from './points.js';
 
 const router = express.Router();
 
@@ -144,12 +145,16 @@ export async function ensurePackagesSchema(connection) {
 
 export async function getPackageCatalog(connection, { visibleOnly = true, includeDeleted = false } = {}) {
   await ensurePackagesSchema(connection);
+  // The reward percentage belongs to Points & Rewards. Packages only read it
+  // to display the reward next to their real price; they never own a second
+  // editable rate.
+  await ensurePointsSchema(connection);
   const [packageRows] = await connection.query(`SELECT * FROM packages ${includeDeleted ? '' : 'WHERE deleted_at IS NULL'} ${visibleOnly ? (includeDeleted ? 'WHERE is_visible = 1' : 'AND is_visible = 1') : ''} ORDER BY sort_order, id`);
   const [featureRows] = await connection.query('SELECT * FROM package_features ORDER BY sort_order, id');
   const [offerRows] = await connection.query('SELECT * FROM package_duration_offers ORDER BY months, id');
   const [durationRows] = await connection.query(`SELECT * FROM package_durations ${visibleOnly ? 'WHERE is_active = 1' : ''} ORDER BY sort_order, months`);
   const [commonRows] = await connection.query('SELECT * FROM common_features ORDER BY sort_order, id');
-  const [[settings]] = await connection.query('SELECT points_per_euro FROM package_settings WHERE id = 1');
+  const [[pointsSettings]] = await connection.query('SELECT cashback_percent FROM points_settings WHERE id = 1');
   const packages = packageRows.map((item) => ({
     ...normalizePackage(item, featureRows),
     offers: offerRows.filter((offer) => Number(offer.package_id) === Number(item.id)).map((offer) => ({
@@ -157,7 +162,7 @@ export async function getPackageCatalog(connection, { visibleOnly = true, includ
       features: parseOfferFeatures(offer.features_json), isActive: Boolean(offer.is_active),
     })),
   }));
-  return { packages, durations: durationRows.map((item) => ({ id: Number(item.id), months: Number(item.months), title: item.title || null, basePriceCents: Number(item.base_price_cents), label: item.label || null, isActive: Boolean(item.is_active), sortOrder: Number(item.sort_order) })), commonFeatures: commonRows.map((item) => ({ id: Number(item.id), text: item.text, sortOrder: Number(item.sort_order) })), pointsPerEuro: Number(settings?.points_per_euro || 5) };
+  return { packages, durations: durationRows.map((item) => ({ id: Number(item.id), months: Number(item.months), title: item.title || null, basePriceCents: Number(item.base_price_cents), label: item.label || null, isActive: Boolean(item.is_active), sortOrder: Number(item.sort_order) })), commonFeatures: commonRows.map((item) => ({ id: Number(item.id), text: item.text, sortOrder: Number(item.sort_order) })), pointsPerEuro: Number(pointsSettings?.cashback_percent || 0) };
 }
 
 export async function getPackageQuote(connection, packageId, durationMonths, { visibleOnly = true, includeDeleted = false } = {}) {
@@ -705,10 +710,10 @@ router.put('/package-durations', authenticateToken, authorizeRole(['coach', 'adm
         [commonFeatures.map((text, index) => [text, index + 1])],
       );
     }
-    if (pointsPerEuro !== null) await connection.query(
-      'UPDATE package_settings SET points_per_euro = ? WHERE id = 1',
-      [pointsPerEuro],
-    );
+    if (pointsPerEuro !== null) {
+      await ensurePointsSchema(connection);
+      await connection.query('UPDATE points_settings SET cashback_percent = ? WHERE id = 1', [pointsPerEuro]);
+    }
     const createdIds = new Map();
     const pendingDrafts = [...draftPackages];
     while (pendingDrafts.length) {
@@ -743,7 +748,7 @@ router.put('/points-rate', authenticateToken, authorizeRole(['coach', 'admin']),
   const rate = Number(req.body?.pointsPerEuro);
   if (!Number.isInteger(rate) || rate < 0 || rate > 1000) return res.status(400).json({ message: 'Μη έγκυρη τιμή πόντων.' });
   let connection;
-  try { connection = await pool.getConnection(); await ensurePackagesSchema(connection); await connection.query('UPDATE package_settings SET points_per_euro = ? WHERE id = 1', [rate]); res.json(await getPackageCatalog(connection, { visibleOnly: false })); }
+  try { connection = await pool.getConnection(); await ensurePackagesSchema(connection); await ensurePointsSchema(connection); await connection.query('UPDATE points_settings SET cashback_percent = ? WHERE id = 1', [rate]); res.json(await getPackageCatalog(connection, { visibleOnly: false })); }
   catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); }
   finally { connection?.release(); }
 });

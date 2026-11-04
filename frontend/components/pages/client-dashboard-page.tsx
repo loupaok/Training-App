@@ -92,6 +92,8 @@ type DashboardData = {
     birthdayToday?: boolean
   }
   todayIsUpdateDay: boolean
+  canSubmitUpdate?: boolean
+  lateUpdateSubmission?: boolean
   alreadySubmittedThisWeek: boolean
   nextUpdateDate: string | null
   streak: number
@@ -184,7 +186,7 @@ function PointsWidget() {
 
 function ModernOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpdate }: { dashboard: DashboardData | null; trainingPlan: TrainingPlan; nutritionPlan: NutritionPlanPreview; onOpenUpdate: () => void }) {
   const client = dashboard?.client
-  const updateReady = dashboard?.todayIsUpdateDay && !dashboard.alreadySubmittedThisWeek
+  const updateReady = (dashboard?.canSubmitUpdate ?? dashboard?.todayIsUpdateDay) && !dashboard?.alreadySubmittedThisWeek
   const updateDone = dashboard?.alreadySubmittedThisWeek
   const nextUpdate = formatDate(dashboard?.nextUpdateDate)
   const daysRemaining = client?.daysRemaining
@@ -415,7 +417,7 @@ function ClientHomeOverviewNext({ dashboard, trainingPlan, nutritionPlan, workou
   const subscriptionState = subscriptionVisualState(client)
   const subscriptionExpired = subscriptionState === "expired"
   const accountActive = client?.subscriptionStatus === "active" || client?.subscriptionStatus === "expiring_soon"
-  const updateReady = Boolean(dashboard?.todayIsUpdateDay && !dashboard?.alreadySubmittedThisWeek)
+  const updateReady = Boolean((dashboard?.canSubmitUpdate ?? dashboard?.todayIsUpdateDay) && !dashboard?.alreadySubmittedThisWeek)
   const daysToNextUpdate = dashboard?.nextUpdateDate ? Math.max(0, Math.ceil((new Date(dashboard.nextUpdateDate).getTime() - Date.now()) / 86400000)) : 7
   const completedUpdateDays = Math.max(0, Math.min(7, 7 - daysToNextUpdate))
   const weekStart = startOfProgramWeek()
@@ -467,7 +469,7 @@ function ClientHomeOverview({ dashboard, trainingPlan, nutritionPlan, onOpenUpda
   const client = dashboard?.client
   const subscriptionState = subscriptionVisualState(client)
   const subscriptionExpired = subscriptionState === "expired"
-  const updateReady = Boolean(dashboard?.todayIsUpdateDay && !dashboard?.alreadySubmittedThisWeek)
+  const updateReady = Boolean((dashboard?.canSubmitUpdate ?? dashboard?.todayIsUpdateDay) && !dashboard?.alreadySubmittedThisWeek)
   const updateDone = Boolean(dashboard?.alreadySubmittedThisWeek)
   const subscriptionActive = client?.subscriptionStatus === "active" || client?.subscriptionStatus === "expiring_soon"
   const startDate = client?.subscriptionStartDate ? new Date(client.subscriptionStartDate) : null
@@ -771,7 +773,7 @@ function ClientDashboardContent() {
           <TabsContent value="payments"><div className="grid gap-6 lg:grid-cols-3"><PlanCard title="Συνδρομή" icon={<CalendarDays className="h-5 w-5 text-primary" />}><Badge>{paymentData?.subscription?.status === "active" ? "Ενεργή" : "-"}</Badge><p className="mt-3 font-medium">{paymentData?.subscription?.planName ?? "Δεν υπάρχει ενεργή συνδρομή"}</p><p className="text-sm text-muted-foreground">{paymentData?.subscription?.daysRemaining != null ? `${paymentData.subscription.daysRemaining} ημέρες απομένουν` : ""}</p></PlanCard><PlanCard title="Πληρωμές" icon={<FileText className="h-5 w-5 text-primary" />}><p className="text-3xl font-bold">{paymentData?.payments.length ?? 0}</p><p className="text-sm text-muted-foreground">καταγεγραμμένες πληρωμές</p></PlanCard><PlanCard title="Επόμενη λήξη" icon={<CalendarDays className="h-5 w-5 text-primary" />}><p className="text-lg font-semibold">{formatDate(paymentData?.subscription?.endDate)}</p></PlanCard></div><PlanCard title="Ιστορικό πληρωμών" icon={<FileText className="h-5 w-5 text-primary" />}>{paymentData?.payments.length ? <div className="space-y-3">{paymentData.payments.map((payment) => <div key={payment.id} className="flex items-center justify-between border-b pb-3 last:border-0"><div><p className="font-medium">€{Number(payment.amount).toFixed(2)}</p><p className="text-xs text-muted-foreground">{formatDate(payment.paidAt)} · {paymentMethod[payment.method] ?? payment.method}</p></div><Badge variant={payment.status === "confirmed" ? "default" : "secondary"}>{payment.status === "confirmed" ? "Εγκρίθηκε" : "Εκκρεμεί"}</Badge></div>)}</div> : <p className="text-sm text-muted-foreground">Δεν υπάρχουν πληρωμές ακόμα.</p>}</PlanCard></TabsContent>
 
           <TabsContent value="update">
-            {submitted ? <Card><CardContent className="flex min-h-72 flex-col items-center justify-center text-center"><CheckCircle2 className="h-14 w-14 text-green-600" /><h2 className="mt-4 text-xl font-semibold">Το update υποβλήθηκε!</h2><p className="mt-2 text-sm text-muted-foreground">Ο coach σου ενημερώθηκε.</p></CardContent></Card> : dashboard?.alreadySubmittedThisWeek ? <Card><CardContent className="flex min-h-72 flex-col items-center justify-center text-center"><CheckCircle2 className="h-14 w-14 text-green-600" /><h2 className="mt-4 text-xl font-semibold">Έχεις ήδη υποβάλει το update σου</h2><p className="mt-2 text-sm text-muted-foreground">Το επόμενο update είναι στις {upcomingDate}.</p></CardContent></Card> : !dashboard?.todayIsUpdateDay ? <Card><CardContent className="flex min-h-72 flex-col items-center justify-center text-center"><CalendarDays className="h-14 w-14 text-primary" /><h2 className="mt-4 text-xl font-semibold">Το επόμενο update είναι στις {upcomingDate}</h2><p className="mt-2 text-sm text-muted-foreground">Επιστρέψε εκείνη την ημέρα για να συμπληρώσεις το εβδομαδιαίο σου update.</p><p className="mt-5 text-xs text-muted-foreground">Έχεις υποβάλει {dashboard?.updatesCount ?? 0} updates συνολικά.</p></CardContent></Card> : <Card><CardHeader><CardTitle>Εβδομαδιαίο Update</CardTitle><CardDescription>Συμπλήρωσε την εβδομαδιαία σου αναφορά. Τα στοιχεία θα σταλούν απευθείας στον coach σου.</CardDescription></CardHeader><CardContent><form className="space-y-6" onSubmit={submitUpdate}>{questions.map(renderQuestion)}<div className="border-t pt-5"><Button type="submit" size="lg" disabled={submitting}><Send className="mr-2 h-4 w-4" />{submitting ? "Υποβολή..." : "Υποβολή Update"}</Button></div></form></CardContent></Card>}
+            {submitted ? <Card><CardContent className="flex min-h-72 flex-col items-center justify-center text-center"><CheckCircle2 className="h-14 w-14 text-green-600" /><h2 className="mt-4 text-xl font-semibold">Το update υποβλήθηκε!</h2><p className="mt-2 text-sm text-muted-foreground">Ο coach σου ενημερώθηκε.</p></CardContent></Card> : dashboard?.alreadySubmittedThisWeek ? <Card><CardContent className="flex min-h-72 flex-col items-center justify-center text-center"><CheckCircle2 className="h-14 w-14 text-green-600" /><h2 className="mt-4 text-xl font-semibold">Έχεις ήδη υποβάλει το update σου</h2><p className="mt-2 text-sm text-muted-foreground">Το επόμενο update είναι στις {upcomingDate}.</p></CardContent></Card> : !((dashboard?.canSubmitUpdate ?? dashboard?.todayIsUpdateDay)) ? <Card><CardContent className="flex min-h-72 flex-col items-center justify-center text-center"><CalendarDays className="h-14 w-14 text-primary" /><h2 className="mt-4 text-xl font-semibold">Το επόμενο update είναι στις {upcomingDate}</h2><p className="mt-2 text-sm text-muted-foreground">Επιστρέψε εκείνη την ημέρα για να συμπληρώσεις το εβδομαδιαίο σου update.</p><p className="mt-5 text-xs text-muted-foreground">Έχεις υποβάλει {dashboard?.updatesCount ?? 0} updates συνολικά.</p></CardContent></Card> : <Card><CardHeader><CardTitle>Εβδομαδιαίο Update</CardTitle><CardDescription>{dashboard?.lateUpdateSubmission ? "Το update θα σταλεί στον coach, αλλά είναι εκπρόθεσμο: δεν δίνει πόντους και δεν μετρά στη συνέπεια." : "Συμπλήρωσε την εβδομαδιαία σου αναφορά. Τα στοιχεία θα σταλούν απευθείας στον coach σου."}</CardDescription></CardHeader><CardContent><form className="space-y-6" onSubmit={submitUpdate}>{questions.map(renderQuestion)}<div className="border-t pt-5"><Button type="submit" size="lg" disabled={submitting}><Send className="mr-2 h-4 w-4" />{submitting ? "Υποβολή..." : "Υποβολή Update"}</Button></div></form></CardContent></Card>}
           </TabsContent>
         </Tabs>
       </main>
