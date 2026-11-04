@@ -68,6 +68,8 @@ interface PlanFeature {
 
 interface PricingPlan {
   id: number | string;
+  packageId?: number;
+  durationMonths?: number;
   name: string;
   description?: string;
   price: number | string;
@@ -77,6 +79,29 @@ interface PricingPlan {
   isActive: boolean;
   isPopular: boolean;
   sortOrder: number;
+}
+
+interface PackageDuration {
+  id: number;
+  months: number;
+  title?: string | null;
+  basePriceCents: number;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+interface CoachingPackage {
+  id: number;
+  name: string;
+  label?: string | null;
+  sortOrder: number;
+  features: { text: string }[];
+  offers?: { months: number; priceCents: number; features: string[]; isActive: boolean }[];
+}
+
+interface PackageCatalog {
+  packages: CoachingPackage[];
+  durations: PackageDuration[];
 }
 
 interface BankDetails {
@@ -121,6 +146,7 @@ type RegistrationProgress = {
     bodyGoal?: BodyGoalForm;
     answers?: Record<number, AnswerValue>;
     selectedPlanId?: number | string | null;
+    selectedDurationMonths?: number;
     paymentMethod?: "bank" | "stripe";
   };
   files: { id: number; file_url: string; file_type: "photo" | "pdf"; original_name: string }[];
@@ -245,6 +271,7 @@ function RegisterWizardContent() {
 
   const [plans, setPlans] = useState<PricingPlan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<number | string | null>(null);
+  const [selectedDurationMonths, setSelectedDurationMonths] = useState(1);
 
   const [paymentMethod, setPaymentMethod] = useState<"bank" | "stripe">("bank");
   const [bankDetails, setBankDetails] = useState<BankDetails | null>(null);
@@ -269,13 +296,36 @@ function RegisterWizardContent() {
       .catch(() => {});
 
     api
-      .get<PricingPlan[]>("/pricing-plans")
-      .then((rows) => {
-        const active = rows.filter((plan) => plan.isActive).sort((a, b) => a.sortOrder - b.sortOrder);
+      .get<PackageCatalog>("/pricing-plans/packages")
+      .then((catalog) => {
+        const activeDurations = catalog.durations.filter((duration) => duration.isActive).sort((a, b) => a.sortOrder - b.sortOrder);
+        const active = activeDurations.flatMap((duration) => [...catalog.packages]
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .flatMap((pkg) => {
+            const offer = pkg.offers?.find((item) => item.months === duration.months && item.isActive);
+            if (!offer) return [];
+            const features = offer.features.length ? offer.features : pkg.features.map((feature) => feature.text);
+            return [{
+              id: `${pkg.id}:${duration.months}`,
+              packageId: pkg.id,
+              durationMonths: duration.months,
+              name: pkg.name,
+              description: "",
+              price: offer.priceCents / 100,
+              currency: "EUR",
+              period: duration.title || `${duration.months} ${duration.months === 1 ? "μήνας" : "μήνες"}`,
+              features: features.map((text) => ({ text, included: true })),
+              isActive: true,
+              isPopular: Boolean(pkg.label),
+              sortOrder: duration.sortOrder * 100 + pkg.sortOrder,
+            } satisfies PricingPlan];
+          }));
         setPlans(active);
-        const preselected = preselectedPlan ? active.find((plan) => String(plan.id) === preselectedPlan) : null;
+        const preselected = preselectedPlan ? active.find((plan) => String(plan.id) === preselectedPlan || String(plan.packageId) === preselectedPlan) : null;
         const popular = active.find((plan) => plan.isPopular);
-        setSelectedPlanId((current) => current ?? (preselected || popular || active[0])?.id ?? null);
+        const initial = preselected || popular || active[0];
+        setSelectedPlanId((current) => current ?? initial?.id ?? null);
+        setSelectedDurationMonths(initial?.durationMonths || activeDurations[0]?.months || 1);
       })
       .catch(() => {});
 
@@ -314,6 +364,7 @@ function RegisterWizardContent() {
         if (data.bodyGoal) setBodyGoal(data.bodyGoal);
         if (data.answers) setAnswers(data.answers);
         if (data.selectedPlanId !== undefined) setSelectedPlanId(data.selectedPlanId);
+        if (data.selectedDurationMonths) setSelectedDurationMonths(Number(data.selectedDurationMonths));
         if (data.paymentMethod) setPaymentMethod(data.paymentMethod);
         setStepIndex(Math.max(0, Math.min(Number(progress.currentStep || 0), steps.length - 1)));
         setShowIntro(false);
@@ -334,6 +385,7 @@ function RegisterWizardContent() {
         if (draft.bodyGoal) setBodyGoal(draft.bodyGoal);
         if (draft.answers) setAnswers(draft.answers);
         if (draft.selectedPlanId !== undefined) setSelectedPlanId(draft.selectedPlanId);
+        if (draft.selectedDurationMonths) setSelectedDurationMonths(Number(draft.selectedDurationMonths));
         if (draft.paymentMethod) setPaymentMethod(draft.paymentMethod);
         if (typeof draft.stepIndex === "number" && draft.stepIndex > 0) {
           setStepIndex(Math.min(draft.stepIndex, steps.length - 1));
@@ -466,6 +518,7 @@ function RegisterWizardContent() {
       bodyGoal,
       answers,
       selectedPlanId,
+      selectedDurationMonths,
       paymentMethod,
     };
   };
@@ -474,7 +527,7 @@ function RegisterWizardContent() {
     if (!draftRestored) return;
     window.sessionStorage.setItem("register-wizard-draft", JSON.stringify({ ...getProgressData(), stepIndex }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftRestored, account, bodyGoal, answers, selectedPlanId, paymentMethod, stepIndex]);
+  }, [draftRestored, account, bodyGoal, answers, selectedPlanId, selectedDurationMonths, paymentMethod, stepIndex]);
 
   const goNext = () => {
     const message = validateStep();
@@ -525,7 +578,12 @@ function RegisterWizardContent() {
     formData.append("weightKg", bodyGoal.currentWeight);
     formData.append("fitnessGoal", bodyGoal.goal);
     if (bodyGoal.targetWeight) formData.append("targetWeightKg", bodyGoal.targetWeight);
-    formData.append("plan_id", String(Number(selectedPlanId)));
+    if (selectedPlan?.packageId && selectedPlan.durationMonths) {
+      formData.append("package_id", String(selectedPlan.packageId));
+      formData.append("duration_months", String(selectedPlan.durationMonths));
+    } else {
+      formData.append("plan_id", String(Number(selectedPlanId)));
+    }
     formData.append("payment_method", paymentMethod);
     formData.append("privacyConsent", "true");
     formData.append("answers", JSON.stringify(answersPayload));
@@ -610,7 +668,7 @@ function RegisterWizardContent() {
               />
             )}
             {stepIndex === 4 && (
-              <PlanStep plans={plans} selectedPlanId={selectedPlanId} onSelect={setSelectedPlanId} />
+              <PlanStep plans={plans} selectedPlanId={selectedPlanId} selectedDurationMonths={selectedDurationMonths} onDurationChange={(months) => { setSelectedDurationMonths(months); const next = plans.find((plan) => plan.durationMonths === months); if (next) setSelectedPlanId(next.id); }} onSelect={setSelectedPlanId} />
             )}
             {stepIndex === 5 && (
               <PaymentStep
@@ -1347,10 +1405,14 @@ function PhotoThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
 function PlanStep({
   plans,
   selectedPlanId,
+  selectedDurationMonths,
+  onDurationChange,
   onSelect,
 }: {
   plans: PricingPlan[];
   selectedPlanId: number | string | null;
+  selectedDurationMonths: number;
+  onDurationChange: (months: number) => void;
   onSelect: (id: number | string) => void;
 }) {
   if (!plans.length) {
@@ -1359,8 +1421,14 @@ function PlanStep({
 
   return (
     <Section title="Επέλεξε το Πλάνο σου">
+      <div className="mb-5 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {[...new Set(plans.map((plan) => plan.durationMonths).filter((months): months is number => Boolean(months)))].map((months) => {
+          const selected = selectedDurationMonths === months;
+          return <button key={months} type="button" onClick={() => onDurationChange(months)} className={`h-10 shrink-0 rounded-full px-4 text-sm font-extrabold transition-colors ${selected ? "bg-[#0b0b0b] text-[#b0f90c]" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-card dark:text-foreground"}`}>{months} {months === 1 ? "μήνας" : "μήνες"}</button>;
+        })}
+      </div>
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        {plans.map((plan) => (
+        {plans.filter((plan) => plan.durationMonths === selectedDurationMonths).map((plan) => (
           <PlanOption key={plan.id} plan={plan} selected={String(plan.id) === String(selectedPlanId)} onSelect={() => onSelect(plan.id)} />
         ))}
       </div>

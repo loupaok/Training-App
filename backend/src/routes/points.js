@@ -17,6 +17,17 @@ export async function ensurePointsSchema(connection) {
       coupon_expiry_days INT DEFAULT 30,
       min_points_redeem INT DEFAULT 100,
       max_discount_percent INT DEFAULT 50,
+      cashback_percent DECIMAL(5,2) NOT NULL DEFAULT 5.00,
+      weekly_update_points INT NOT NULL DEFAULT 100,
+      weekly_streak_bonus_points INT NOT NULL DEFAULT 200,
+      early_renewal_days INT NOT NULL DEFAULT 7,
+      early_renewal_points INT NOT NULL DEFAULT 1000,
+      loyalty_3_month_points INT NOT NULL DEFAULT 600,
+      loyalty_6_month_points INT NOT NULL DEFAULT 1200,
+      loyalty_9_month_points INT NOT NULL DEFAULT 1800,
+      loyalty_12_month_points INT NOT NULL DEFAULT 2400,
+      birthday_points INT NOT NULL DEFAULT 1500,
+      referral_points INT NOT NULL DEFAULT 1000,
       is_active BOOLEAN DEFAULT TRUE,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )
@@ -59,6 +70,17 @@ export async function ensurePointsSchema(connection) {
     )
   `);
   for (const statement of [
+    'ALTER TABLE points_settings ADD COLUMN cashback_percent DECIMAL(5,2) NOT NULL DEFAULT 5.00',
+    'ALTER TABLE points_settings ADD COLUMN weekly_update_points INT NOT NULL DEFAULT 100',
+    'ALTER TABLE points_settings ADD COLUMN weekly_streak_bonus_points INT NOT NULL DEFAULT 200',
+    'ALTER TABLE points_settings ADD COLUMN early_renewal_days INT NOT NULL DEFAULT 7',
+    'ALTER TABLE points_settings ADD COLUMN early_renewal_points INT NOT NULL DEFAULT 1000',
+    'ALTER TABLE points_settings ADD COLUMN loyalty_3_month_points INT NOT NULL DEFAULT 600',
+    'ALTER TABLE points_settings ADD COLUMN loyalty_6_month_points INT NOT NULL DEFAULT 1200',
+    'ALTER TABLE points_settings ADD COLUMN loyalty_9_month_points INT NOT NULL DEFAULT 1800',
+    'ALTER TABLE points_settings ADD COLUMN loyalty_12_month_points INT NOT NULL DEFAULT 2400',
+    'ALTER TABLE points_settings ADD COLUMN birthday_points INT NOT NULL DEFAULT 1500',
+    'ALTER TABLE points_settings ADD COLUMN referral_points INT NOT NULL DEFAULT 1000',
     "ALTER TABLE points_transactions ADD COLUMN coupon_expires_at DATETIME NULL",
     "ALTER TABLE points_transactions ADD COLUMN coupon_status ENUM('active', 'used', 'expired', 'invalid') NULL",
     "ALTER TABLE points_transactions ADD COLUMN coupon_checked_at DATETIME NULL",
@@ -74,8 +96,98 @@ export async function ensurePointsSchema(connection) {
 // Best-effort points award — called after a payment is recorded as completed
 // (manual entry or bank-transfer approval). Never throws: a points-system
 // hiccup must not undo or fail the payment it's attached to.
+async function awardRulePoints(connection, { clientId, points, referenceType, referenceId, description, title = 'Κέρδισες πόντους!' }) {
+  const reward = Math.max(0, Math.round(Number(points) || 0));
+  if (!reward) return false;
+  const [existing] = await connection.query(
+    'SELECT id FROM points_transactions WHERE client_id = ? AND reference_type = ? AND reference_id <=> ? LIMIT 1',
+    [clientId, referenceType, referenceId ?? null],
+  );
+  if (existing.length) return false;
+  await connection.query(
+    `INSERT INTO client_points (client_id, total_points) VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE total_points = total_points + ?`, [clientId, reward, reward],
+  );
+  await connection.query(
+    `INSERT INTO points_transactions (client_id, type, points, description, reference_id, reference_type)
+     VALUES (?, 'earned', ?, ?, ?, ?)`, [clientId, reward, description, referenceId ?? null, referenceType],
+  );
+  const { notifyUser } = await import('./clients.js');
+  await notifyUser(connection, clientId, {
+    clientId, type: 'points_earned', title: `🎯 ${title}`,
+    body: `${description} +${reward} πόντοι.`, linkUrl: '/client-points',
+  });
+  return true;
+}
+
+export async function awardLoyaltyMilestones(connection, clientId, settings = null) {
+  if (!settings) {
+    await ensurePointsSchema(connection);
+    [[settings]] = await connection.query('SELECT * FROM points_settings WHERE id = 1');
+  }
+  if (!settings?.is_active) return;
+  const [subscriptions] = await connection.query(
+    `SELECT start_date, end_date FROM subscriptions
+     WHERE client_id = ? AND status IN ('active', 'expiring_soon', 'expired')
+     ORDER BY start_date ASC, end_date ASC`, [clientId],
+  );
+  let chainStart = null;
+  let chainEnd = null;
+  for (const subscription of subscriptions) {
+    const start = new Date(subscription.start_date);
+    const end = new Date(Math.min(new Date(subscription.end_date).getTime(), Date.now()));
+    if (!chainStart || start.getTime() > chainEnd.getTime() + 86400000) { chainStart = start; chainEnd = end; }
+    else if (end > chainEnd) chainEnd = end;
+  }
+  if (!chainStart || !chainEnd) return;
+  for (const [months, points] of [[3, settings.loyalty_3_month_points], [6, settings.loyalty_6_month_points], [9, settings.loyalty_9_month_points], [12, settings.loyalty_12_month_points]]) {
+    const threshold = new Date(chainStart);
+    threshold.setMonth(threshold.getMonth() + months);
+    if (chainEnd >= threshold) await awardRulePoints(connection, {
+      clientId, points, referenceType: `loyalty_milestone:${chainStart.toISOString().slice(0, 10)}`, referenceId: months,
+      description: `Bonus συνέπειας ${months} μηνών χωρίς διακοπή`, title: 'Bonus συνέπειας!',
+    });
+  }
+}
+
+async function awardCashbackPoints(connection, { clientId, paymentId, planNameOverride = null }) {
+  await ensurePointsSchema(connection);
+  const [[settings]] = await connection.query('SELECT * FROM points_settings WHERE id = 1');
+  if (!settings?.is_active) return;
+  const [[payment]] = await connection.query(
+    `SELECT p.amount, p.created_at, p.subscription_id, s.plan_name
+     FROM payments p LEFT JOIN subscriptions s ON s.id = p.subscription_id
+     WHERE p.id = ? AND p.client_id = ? LIMIT 1`, [paymentId, clientId],
+  );
+  if (!payment) return;
+  // One euro of cashback equals 100 points. For a percentage P this reduces
+  // to amount × P: 105 € × 5 = 525 points.
+  const reward = Math.round(Number(payment.amount || 0) * Number(settings.cashback_percent || 0));
+  await awardRulePoints(connection, {
+    clientId, points: reward, referenceType: 'payment', referenceId: paymentId,
+    description: `Επιστροφή ${Number(settings.cashback_percent).toLocaleString('el-GR')}% από πληρωμή ${planNameOverride || payment.plan_name || 'συνδρομής'}`,
+  });
+  const [[previous]] = await connection.query(
+    `SELECT end_date FROM subscriptions WHERE client_id = ? AND id <> ?
+     AND status IN ('active', 'expiring_soon') ORDER BY end_date DESC LIMIT 1`,
+    [clientId, payment.subscription_id || 0],
+  );
+  if (previous?.end_date) {
+    const daysEarly = Math.floor((new Date(previous.end_date).getTime() - new Date(payment.created_at).getTime()) / 86400000);
+    if (daysEarly >= Number(settings.early_renewal_days || 7)) await awardRulePoints(connection, {
+      clientId, points: settings.early_renewal_points, referenceType: 'early_renewal', referenceId: paymentId,
+      description: `Bonus έγκαιρης ανανέωσης (${daysEarly} ημέρες πριν τη λήξη)`, title: 'Έγκαιρη ανανέωση!',
+    });
+  }
+  await awardLoyaltyMilestones(connection, clientId, settings);
+}
+
 export async function awardPoints(connection, { clientId, planId, paymentId, pointsOverride = null, planNameOverride = null }) {
   try {
+    if (paymentId) {
+      await awardCashbackPoints(connection, { clientId, paymentId, planNameOverride });
+      return;
+    }
     if (!planId && !Number.isFinite(Number(pointsOverride))) return;
     await ensurePointsSchema(connection);
     const [plans] = planId ? await connection.query('SELECT name, points_reward FROM pricing_plans WHERE id = ?', [planId]) : [[]];
@@ -113,6 +225,46 @@ export async function awardPoints(connection, { clientId, planId, paymentId, poi
   }
 }
 
+export async function awardWeeklyUpdatePoints(connection, { clientId, updateId, weekStart }) {
+  try {
+    await ensurePointsSchema(connection);
+    const [[settings]] = await connection.query('SELECT * FROM points_settings WHERE id = 1');
+    if (!settings?.is_active) return;
+    const [updates] = await connection.query(
+      'SELECT id, week_start FROM weekly_updates WHERE client_id = ? ORDER BY week_start DESC, id DESC LIMIT 4',
+      [clientId],
+    );
+    let streak = 0;
+    let expected = new Date(weekStart);
+    for (const update of updates) {
+      const actual = new Date(update.week_start);
+      if (actual.toISOString().slice(0, 10) !== expected.toISOString().slice(0, 10)) break;
+      streak += 1;
+      expected.setDate(expected.getDate() - 7);
+    }
+    const fourthInStreak = streak > 0 && streak % 4 === 0;
+    await awardRulePoints(connection, {
+      clientId,
+      points: fourthInStreak ? settings.weekly_streak_bonus_points : settings.weekly_update_points,
+      referenceType: 'weekly_update', referenceId: updateId,
+      description: fourthInStreak ? 'Bonus 4 συνεχόμενων έγκαιρων εβδομαδιαίων updates' : 'Έγκαιρο και ολοκληρωμένο εβδομαδιαίο update',
+      title: fourthInStreak ? 'Bonus συνέπειας!' : 'Το update σου ολοκληρώθηκε!',
+    });
+  } catch (error) { console.error('Weekly update points award failed:', error); }
+}
+
+export async function awardBirthdayPoints(connection, { clientId, year }) {
+  try {
+    await ensurePointsSchema(connection);
+    const [[settings]] = await connection.query('SELECT * FROM points_settings WHERE id = 1');
+    if (!settings?.is_active) return;
+    await awardRulePoints(connection, {
+      clientId, points: settings.birthday_points, referenceType: 'birthday', referenceId: year,
+      description: 'Δώρο γενεθλίων από την SP Team', title: 'Χρόνια πολλά!',
+    });
+  } catch (error) { console.error('Birthday points award failed:', error); }
+}
+
 router.get('/settings', async (req, res) => {
   try {
     const connection = await pool.getConnection();
@@ -126,7 +278,7 @@ router.get('/settings', async (req, res) => {
   }
 });
 
-router.put('/settings', authenticateToken, authorizeRole(['coach']), [
+router.put('/settings', authenticateToken, authorizeRole(['coach', 'admin']), [
   body('pointsPerEuro').optional().isInt({ min: 0 }),
   body('euroPerPoints').optional().isInt({ min: 1 }),
   body('couponExpiryDays').optional().isInt({ min: 1 }),
@@ -134,6 +286,17 @@ router.put('/settings', authenticateToken, authorizeRole(['coach']), [
   body('maxDiscountPercent').optional().isInt({ min: 0, max: 100 }),
   body('isActive').optional().isBoolean(),
   body('shopUrl').optional({ nullable: true }).isString(),
+  body('cashbackPercent').optional().isFloat({ min: 0, max: 100 }),
+  body('weeklyUpdatePoints').optional().isInt({ min: 0 }),
+  body('weeklyStreakBonusPoints').optional().isInt({ min: 0 }),
+  body('earlyRenewalDays').optional().isInt({ min: 0 }),
+  body('earlyRenewalPoints').optional().isInt({ min: 0 }),
+  body('loyalty3MonthPoints').optional().isInt({ min: 0 }),
+  body('loyalty6MonthPoints').optional().isInt({ min: 0 }),
+  body('loyalty9MonthPoints').optional().isInt({ min: 0 }),
+  body('loyalty12MonthPoints').optional().isInt({ min: 0 }),
+  body('birthdayPoints').optional().isInt({ min: 0 }),
+  body('referralPoints').optional().isInt({ min: 0 }),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -146,7 +309,10 @@ router.put('/settings', authenticateToken, authorizeRole(['coach']), [
     await connection.query(
       `UPDATE points_settings
        SET points_per_euro = ?, euro_per_points = ?, coupon_expiry_days = ?, min_points_redeem = ?,
-           max_discount_percent = ?, is_active = ?, shop_url = ?
+           max_discount_percent = ?, is_active = ?, shop_url = ?, cashback_percent = ?,
+           weekly_update_points = ?, weekly_streak_bonus_points = ?, early_renewal_days = ?, early_renewal_points = ?,
+           loyalty_3_month_points = ?, loyalty_6_month_points = ?, loyalty_9_month_points = ?, loyalty_12_month_points = ?,
+           birthday_points = ?, referral_points = ?
        WHERE id = 1`,
       [
         req.body.pointsPerEuro ?? current.points_per_euro,
@@ -156,6 +322,17 @@ router.put('/settings', authenticateToken, authorizeRole(['coach']), [
         req.body.maxDiscountPercent ?? current.max_discount_percent,
         req.body.isActive === undefined ? current.is_active : (req.body.isActive ? 1 : 0),
         req.body.shopUrl === undefined ? current.shop_url : (req.body.shopUrl || null),
+        req.body.cashbackPercent ?? current.cashback_percent,
+        req.body.weeklyUpdatePoints ?? current.weekly_update_points,
+        req.body.weeklyStreakBonusPoints ?? current.weekly_streak_bonus_points,
+        req.body.earlyRenewalDays ?? current.early_renewal_days,
+        req.body.earlyRenewalPoints ?? current.early_renewal_points,
+        req.body.loyalty3MonthPoints ?? current.loyalty_3_month_points,
+        req.body.loyalty6MonthPoints ?? current.loyalty_6_month_points,
+        req.body.loyalty9MonthPoints ?? current.loyalty_9_month_points,
+        req.body.loyalty12MonthPoints ?? current.loyalty_12_month_points,
+        req.body.birthdayPoints ?? current.birthday_points,
+        req.body.referralPoints ?? current.referral_points,
       ]
     );
 
@@ -282,7 +459,7 @@ router.get('/my/coupons', authenticateToken, authorizeRole(['client']), async (r
   }
 });
 
-router.get('/client/:id', authenticateToken, authorizeRole(['coach']), async (req, res) => {
+router.get('/client/:id', authenticateToken, authorizeRole(['coach', 'admin']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await ensurePointsSchema(connection);
@@ -295,7 +472,7 @@ router.get('/client/:id', authenticateToken, authorizeRole(['coach']), async (re
   }
 });
 
-router.post('/award', authenticateToken, authorizeRole(['coach']), [
+router.post('/award', authenticateToken, authorizeRole(['coach', 'admin']), [
   body('clientId').isInt({ gt: 0 }),
   body('points').isInt(),
   body('description').optional({ nullable: true }).isString(),
@@ -421,7 +598,7 @@ router.post('/redeem', authenticateToken, authorizeRole(['client']), [
   }
 });
 
-router.get('/wc-test', authenticateToken, authorizeRole(['coach']), async (req, res) => {
+router.get('/wc-test', authenticateToken, authorizeRole(['coach', 'admin']), async (req, res) => {
   try {
     const status = await wcRequest('GET', '/system_status');
     res.json({ connected: true, store: status?.environment?.site_url || 'WooCommerce' });

@@ -10,6 +10,7 @@ import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { updateNotificationEmail } from '../lib/email-templates.js';
 import { registerWeeklyUpdatePhotos } from './media.js';
 import { optimizeUploadedImages } from '../utils/image-optimization.js';
+import { awardWeeklyUpdatePoints } from './points.js';
 
 const router = express.Router();
 
@@ -630,6 +631,7 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
     const clientName = userRows[0]?.full_name || userRows[0]?.email || 'Πελάτης';
 
     await connection.commit();
+    await awardWeeklyUpdatePoints(connection, { clientId: req.user.id, updateId, weekStart });
     try {
       await registerWeeklyUpdatePhotos(connection, req.user.id);
     } catch (mediaError) {

@@ -7,7 +7,6 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -25,6 +24,17 @@ interface PointsSettings {
   max_discount_percent: number;
   is_active: boolean | number;
   shop_url: string | null;
+  cashback_percent: number;
+  weekly_update_points: number;
+  weekly_streak_bonus_points: number;
+  early_renewal_days: number;
+  early_renewal_points: number;
+  loyalty_3_month_points: number;
+  loyalty_6_month_points: number;
+  loyalty_9_month_points: number;
+  loyalty_12_month_points: number;
+  birthday_points: number;
+  referral_points: number;
 }
 
 interface ClientRow {
@@ -39,22 +49,31 @@ interface ClientPoints {
   availablePoints: number;
 }
 
+interface MediaAsset {
+  id: string | number;
+  title: string;
+  url: string;
+  assetType?: string;
+  folderName?: string;
+}
+
 function CoachPointsContent() {
   const { user, logout } = useAuth();
   const { refreshBranding } = useBranding();
   const [settings, setSettings] = useState<PointsSettings | null>(null);
-  const [eshopBranding, setEshopBranding] = useState<BrandingData | null>(null);
-  const [savingEshop, setSavingEshop] = useState(false);
-  const [uploadingEshopImage, setUploadingEshopImage] = useState(false);
-  const eshopImageInputRef = useRef<HTMLInputElement>(null);
+  const [branding, setBranding] = useState<BrandingData | null>(null);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+  const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
+  const [loadingMedia, setLoadingMedia] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const [wcStatus, setWcStatus] = useState<{ connected: boolean; store?: string; message?: string } | null>(null);
-  const [testingWc, setTestingWc] = useState(false);
 
   const [clients, setClients] = useState<ClientRow[]>([]);
+  const [visibleClients, setVisibleClients] = useState(10);
   const [clientPoints, setClientPoints] = useState<Record<string, ClientPoints>>({});
 
   const [awardOpen, setAwardOpen] = useState(false);
@@ -65,7 +84,7 @@ function CoachPointsContent() {
 
   useEffect(() => {
     api.get<PointsSettings>("/points/settings").then(setSettings).catch(() => {});
-    api.get<BrandingData>("/branding").then(setEshopBranding).catch(() => {});
+    api.get<BrandingData>("/branding").then(setBranding).catch(() => {});
     api
       .get<ClientRow[]>("/clients")
       .then((rows) => {
@@ -80,53 +99,17 @@ function CoachPointsContent() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (!mediaPickerOpen) return;
+    setLoadingMedia(true);
+    api.get<MediaAsset[]>("/media?limit=60")
+      .then((assets) => setMediaAssets(assets.filter((asset) => asset.assetType === "photo")))
+      .catch(() => setMediaAssets([]))
+      .finally(() => setLoadingMedia(false));
+  }, [mediaPickerOpen]);
+
   const update = <K extends keyof PointsSettings>(key: K, value: PointsSettings[K]) =>
     setSettings((current) => (current ? { ...current, [key]: value } : current));
-
-  const updateEshop = <K extends keyof BrandingData>(key: K, value: BrandingData[K]) =>
-    setEshopBranding((current) => (current ? { ...current, [key]: value } : current));
-
-  const saveEshop = async () => {
-    if (!eshopBranding) return;
-    setSavingEshop(true);
-    setError("");
-    setMessage("");
-    try {
-      const saved = await api.put<BrandingData>("/branding", {
-        ...eshopBranding,
-        eshopUrl: eshopBranding.eshopUrl?.trim() || null,
-        eshopBannerTitle: eshopBranding.eshopBannerTitle?.trim() || null,
-        eshopBannerAccentText: eshopBranding.eshopBannerAccentText?.trim() || null,
-        eshopBannerText: eshopBranding.eshopBannerText?.trim() || null,
-        eshopButtonText: eshopBranding.eshopButtonText?.trim() || "Πήγαινε στο eshop",
-      });
-      setEshopBranding(saved);
-      await refreshBranding();
-      setMessage("Οι ρυθμίσεις eshop αποθηκεύτηκαν.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Δεν αποθηκεύτηκαν οι ρυθμίσεις eshop.");
-    } finally {
-      setSavingEshop(false);
-    }
-  };
-
-  const uploadEshopImage = async (file?: File) => {
-    if (!file) return;
-    setUploadingEshopImage(true);
-    setError("");
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const saved = await api.upload<BrandingData>("/branding/eshop-banner", formData);
-      setEshopBranding(saved);
-      await refreshBranding();
-      setMessage("Η εικόνα banner ανέβηκε.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Η μεταφόρτωση απέτυχε.");
-    } finally {
-      setUploadingEshopImage(false);
-    }
-  };
 
   const saveSettings = async () => {
     if (!settings) return;
@@ -142,6 +125,17 @@ function CoachPointsContent() {
         maxDiscountPercent: Number(settings.max_discount_percent),
         isActive: Boolean(settings.is_active),
         shopUrl: settings.shop_url || "",
+        cashbackPercent: Number(settings.cashback_percent),
+        weeklyUpdatePoints: Number(settings.weekly_update_points),
+        weeklyStreakBonusPoints: Number(settings.weekly_streak_bonus_points),
+        earlyRenewalDays: Number(settings.early_renewal_days),
+        earlyRenewalPoints: Number(settings.early_renewal_points),
+        loyalty3MonthPoints: Number(settings.loyalty_3_month_points),
+        loyalty6MonthPoints: Number(settings.loyalty_6_month_points),
+        loyalty9MonthPoints: Number(settings.loyalty_9_month_points),
+        loyalty12MonthPoints: Number(settings.loyalty_12_month_points),
+        birthdayPoints: Number(settings.birthday_points),
+        referralPoints: Number(settings.referral_points),
       });
       setSettings(saved);
       setMessage("Οι ρυθμίσεις αποθηκεύτηκαν.");
@@ -152,16 +146,45 @@ function CoachPointsContent() {
     }
   };
 
+  const uploadBanner = async (file?: File) => {
+    if (!file) return;
+    setUploadingBanner(true);
+    setError("");
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const saved = await api.upload<BrandingData>("/branding/eshop-banner", formData);
+      setBranding(saved);
+      await refreshBranding();
+      setMessage("Η φωτογραφία του banner αποθηκεύτηκε.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν ανέβηκε η φωτογραφία του banner.");
+    } finally {
+      setUploadingBanner(false);
+    }
+  };
+
   const testConnection = async () => {
-    setTestingWc(true);
-    setWcStatus(null);
+    setError("");
+    setMessage("");
     try {
       const result = await api.get<{ connected: boolean; store?: string; message?: string }>("/points/wc-test");
-      setWcStatus(result);
+      setMessage(result.connected ? `Συνδέθηκε με ${result.store || "WooCommerce"}.` : `Δεν συνδέθηκε: ${result.message || "άγνωστο σφάλμα"}`);
     } catch (err) {
-      setWcStatus({ connected: false, message: err instanceof Error ? err.message : "Σφάλμα σύνδεσης." });
-    } finally {
-      setTestingWc(false);
+      setError(err instanceof Error ? err.message : "Δεν ήταν δυνατή η σύνδεση με WooCommerce.");
+    }
+  };
+
+  const chooseMediaBanner = async (asset: MediaAsset) => {
+    setError("");
+    try {
+      const saved = await api.put<BrandingData>("/branding/eshop-banner/library", { url: asset.url });
+      setBranding(saved);
+      setMediaPickerOpen(false);
+      await refreshBranding();
+      setMessage("Η φωτογραφία από τη Media Library επιλέχθηκε.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν ενημερώθηκε η φωτογραφία banner.");
     }
   };
 
@@ -189,6 +212,8 @@ function CoachPointsContent() {
   };
 
   const clientOptions = useMemo(() => clients.map((c) => ({ value: String(c.id), label: c.full_name || c.email || `#${c.id}` })), [clients]);
+  const cashbackPercent = Number(settings?.cashback_percent || 0);
+  const cashbackExamples = [105, 190, 270, 350].map((amount) => ({ amount, points: Math.round(amount * cashbackPercent) }));
 
   return (
     <CoachShell title="Πόντοι & Rewards" user={user} logout={logout}>
@@ -200,78 +225,47 @@ function CoachPointsContent() {
           <h2 className="text-xl font-bold">Ρυθμίσεις Πόντων</h2>
           {settings && (
             <div className="mt-5 space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  Πόντοι ανά €
-                  <Input type="number" value={settings.points_per_euro} onChange={(e) => update("points_per_euro", Number(e.target.value) || 0)} />
-                  <span className="text-xs font-semibold text-slate-400">100 πόντοι = 1€ έκπτωση</span>
-                </Label>
-                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  Ελάχιστοι για εξαργύρωση
-                  <Input type="number" value={settings.min_points_redeem} onChange={(e) => update("min_points_redeem", Number(e.target.value) || 0)} />
-                </Label>
-                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  Λήξη coupon (μέρες)
-                  <Input type="number" value={settings.coupon_expiry_days} onChange={(e) => update("coupon_expiry_days", Number(e.target.value) || 0)} />
-                </Label>
-                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                  Μέγιστη έκπτωση (%)
-                  <Input type="number" value={settings.max_discount_percent} onChange={(e) => update("max_discount_percent", Number(e.target.value) || 0)} />
-                </Label>
+              <div className="rounded-[16px] border border-border bg-muted/40 p-4">
+                <p className="text-[15px] font-extrabold">Αυτόματες επιβραβεύσεις</p>
+                <p className="mt-1 text-xs text-muted-foreground">Οι πόντοι δίνονται μόνο αφού ολοκληρωθεί η αντίστοιχη ενέργεια.</p>
+                <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  <Label className="space-y-2 sm:col-span-2 xl:col-span-3"><span>Επιστροφή σε πληρωμή (%)</span><div className="flex items-center gap-3"><Input type="number" min="0" max="100" step="0.1" value={settings.cashback_percent} onChange={(e) => update("cashback_percent", Number(e.target.value) || 0)} /><span className="inline-flex h-11 shrink-0 items-center rounded-full bg-foreground px-4 text-sm font-extrabold text-background">{cashbackPercent.toLocaleString("el-GR")}%</span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{cashbackExamples.map(({ amount, points }) => <span key={amount} className="rounded-[12px] bg-card p-3 text-xs text-muted-foreground"><b className="block text-sm text-foreground">{amount} € → {points.toLocaleString("el-GR")}</b>πόντοι · {(points / 100).toLocaleString("el-GR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</span>)}</div></Label>
+                  <Label className="space-y-2"><span>Έγκαιρο weekly update</span><Input type="number" min="0" value={settings.weekly_update_points} onChange={(e) => update("weekly_update_points", Number(e.target.value) || 0)} /><small className="text-xs text-muted-foreground">1ο, 2ο και 3ο της τετράδας</small></Label>
+                  <Label className="space-y-2"><span>Bonus 4 συνεχόμενων updates</span><Input type="number" min="0" value={settings.weekly_streak_bonus_points} onChange={(e) => update("weekly_streak_bonus_points", Number(e.target.value) || 0)} /><small className="text-xs text-muted-foreground">Το 4ο δίνει το bonus αντί για τους 100</small></Label>
+                  <Label className="space-y-2"><span>Έγκαιρη ανανέωση (ημέρες πριν)</span><Input type="number" min="0" value={settings.early_renewal_days} onChange={(e) => update("early_renewal_days", Number(e.target.value) || 0)} /></Label>
+                  <Label className="space-y-2"><span>Bonus έγκαιρης ανανέωσης</span><Input type="number" min="0" value={settings.early_renewal_points} onChange={(e) => update("early_renewal_points", Number(e.target.value) || 0)} /></Label>
+                  <Label className="space-y-2"><span>Δώρο γενεθλίων</span><Input type="number" min="0" value={settings.birthday_points} onChange={(e) => update("birthday_points", Number(e.target.value) || 0)} /></Label>
+                  <Label className="space-y-2"><span>Πρότεινε φίλο</span><Input type="number" min="0" value={settings.referral_points} onChange={(e) => update("referral_points", Number(e.target.value) || 0)} /><small className="text-xs text-muted-foreground">Δίνεται χειροκίνητα μέχρι να προστεθεί referral link.</small></Label>
+                </div>
+                <div className="mt-4 grid grid-cols-4 gap-2">
+                  {[[3, settings.loyalty_3_month_points], [6, settings.loyalty_6_month_points], [9, settings.loyalty_9_month_points], [12, settings.loyalty_12_month_points]].map(([months, points]) => <Label key={months} className="space-y-2 text-center"><span>{months} μήνες χωρίς διακοπή</span><Input type="number" min="0" value={points} onChange={(e) => update(`loyalty_${months}_month_points` as keyof PointsSettings, Number(e.target.value) || 0)} /></Label>)}
+                </div>
               </div>
-              <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                Link καταστήματος
-                <Input
-                  type="url"
-                  autoComplete="off"
-                  value={settings.shop_url || ""}
-                  onChange={(e) => update("shop_url", e.target.value)}
-                  placeholder="https://mystore.com/shop"
-                />
-                <span className="text-xs font-semibold text-slate-400">Ο πελάτης βλέπει αυτό το link για να χρησιμοποιήσει το coupon του.</span>
-              </Label>
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-                <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Ενεργό</span>
-                <Switch checked={Boolean(settings.is_active)} onCheckedChange={(checked) => update("is_active", checked === true)} />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Label className="space-y-2"><span>Γενική ισοτιμία κουπονιού</span><div className="flex items-center gap-3"><Input type="number" min="1" value={settings.euro_per_points} onChange={(e) => update("euro_per_points", Number(e.target.value) || 100)} /><span className="shrink-0 text-sm font-extrabold">πόντοι = 1 €</span></div></Label>
+                <Label className="space-y-2"><span>Λήξη κουπονιού (ημέρες)</span><Input type="number" min="1" value={settings.coupon_expiry_days} onChange={(e) => update("coupon_expiry_days", Number(e.target.value) || 1)} /><small className="text-xs text-muted-foreground">Από την ημέρα δημιουργίας του coupon.</small></Label>
               </div>
               <Button onClick={saveSettings} disabled={saving} className="font-bold">
-                💾 Αποθήκευση
+                Αποθήκευση
               </Button>
             </div>
           )}
         </Card>
 
-        <Card className="p-6">
-          <h2 className="text-xl font-extrabold">Eshop & κουπόνια</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Ρύθμισε ό,τι εμφανίζεται στους πελάτες στη σελίδα Πόντοι & Rewards.</p>
-          {eshopBranding && <div className="mt-5 space-y-4">
-            <div className="flex items-center justify-between gap-4 rounded-[14px] border border-border bg-muted/40 p-4"><div><Label htmlFor="points-eshop-enabled">Εμφάνιση eshop στους πελάτες</Label><p className="mt-1 text-xs text-muted-foreground">Χρειάζεται έγκυρο HTTPS link.</p></div><Switch id="points-eshop-enabled" checked={eshopBranding.eshopEnabled} onCheckedChange={(value) => updateEshop("eshopEnabled", value)} /></div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Label className="space-y-2 sm:col-span-2"><span>Link eshop</span><Input type="url" value={eshopBranding.eshopUrl || ""} onChange={(event) => updateEshop("eshopUrl", event.target.value)} placeholder="https://example.com" /></Label>
-              <Label className="space-y-2"><span>Λευκό κείμενο τίτλου</span><Input maxLength={100} value={eshopBranding.eshopBannerTitle || ""} onChange={(event) => updateEshop("eshopBannerTitle", event.target.value)} placeholder="ΧΡΗΣΙΜΟΠΟΙΗΣΕ ΤΟΥΣ ΠΟΝΤΟΥΣ ΣΟΥ ΣΤΟ" /></Label>
-              <Label className="space-y-2"><span>Lime κείμενο τίτλου</span><Input maxLength={100} value={eshopBranding.eshopBannerAccentText || ""} onChange={(event) => updateEshop("eshopBannerAccentText", event.target.value)} placeholder="ESHOP." /></Label>
-              <Label className="space-y-2"><span>Κείμενο banner</span><Input maxLength={255} value={eshopBranding.eshopBannerText || ""} onChange={(event) => updateEshop("eshopBannerText", event.target.value)} placeholder="Εξαργύρωσε τους πόντους σου σε κουπόνια." /></Label>
-              <Label className="space-y-2"><span>Κείμενο κουμπιού</span><Input maxLength={100} value={eshopBranding.eshopButtonText || ""} onChange={(event) => updateEshop("eshopButtonText", event.target.value)} placeholder="Πήγαινε στο eshop" /></Label>
-            </div>
-            {eshopBranding.eshopBannerImageUrl && <img src={resolveMediaUrl(eshopBranding.eshopBannerImageUrl)} alt="Προεπισκόπηση banner eshop" className="max-h-48 w-full rounded-[14px] border border-border object-cover" />}
-            <div className="flex flex-wrap gap-3"><Button type="button" variant="outline" onClick={() => eshopImageInputRef.current?.click()} disabled={uploadingEshopImage}>{uploadingEshopImage ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}{uploadingEshopImage ? "Ανέβασμα..." : "Φωτογραφία banner"}</Button><Button type="button" variant="lime" onClick={saveEshop} disabled={savingEshop}>{savingEshop ? "Αποθήκευση..." : "Αποθήκευση eshop"}</Button></div>
-            <input ref={eshopImageInputRef} type="file" accept=".jpg,.jpeg,.png" className="hidden" onChange={(event) => void uploadEshopImage(event.target.files?.[0])} />
-          </div>}
+        <Card className="rounded-[20px] border-border shadow-none">
+          <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+            {branding?.eshopBannerImageUrl ? <img src={resolveMediaUrl(branding.eshopBannerImageUrl)} alt="Banner eshop" className="h-20 w-full rounded-[14px] border border-border object-cover sm:w-40" /> : <div className="grid h-20 w-full place-items-center rounded-[14px] bg-muted text-xs font-bold text-muted-foreground sm:w-40">Χωρίς φωτογραφία</div>}
+            <div className="min-w-0 flex-1"><h2 className="text-[16px] font-extrabold">Φωτογραφία banner eshop</h2><p className="mt-1 text-xs text-muted-foreground">Η εικόνα εμφανίζεται στη σελίδα Πόντοι & Rewards του πελάτη.</p></div>
+            <div className="flex shrink-0 flex-wrap gap-2"><Button type="button" variant="outline" onClick={() => setMediaPickerOpen(true)}>Media Library</Button><Button type="button" variant="outline" onClick={() => bannerInputRef.current?.click()} disabled={uploadingBanner}>{uploadingBanner ? <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}{uploadingBanner ? "Ανέβασμα..." : "Ανέβασε φωτογραφία"}</Button></div>
+            <input ref={bannerInputRef} type="file" accept=".jpg,.jpeg,.png" className="hidden" onChange={(event) => void uploadBanner(event.target.files?.[0])} />
+          </CardContent>
         </Card>
 
-        <Card className="p-6">
-          <h2 className="text-xl font-bold">WooCommerce Status</h2>
-          <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Ελέγχει αν η σύνδεση με το WooCommerce store λειτουργεί.</p>
-          <div className="mt-4 flex items-center gap-3">
-            <Button variant="outline" onClick={testConnection} disabled={testingWc} className="font-bold">
-              🔗 {testingWc ? "Δοκιμή..." : "Δοκιμή Σύνδεσης"}
-            </Button>
-            {wcStatus && (
-              <span className={wcStatus.connected ? "font-bold text-emerald-600" : "font-bold text-red-600"}>
-                {wcStatus.connected ? `✅ Συνδέθηκε (${wcStatus.store})` : `❌ Σφάλμα: ${wcStatus.message}`}
-              </span>
-            )}
-          </div>
+        <Card className="rounded-[20px] border-border shadow-none">
+          <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
+            <div><h2 className="text-[16px] font-extrabold">WooCommerce</h2><p className="mt-1 text-xs text-muted-foreground">Έλεγχος σύνδεσης για δημιουργία και έλεγχο κουπονιών.</p></div>
+            <Button type="button" variant="outline" onClick={() => void testConnection()}>Δοκιμή σύνδεσης</Button>
+          </CardContent>
         </Card>
 
         <Card className="overflow-hidden p-0">
@@ -291,7 +285,7 @@ function CoachPointsContent() {
               </TableRow>
             </TableHeader>
             <TableBody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {clients.map((client) => {
+              {clients.slice(0, visibleClients).map((client) => {
                 const points = clientPoints[String(client.id)];
                 return (
                   <TableRow key={client.id}>
@@ -311,6 +305,7 @@ function CoachPointsContent() {
               )}
             </TableBody>
           </Table>
+          {clients.length > visibleClients && <div className="border-t border-border p-3 text-center"><Button type="button" variant="outline" size="sm" onClick={() => setVisibleClients((count) => count + 10)}>Δες περισσότερα</Button></div>}
         </Card>
       </div>
 
@@ -352,6 +347,20 @@ function CoachPointsContent() {
               Αποθήκευση
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={mediaPickerOpen} onOpenChange={setMediaPickerOpen}>
+        <DialogContent className="max-h-[88vh] max-w-4xl overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Επιλογή από Media Library</DialogTitle>
+            <DialogDescription>Διάλεξε μια ήδη αποθηκευμένη φωτογραφία για το banner του e-shop.</DialogDescription>
+          </DialogHeader>
+          <div className="grid max-h-[62vh] grid-cols-2 gap-3 overflow-y-auto pr-1 sm:grid-cols-3 md:grid-cols-4">
+            {loadingMedia && <p className="col-span-full py-10 text-center text-sm text-muted-foreground">Φόρτωση φωτογραφιών…</p>}
+            {!loadingMedia && !mediaAssets.length && <p className="col-span-full py-10 text-center text-sm text-muted-foreground">Δεν υπάρχουν διαθέσιμες φωτογραφίες στη Media Library.</p>}
+            {mediaAssets.map((asset) => <button key={asset.id} type="button" onClick={() => void chooseMediaBanner(asset)} className="overflow-hidden rounded-[14px] border border-border bg-card text-left transition-colors hover:border-foreground"><img src={resolveMediaUrl(asset.url)} alt="" className="aspect-[4/3] w-full object-cover" /><span className="block truncate p-2.5 text-xs font-extrabold">{asset.title}</span></button>)}
+          </div>
         </DialogContent>
       </Dialog>
     </CoachShell>

@@ -5,6 +5,7 @@ import { getEmailTemplate, sendMail } from './lib/mailer.js';
 import { updateReminderEmail } from './lib/email-templates.js';
 import { ensureSettingsSchema } from './routes/settings.js';
 import { notifyUser } from './routes/clients.js';
+import { awardBirthdayPoints, awardLoyaltyMilestones, ensurePointsSchema } from './routes/points.js';
 
 // ─── CRON 1 ──────────────────────────────────────────────────────────────────
 // Daily 00:05 — update subscription statuses
@@ -51,6 +52,14 @@ async function runSubscriptionStatus() {
              AND active_subscription.end_date >= CURDATE()
          )`
     );
+
+    const [loyaltyClients] = await connection.query(
+      `SELECT DISTINCT client_id FROM subscriptions
+       WHERE status IN ('active', 'expiring_soon', 'expired')`
+    );
+    for (const { client_id } of loyaltyClients) {
+      await awardLoyaltyMilestones(connection, client_id);
+    }
 
     await connection.query(
       `UPDATE cron_settings SET last_run = NOW() WHERE job_key = 'subscription_status'`
@@ -231,6 +240,8 @@ async function runSubscriptionExpiry() {
   let connection;
   try {
     connection = await pool.getConnection();
+    await ensurePointsSchema(connection);
+    const [[pointsSettings]] = await connection.query('SELECT early_renewal_days, early_renewal_points FROM points_settings WHERE id = 1');
 
     const [expiringSubs] = await connection.query(
       `SELECT uc.id AS client_id, uc.email AS client_email, uc.full_name AS client_name,
@@ -247,7 +258,7 @@ async function runSubscriptionExpiry() {
           clientId: sub.client_id,
           type: 'subscription_expiring',
           title: 'Η συνδρομή σου λήγει σε 7 ημέρες',
-          body: `Το πλάνο «${sub.plan_name}» λήγει στις ${new Date(sub.end_date).toLocaleDateString('el-GR')}. Ανανεώσέ το έγκαιρα για να συνεχίσεις χωρίς διακοπή.`,
+          body: `Το πλάνο «${sub.plan_name}» λήγει στις ${new Date(sub.end_date).toLocaleDateString('el-GR')}. Ανανέωσέ το τουλάχιστον ${pointsSettings?.early_renewal_days || 7} ημέρες πριν και κέρδισε ${pointsSettings?.early_renewal_points || 1000} πόντους.`,
           linkUrl: '/client-billing',
         });
       } catch (e) {
@@ -319,6 +330,7 @@ export async function runBirthdayNotifications() {
     let delivered = 0;
 
     for (const client of birthdayClients) {
+      await awardBirthdayPoints(connection, { clientId: client.id, year });
       const [recipients] = await connection.query(
         `SELECT DISTINCT recipient_id
          FROM (

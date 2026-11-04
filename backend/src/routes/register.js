@@ -9,7 +9,7 @@ import { ensureAuthSchema, generateAccessToken, generateRefreshToken, setAuthCoo
 import { getDefaultCoachId, notifyCoaches, ensureNotificationsSchema } from './clients.js';
 import { authenticateToken, authorizeRole } from '../middleware/auth.js';
 import { ensureQuestionnaireSchema } from './questionnaire.js';
-import { ensurePricingPlansSchema, getPaymentSettings } from './pricingPlans.js';
+import { ensurePackagesSchema, ensurePricingPlansSchema, getPackageQuote, getPaymentSettings } from './pricingPlans.js';
 import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { registrationEmail } from '../lib/email-templates.js';
 import { logClientActivity } from '../lib/client-activity-log.js';
@@ -322,7 +322,9 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
   body('weightKg').optional({ nullable: true, checkFalsy: true }).isNumeric(),
   body('targetWeightKg').optional({ nullable: true, checkFalsy: true }).isNumeric(),
   body('fitnessGoal').optional({ nullable: true }).isString(),
-  body('plan_id').isInt(),
+  body('plan_id').optional({ nullable: true, checkFalsy: true }).isInt(),
+  body('package_id').optional({ nullable: true, checkFalsy: true }).isInt({ min: 1 }),
+  body('duration_months').optional({ nullable: true, checkFalsy: true }).isInt({ min: 1, max: 24 }),
   body('payment_method').isIn(['bank', 'stripe']),
   body('privacyConsent').equals('true').withMessage('Privacy policy acceptance is required'),
 ], async (req, res) => {
@@ -364,6 +366,8 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     targetWeightKg: submittedTargetWeightKg,
     fitnessGoal: submittedFitnessGoal,
     plan_id: planId,
+    package_id: packageId,
+    duration_months: durationMonths,
     payment_method: paymentMethod,
   } = req.body;
 
@@ -386,6 +390,7 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     await ensureAuthSchema(connection);
     await ensureQuestionnaireSchema(connection);
     await ensurePricingPlansSchema(connection);
+    await ensurePackagesSchema(connection);
     await ensureNotificationsSchema(connection);
     await ensureClientIntakeFilesSchema(connection);
     await ensureRegistrationProgressSchema(connection);
@@ -398,15 +403,32 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
       return res.status(400).json({ message: 'Το email χρησιμοποιείται ήδη.' });
     }
 
-    const [planRows] = await connection.query(
-      'SELECT * FROM pricing_plans WHERE id = ? AND is_active = 1 LIMIT 1',
-      [planId]
-    );
-    if (!planRows.length) {
-      connection.release();
-      return res.status(400).json({ message: 'Μη έγκυρο πλάνο.' });
+    let packageQuote = null;
+    let plan = null;
+    if (packageId && durationMonths) {
+      packageQuote = await getPackageQuote(connection, Number(packageId), Number(durationMonths));
+      if (!packageQuote) {
+        connection.release();
+        return res.status(400).json({ message: 'Το επιλεγμένο πακέτο ή η διάρκειά του δεν είναι διαθέσιμα.' });
+      }
+      plan = {
+        id: null,
+        name: packageQuote.package.name,
+        price: packageQuote.price,
+        currency: 'EUR',
+        period: `${packageQuote.duration.months} ${packageQuote.duration.months === 1 ? 'μήνας' : 'μήνες'}`,
+      };
+    } else {
+      const [planRows] = await connection.query(
+        'SELECT * FROM pricing_plans WHERE id = ? AND is_active = 1 LIMIT 1',
+        [planId]
+      );
+      if (!planRows.length) {
+        connection.release();
+        return res.status(400).json({ message: 'Μη έγκυρο πλάνο.' });
+      }
+      plan = planRows[0];
     }
-    const plan = planRows[0];
 
     const [activeQuestions] = await connection.query('SELECT * FROM questionnaire_questions WHERE is_active = 1');
     const requiredIds = activeQuestions.filter((q) => q.is_required).map((q) => q.id);
@@ -505,8 +527,8 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     const pendingDate = new Date().toISOString().slice(0, 10);
 
     const [subscriptionResult] = await connection.query(
-      `INSERT INTO subscriptions (client_id, coach_id, plan_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?)`,
+      `INSERT INTO subscriptions (client_id, coach_id, plan_id, plan_name, plan_type, price, currency, start_date, end_date, status, notes, package_id, duration_months, price_cents, package_name_snapshot, features_snapshot)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_payment', ?, ?, ?, ?, ?, ?)`,
       [
         userId,
         coachId,
@@ -518,13 +540,18 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
         pendingDate,
         pendingDate,
         paymentMethod === 'stripe' ? 'Η πληρωμή με κάρτα αναμένει έγκριση coach.' : 'Το τραπεζικό έμβασμα αναμένει έγκριση coach.',
+        packageQuote?.package.id || null,
+        packageQuote?.duration.months || null,
+        packageQuote?.priceCents || null,
+        packageQuote?.package.name || null,
+        packageQuote ? JSON.stringify(packageQuote.features) : null,
       ]
     );
 
     const referenceNumber = `REG-${String(userId).padStart(4, '0')}-${Date.now().toString().slice(-4)}`;
     const [paymentResult] = await connection.query(
-      `INSERT INTO payments (client_id, coach_id, subscription_id, amount, currency, method, status, reference_number, notes)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      `INSERT INTO payments (client_id, coach_id, subscription_id, amount, currency, method, status, reference_number, notes, package_id, duration_months, price_cents, package_name_snapshot, features_snapshot)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
         coachId,
@@ -534,6 +561,11 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
         paymentMethod === 'stripe' ? 'stripe' : 'bank_transfer',
         referenceNumber,
         paymentMethod === 'stripe' ? 'Stripe integration pending.' : 'Αναμένεται τραπεζικό έμβασμα.',
+        packageQuote?.package.id || null,
+        packageQuote?.duration.months || null,
+        packageQuote?.priceCents || null,
+        packageQuote?.package.name || null,
+        packageQuote ? JSON.stringify(packageQuote.features) : null,
       ]
     );
 

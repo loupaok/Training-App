@@ -236,4 +236,25 @@ router.post('/favicon', authenticateToken, authorizeRole(['coach']), uploadFavic
 router.post('/login-background', authenticateToken, authorizeRole(['coach']), uploadLoginBackground, (req, res) => saveBrandImage(req, res, 'login_background_url'));
 router.post('/eshop-banner', authenticateToken, authorizeRole(['coach']), uploadEshopBanner, (req, res) => saveBrandImage(req, res, 'eshop_banner_image_url'));
 
+router.put('/eshop-banner/library', authenticateToken, authorizeRole(['coach', 'admin']), [
+  body('url').isString().isLength({ min: 1, max: 600 }).custom((url) => String(url).startsWith('/uploads/media/')),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await ensureBrandingSchema(connection);
+    const [[asset]] = await connection.query('SELECT id FROM media_assets WHERE url = ? LIMIT 1', [req.body.url]);
+    if (!asset) return res.status(404).json({ message: 'Το αρχείο δεν υπάρχει στη Media Library.' });
+    await connection.query('UPDATE branding SET eshop_banner_image_url = ? WHERE id = 1', [req.body.url]);
+    return res.json(await getBranding(connection));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection?.release();
+  }
+});
+
 export default router;

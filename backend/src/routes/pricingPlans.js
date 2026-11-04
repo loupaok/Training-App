@@ -167,10 +167,17 @@ export async function getPackageQuote(connection, packageId, durationMonths, { v
   const oneMonth = catalog.durations.find((item) => item.months === 1);
   if (!selectedPackage || !duration || !oneMonth) return null;
   const offer = selectedPackage.offers?.find((item) => item.months === duration.months && item.isActive !== false);
-  const priceCents = offer?.priceCents ?? calculatePackagePriceCents({ basePriceCents: duration.basePriceCents, monthlyAddonCents: selectedPackage.monthlyAddonCents, months: duration.months });
-  const position = catalog.packages.findIndex((item) => item.id === selectedPackage.id);
-  const inheritedFeatures = catalog.packages.slice(0, position + 1).flatMap((item) => item.features.map((feature) => feature.text));
-  return { package: selectedPackage, duration, priceCents, price: priceCents / 100, monthlyPriceCents: Math.round(priceCents / duration.months), discountPercent: calculateDurationDiscount(duration.basePriceCents, oneMonth.basePriceCents, duration.months), savingCents: calculateDurationSavingCents(duration.basePriceCents, oneMonth.basePriceCents, duration.months), points: Math.round((priceCents / 100) * catalog.pointsPerEuro), commonFeatures: catalog.commonFeatures.map((item) => item.text), features: offer?.features?.length ? offer.features : inheritedFeatures };
+  if (!offer) return null;
+  const resolveFeatures = (item, visited = new Set()) => {
+    if (!item || visited.has(item.id)) return [];
+    visited.add(item.id);
+    const parent = item.parentPackageId ? catalog.packages.find((entry) => entry.id === item.parentPackageId) : null;
+    const currentOffer = item.offers?.find((entry) => entry.months === duration.months && entry.isActive !== false);
+    const own = currentOffer?.features?.length ? currentOffer.features : item.features.map((feature) => feature.text);
+    return [...new Set([...resolveFeatures(parent, visited), ...own])];
+  };
+  const priceCents = offer.priceCents;
+  return { package: selectedPackage, duration, priceCents, price: priceCents / 100, monthlyPriceCents: Math.round(priceCents / duration.months), discountPercent: calculateDurationDiscount(duration.basePriceCents, oneMonth.basePriceCents, duration.months), savingCents: calculateDurationSavingCents(duration.basePriceCents, oneMonth.basePriceCents, duration.months), points: Math.round((priceCents / 100) * catalog.pointsPerEuro), commonFeatures: catalog.commonFeatures.map((item) => item.text), features: resolveFeatures(selectedPackage) };
 }
 
 // New plans requested for the public pricing redesign — added alongside the
@@ -651,6 +658,100 @@ router.post('/', authenticateToken, authorizeRole(['coach', 'admin']), [
   }
 });
 
+router.put('/package-durations', authenticateToken, authorizeRole(['coach', 'admin']), async (req, res) => {
+  const durations = Array.isArray(req.body?.durations) ? req.body.durations : [];
+  if (!durations.length || durations.length > 12 || new Set(durations.map((item) => Number(item.months))).size !== durations.length || durations.some((item) => !Number.isInteger(Number(item.months)) || Number(item.months) < 1 || Number(item.months) > 24 || !Number.isInteger(Number(item.basePriceCents)) || Number(item.basePriceCents) < 0)) return res.status(400).json({ message: 'Οι διάρκειες πρέπει να έχουν έγκυρους μήνες και τιμές.' });
+  const commonFeatures = Array.isArray(req.body?.commonFeatures)
+    ? req.body.commonFeatures.map((item) => String(item?.text || item).trim()).filter(Boolean).slice(0, 30)
+    : null;
+  const pointsPerEuro = req.body?.pointsPerEuro === undefined ? null : Number(req.body.pointsPerEuro);
+  const draftPackages = Array.isArray(req.body?.draftPackages) ? req.body.draftPackages.slice(0, 40) : [];
+  if (pointsPerEuro !== null && (!Number.isInteger(pointsPerEuro) || pointsPerEuro < 0 || pointsPerEuro > 1000)) return res.status(400).json({ message: 'Μη έγκυρη τιμή πόντων.' });
+  let connection;
+  try {
+    connection = await pool.getConnection(); await ensurePackagesSchema(connection); await connection.beginTransaction();
+    const [existingDurations] = await connection.query('SELECT months FROM package_durations');
+    const requestedMonths = durations.map((duration) => Number(duration.months));
+    const removedMonths = existingDurations.map((duration) => Number(duration.months)).filter((months) => !requestedMonths.includes(months));
+    if (removedMonths.length) {
+      await connection.query('DELETE FROM package_duration_offers WHERE months IN (?)', [removedMonths]);
+      await connection.query('DELETE FROM package_durations WHERE months IN (?)', [removedMonths]);
+    }
+    for (const [index, duration] of durations.entries()) {
+      await connection.query(
+      `INSERT INTO package_durations (months, base_price_cents, title, label, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE base_price_cents = VALUES(base_price_cents), title = VALUES(title), label = VALUES(label), is_active = VALUES(is_active), sort_order = VALUES(sort_order)`,
+      [Number(duration.months), Number(duration.basePriceCents), String(duration.title || '').trim().slice(0, 120) || null, duration.label || null, duration.isActive === false ? 0 : 1, index + 1],
+      );
+      const duplicateFromMonths = Number(duration.duplicateFromMonths);
+      if (Number.isInteger(duplicateFromMonths) && duplicateFromMonths > 0 && duplicateFromMonths !== Number(duration.months)) await connection.query(
+        `INSERT INTO package_duration_offers (package_id, months, price_cents, features_json, is_active)
+         SELECT package_id, ?, price_cents, features_json, is_active FROM package_duration_offers WHERE months = ?
+         ON DUPLICATE KEY UPDATE price_cents = VALUES(price_cents), features_json = VALUES(features_json), is_active = VALUES(is_active)`,
+        [Number(duration.months), duplicateFromMonths],
+      );
+    }
+    const [packages] = await connection.query('SELECT id, monthly_addon_cents FROM packages WHERE deleted_at IS NULL');
+    for (const pkg of packages) for (const duration of durations) await connection.query(
+      `INSERT IGNORE INTO package_duration_offers (package_id, months, price_cents, features_json, is_active)
+       VALUES (?, ?, ?, ?, ?)`,
+      [Number(pkg.id), Number(duration.months), calculatePackagePriceCents({ basePriceCents: Number(duration.basePriceCents), monthlyAddonCents: Number(pkg.monthly_addon_cents || 0), months: Number(duration.months) }), JSON.stringify([]), existingDurations.some((item) => Number(item.months) === Number(duration.months)) && duration.isActive !== false ? 1 : 0],
+    );
+    // Save every builder setting atomically, so no partial changes are left behind.
+    if (commonFeatures !== null) {
+      await connection.query('DELETE FROM common_features');
+      if (commonFeatures.length) await connection.query(
+        'INSERT INTO common_features (text, sort_order) VALUES ?',
+        [commonFeatures.map((text, index) => [text, index + 1])],
+      );
+    }
+    if (pointsPerEuro !== null) await connection.query(
+      'UPDATE package_settings SET points_per_euro = ? WHERE id = 1',
+      [pointsPerEuro],
+    );
+    const createdIds = new Map();
+    const pendingDrafts = [...draftPackages];
+    while (pendingDrafts.length) {
+      const nextIndex = pendingDrafts.findIndex((draft) => {
+        const parentId = Number(draft?.parentPackageId || 0);
+        return !parentId || parentId > 0 || createdIds.has(parentId);
+      });
+      if (nextIndex < 0) throw Object.assign(new Error('Υπάρχει κυκλική επέκταση μεταξύ νέων πακέτων.'), { status: 400 });
+      const [draft] = pendingDrafts.splice(nextIndex, 1);
+      const parentId = Number(draft?.parentPackageId || 0);
+      const id = await savePackage(connection, {
+        ...draft,
+        id: undefined,
+        parentPackageId: parentId < 0 ? createdIds.get(parentId) || null : parentId || null,
+      });
+      if (Number(draft?.id) < 0) createdIds.set(Number(draft.id), id);
+    }
+    await connection.commit(); res.json(await getPackageCatalog(connection, { visibleOnly: false }));
+  } catch (error) { await connection?.rollback(); console.error(error); res.status(500).json({ message: 'Server error' }); }
+  finally { connection?.release(); }
+});
+
+router.put('/common-features', authenticateToken, authorizeRole(['coach', 'admin']), async (req, res) => {
+  const features = Array.isArray(req.body?.features) ? req.body.features.map((item) => String(item.text || item).trim()).filter(Boolean).slice(0, 30) : [];
+  let connection;
+  try { connection = await pool.getConnection(); await ensurePackagesSchema(connection); await connection.beginTransaction(); await connection.query('DELETE FROM common_features'); if (features.length) await connection.query('INSERT INTO common_features (text, sort_order) VALUES ?', [features.map((text, index) => [text, index + 1])]); await connection.commit(); res.json(await getPackageCatalog(connection, { visibleOnly: false })); }
+  catch (error) { await connection?.rollback(); console.error(error); res.status(500).json({ message: 'Server error' }); }
+  finally { connection?.release(); }
+});
+
+router.put('/points-rate', authenticateToken, authorizeRole(['coach', 'admin']), async (req, res) => {
+  const rate = Number(req.body?.pointsPerEuro);
+  if (!Number.isInteger(rate) || rate < 0 || rate > 1000) return res.status(400).json({ message: 'Μη έγκυρη τιμή πόντων.' });
+  let connection;
+  try { connection = await pool.getConnection(); await ensurePackagesSchema(connection); await connection.query('UPDATE package_settings SET points_per_euro = ? WHERE id = 1', [rate]); res.json(await getPackageCatalog(connection, { visibleOnly: false })); }
+  catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); }
+  finally { connection?.release(); }
+});
+
+// NOTE: /:id must stay registered after the literal routes above
+// (/package-durations, /common-features, /points-rate) — otherwise Express
+// matches this param route first and treats those paths as a plan id,
+// returning a false "Plan not found" 404 for every request to them.
 router.put('/:id', authenticateToken, authorizeRole(['coach', 'admin']), async (req, res) => {
   try {
     const connection = await pool.getConnection();
@@ -732,61 +833,6 @@ router.get('/packages/manage', authenticateToken, authorizeRole(['coach', 'admin
   finally { connection?.release(); }
 });
 
-router.put('/package-durations', authenticateToken, authorizeRole(['coach', 'admin']), async (req, res) => {
-  const durations = Array.isArray(req.body?.durations) ? req.body.durations : [];
-  if (!durations.length || durations.length > 12 || new Set(durations.map((item) => Number(item.months))).size !== durations.length || durations.some((item) => !Number.isInteger(Number(item.months)) || Number(item.months) < 1 || Number(item.months) > 24 || !Number.isInteger(Number(item.basePriceCents)) || Number(item.basePriceCents) < 0)) return res.status(400).json({ message: 'Οι διάρκειες πρέπει να έχουν έγκυρους μήνες και τιμές.' });
-  let connection;
-  try {
-    connection = await pool.getConnection(); await ensurePackagesSchema(connection); await connection.beginTransaction();
-    const [existingDurations] = await connection.query('SELECT months FROM package_durations');
-    const requestedMonths = durations.map((duration) => Number(duration.months));
-    const removedMonths = existingDurations.map((duration) => Number(duration.months)).filter((months) => !requestedMonths.includes(months));
-    if (removedMonths.length) {
-      await connection.query('DELETE FROM package_duration_offers WHERE months IN (?)', [removedMonths]);
-      await connection.query('DELETE FROM package_durations WHERE months IN (?)', [removedMonths]);
-    }
-    for (const [index, duration] of durations.entries()) {
-      await connection.query(
-      `INSERT INTO package_durations (months, base_price_cents, title, label, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE base_price_cents = VALUES(base_price_cents), title = VALUES(title), label = VALUES(label), is_active = VALUES(is_active), sort_order = VALUES(sort_order)`,
-      [Number(duration.months), Number(duration.basePriceCents), String(duration.title || '').trim().slice(0, 120) || null, duration.label || null, duration.isActive === false ? 0 : 1, index + 1],
-      );
-      const duplicateFromMonths = Number(duration.duplicateFromMonths);
-      if (Number.isInteger(duplicateFromMonths) && duplicateFromMonths > 0 && duplicateFromMonths !== Number(duration.months)) await connection.query(
-        `INSERT INTO package_duration_offers (package_id, months, price_cents, features_json, is_active)
-         SELECT package_id, ?, price_cents, features_json, is_active FROM package_duration_offers WHERE months = ?
-         ON DUPLICATE KEY UPDATE price_cents = VALUES(price_cents), features_json = VALUES(features_json), is_active = VALUES(is_active)`,
-        [Number(duration.months), duplicateFromMonths],
-      );
-    }
-    const [packages] = await connection.query('SELECT id, monthly_addon_cents FROM packages WHERE deleted_at IS NULL');
-    for (const pkg of packages) for (const duration of durations) await connection.query(
-      `INSERT IGNORE INTO package_duration_offers (package_id, months, price_cents, features_json, is_active)
-       VALUES (?, ?, ?, ?, ?)`,
-      [Number(pkg.id), Number(duration.months), calculatePackagePriceCents({ basePriceCents: Number(duration.basePriceCents), monthlyAddonCents: Number(pkg.monthly_addon_cents || 0), months: Number(duration.months) }), JSON.stringify([]), existingDurations.some((item) => Number(item.months) === Number(duration.months)) && duration.isActive !== false ? 1 : 0],
-    );
-    await connection.commit(); res.json(await getPackageCatalog(connection, { visibleOnly: false }));
-  } catch (error) { await connection?.rollback(); console.error(error); res.status(500).json({ message: 'Server error' }); }
-  finally { connection?.release(); }
-});
-
-router.put('/common-features', authenticateToken, authorizeRole(['coach', 'admin']), async (req, res) => {
-  const features = Array.isArray(req.body?.features) ? req.body.features.map((item) => String(item.text || item).trim()).filter(Boolean).slice(0, 30) : [];
-  let connection;
-  try { connection = await pool.getConnection(); await ensurePackagesSchema(connection); await connection.beginTransaction(); await connection.query('DELETE FROM common_features'); if (features.length) await connection.query('INSERT INTO common_features (text, sort_order) VALUES ?', [features.map((text, index) => [text, index + 1])]); await connection.commit(); res.json(await getPackageCatalog(connection, { visibleOnly: false })); }
-  catch (error) { await connection?.rollback(); console.error(error); res.status(500).json({ message: 'Server error' }); }
-  finally { connection?.release(); }
-});
-
-router.put('/points-rate', authenticateToken, authorizeRole(['coach', 'admin']), async (req, res) => {
-  const rate = Number(req.body?.pointsPerEuro);
-  if (!Number.isInteger(rate) || rate < 0 || rate > 1000) return res.status(400).json({ message: 'Μη έγκυρη τιμή πόντων.' });
-  let connection;
-  try { connection = await pool.getConnection(); await ensurePackagesSchema(connection); await connection.query('UPDATE package_settings SET points_per_euro = ? WHERE id = 1', [rate]); res.json(await getPackageCatalog(connection, { visibleOnly: false })); }
-  catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); }
-  finally { connection?.release(); }
-});
-
 router.put('/packages/order', authenticateToken, authorizeRole(['coach', 'admin']), async (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : [];
   if (!ids.length) return res.status(400).json({ message: 'Δεν δόθηκε σειρά πακέτων.' });
@@ -798,7 +844,10 @@ router.put('/packages/order', authenticateToken, authorizeRole(['coach', 'admin'
 
 async function savePackage(connection, payload, id = null) {
   const name = String(payload?.name || '').trim().slice(0, 120);
-  const key = String(payload?.key || payload?.packageKey || name).trim().toUpperCase().replace(/[^A-Z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+  const requestedKey = String(payload?.key || payload?.packageKey || name).trim().toUpperCase().replace(/[^A-Z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+  // Package names are normally Greek. They do not need to double as a
+  // database key, so generate a safe key when an ASCII one was not supplied.
+  const key = requestedKey || `PACKAGE_${Date.now().toString(36).toUpperCase()}_${Math.random().toString(36).slice(2, 7).toUpperCase()}`;
   const addon = Number(payload?.monthlyAddonCents);
   const parentPackageId = payload?.parentPackageId == null || payload?.parentPackageId === '' ? null : Number(payload.parentPackageId);
   const features = Array.isArray(payload?.features) ? payload.features.map((feature) => String(feature.text || feature).trim()).filter(Boolean).slice(0, 30) : [];
@@ -811,7 +860,7 @@ async function savePackage(connection, payload, id = null) {
       isActive: offer.isActive !== false,
     }))
     .filter((offer) => availableMonths.has(offer.months) && Number.isInteger(offer.priceCents) && offer.priceCents >= 0) : [];
-  if (!name || !key || !Number.isInteger(addon) || addon < 0 || (!id && !features.length)) throw Object.assign(new Error('Συμπλήρωσε όνομα, έγκυρη αναβάθμιση και τουλάχιστον μία παροχή.'), { status: 400 });
+  if (!name || !Number.isInteger(addon) || addon < 0) throw Object.assign(new Error('Συμπλήρωσε όνομα και έγκυρη αναβάθμιση.'), { status: 400 });
   if (parentPackageId !== null && (!Number.isInteger(parentPackageId) || parentPackageId <= 0 || parentPackageId === Number(id))) throw Object.assign(new Error('Μη έγκυρο βασικό πακέτο.'), { status: 400 });
   if (offers.length && new Set(offers.map((offer) => offer.months)).size !== offers.length) throw Object.assign(new Error('Κάθε διάρκεια μπορεί να υπάρχει μόνο μία φορά.'), { status: 400 });
   if (id) {
@@ -829,7 +878,7 @@ async function savePackage(connection, payload, id = null) {
   }
   const [[last]] = await connection.query('SELECT COALESCE(MAX(sort_order), 0) AS position FROM packages');
   const [result] = await connection.query('INSERT INTO packages (package_key, name, monthly_addon_cents, label, sort_order, parent_package_id, is_visible, is_upgradable) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [key, name, addon, payload.label || null, Number(last.position) + 1, parentPackageId ?? 0, payload.isVisible === false ? 0 : 1, payload.isUpgradable === false ? 0 : 1]);
-  await connection.query('INSERT INTO package_features (package_id, text, sort_order) VALUES ?', [features.map((text, index) => [result.insertId, text, index + 1])]);
+  if (features.length) await connection.query('INSERT INTO package_features (package_id, text, sort_order) VALUES ?', [features.map((text, index) => [result.insertId, text, index + 1])]);
   const durationRows = await connection.query('SELECT months, base_price_cents FROM package_durations ORDER BY sort_order, months').then(([rows]) => rows);
   const initialOffers = offers.length ? offers : durationRows.map((duration) => ({ months: Number(duration.months), priceCents: calculatePackagePriceCents({ basePriceCents: Number(duration.base_price_cents), monthlyAddonCents: addon, months: Number(duration.months) }), features, isActive: true }));
   if (initialOffers.length) await connection.query('INSERT INTO package_duration_offers (package_id, months, price_cents, features_json, is_active) VALUES ?', [initialOffers.map((offer) => [result.insertId, offer.months, offer.priceCents, JSON.stringify(offer.features), offer.isActive ? 1 : 0])]);

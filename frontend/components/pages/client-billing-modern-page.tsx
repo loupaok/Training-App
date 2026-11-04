@@ -100,9 +100,9 @@ type PricingPlan = {
   isPopular?: boolean;
   features?: string[];
 };
-type PackageDuration = { id: number; months: number; title?: string | null; basePriceCents: number; label?: string | null; isActive: boolean };
+type PackageDuration = { id: number; months: number; title?: string | null; basePriceCents: number; label?: string | null; isActive: boolean; sortOrder?: number };
 type CoachingPackageOffer = { id: number; months: number; priceCents: number; features: string[]; isActive: boolean };
-type CoachingPackage = { id: number; key: string; name: string; monthlyAddonCents: number; label?: string | null; features: { id: number; text: string }[]; offers?: CoachingPackageOffer[] };
+type CoachingPackage = { id: number; key: string; name: string; monthlyAddonCents: number; label?: string | null; sortOrder?: number; parentPackageId?: number | null; features: { id: number; text: string }[]; offers?: CoachingPackageOffer[] };
 type PackageCatalog = { packages: CoachingPackage[]; durations: PackageDuration[]; commonFeatures: { id: number; text: string }[]; pointsPerEuro: number };
 type BankDetails = { beneficiary?: string; bankName?: string; iban?: string };
 type BankAccount = {
@@ -242,7 +242,8 @@ function ClientBillingModernContent() {
               : null;
       if (firstAvailable) setPaymentMethod(firstAvailable);
       }
-      setSelectedDurationMonths((current) => packageCatalog?.durations.some((item) => item.months === current) ? current : (packageCatalog?.durations[0]?.months || 1));
+      const availableDurations = packageCatalog?.durations.filter((item) => item.isActive).sort((a, b) => (a.sortOrder || a.months) - (b.sortOrder || b.months)) || [];
+      setSelectedDurationMonths((current) => availableDurations.some((item) => item.months === current) ? current : (availableDurations[0]?.months || 1));
       setSelectedPlan((current) => current || (packageCatalog?.packages[0] ? String(packageCatalog.packages[0].id) : ""));
     } catch (loadError) {
       setError(
@@ -290,14 +291,20 @@ function ClientBillingModernContent() {
   const plans = useMemo<PricingPlan[]>(() => {
     const duration = catalog?.durations.find((item) => item.months === selectedDurationMonths) || catalog?.durations[0];
     if (!duration) return [];
-    return (catalog?.packages || []).filter((item) => {
-      const offer = item.offers?.find((entry) => entry.months === duration.months);
-      return !offer || offer.isActive !== false;
-    }).map((item) => {
+    const resolveFeatures = (item: CoachingPackage, visited = new Set<number>()): string[] => {
+      if (visited.has(item.id)) return [];
+      visited.add(item.id);
+      const parent = item.parentPackageId ? catalog?.packages.find((entry) => entry.id === item.parentPackageId) : undefined;
       const offer = item.offers?.find((entry) => entry.months === duration.months && entry.isActive !== false);
-      const priceCents = offer?.priceCents ?? duration.basePriceCents + item.monthlyAddonCents * duration.months;
-      const offerFeatures = offer?.features?.length ? offer.features : item.features.map((feature) => feature.text);
-      return {
+      const own = offer?.features?.length ? offer.features : item.features.map((feature) => feature.text);
+      return [...new Set([...(parent ? resolveFeatures(parent, visited) : []), ...own])];
+    };
+    return [...(catalog?.packages || [])].sort((a, b) => (a.sortOrder || a.id) - (b.sortOrder || b.id)).flatMap((item) => {
+      const offer = item.offers?.find((entry) => entry.months === duration.months && entry.isActive !== false);
+      if (!offer) return [];
+      const priceCents = offer.priceCents;
+      const offerFeatures = resolveFeatures(item);
+      return [{
         id: item.id,
         slug: String(item.id),
         name: item.name,
@@ -309,9 +316,12 @@ function ClientBillingModernContent() {
         features: offerFeatures,
         pointsReward: Math.round((priceCents / 100) * (catalog?.pointsPerEuro || 0)),
         isPopular: Boolean(item.label),
-      };
+      }];
     });
   }, [catalog, selectedDurationMonths]);
+  useEffect(() => {
+    if (plans.length && !plans.some((item) => item.slug === selectedPlan)) setSelectedPlan(plans[0].slug);
+  }, [plans, selectedPlan]);
   const subscription = data.subscription;
   const pendingSubscription = data.pendingSubscription || null;
   const pendingPayment =
@@ -553,7 +563,7 @@ function ClientBillingModernContent() {
                   plans={plans}
                   subscription={subscription}
                   selectedPlan={selectedPlan}
-                  durations={catalog?.durations || []}
+                  durations={(catalog?.durations || []).filter((duration) => duration.isActive).sort((a, b) => (a.sortOrder || a.months) - (b.sortOrder || b.months))}
                   selectedDurationMonths={selectedDurationMonths}
                   onDurationChange={setSelectedDurationMonths}
                   commonFeatures={(catalog?.commonFeatures || []).map((feature) => feature.text)}
@@ -805,7 +815,7 @@ function AvailablePlans({
   return <section ref={plansRef} id="available-plans" aria-labelledby="available-plans-heading" className="scroll-mt-6">
     <Card className="rounded-[20px] border-border bg-card shadow-none"><CardContent className="space-y-[18px] p-4 sm:p-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><h2 id="available-plans-heading" className="text-[20px] font-extrabold">Ανανέωση ή αλλαγή πακέτου</h2><p className="mt-1 text-[13px] text-muted-foreground">Η αλλαγή ισχύει από την επόμενη περίοδο.</p>{intent === "change" && <p className="mt-2 text-[12px] font-bold text-muted-foreground">Επίλεξε πακέτο και συνέχισε στην πληρωμή.</p>}</div>
-        <div className="w-full lg:max-w-[520px]"><div className="grid grid-cols-2 gap-1 rounded-[16px] border border-border bg-card p-[5px] sm:grid-cols-4">{durations.map((duration) => { const discount = duration.months > 1 && oneMonth ? Math.round((1 - duration.basePriceCents / Math.max(1, oneMonth.basePriceCents * duration.months)) * 100) : 0; const active = selectedDurationMonths === duration.months; return <Button key={duration.id} type="button" variant="ghost" onClick={() => onDurationChange(duration.months)} className={`h-[46px] rounded-[12px] px-2 text-[13px] font-extrabold ${active ? "bg-foreground text-background hover:bg-foreground/90" : "text-[#3a3a3a] hover:bg-muted dark:text-foreground"}`}>{duration.title || `${duration.months} ${duration.months === 1 ? "μήνας" : "μήνες"}`}{discount > 0 && <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold ${active ? "bg-accent text-accent-foreground" : "bg-[color:var(--sp-lime-soft)] text-[#3f6b00] dark:text-accent"}`}>−{discount}%</span>}</Button>; })}</div></div>
+        <div className="w-full lg:max-w-[520px]"><div className="grid grid-cols-2 gap-1 rounded-[16px] border border-border bg-card p-[5px] sm:grid-cols-4">{durations.map((duration) => { const discount = duration.months > 1 && oneMonth ? Math.round((1 - duration.basePriceCents / Math.max(1, oneMonth.basePriceCents * duration.months)) * 100) : 0; const active = selectedDurationMonths === duration.months; return <Button key={duration.id} type="button" variant="ghost" onClick={() => onDurationChange(duration.months)} className={`h-[46px] rounded-[12px] px-2 text-[13px] font-extrabold ${active ? "bg-foreground text-background hover:bg-foreground hover:text-background" : "text-[#3a3a3a] hover:bg-muted dark:text-foreground"}`}>{duration.title || `${duration.months} ${duration.months === 1 ? "μήνας" : "μήνες"}`}{discount > 0 && <span className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold ${active ? "bg-accent text-accent-foreground" : "bg-[color:var(--sp-lime-soft)] text-[#3f6b00] dark:text-accent"}`}>−{discount}%</span>}</Button>; })}</div></div>
       </div>
       <div className="grid items-stretch gap-[14px] pt-2 md:grid-cols-2 xl:grid-cols-4">{plans.map((plan, index) => { const isCurrent = plan.name.trim().toLocaleLowerCase("el-GR") === currentName; const isSelected = selected?.slug === plan.slug; const months = periodMonths(plan.period); const addon = Number(plan.price || 0) - Number(plans[0]?.price || 0); return <button key={plan.slug} type="button" role="radio" aria-checked={isSelected} onClick={() => onSelect(plan.slug)} className={`relative flex min-h-[360px] flex-col gap-3 rounded-[20px] border bg-card p-5 text-left transition-all focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--sp-lime-glow)] ${isSelected ? "border-2 border-foreground ring-4 ring-accent/50" : "border-border hover:border-foreground/45"}`}>
         {plan.badge && <span className={`absolute -top-[11px] left-[18px] rounded-full px-2.5 py-1 text-[10px] font-extrabold ${plan.badge === "Πλήρης πρόσβαση" ? "bg-foreground text-accent" : "bg-accent text-accent-foreground"}`}>{plan.badge}</span>}
@@ -1272,16 +1282,12 @@ function RenewalForm({
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [bankDialogOpen, setBankDialogOpen] = useState(false);
   const selected = plans.find((plan) => plan.slug === selectedPlan) || plans[0];
-  const selectedBankAccount = paymentSettings.bankAccounts
+  const bankAccounts: BankDetails[] = paymentSettings.bankAccounts
     .filter((account) => account.isVisible)
-    .sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.sortOrder - right.sortOrder)[0];
-  const bankAccount = selectedBankAccount
-    ? {
-        beneficiary: selectedBankAccount.accountHolder,
-        bankName: selectedBankAccount.bankName,
-        iban: selectedBankAccount.iban,
-      }
-    : bankDetails;
+    .sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.sortOrder - right.sortOrder)
+    .map((account) => ({ beneficiary: account.accountHolder, bankName: account.bankName, iban: account.iban }));
+  if (!bankAccounts.length && bankDetails?.iban) bankAccounts.push({ beneficiary: bankDetails.beneficiary || "", bankName: bankDetails.bankName || "", iban: bankDetails.iban });
+  const bankAccount = bankAccounts[0] || null;
   const methods = [
     {
       value: "bank_transfer" as const,
@@ -1360,6 +1366,7 @@ function RenewalForm({
           method={paymentMethod}
           selected={selected}
           bankAccount={bankAccount}
+          bankAccounts={bankAccounts}
           paymentReference={paymentSettings.paymentReference}
           paymentNote={paymentSettings.paymentNote}
           onCopyIban={onCopyIban}
@@ -1480,6 +1487,7 @@ function PaymentMethodDetails({
   method,
   selected,
   bankAccount,
+  bankAccounts,
   paymentReference,
   paymentNote,
   onCopyIban,
@@ -1490,6 +1498,7 @@ function PaymentMethodDetails({
   method: "bank_transfer" | "stripe_card" | "paypal" | "cash";
   selected?: PricingPlan;
   bankAccount: BankDetails | null;
+  bankAccounts: BankDetails[];
   paymentReference?: string;
   paymentNote?: string;
   onCopyIban: (iban?: string) => void;
@@ -1513,18 +1522,9 @@ function PaymentMethodDetails({
       <div className="flex flex-col gap-[10px]">
         <div className="flex items-center justify-between gap-3">
           <p className="text-[13px] font-extrabold">Στοιχεία κατάθεσης</p>
-          {bankAccount?.bankName && <span className="inline-flex h-[26px] items-center rounded-full bg-muted px-2.5 text-[12px] font-extrabold">{bankAccount.bankName}</span>}
+          {bankAccounts.length > 1 && <span className="inline-flex h-[26px] items-center rounded-full bg-muted px-2.5 text-[12px] font-extrabold">{bankAccounts.length} λογαριασμοί</span>}
         </div>
-        <div className="grid gap-[10px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
-          <div className="flex min-w-0 items-center gap-[10px] rounded-[14px] bg-muted px-[14px] py-3">
-            <div className="min-w-0 flex-1"><p className="text-[11px] text-muted-foreground">Δικαιούχος</p><p className="truncate text-[14px] font-extrabold">{bankAccount?.beneficiary || "—"}</p></div>
-            {bankAccount?.beneficiary && <Button type="button" variant="outline" size="icon" aria-label="Αντιγραφή δικαιούχου" onClick={() => onCopyIban(bankAccount.beneficiary)} className="h-[34px] w-[34px] shrink-0 rounded-[10px] border-border bg-card"><Copy className="h-[15px] w-[15px]" /></Button>}
-          </div>
-          <div className="flex min-w-0 items-center gap-[10px] rounded-[14px] bg-muted px-[14px] py-3">
-            <div className="min-w-0 flex-1"><p className="text-[11px] text-muted-foreground">IBAN</p><p className="truncate text-[14px] font-extrabold tracking-[.3px] tabular-nums">{bankAccount?.iban || "—"}</p></div>
-            {bankAccount?.iban && <Button type="button" variant="outline" size="icon" aria-label="Αντιγραφή IBAN" onClick={() => onCopyIban(bankAccount.iban)} className="h-[34px] w-[34px] shrink-0 rounded-[10px] border-border bg-card"><Copy className="h-[15px] w-[15px]" /></Button>}
-          </div>
-        </div>
+        <div className="space-y-[10px]">{bankAccounts.map((account, index) => <div key={`${account.iban}-${index}`} className="rounded-[14px] border border-border bg-muted p-3"><div className="mb-2 flex items-center justify-between gap-3"><p className="text-[12px] font-extrabold">{account.bankName || "Τραπεζικός λογαριασμός"}</p>{index === 0 && <span className="rounded-full bg-card px-2 py-1 text-[10px] font-extrabold text-muted-foreground">Προτεινόμενος</span>}</div><div className="grid gap-[10px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]"><div className="flex min-w-0 items-center gap-[10px] rounded-[12px] bg-card px-[14px] py-3"><div className="min-w-0 flex-1"><p className="text-[11px] text-muted-foreground">Δικαιούχος</p><p className="truncate text-[14px] font-extrabold">{account.beneficiary || "—"}</p></div>{account.beneficiary && <Button type="button" variant="outline" size="icon" aria-label="Αντιγραφή δικαιούχου" onClick={() => onCopyIban(account.beneficiary)} className="h-[34px] w-[34px] shrink-0 rounded-[10px] border-border bg-card"><Copy className="h-[15px] w-[15px]" /></Button>}</div><div className="flex min-w-0 items-center gap-[10px] rounded-[12px] bg-card px-[14px] py-3"><div className="min-w-0 flex-1"><p className="text-[11px] text-muted-foreground">IBAN</p><p className="truncate text-[14px] font-extrabold tracking-[.3px] tabular-nums">{account.iban || "—"}</p></div>{account.iban && <Button type="button" variant="outline" size="icon" aria-label="Αντιγραφή IBAN" onClick={() => onCopyIban(account.iban)} className="h-[34px] w-[34px] shrink-0 rounded-[10px] border-border bg-card"><Copy className="h-[15px] w-[15px]" /></Button>}</div></div></div>)}</div>
         <p className="text-[13px] text-muted-foreground">Στην αιτιολογία γράψε <b className="text-foreground">{referenceHint}</b>.</p>
         <div className="flex flex-col gap-[14px] rounded-[14px] border-[1.5px] border-dashed border-[#d6d6d2] px-4 py-[14px] sm:flex-row sm:items-center dark:border-border">
           <div className="min-w-0 flex-1"><p className="text-[14px] font-extrabold">Έκανες την κατάθεση;</p><p className="mt-0.5 flex items-start gap-1.5 text-[12px] leading-5 text-muted-foreground"><Paperclip className="mt-0.5 h-[14px] w-[14px] shrink-0" />Επισύναψε προαιρετικά το αποδεικτικό (φωτογραφία ή PDF) για γρηγορότερη έγκριση.</p></div>

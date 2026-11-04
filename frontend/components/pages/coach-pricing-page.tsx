@@ -1,6 +1,6 @@
 "use client";
 
-import { DragEvent, useEffect, useMemo, useState } from "react";
+import { DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -428,41 +428,64 @@ function PackageBuilder({ catalog, onSaved }: { catalog: PackageCatalog | null; 
   const [editingDuration, setEditingDuration] = useState<number | null>(null);
   const [durations, setDurations] = useState<PackageDuration[]>([]);
   const [common, setCommon] = useState<string[]>([]);
-  const [pointsRate, setPointsRate] = useState(5);
   const [saving, setSaving] = useState(false);
   const [draftPackages, setDraftPackages] = useState<AdminPackage[]>([]);
+  const [autoSaveError, setAutoSaveError] = useState(false);
+  const [retryVersion, setRetryVersion] = useState(0);
+  const initializedRef = useRef(false);
+  const lastSavedSnapshotRef = useRef("");
+  const failedSnapshotRef = useRef<string | null>(null);
+
+  const settingsSnapshot = useMemo(() => JSON.stringify({ durations, common, draftPackages }), [durations, common, draftPackages]);
 
   useEffect(() => {
     if (!catalog) return;
     setDurations(catalog.durations);
     setCommon(catalog.commonFeatures.map((item) => item.text));
-    setPointsRate(catalog.pointsPerEuro);
+    if (!initializedRef.current) {
+      lastSavedSnapshotRef.current = JSON.stringify({
+        durations: catalog.durations,
+        common: catalog.commonFeatures.map((item) => item.text),
+        draftPackages: [],
+      });
+      initializedRef.current = true;
+    }
   }, [catalog]);
 
-  if (!catalog) return <Card className="rounded-[20px]"><CardContent className="p-6 text-sm text-muted-foreground">Φόρτωση πακέτων…</CardContent></Card>;
   const baseOneMonth = durations.find((item) => item.months === 1)?.basePriceCents || 0;
   const saveSettings = async () => {
+    const snapshot = settingsSnapshot;
     setSaving(true);
     try {
-      await api.put("/pricing-plans/package-durations", { durations });
-      await api.put("/pricing-plans/common-features", { features: common });
-      await api.put("/pricing-plans/points-rate", { pointsPerEuro: pointsRate });
-      const pendingDrafts = [...draftPackages];
-      const createdIds = new Map<number, number>();
-      while (pendingDrafts.length) {
-        const nextIndex = pendingDrafts.findIndex((draft) => !draft.parentPackageId || draft.parentPackageId > 0 || createdIds.has(draft.parentPackageId));
-        if (nextIndex < 0) throw new Error("Υπάρχει κυκλική επέκταση μεταξύ πρόχειρων πακέτων.");
-        const [draft] = pendingDrafts.splice(nextIndex, 1);
-        const created = await api.post<AdminPackage>("/pricing-plans/packages", { ...draft, id: undefined, parentPackageId: draft.parentPackageId && draft.parentPackageId < 0 ? createdIds.get(draft.parentPackageId) || null : draft.parentPackageId });
-        createdIds.set(draft.id, created.id);
-      }
+      await api.put("/pricing-plans/package-durations", {
+        durations,
+        commonFeatures: common,
+        draftPackages,
+      });
       setDraftPackages([]);
+      lastSavedSnapshotRef.current = JSON.stringify({ durations, common, draftPackages: [] });
+      failedSnapshotRef.current = null;
+      setAutoSaveError(false);
       await onSaved();
-      toast.success("Οι ρυθμίσεις πακέτων αποθηκεύτηκαν.");
       return true;
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Δεν αποθηκεύτηκαν οι ρυθμίσεις."); return false; }
+    } catch (error) {
+      failedSnapshotRef.current = snapshot;
+      setAutoSaveError(true);
+      toast.error(error instanceof Error ? error.message : "Δεν αποθηκεύτηκαν οι ρυθμίσεις.");
+      window.setTimeout(() => {
+        failedSnapshotRef.current = null;
+        setRetryVersion((version) => version + 1);
+      }, 3000);
+      return false;
+    }
     finally { setSaving(false); }
   };
+  useEffect(() => {
+    if (!initializedRef.current || saving || settingsSnapshot === lastSavedSnapshotRef.current || failedSnapshotRef.current === settingsSnapshot) return;
+    const timer = window.setTimeout(() => { void saveSettings(); }, 900);
+    return () => window.clearTimeout(timer);
+  }, [settingsSnapshot, saving, retryVersion]);
+  if (!catalog) return <Card className="rounded-[20px]"><CardContent className="p-6 text-sm text-muted-foreground">Φόρτωση πακέτων…</CardContent></Card>;
   const savePackage = async () => {
     if (!editing) return;
     setSaving(true);
@@ -527,10 +550,8 @@ function PackageBuilder({ catalog, onSaved }: { catalog: PackageCatalog | null; 
     setDurations={setDurations}
     common={common}
     setCommon={setCommon}
-    pointsRate={pointsRate}
-    setPointsRate={setPointsRate}
     saving={saving}
-    onSaveSettings={saveSettings}
+    autoSaveError={autoSaveError}
     onEditPackage={openPackage}
     onRemovePackage={removePackage}
     editing={editing}
@@ -553,17 +574,15 @@ function PackageBuilder({ catalog, onSaved }: { catalog: PackageCatalog | null; 
 }
 
 function PackageReferenceLayout({
-  catalog, durations, setDurations, common, setCommon, pointsRate, setPointsRate, saving, onSaveSettings, onEditPackage, onRemovePackage, editing, setEditing, onSavePackage, onCopyDuration, editingDuration,
+  catalog, durations, setDurations, common, setCommon, saving, autoSaveError, onEditPackage, onRemovePackage, editing, setEditing, onSavePackage, onCopyDuration, editingDuration,
 }: {
   catalog: PackageCatalog;
   durations: PackageDuration[];
   setDurations: React.Dispatch<React.SetStateAction<PackageDuration[]>>;
   common: string[];
   setCommon: React.Dispatch<React.SetStateAction<string[]>>;
-  pointsRate: number;
-  setPointsRate: React.Dispatch<React.SetStateAction<number>>;
   saving: boolean;
-  onSaveSettings: () => Promise<boolean>;
+  autoSaveError: boolean;
   onEditPackage: (item: AdminPackage | null, months?: number) => void;
   onRemovePackage: (item: AdminPackage) => Promise<void>;
   editing: AdminPackage | null;
@@ -628,7 +647,7 @@ function PackageReferenceLayout({
         </CardContent></Card>
         <Card className="rounded-[20px] border-border bg-card shadow-none"><CardContent className="space-y-3 p-[22px]"><div className="flex items-center justify-between gap-3"><div><h3 className="text-[16px] font-extrabold">Κοινές παροχές όλων των πακέτων</h3><p className="text-xs text-muted-foreground">Εμφανίζονται σε κάθε επιλογή, ανεξάρτητα από διάρκεια.</p></div><Badge className="bg-muted text-foreground">{common.filter(Boolean).length}</Badge></div><Textarea className="min-h-40 rounded-[14px] bg-muted" value={common.join("\n")} onChange={(event) => setCommon(event.target.value.split("\n").map((item) => item.trim()))} /><div className="flex items-center justify-between gap-3"><p className="text-xs text-muted-foreground">Μία παροχή σε κάθε γραμμή.</p><Button type="button" variant="outline" className="h-9 rounded-full border-border text-xs font-extrabold" onClick={() => setCommon((items) => [...items, ""])}><Plus className="mr-1.5 h-3.5 w-3.5" />Πρόσθεσε παροχή</Button></div></CardContent></Card>
       </div>
-      <aside className="space-y-4 xl:sticky xl:top-6"><Card className="rounded-[20px] border-border bg-card shadow-none"><CardContent className="space-y-3 p-5"><h3 className="text-[15px] font-extrabold">Πόντοι από πληρωμές</h3><div className="flex items-center gap-3"><Input type="number" min={0} className="h-[42px] w-20 rounded-xl text-center text-lg font-extrabold" value={pointsRate} onChange={(event) => setPointsRate(Number(event.target.value || 0))} /><p className="text-sm font-bold">πόντοι ανά 1 €</p></div><p className="text-xs leading-5 text-muted-foreground">Οι πόντοι υπολογίζονται όταν εγκριθεί η πληρωμή.</p></CardContent></Card><Button className="h-[48px] w-full rounded-full bg-accent font-extrabold text-accent-foreground hover:bg-accent/85" disabled={saving} onClick={() => void onSaveSettings()}>{saving ? "Αποθήκευση..." : "Αποθήκευση ρυθμίσεων"}</Button><a href="/client-billing" target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-[20px] bg-foreground p-4 text-background transition-transform hover:-translate-y-0.5"><span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-[11px] bg-accent text-accent-foreground"><Eye className="h-[17px] w-[17px]" /></span><span className="min-w-0 flex-1"><b className="block text-sm">Δες όπως ο πελάτης</b><small className="block text-xs text-[#9a9a9a]">Εγγραφή & Συνδρομή</small></span><span aria-hidden="true" className="text-lg">→</span></a></aside>
+      <aside className="xl:sticky xl:top-6"><p aria-live="polite" className={`px-1 text-xs font-semibold ${autoSaveError ? "text-destructive" : "text-muted-foreground"}`}>{saving ? "Αποθήκευση αλλαγών…" : autoSaveError ? "Η τελευταία αλλαγή δεν αποθηκεύτηκε. Διόρθωσέ την και θα γίνει νέα προσπάθεια." : "Οι αλλαγές αποθηκεύονται αυτόματα."}</p></aside>
     </div>
     <PackageBuilderSheetReference editing={editing} setEditing={setEditing} saving={saving} onSave={onSavePackage} packages={catalog.packages} durations={orderedDurations} onDelete={onRemovePackage} initialDuration={editingDuration} />
     <AlertDialog open={Boolean(durationAction)} onOpenChange={(open) => !open && setDurationAction(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{durationAction?.type === "duplicate" ? "Αντιγραφή διάρκειας;" : "Διαγραφή διάρκειας;"}</AlertDialogTitle><AlertDialogDescription>{durationAction?.type === "duplicate" ? `Θα δημιουργηθεί νέο accordion ως αντίγραφο του «${durationAction.duration.title || `${durationAction.duration.months} μήνες`}», με τις ίδιες τιμές και παροχές.` : `Θα αφαιρεθεί η διάρκεια «${durationAction?.duration.title || `${durationAction?.duration.months} μήνες`}» και οι προσφορές της. Η ενέργεια εφαρμόζεται όταν αποθηκεύσεις τις ρυθμίσεις.`}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Άκυρο</AlertDialogCancel><AlertDialogAction className={durationAction?.type === "delete" ? "bg-destructive text-white hover:bg-destructive/90" : "bg-foreground text-background hover:bg-foreground/90"} onClick={() => { if (!durationAction) return; if (durationAction.type === "duplicate") duplicateDuration(durationAction.duration); else deleteDuration(durationAction.duration.months); setDurationAction(null); }}>{durationAction?.type === "duplicate" ? "Ναι, αντιγραφή" : "Ναι, διαγραφή"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
