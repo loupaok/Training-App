@@ -138,11 +138,11 @@ export function MediaFolderTree({
                   }
                 }}
                 className={cn(
-                  "group flex items-center gap-1 rounded-md py-1.5 pr-1 text-sm",
+                  "group flex items-center gap-1 rounded-[10px] py-2 pr-1 text-[13px] font-semibold",
                   isSelected
-                    ? "bg-red-50 font-semibold text-red-700 dark:bg-red-500/10 dark:text-red-400"
-                    : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800",
-                  isDropTarget && "ring-2 ring-red-400",
+                    ? "bg-accent text-accent-foreground"
+                    : "text-foreground hover:bg-muted",
+                  isDropTarget && "ring-2 ring-accent",
                 )}
                 style={{ paddingLeft: `${depth * 16 + 4}px` }}
               />
@@ -151,7 +151,7 @@ export function MediaFolderTree({
             <button
               type="button"
               onClick={() => (hasChildren ? toggleCollapsed(node.id) : undefined)}
-              className={cn("flex h-5 w-5 shrink-0 items-center justify-center text-slate-400", !hasChildren && "opacity-0")}
+              className={cn("flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground", !hasChildren && "opacity-0")}
               tabIndex={-1}
             >
               {hasChildren && (isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />)}
@@ -168,9 +168,9 @@ export function MediaFolderTree({
               />
             ) : (
               <button type="button" onClick={() => onSelect(node.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-                {isSelected ? <FolderOpen className="h-4 w-4 shrink-0" /> : <Folder className="h-4 w-4 shrink-0 text-slate-400" />}
+                {isSelected ? <FolderOpen className="h-4 w-4 shrink-0" /> : <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />}
                 <span className="truncate">{node.name}</span>
-                <span className="ml-auto shrink-0 text-xs text-slate-400">{node.itemCount}</span>
+                <span className={cn("ml-auto shrink-0 text-[11px]", isSelected ? "text-accent-foreground/70" : "text-muted-foreground")}>{node.itemCount}</span>
               </button>
             )}
 
@@ -181,7 +181,7 @@ export function MediaFolderTree({
                     <button
                       type="button"
                       aria-label="Επιλογές φακέλου"
-                      className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 opacity-0 hover:bg-slate-200 hover:text-slate-700 group-hover:opacity-100 dark:hover:bg-slate-700 dark:hover:text-slate-200"
+                      className="ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-black/10 hover:text-foreground group-hover:opacity-100"
                       onClick={(event) => event.stopPropagation()}
                     />
                   }
@@ -237,13 +237,14 @@ export function MediaFolderTree({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-slate-200 p-2 dark:border-slate-800">
-        <Button type="button" variant="outline" size="sm" onClick={() => startCreate(null)} className="w-full justify-center gap-2 font-medium">
-          <Plus className="h-4 w-4" /> Νέος Φάκελος
+      <div className="flex items-center justify-between border-b border-border px-3 py-3">
+        <span className="text-[11px] font-extrabold uppercase tracking-[1px] text-muted-foreground">Φάκελοι</span>
+        <Button type="button" variant="ghost" size="icon-sm" onClick={() => startCreate(null)} aria-label="Νέος φάκελος" className="size-8 rounded-full hover:bg-muted">
+          <Plus className="h-4 w-4" />
         </Button>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="flex-1 overflow-y-auto p-2.5">
         {creatingParentId === "root-create" && (
           <div className="flex items-center gap-1 py-1 pl-1">
             <Input
@@ -274,13 +275,13 @@ export function MediaFolderTree({
             }
           }}
           className={cn(
-            "mb-1 flex items-center gap-2 rounded-md py-1.5 pl-1 pr-2 text-sm",
-            selectedFolderId === null ? "bg-red-50 font-semibold text-red-700 dark:bg-red-500/10 dark:text-red-400" : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800",
-            fileDropTarget === "root" ? "ring-2 ring-red-400" : "",
+            "mb-1 flex items-center gap-2 rounded-[10px] py-2 pl-2 pr-2 text-[13px] font-semibold",
+            selectedFolderId === null ? "bg-accent text-accent-foreground" : "text-foreground hover:bg-muted",
+            fileDropTarget === "root" ? "ring-2 ring-accent" : "",
           )}
         >
           <button type="button" onClick={() => onSelect(null)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-            {selectedFolderId === null ? <FolderOpen className="h-4 w-4 shrink-0" /> : <Folder className="h-4 w-4 shrink-0 text-slate-400" />}
+            {selectedFolderId === null ? <FolderOpen className="h-4 w-4 shrink-0" /> : <Folder className="h-4 w-4 shrink-0 text-muted-foreground" />}
             <span className="truncate">Όλα τα αρχεία</span>
           </button>
         </div>

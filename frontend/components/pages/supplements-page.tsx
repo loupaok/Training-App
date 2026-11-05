@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Clock3, Grid2X2, List, Pencil, Pill, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ function shortCode(item: Supplement) { return item.shortCode?.trim() || item.nam
 
 function SupplementsContent() {
   const { user, logout } = useAuth();
+  const router = useRouter();
   const [items, setItems] = useState<Supplement[]>([]); const [loading, setLoading] = useState(true); const [search, setSearch] = useState("");
   const [category, setCategory] = useState(""); const [view, setView] = useState<"grid" | "list">("grid");
   const [formOpen, setFormOpen] = useState(false); const [editing, setEditing] = useState<Supplement | null>(null); const [form, setForm] = useState<Form>(emptyForm); const [saving, setSaving] = useState(false);
@@ -46,8 +48,8 @@ function SupplementsContent() {
   const filtered = useMemo(() => items.filter((item) => (!category || item.category === category) && (!search.trim() || item.name.toLocaleLowerCase("el").includes(search.toLocaleLowerCase("el")))), [items, category, search]);
   const counts = useMemo(() => Object.fromEntries(CATEGORIES.map(([value]) => [value, items.filter((item) => item.category === value).length])), [items]);
   const categoryChips: Array<[string, string, number]> = [["", "Όλα", items.length], ...CATEGORIES.map(([value, label]): [string, string, number] => [value, label, counts[value] || 0])];
-  const openNew = () => { setEditing(null); setForm(emptyForm); setFormOpen(true); };
-  const openEdit = (item: Supplement) => { setEditing(item); setForm({ category: item.category, name: item.name, shortCode: item.shortCode || "", form: item.form || "", dailyDose: item.dailyDose, doseUnit: item.doseUnit || "", timing: item.timing || "", linkUrl: item.linkUrl || "" }); setFormOpen(true); };
+  const openNew = () => router.push("/coach/supplements/new");
+  const openEdit = (item: Supplement) => router.push(`/coach/supplements/${item.id}`);
   const save = async () => { if (!form.name.trim()) return; setSaving(true); try { const result = editing ? await api.put<Supplement>(`/supplements/${editing.id}`, form) : await api.post<Supplement>("/supplements", form); setItems((old) => editing ? old.map((item) => item.id === result.id ? result : item) : [result, ...old]); setFormOpen(false); } finally { setSaving(false); } };
   const remove = async (item: Supplement) => { if (!window.confirm(`Να διαγραφεί το «${item.name}»;`)) return; await api.delete(`/supplements/${item.id}`); setItems((old) => old.filter((value) => value.id !== item.id)); };
 

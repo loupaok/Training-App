@@ -31,6 +31,7 @@ export interface Exercise {
   type: string;
   programsCount?: number;
   instructions?: string;
+  commonMistakes?: string;
   imageUrl?: string;
   videoUrl?: string;
   images?: RawExerciseImage[];

@@ -162,7 +162,7 @@ async function getPlans(connection, clientId) {
     const [days] = await connection.query('SELECT * FROM training_plan_days WHERE training_plan_id = ? ORDER BY day_of_week, sort_order', [training.id]);
     const dayIds = days.map((day) => day.id);
     const [exercises] = dayIds.length ? await connection.query(
-      `SELECT tpe.*, e.muscle_group, e.equipment, e.image_url, e.video_url, e.instructions
+      `SELECT tpe.*, e.muscle_group, e.equipment, e.image_url, e.video_url, e.instructions, e.common_mistakes
        FROM training_plan_exercises tpe
        LEFT JOIN exercises e ON e.id = tpe.exercise_id
        WHERE tpe.day_id IN (?) ORDER BY tpe.sort_order`,

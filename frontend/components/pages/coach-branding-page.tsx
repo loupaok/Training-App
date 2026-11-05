@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
-import { ImageIcon, LoaderCircle, Save, Upload } from "lucide-react";
+import { Images, ImageIcon, LoaderCircle, Save, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CoachShell } from "@/components/shell/coach-shell";
+import { MediaLibraryPickerDialog } from "@/components/shared/media-library-picker-dialog";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useBranding, type BrandingData } from "@/contexts/BrandingContext";
 import { api } from "@/lib/api/client";
@@ -95,6 +96,7 @@ function CoachBrandingContent() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState<"logo" | "login-logo" | "favicon" | "login-background" | "eshop-banner" | null>(null);
+  const [pickerKind, setPickerKind] = useState<"logo" | "login-logo" | "favicon" | "login-background" | null>(null);
 
   useEffect(() => {
     api
@@ -159,6 +161,16 @@ function CoachBrandingContent() {
     }
   };
 
+  const chooseFromLibrary = async (kind: "logo" | "login-logo" | "favicon" | "login-background", url: string) => {
+    try {
+      setBranding(await api.put<Branding>(`/branding/${kind}/library`, { url }));
+      await refreshBranding();
+      toast.success("Η φωτογραφία επιλέχθηκε.");
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Δεν ήταν δυνατή η επιλογή της φωτογραφίας."));
+    }
+  };
+
   const validColor = isHexColor(branding.primaryColor);
   const brandingImageAccept = user?.role === "admin" ? ".jpg,.jpeg,.png,.svg" : ".jpg,.jpeg,.png";
 
@@ -219,10 +231,15 @@ function CoachBrandingContent() {
           </CardHeader>
           <CardContent className="gap-5">
             <BrandImagePreview url={branding.loginBackgroundUrl} type="login-background" />
-            <Button type="button" variant="outline" onClick={() => loginBackgroundInputRef.current?.click()} disabled={uploading !== null || loading}>
-              {uploading === "login-background" ? <LoaderCircle className="animate-spin" /> : <Upload />}
-              {uploading === "login-background" ? "Ανέβασμα..." : "Ανέβασε Background"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => setPickerKind("login-background")} disabled={uploading !== null || loading}>
+                <Images /> Πρόσθεσε φωτογραφία
+              </Button>
+              <Button type="button" variant="outline" onClick={() => loginBackgroundInputRef.current?.click()} disabled={uploading !== null || loading}>
+                {uploading === "login-background" ? <LoaderCircle className="animate-spin" /> : <Upload />}
+                {uploading === "login-background" ? "Ανέβασμα..." : "Ανέβασε φωτογραφία"}
+              </Button>
+            </div>
             <input ref={loginBackgroundInputRef} type="file" accept=".jpg,.jpeg,.png" onChange={(event) => uploadBrandImage("login-background", event)} className="hidden" />
           </CardContent>
         </Card>
@@ -249,10 +266,15 @@ function CoachBrandingContent() {
           </CardHeader>
           <CardContent className="gap-5">
             <BrandImagePreview url={branding.logoUrl} type="logo" />
-            <Button type="button" variant="outline" onClick={() => logoInputRef.current?.click()} disabled={uploading !== null || loading}>
-              {uploading === "logo" ? <LoaderCircle className="animate-spin" /> : <Upload />}
-              {uploading === "logo" ? "Ανέβασμα..." : "Ανέβασε Logo"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => setPickerKind("logo")} disabled={uploading !== null || loading}>
+                <Images /> Πρόσθεσε φωτογραφία
+              </Button>
+              <Button type="button" variant="outline" onClick={() => logoInputRef.current?.click()} disabled={uploading !== null || loading}>
+                {uploading === "logo" ? <LoaderCircle className="animate-spin" /> : <Upload />}
+                {uploading === "logo" ? "Ανέβασμα..." : "Ανέβασε φωτογραφία"}
+              </Button>
+            </div>
             <input ref={logoInputRef} type="file" accept={brandingImageAccept} onChange={(event) => uploadBrandImage("logo", event)} className="hidden" />
           </CardContent>
         </Card>
@@ -264,10 +286,15 @@ function CoachBrandingContent() {
           </CardHeader>
           <CardContent className="gap-5">
             <BrandImagePreview url={branding.loginLogoUrl} type="login-logo" />
-            <Button type="button" variant="outline" onClick={() => loginLogoInputRef.current?.click()} disabled={uploading !== null || loading}>
-              {uploading === "login-logo" ? <LoaderCircle className="animate-spin" /> : <Upload />}
-              {uploading === "login-logo" ? "Ανέβασμα..." : "Ανέβασε Logo Σύνδεσης"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => setPickerKind("login-logo")} disabled={uploading !== null || loading}>
+                <Images /> Πρόσθεσε φωτογραφία
+              </Button>
+              <Button type="button" variant="outline" onClick={() => loginLogoInputRef.current?.click()} disabled={uploading !== null || loading}>
+                {uploading === "login-logo" ? <LoaderCircle className="animate-spin" /> : <Upload />}
+                {uploading === "login-logo" ? "Ανέβασμα..." : "Ανέβασε φωτογραφία"}
+              </Button>
+            </div>
             <input ref={loginLogoInputRef} type="file" accept={brandingImageAccept} onChange={(event) => uploadBrandImage("login-logo", event)} className="hidden" />
           </CardContent>
         </Card>
@@ -279,10 +306,15 @@ function CoachBrandingContent() {
           </CardHeader>
           <CardContent className="gap-5">
             <BrandImagePreview url={branding.faviconUrl} type="favicon" />
-            <Button type="button" variant="outline" onClick={() => faviconInputRef.current?.click()} disabled={uploading !== null || loading}>
-              {uploading === "favicon" ? <LoaderCircle className="animate-spin" /> : <Upload />}
-              {uploading === "favicon" ? "Ανέβασμα..." : "Ανέβασε Favicon"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => setPickerKind("favicon")} disabled={uploading !== null || loading}>
+                <Images /> Πρόσθεσε φωτογραφία
+              </Button>
+              <Button type="button" variant="outline" onClick={() => faviconInputRef.current?.click()} disabled={uploading !== null || loading}>
+                {uploading === "favicon" ? <LoaderCircle className="animate-spin" /> : <Upload />}
+                {uploading === "favicon" ? "Ανέβασμα..." : "Ανέβασε φωτογραφία"}
+              </Button>
+            </div>
             <input ref={faviconInputRef} type="file" accept={brandingImageAccept} onChange={(event) => uploadBrandImage("favicon", event)} className="hidden" />
           </CardContent>
         </Card>
@@ -359,6 +391,11 @@ function CoachBrandingContent() {
           </Button>
         </div>
       </div>
+      <MediaLibraryPickerDialog
+        open={pickerKind !== null}
+        onOpenChange={(open) => !open && setPickerKind(null)}
+        onSelect={(url) => pickerKind && void chooseFromLibrary(pickerKind, url)}
+      />
     </CoachShell>
   );
 }

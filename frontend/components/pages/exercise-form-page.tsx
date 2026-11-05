@@ -3,7 +3,7 @@
 import { startTransition, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronDown, Play, Trash2, Plus, Search } from "lucide-react";
+import { ChevronLeft, ChevronDown, Play, Trash2, Plus, Search, Images, Upload } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -15,6 +15,7 @@ import {
 import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,6 +24,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { MediaLibraryPickerDialog } from "@/components/shared/media-library-picker-dialog";
 import {
   Select,
   SelectContent,
@@ -37,6 +39,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { CoachShell } from "@/components/shell/coach-shell";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -59,8 +71,10 @@ interface EditForm {
   name: string;
   muscleGroup: string;
   equipment: string;
+  level: string;
   type: string;
   instructions: string;
+  commonMistakes: string;
   programsCount: number | string;
   imageUrl: string;
   videoUrl: string;
@@ -116,6 +130,7 @@ function draftExercise(): Exercise {
     type: "Δύναμη",
     programsCount: 0,
     instructions: "",
+    commonMistakes: "",
     imageUrl: "",
     videoUrl: "",
   };
@@ -126,15 +141,17 @@ function editFormFrom(exercise: Exercise): EditForm {
     name: exercise.name || "",
     muscleGroup: exercise.muscleGroup || "",
     equipment: exercise.equipment || "",
+    level: (exercise as Exercise & { level?: string }).level || "Μέσος",
     type: exercise.type || "Δύναμη",
     instructions: exercise.instructions || "",
+    commonMistakes: exercise.commonMistakes || "",
     programsCount: exercise.programsCount || 0,
     imageUrl: exercise.imageUrl || "",
     videoUrl: exercise.videoUrl || "",
   };
 }
 
-function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
+function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: string | null; forceEdit?: boolean }) {
   const { user, logout } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -143,11 +160,12 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
   const [filters, setFilters] = useState<FiltersState>({ muscleGroups: [], equipment: [], types: [] });
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
-  const [modalMode, setModalMode] = useState<"view" | "edit">(isCreatingRoute ? "edit" : "view");
+  const [modalMode, setModalMode] = useState<"view" | "edit">(isCreatingRoute || forceEdit ? "edit" : "view");
   const [isCreating, setIsCreating] = useState(isCreatingRoute);
   const [loading, setLoading] = useState(!isCreatingRoute);
   const [loadError, setLoadError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [mediaMessage, setMediaMessage] = useState("");
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
   const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
@@ -190,7 +208,7 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
         setExercise(data);
         setEditForm(editFormFrom(data));
         setIsCreating(false);
-        setModalMode(searchParams.get("mode") === "edit" ? "edit" : "view");
+        setModalMode(forceEdit || searchParams.get("mode") === "edit" ? "edit" : "view");
       })
       .catch((error) => {
         if (!ignore) setLoadError(getErrorMessage(error, "Δεν φορτώθηκε η άσκηση."));
@@ -265,19 +283,20 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
     setEditForm((current) => (current ? { ...current, [field]: value } : current));
   };
 
-  const saveExercise = async () => {
+  const saveExercise = async (draft?: Pick<EditForm, "instructions" | "commonMistakes">) => {
     if (!exercise || !editForm) return;
     setSaving(true);
     setMediaMessage("");
 
     try {
+      const formForSave = { ...editForm, ...draft };
       const payload = {
-        ...editForm,
-        name: editForm.name?.trim() || "Νέα Άσκηση",
-        muscleGroup: editForm.muscleGroup?.trim() || "Γενική",
-        equipment: editForm.equipment?.trim() || "Χωρίς εξοπλισμό",
-        type: editForm.type?.trim() || "Δύναμη",
-        programsCount: Number(editForm.programsCount || 0),
+        ...formForSave,
+        name: formForSave.name?.trim() || "Νέα Άσκηση",
+        muscleGroup: formForSave.muscleGroup?.trim() || "Γενική",
+        equipment: formForSave.equipment?.trim() || "Χωρίς εξοπλισμό",
+        type: formForSave.type?.trim() || "Δύναμη",
+        programsCount: Number(formForSave.programsCount || 0),
       };
 
       const updated = isCreating
@@ -290,7 +309,7 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
 
       if (isCreating) {
         setIsCreating(false);
-        router.replace(`/exercises/${updated.id}?mode=edit`);
+        router.replace("/exercises");
       }
     } catch (error) {
       setMediaMessage(getErrorMessage(error, "Δεν αποθηκεύτηκαν οι αλλαγές της άσκησης."));
@@ -301,8 +320,6 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
 
   const deleteExercise = async () => {
     if (!exercise || isCreating) return;
-    const confirmed = window.confirm(`Να διαγραφεί η άσκηση "${exercise.name}";`);
-    if (!confirmed) return;
 
     setSaving(true);
     setMediaMessage("");
@@ -398,6 +415,31 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
     }
   };
 
+  const chooseMediaAssetUrl = async (url: string) => {
+    setMediaPickerOpen(false);
+
+    if (isCreating || !exercise) {
+      updateEditField("imageUrl", url);
+      setMediaMessage("Επιλέχθηκε εικόνα από Media Library.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await api.post<{ images?: RawExerciseImage[] }>(`/exercises/${exercise.id}/images`, {
+        imageUrl: url,
+        primary: true,
+      });
+      updateExerciseImages(response.images || [], url);
+      setMediaMessage("Προστέθηκε στο gallery από Media Library.");
+    } catch (error) {
+      updateEditField("imageUrl", url);
+      setMediaMessage(getErrorMessage(error, "Δεν προστέθηκε η εικόνα στο gallery."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const clearThumbnail = () => {
     updateEditField("imageUrl", "");
     setMediaMessage("Το thumbnail αφαιρέθηκε. Πάτησε αποθήκευση για να ενημερωθεί η άσκηση.");
@@ -457,6 +499,27 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
   const isReadOnly = modalMode === "view";
   const currentImages = exercise && editForm ? normalizeExerciseImages({ ...exercise, imageUrl: editForm.imageUrl }) : [];
 
+  if (forceEdit && !loading && exercise && editForm) {
+    return <CoachShell title={isCreating ? "Νέα άσκηση" : "Επεξεργασία άσκησης"} user={user} logout={logout}>
+      <AdminExerciseEditor
+        creating={isCreating}
+        form={editForm}
+        images={currentImages}
+        saving={saving}
+        message={mediaMessage}
+        onChange={updateEditField}
+        onSave={(draft) => saveExercise(draft)}
+        onDelete={() => setDeleteDialogOpen(true)}
+        onCancel={() => router.push("/exercises")}
+        onPickMedia={openMediaPicker}
+        onUploadClick={() => fileInputRef.current?.click()}
+      />
+      <input ref={fileInputRef} type="file" accept="image/*" onChange={uploadImage} className="hidden" />
+      <MediaLibraryPickerDialog open={mediaPickerOpen} onOpenChange={setMediaPickerOpen} onSelect={chooseMediaAssetUrl} title="Επιλογή από Media Library" />
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Διαγραφή άσκησης;</AlertDialogTitle><AlertDialogDescription>Η «{exercise.name}» θα διαγραφεί οριστικά από τη Βιβλιοθήκη Ασκήσεων.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={saving}>Ακύρωση</AlertDialogCancel><AlertDialogAction onClick={deleteExercise} disabled={saving} className="bg-red-600 text-white hover:bg-red-700">{saving ? "Διαγραφή…" : "Ναι, διαγραφή"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+    </CoachShell>;
+  }
+
   return (
     <CoachShell title={isCreating ? "Νέα Άσκηση" : editForm?.name || "Άσκηση"} user={user} logout={logout}>
       <div className="mb-6">
@@ -471,6 +534,16 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
           <ChevronLeft className="h-4 w-4" />
           Βιβλιοθήκη Ασκήσεων
         </Button>
+        <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-[28px] font-extrabold tracking-[-.5px]">{isCreating ? "Νέα άσκηση" : "Επεξεργασία άσκησης"}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{isCreating ? "Συμπλήρωσε τα βασικά, πρόσθεσε media και οδηγίες εκτέλεσης." : `Σε ${exercise?.programsCount || 0} προγράμματα · οι αλλαγές αποθηκεύονται στην άσκηση.`}</p>
+          </div>
+          {!loading && <div className="flex items-center gap-2">
+            {!isCreating && <Button type="button" variant="outline" onClick={() => router.push("/exercises")} className="h-[46px] rounded-full px-5 font-extrabold">Ακύρωση</Button>}
+            <Button type="button" onClick={() => saveExercise()} disabled={saving} className="h-[46px] rounded-full bg-accent px-6 font-extrabold text-accent-foreground hover:bg-accent/85">{saving ? "Αποθήκευση…" : "Αποθήκευση"}</Button>
+          </div>}
+        </div>
       </div>
 
       {loadError && (
@@ -482,7 +555,7 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
       {loading ? (
         <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Φόρτωση...</p>
       ) : exercise && editForm ? (
-        <div className="mx-auto max-w-4xl pb-8">
+        <div className="mx-auto max-w-[1180px] pb-24">
           {/* TOP — two columns */}
           <div className="grid grid-cols-1 gap-8 sm:grid-cols-[35%_1fr]">
             {/* LEFT — image + gallery */}
@@ -694,7 +767,7 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
                   <Button type="button" variant="outline" onClick={() => router.push("/exercises")} className="font-normal">
                     Ακύρωση
                   </Button>
-                  <Button onClick={saveExercise} disabled={saving} className="gap-2 px-6 font-medium">
+                  <Button onClick={() => saveExercise()} disabled={saving} className="gap-2 px-6 font-medium">
                     💾 {saving ? "Αποθήκευση..." : isCreating ? "Προσθήκη Άσκησης" : "Αποθήκευση"}
                   </Button>
                 </div>
@@ -705,7 +778,7 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
       ) : null}
 
       <Dialog open={mediaPickerOpen} onOpenChange={setMediaPickerOpen}>
-        <DialogContent className="max-h-[88vh] w-full max-w-5xl overflow-hidden sm:max-w-5xl">
+        <DialogContent className="h-[100dvh] w-[100vw] max-w-none overflow-hidden rounded-none border-0 p-5 shadow-none sm:max-w-none sm:p-7">
           <DialogHeader>
             <DialogTitle className="text-2xl">Επιλογή από Media Library</DialogTitle>
             <DialogDescription>Διάλεξε φωτογραφία που είναι ήδη αποθηκευμένη στη βάση.</DialogDescription>
@@ -763,6 +836,50 @@ function ExerciseFormContent({ exerciseId }: { exerciseId: string | null }) {
       </Dialog>
     </CoachShell>
   );
+}
+
+function AdminExerciseEditor({ creating, form, images, saving, message, onChange, onSave, onDelete, onCancel, onPickMedia, onUploadClick }: {
+  creating: boolean; form: EditForm; images: NormalizedExerciseImage[]; saving: boolean; message: string;
+  onChange: <K extends keyof EditForm>(field: K, value: EditForm[K]) => void;
+  onSave: (draft: Pick<EditForm, "instructions" | "commonMistakes">) => void; onDelete: () => void; onCancel: () => void; onPickMedia: () => void; onUploadClick: () => void;
+}) {
+  const [mistakes, setMistakesState] = useState<string[]>(() => form.commonMistakes ? form.commonMistakes.split("\n") : []);
+  const muscles = ["Στήθος", "Πλάτη", "Ώμοι", "Δικέφαλα", "Τρικέφαλα", "Κοιλιακοί", "Τετρακέφαλοι", "Οπίσθιοι μηριαίοι", "Γλουτοί", "Γάμπες"];
+  const types = ["Δύναμη", "Cardio", "Διάταση", "Κινητικότητα"];
+  const levels = ["Αρχάριος", "Μέσος", "Προχωρημένος"];
+  const [steps, setStepsState] = useState<string[]>(() => form.instructions ? form.instructions.split("\n") : []);
+  const stepsRef = useRef(steps);
+  const mistakesRef = useRef(mistakes);
+  useEffect(() => { const next = form.instructions ? form.instructions.split("\n") : []; stepsRef.current = next; setStepsState(next); }, [form.instructions]);
+  useEffect(() => { const next = form.commonMistakes ? form.commonMistakes.split("\n") : []; mistakesRef.current = next; setMistakesState(next); }, [form.commonMistakes]);
+  const setSteps = (next: string[]) => { stepsRef.current = next; setStepsState(next); onChange("instructions", next.join("\n")); };
+  const setMistakes = (next: string[]) => { mistakesRef.current = next; setMistakesState(next); onChange("commonMistakes", next.join("\n")); };
+  const ready = [Boolean(form.name && form.muscleGroup), Boolean(form.equipment), Boolean(form.videoUrl || images.length), Boolean(form.instructions?.trim())];
+  const completed = ready.filter(Boolean).length;
+  return <section className="mx-auto w-full max-w-[1180px] pb-24">
+    <div className="mb-[22px] flex flex-wrap items-end justify-between gap-4"><div><button type="button" onClick={onCancel} className="mb-3 flex items-center gap-1 text-[13px] font-extrabold"><ChevronLeft className="size-4" />Βιβλιοθήκη Ασκήσεων</button><h1 className="text-[28px] font-extrabold tracking-[-.5px]">{creating ? "Νέα άσκηση" : "Επεξεργασία άσκησης"}</h1><p className="mt-1 text-sm text-muted-foreground">{creating ? "Συμπλήρωσε τα βασικά, πρόσθεσε βίντεο ή φωτογραφίες και οδηγίες." : "Οι αλλαγές ενημερώνουν άμεσα τη Βιβλιοθήκη Ασκήσεων."}</p></div><div className="flex gap-2"><Button type="button" variant="outline" onClick={onCancel} className="h-[46px] rounded-full px-5 font-extrabold">Ακύρωση</Button><Button type="button" onClick={() => onSave({ instructions: stepsRef.current.join("\n"), commonMistakes: mistakesRef.current.join("\n") })} disabled={saving} className="h-[46px] rounded-full bg-accent px-6 font-extrabold text-accent-foreground hover:bg-accent/85">{saving ? "Αποθήκευση…" : "Αποθήκευση"}</Button></div></div>
+    {message && <div role="status" className="mb-5 rounded-[14px] border border-border bg-muted px-4 py-3 text-sm font-bold">{message}</div>}
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]"><div className="space-y-5">
+      <FormCard index="1" title="Βασικά" description="Όνομα, μυϊκή ομάδα και εξοπλισμός"><div className="grid gap-[14px] sm:grid-cols-2"><Field label="Όνομα άσκησης" required><Input value={form.name} onChange={(e) => onChange("name", e.target.value)} className="h-[46px] rounded-xl font-semibold" /></Field><Field label="Εναλλακτικό όνομα"><Input placeholder="προαιρετικό · βοηθά στην αναζήτηση" className="h-[46px] rounded-xl" /></Field></div><Field label="Κύρια μυϊκή ομάδα" required><div className="flex flex-wrap gap-2">{muscles.map((item) => <Pill key={item} active={form.muscleGroup === item} onClick={() => onChange("muscleGroup", item)}>{item}</Pill>)}</div></Field><div className="grid gap-[14px] sm:grid-cols-2"><Field label="Εξοπλισμός" required><Input value={form.equipment} onChange={(e) => onChange("equipment", e.target.value)} placeholder="π.χ. Σωματικό βάρος" className="h-[46px] rounded-xl" /></Field><Field label="Επίπεδο"><div className="flex flex-wrap gap-2">{levels.map((item) => <Pill key={item} active={form.level === item} onClick={() => onChange("level", item)}>{item}</Pill>)}</div></Field></div><Field label="Τύπος"><div className="flex flex-wrap gap-2">{types.map((item) => <Pill key={item} active={form.type === item} onClick={() => onChange("type", item)}>{item}</Pill>)}</div></Field></FormCard>
+      <FormCard index="2" title="Βίντεο & φωτογραφίες" description="Ο πελάτης τα βλέπει στην οθόνη της άσκησης"><Field label="Βίντεο" hint="Link YouTube ή Vimeo · προαιρετικό"><Input value={form.videoUrl} onChange={(e) => onChange("videoUrl", e.target.value)} placeholder="https://youtube.com/…" className="h-[46px] rounded-xl" /></Field><Field label="Φωτογραφίες" hint="Η πρώτη είναι το εξώφυλλο στη Βιβλιοθήκη"><div className="flex flex-wrap gap-3">{images.map((image, index) => <div key={image.id} className={cn("relative h-[150px] w-[150px] overflow-hidden rounded-[14px] bg-muted", index === 0 && "ring-3 ring-accent ring-inset")}><img src={resolveMediaUrl(image.imageUrl)} alt="" className="h-full w-full object-cover" />{index === 0 && <span className="absolute left-2 top-2 rounded-full bg-accent px-2 py-1 text-[10px] font-extrabold text-accent-foreground">Εξώφυλλο</span>}</div>)}<button type="button" onClick={onPickMedia} className="grid h-[150px] w-[150px] place-items-center gap-1.5 rounded-[14px] border-2 border-dashed border-border bg-muted/40 text-center text-xs font-extrabold text-muted-foreground"><Images className="size-5" />Πρόσθεσε<br />φωτογραφία</button><button type="button" onClick={onUploadClick} disabled={creating} className="grid h-[150px] w-[150px] place-items-center gap-1.5 rounded-[14px] border-2 border-dashed border-border bg-muted/40 text-center text-xs font-extrabold text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"><Upload className="size-5" />Ανέβασε<br />φωτογραφία</button></div></Field><div className="rounded-[14px] bg-muted px-4 py-3 text-xs font-bold">Ο πελάτης θα δει: <span className="ml-2 rounded-full bg-accent px-3 py-1 text-accent-foreground">{form.videoUrl && images.length ? "Βίντεο + φωτογραφίες" : images.length > 1 ? "Slider φωτογραφιών" : images.length ? "Μία φωτογραφία" : "Μόνο βίντεο"}</span></div></FormCard>
+      <FormCard index="3" title="Οδηγίες εκτέλεσης" description="Βήμα βήμα · ο πελάτης τις βλέπει αριθμημένα"><p className="text-[13px] font-extrabold">Οδηγίες</p><div className="space-y-2">{steps.map((step, index) => <div key={`step-${index}`} className="flex items-start gap-3.5 rounded-xl bg-muted px-4 py-2.5"><span className="shrink-0 pt-1 text-[#b5b5b5]">⠿</span><span className="mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-full bg-[#0b0b0b] text-[11px] font-extrabold text-accent">{index + 1}</span><DeferredTextarea value={step} onCommit={(value) => setSteps(steps.map((current, currentIndex) => currentIndex === index ? value : current))} className="min-h-6 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 pl-1 text-sm leading-[1.45] shadow-none focus-visible:ring-0" /><button type="button" onClick={() => setSteps(steps.filter((_, currentIndex) => currentIndex !== index))} aria-label="Διαγραφή βήματος" className="shrink-0 pt-1 text-muted-foreground hover:text-red-600">×</button></div>)}</div><button type="button" onClick={() => setSteps([...steps, ""])} className="flex h-[42px] w-full items-center gap-2 rounded-xl border-[1.5px] border-dashed border-[#d6d6d2] px-4 text-[13px] font-bold text-muted-foreground hover:border-foreground hover:text-foreground"><Plus className="size-4" />Πρόσθεσε βήμα</button><div className="pt-2"><p className="text-[13px] font-extrabold">Συχνά λάθη</p><p className="mt-0.5 text-xs text-muted-foreground">προαιρετικό · εμφανίζονται με κόκκινο θαυμαστικό</p><div className="mt-3 space-y-2">{mistakes.map((mistake, index) => <div key={`mistake-${index}`} className="flex items-center gap-3 rounded-xl bg-red-50 px-4 py-2.5"><span className="shrink-0 text-red-600">⚠</span><DeferredInput value={mistake} onCommit={(value) => setMistakes(mistakes.map((current, currentIndex) => currentIndex === index ? value : current))} className="h-auto min-w-0 flex-1 border-0 bg-transparent p-0 pl-1 text-sm shadow-none focus-visible:ring-0" /><button type="button" onClick={() => setMistakes(mistakes.filter((_, currentIndex) => currentIndex !== index))} aria-label="Διαγραφή λάθους" className="shrink-0 text-muted-foreground hover:text-red-600">×</button></div>)}</div><button type="button" onClick={() => setMistakes([...mistakes, ""])} className="mt-3 flex h-[42px] w-full items-center gap-2 rounded-xl border-[1.5px] border-dashed border-[#d6d6d2] px-4 text-[13px] font-bold text-muted-foreground hover:border-foreground hover:text-foreground"><Plus className="size-4" />Πρόσθεσε λάθος</button></div></FormCard>
+    </div><aside className="space-y-5"><Card className="rounded-[20px] border-border bg-card p-5 shadow-none"><div className="flex justify-between"><b>Ετοιμότητα</b><b>{completed} / 4</b></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full bg-accent" style={{ width: `${completed * 25}%` }} /></div><div className="mt-4 space-y-3 text-[13px] font-bold">{["Όνομα & μυϊκή ομάδα", "Εξοπλισμός", "Βίντεο ή φωτογραφία", "Οδηγίες εκτέλεσης"].map((label, index) => <p key={label} className={cn("flex items-center gap-2", ready[index] ? "text-foreground" : "text-muted-foreground")}><span className={cn("grid size-5 place-items-center rounded-full", ready[index] ? "bg-accent text-accent-foreground" : "bg-muted")}>{ready[index] ? "✓" : ""}</span>{label}</p>)}</div></Card><Card className="overflow-hidden rounded-[20px] border-border bg-card p-5 shadow-none"><div className="mb-3 flex justify-between"><b>Όπως το βλέπει ο πελάτης</b><span className="text-[11px] font-extrabold tracking-[1px] text-muted-foreground">LIVE</span></div><div className="overflow-hidden rounded-[26px] border-[7px] border-[#0b0b0b] bg-white"><div className="h-48 bg-muted">{images[0] && <img src={resolveMediaUrl(images[0].imageUrl)} alt="" className="h-full w-full object-cover" />}</div><div className="space-y-2 p-4"><span className="inline-flex rounded-full bg-[var(--sp-lime-soft)] px-2 py-1 text-[11px] font-extrabold">{form.muscleGroup || "Μυϊκή ομάδα"}</span><h2 className="text-lg font-extrabold">{form.name || "Όνομα άσκησης"}</h2>{form.instructions.split("\n").filter(Boolean).slice(0, 3).map((step, index) => <p key={`${step}-${index}`} className="text-xs leading-5"><b>{index + 1}.</b> {step}</p>)}</div></div></Card>{!creating && <Button type="button" variant="outline" onClick={onDelete} disabled={saving} className="h-11 w-full rounded-full border-red-200 text-red-600 hover:border-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/70 dark:hover:bg-red-950/30"><Trash2 className="size-4" />Διαγραφή άσκησης</Button>}</aside></div>
+  </section>;
+}
+function FormCard({ index, title, description, children }: { index: string; title: string; description: string; children: React.ReactNode }) { return <Card className="rounded-[20px] border-border bg-card p-[22px] shadow-none"><div className="mb-[18px] flex items-center gap-3"><span className="grid size-[30px] place-items-center rounded-full bg-foreground text-[13px] font-extrabold text-accent">{index}</span><div><h2 className="text-[17px] font-extrabold">{title}</h2><p className="text-xs text-muted-foreground">{description}</p></div></div><div className="space-y-[18px]">{children}</div></Card>; }
+function Field({ label, hint, required, children }: { label: string; hint?: string; required?: boolean; children: React.ReactNode }) { return <label className="block text-[13px] font-extrabold">{label} {required && <span className="text-red-600">*</span>}{hint && <small className="ml-1 block pt-0.5 text-xs font-medium text-muted-foreground">{hint}</small>}<span className="mt-2 block">{children}</span></label>; }
+function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <button type="button" onClick={onClick} className={cn("h-[34px] rounded-full px-[14px] text-[13px] font-extrabold", active ? "bg-[#0b0b0b] text-white" : "bg-muted text-[#3a3a3a]")}>{children}</button>; }
+
+function DeferredTextarea({ value: initialValue, onCommit, className }: { value: string; onCommit: (value: string) => void; className?: string }) {
+  const [value, setValue] = useState(initialValue);
+  useEffect(() => setValue(initialValue), [initialValue]);
+  return <Textarea value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => onCommit(value)} className={className} />;
+}
+
+function DeferredInput({ value: initialValue, onCommit, className }: { value: string; onCommit: (value: string) => void; className?: string }) {
+  const [value, setValue] = useState(initialValue);
+  useEffect(() => setValue(initialValue), [initialValue]);
+  return <Input value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => onCommit(value)} className={className} />;
 }
 
 function SortableThumb({
@@ -982,10 +1099,10 @@ function getVideoEmbedUrl(url?: string): string {
   }
 }
 
-export default function ExerciseFormPage({ exerciseId }: { exerciseId: string | null }) {
+export default function ExerciseFormPage({ exerciseId, forceEdit = false }: { exerciseId: string | null; forceEdit?: boolean }) {
   return (
     <ProtectedRoute>
-      <ExerciseFormContent exerciseId={exerciseId} />
+      <ExerciseFormContent exerciseId={exerciseId} forceEdit={forceEdit} />
     </ProtectedRoute>
   );
 }

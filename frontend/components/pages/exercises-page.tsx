@@ -43,6 +43,7 @@ function ExercisesContent() {
 }
 function exerciseLevel(item: Exercise) { return String((item as Exercise & { level?: string }).level || ""); }
 function ExerciseCard({ item, list, onOpen }: { item: Exercise; list: boolean; onOpen: () => void }) {
+  const router = useRouter();
   const displayLevel = exerciseLevel(item);
   const lvl = displayLevel.toLocaleLowerCase("el");
   const count = lvl.includes("προχ") ? 3 : lvl.includes("αρχ") ? 1 : 2;
@@ -66,7 +67,7 @@ function ExerciseCard({ item, list, onOpen }: { item: Exercise; list: boolean; o
       <div className="mt-3 flex items-center justify-between gap-2"><span className="rounded-full bg-[#f6f6f3] px-2.5 py-1 text-[11px] font-bold text-[#333]">{item.equipment}</span><span className="flex items-center gap-1.5 text-[11px] text-[#6a6a6a]"><i className="flex gap-0.5">{[1, 2, 3].map((n) => <b key={n} className={cn("h-3 w-1 rounded-sm", n <= count ? "bg-[#0b0b0b]" : "bg-[#dcdcd8]")} />)}</i>{displayLevel || "Μέτριο"}</span></div>
       <div className="mt-auto flex items-center gap-2">
         <Button onClick={onOpen} className="h-9 flex-1 rounded-full bg-[#0b0b0b] text-xs text-white hover:bg-[#1f1f1f]"><Plus className="size-3.5" />Σε πρόγραμμα</Button>
-        <Button type="button" size="icon-sm" variant="outline" onClick={onOpen} aria-label={`Επεξεργασία ${item.name}`} className="size-9 shrink-0 rounded-full border-border text-foreground hover:bg-muted"><Pencil className="size-3.5" /></Button>
+        <Button type="button" size="icon-sm" variant="outline" onClick={() => router.push(`/exercises/${item.id}`)} aria-label={`Επεξεργασία ${item.name}`} className="size-9 shrink-0 rounded-full border-border text-foreground hover:bg-muted"><Pencil className="size-3.5" /></Button>
         <Button type="button" size="icon-sm" variant="outline" onClick={() => void deleteExercise()} aria-label={`Διαγραφή ${item.name}`} className="size-9 shrink-0 rounded-full border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"><Trash2 className="size-3.5" /></Button>
       </div>
     </div>

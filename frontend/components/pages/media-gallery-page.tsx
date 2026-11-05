@@ -17,6 +17,8 @@ import {
   Save,
   ImagePlus,
   FileText,
+  Grid2X2,
+  List,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -121,12 +123,14 @@ function MediaGalleryContent() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const [selectMode, setSelectMode] = useState(false);
+  const [view, setView] = useState<"list" | "grid">("grid");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
 
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<MediaFolder | null>(null);
+  const [deleteItemTarget, setDeleteItemTarget] = useState<GalleryItem | null>(null);
   const [moveTargetItems, setMoveTargetItems] = useState<GalleryItem[] | null>(null);
   const [editTarget, setEditTarget] = useState<GalleryItem | null>(null);
   const [replacingFile, setReplacingFile] = useState(false);
@@ -341,6 +345,13 @@ function MediaGalleryContent() {
     }
   };
 
+  const confirmDeleteItem = async () => {
+    if (!deleteItemTarget) return;
+    const target = deleteItemTarget;
+    setDeleteItemTarget(null);
+    await deleteItem(target);
+  };
+
   const bulkDelete = async () => {
     const items = displayItems.filter((item) => selectedIds.has(item.id));
     if (!items.length) return;
@@ -430,10 +441,14 @@ function MediaGalleryContent() {
   const moveDialogFolders = folders;
 
   return (
-    <CoachShell title="Media Library" user={user} logout={logout}>
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold dark:text-slate-50">Media Library</h1>
+    <CoachShell title="Media" user={user} logout={logout}>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div><h1 className="text-[28px] font-extrabold tracking-[-.5px]">Media</h1><p className="mt-1 text-sm text-muted-foreground">Φωτογραφίες οργανωμένες σε φακέλους για όλη την εφαρμογή.</p></div>
         <div className="flex items-center gap-2">
+          <div className="flex h-9 rounded-xl border border-border bg-card p-1">
+            <Button type="button" size="icon-sm" variant="ghost" onClick={() => setView("list")} aria-label="Προβολή λίστας" className={cn("size-7 rounded-[8px]", view === "list" && "bg-foreground text-background hover:bg-foreground hover:text-background")}><List className="size-4" /></Button>
+            <Button type="button" size="icon-sm" variant="ghost" onClick={() => setView("grid")} aria-label="Προβολή πλέγματος" className={cn("size-7 rounded-[8px]", view === "grid" && "bg-foreground text-background hover:bg-foreground hover:text-background")}><Grid2X2 className="size-4" /></Button>
+          </div>
           {selectMode ? (
             <Button type="button" variant="outline" size="sm" onClick={clearSelection} className="font-medium">
               Ακύρωση επιλογής
@@ -450,14 +465,14 @@ function MediaGalleryContent() {
               disabled={uploading}
               className="gap-2 bg-primary font-medium hover:bg-primary/90"
             >
-              <Upload className="h-4 w-4" /> {uploading ? "Ανέβασμα..." : "Ανέβασμα"}
+              <Upload className="h-4 w-4" /> {uploading ? "Ανέβασμα…" : "Προσθήκη media"}
             </Button>
           <input ref={fileInputRef} type="file" accept="image/*" onChange={uploadFile} className="hidden" />
         </div>
       </div>
 
-      <ResizablePanelGroup orientation="horizontal" className="mt-5 min-h-[70vh] rounded-lg border border-slate-200 dark:border-slate-800">
-        <ResizablePanel defaultSize="22" minSize="16" maxSize="35" className="flex flex-col overflow-hidden">
+      <ResizablePanelGroup orientation="horizontal" className="relative mt-6 min-h-[680px] overflow-hidden rounded-[22px] border border-border bg-card shadow-none before:absolute before:left-3 before:top-3 before:z-10 before:size-2 before:border-l before:border-t before:border-foreground after:absolute after:bottom-3 after:right-3 after:z-10 after:size-2 after:border-b after:border-r after:border-foreground">
+        <ResizablePanel defaultSize="22" minSize="16" maxSize="35" className="flex flex-col overflow-hidden bg-muted/30">
           <MediaFolderTree
             folders={folders}
             selectedFolderId={selectedFolderId}
@@ -472,7 +487,7 @@ function MediaGalleryContent() {
         <ResizableHandle withHandle />
 
         <ResizablePanel defaultSize="78" className="flex flex-col overflow-hidden">
-          <div className="flex flex-col gap-3 border-b border-slate-200 p-4 dark:border-slate-800">
+          <div className="flex flex-col gap-3 border-b border-border bg-card p-5">
             <Breadcrumb>
               <BreadcrumbList>
                 <BreadcrumbItem>
@@ -497,8 +512,8 @@ function MediaGalleryContent() {
               </BreadcrumbList>
             </Breadcrumb>
 
-            <div className="flex h-10 w-full max-w-sm items-center rounded-lg border border-slate-200 bg-white px-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <Search className="mr-2 h-4 w-4 shrink-0 text-slate-400" />
+            <div className="flex h-11 w-full max-w-md items-center rounded-xl border border-input bg-muted/30 px-3 shadow-none">
+              <Search className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -520,7 +535,7 @@ function MediaGalleryContent() {
               setContentDropActive(false);
             }}
             onDrop={handleContentDrop}
-            className={cn("relative flex-1 overflow-y-auto p-4", contentDropActive && "bg-red-50/60 dark:bg-red-500/5")}
+            className={cn("relative flex-1 overflow-y-auto bg-muted/20 p-4 sm:p-5", contentDropActive && "bg-red-50/60 dark:bg-red-500/5")}
           >
             {contentDropActive && (
               <div className="pointer-events-none absolute inset-2 z-10 flex items-center justify-center rounded-lg border-2 border-dashed border-red-400 bg-white/70 text-sm font-semibold text-red-600 dark:bg-slate-950/70">
@@ -536,17 +551,18 @@ function MediaGalleryContent() {
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                <div className={cn(view === "grid" ? "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4" : "space-y-2")}>
                   {displayItems.map((item, index) => (
                     <GalleryCard
                       key={item.id}
                       item={item}
+                      view={view}
                       selectMode={selectMode}
                       selected={selectedIds.has(item.id)}
                       onToggleSelect={() => toggleSelect(item.id)}
                       onPreview={() => setPreviewIndex(index)}
                       onMove={() => setMoveTargetItems([item])}
-                      onDelete={() => deleteItem(item)}
+                      onDelete={() => setDeleteItemTarget(item)}
                       onEdit={() => setEditTarget(item)}
                     />
                   ))}
@@ -587,6 +603,19 @@ function MediaGalleryContent() {
       )}
 
       <PreviewDialog items={displayItems} index={previewIndex} onClose={() => setPreviewIndex(null)} onNavigate={setPreviewIndex} />
+
+      <AlertDialog open={Boolean(deleteItemTarget)} onOpenChange={(open) => !open && setDeleteItemTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Διαγραφή φωτογραφίας;</AlertDialogTitle>
+            <AlertDialogDescription>Η «{deleteItemTarget?.title}» θα διαγραφεί οριστικά από τη Media Library.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Ακύρωση</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void confirmDeleteItem()} className="bg-red-600 text-white hover:bg-red-700">Ναι, διαγραφή</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={Boolean(deleteFolderTarget)} onOpenChange={(open) => !open && setDeleteFolderTarget(null)}>
         <AlertDialogContent>
@@ -641,6 +670,7 @@ function MediaGalleryContent() {
 
 function GalleryCard({
   item,
+  view,
   selectMode,
   selected,
   onToggleSelect,
@@ -650,6 +680,7 @@ function GalleryCard({
   onEdit,
 }: {
   item: GalleryItem;
+  view: "list" | "grid";
   selectMode: boolean;
   selected: boolean;
   onToggleSelect: () => void;
@@ -665,49 +696,17 @@ function GalleryCard({
   return (
     <ContextMenu>
       <ContextMenuTrigger
-        render={<Card className={cn("group relative overflow-hidden p-0", selected && "ring-2 ring-red-500")} />}
+        render={<Card className={cn("group relative overflow-hidden rounded-[16px] border-border bg-card p-0 shadow-none transition-colors hover:border-foreground", selected && "border-accent ring-2 ring-accent")} />}
       >
-        {selectMode && (
-          <div className="absolute left-2 top-2 z-10">
-            <Checkbox checked={selected} onCheckedChange={onToggleSelect} className="bg-white" />
+        <div role="button" tabIndex={0} onClick={selectMode ? onToggleSelect : onPreview} onKeyDown={(event) => { if (event.key === "Enter") (selectMode ? onToggleSelect : onPreview)(); }} className={cn("min-w-0", view === "grid" ? "flex flex-col gap-0" : "flex items-center gap-3 p-3 sm:gap-4 sm:p-3.5")}>
+          {selectMode && <Checkbox checked={selected} onCheckedChange={onToggleSelect} onClick={(event) => event.stopPropagation()} className="shrink-0" />}
+          <div className={cn("relative grid shrink-0 place-items-center overflow-hidden bg-muted", view === "grid" ? "aspect-square w-full rounded-t-[15px]" : "size-14 rounded-[12px] sm:size-16")}>
+            {document ? <FileText className="size-6 text-muted-foreground" /> : !src || failed ? <ImageOff className="size-6 text-muted-foreground" /> : <img src={src} alt={item.title} onError={() => setFailed(true)} loading="lazy" className="h-full w-full object-cover" />}
+            {!selectMode && view === "grid" && <button type="button" onClick={(event) => { event.stopPropagation(); onDelete(); }} aria-label={`Διαγραφή ${item.title}`} className="absolute right-2 top-2 grid size-8 place-items-center rounded-full bg-black/70 text-white shadow-sm transition-colors hover:bg-red-600"><Trash2 className="size-4" /></button>}
           </div>
-        )}
-
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={selectMode ? onToggleSelect : onPreview}
-          onKeyDown={(event) => { if (event.key === "Enter") (selectMode ? onToggleSelect : onPreview)(); }}
-          className="relative block aspect-square w-full overflow-hidden bg-slate-100 dark:bg-slate-800"
-        >
-          {document ? (
-            <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-muted text-muted-foreground"><FileText className="h-10 w-10" /><span className="rounded-full bg-card px-2.5 py-1 text-[11px] font-extrabold text-foreground">PDF</span></div>
-          ) : !src || failed ? (
-            <div className="flex h-full w-full items-center justify-center">
-              <ImageOff className="h-8 w-8 text-slate-300 dark:text-slate-600" />
-            </div>
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={src} alt={item.title} onError={() => setFailed(true)} loading="lazy" className="h-full w-full object-cover" />
-          )}
-          {!selectMode && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-2 bg-black/0 opacity-0 transition-all group-hover:bg-black/30 group-hover:opacity-100">
-              <button type="button" className="pointer-events-auto rounded-full bg-white/95 p-2 text-slate-900 shadow" onClick={(event) => { event.stopPropagation(); onPreview(); }}>
-                <Eye className="h-4 w-4" />
-              </button>
-            </div>
-          )}
-          {!selectMode && (
-            <button
-              type="button"
-              onClick={(event) => { event.stopPropagation(); onEdit(); }}
-              className="absolute inset-x-0 bottom-0 z-10 flex items-center justify-center gap-1.5 bg-black/70 py-1.5 text-xs font-semibold text-white opacity-0 transition-opacity group-hover:opacity-100"
-            >
-              <Pencil className="h-3.5 w-3.5" /> Επεξεργασία
-            </button>
-          )}
+          <div className={cn("min-w-0", view === "grid" ? "w-full p-3" : "flex-1")}><p className="truncate text-sm font-extrabold">{item.title}</p><p className="mt-1 text-xs text-muted-foreground">{document ? "Έγγραφο PDF" : "Φωτογραφία"} · Media Library</p></div>
+          {!selectMode && <div className="flex shrink-0 items-center gap-1"><Button type="button" variant="ghost" size="icon-sm" onClick={(event) => { event.stopPropagation(); onPreview(); }} aria-label="Προεπισκόπηση" className="rounded-full"><Eye className="size-4" /></Button><Button type="button" variant="ghost" size="icon-sm" onClick={(event) => { event.stopPropagation(); onMove(); }} aria-label="Μετακίνηση" className="hidden rounded-full sm:inline-flex"><FolderInput className="size-4" /></Button><Button type="button" variant="ghost" size="icon-sm" onClick={(event) => { event.stopPropagation(); onEdit(); }} aria-label="Επεξεργασία" className="rounded-full"><Pencil className="size-4" /></Button></div>}
         </div>
-        <div className="truncate px-2.5 py-2 text-xs font-medium text-slate-600 dark:text-slate-300">{item.title}</div>
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem onClick={onPreview}>

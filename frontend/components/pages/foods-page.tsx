@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Search, Plus, Pencil, Trash2, ImageOff, Images, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -174,6 +175,7 @@ function pickerFolderOptions(folders: MediaFolder[]): Array<{ id: number; label:
 
 function FoodsContent() {
   const { user, logout } = useAuth();
+  const router = useRouter();
 
   const [items, setItems] = useState<Food[]>([]);
   const [total, setTotal] = useState(0);
@@ -304,19 +306,11 @@ function FoodsContent() {
   }, [debouncedSearch, categoryFilter, page]);
 
   const openCreate = () => {
-    setIsCreating(true);
-    setEditingId(null);
-    setForm(emptyForm);
-    setFormMessage("");
-    setDialogOpen(true);
+    router.push("/coach/foods/new");
   };
 
   const openEdit = (food: Food) => {
-    setIsCreating(false);
-    setEditingId(food.id);
-    setForm(foodToForm(food));
-    setFormMessage("");
-    setDialogOpen(true);
+    router.push(`/coach/foods/${food.id}`);
   };
 
   const updateForm = <K extends keyof FoodForm>(field: K, value: FoodForm[K]) => {
@@ -720,7 +714,7 @@ function FoodsContent() {
 
       {/* Media Library photo picker */}
       <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
-        <DialogContent className="max-h-[85vh] w-full max-w-xl overflow-y-auto">
+        <DialogContent className="h-[100dvh] w-[100vw] max-w-none overflow-y-auto rounded-none border-0 p-5 shadow-none sm:max-w-none sm:p-7">
           <DialogHeader>
             <DialogTitle>Επιλογή φωτογραφίας από Media Library</DialogTitle>
             <DialogDescription>Επίλεξε φωτογραφία από τα αρχεία της Media Library.</DialogDescription>

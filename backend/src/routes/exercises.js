@@ -59,6 +59,14 @@ async function ensureMediaArchiveTable(connection) {
 }
 
 async function ensureExerciseImagesTable(connection) {
+  const [mistakesColumn] = await connection.query(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'exercises' AND COLUMN_NAME = 'common_mistakes'`
+  );
+  if (!mistakesColumn.length) {
+    await connection.query('ALTER TABLE exercises ADD COLUMN common_mistakes TEXT NULL AFTER instructions');
+  }
+
   await connection.query(`
     CREATE TABLE IF NOT EXISTS exercise_images (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -229,10 +237,10 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
     const [rows] = await connection.query(
       `SELECT id, name, muscle_group AS muscleGroup, secondary_muscles AS secondaryMuscles,
               equipment, level, type, image_url AS imageUrl, video_url AS videoUrl,
-              instructions, programs_count AS programsCount
+              instructions, common_mistakes AS commonMistakes, programs_count AS programsCount
        FROM exercises
        ${where}
-       ORDER BY name${limit ? '\n       LIMIT ?' : ''}`,
+       ORDER BY id DESC${limit ? '\n       LIMIT ?' : ''}`,
       limit ? [...values, limit] : values
     );
     const imagesMap = await getExerciseImagesMap(connection, rows.map((row) => row.id));
@@ -266,7 +274,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
     const [rows] = await connection.query(
       `SELECT id, name, muscle_group AS muscleGroup, secondary_muscles AS secondaryMuscles,
               equipment, level, type, image_url AS imageUrl, video_url AS videoUrl,
-              instructions, programs_count AS programsCount
+              instructions, common_mistakes AS commonMistakes, programs_count AS programsCount
        FROM exercises WHERE id = ?`,
       [req.params.id]
     );
@@ -296,7 +304,7 @@ router.post('/', authorizeRole(['coach', 'admin']), [
   }
 
   const {
-    imageUrl, videoUrl, instructions, programsCount = 0
+    imageUrl, videoUrl, instructions, commonMistakes, programsCount = 0
   } = req.body;
   const name = (req.body.name || 'Νέα Άσκηση').trim();
   const muscleGroup = (req.body.muscleGroup || 'Γενική').trim();
@@ -311,16 +319,16 @@ router.post('/', authorizeRole(['coach', 'admin']), [
     const [result] = await connection.query(
       `INSERT INTO exercises
         (name, muscle_group, secondary_muscles, equipment, level, type,
-         image_url, video_url, instructions, programs_count)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         image_url, video_url, instructions, common_mistakes, programs_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [name, muscleGroup, secondaryMuscles, equipment, level, type,
-       imageUrl || null, videoUrl || null, instructions || null, programsCount]
+       imageUrl || null, videoUrl || null, instructions || null, commonMistakes || null, programsCount]
     );
 
     const [rows] = await connection.query(
       `SELECT id, name, muscle_group AS muscleGroup, secondary_muscles AS secondaryMuscles,
               equipment, level, type, image_url AS imageUrl, video_url AS videoUrl,
-              instructions, programs_count AS programsCount
+              instructions, common_mistakes AS commonMistakes, programs_count AS programsCount
        FROM exercises
        WHERE id = ?`,
       [result.insertId]
@@ -347,6 +355,7 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
   body('imageUrl').optional({ nullable: true }).isString(),
   body('videoUrl').optional({ nullable: true }).isString(),
   body('instructions').optional({ nullable: true }).isString(),
+  body('commonMistakes').optional({ nullable: true }).isString(),
   body('programsCount').optional().isInt({ min: 0 }),
 ], async (req, res) => {
   const errors = validationResult(req);
@@ -356,7 +365,7 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
 
   const {
     name, muscleGroup, secondaryMuscles, equipment, level, type,
-    imageUrl, videoUrl, instructions, programsCount
+    imageUrl, videoUrl, instructions, commonMistakes, programsCount
   } = req.body;
 
   try {
@@ -377,6 +386,7 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
            image_url = ?,
            video_url = ?,
            instructions = ?,
+           common_mistakes = ?,
            programs_count = COALESCE(?, programs_count)
        WHERE id = ?`,
       [
@@ -389,6 +399,7 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
         imageUrl || null,
         videoUrl || null,
         instructions || null,
+        commonMistakes || null,
         programsCount ?? null,
         req.params.id,
       ]
@@ -397,7 +408,7 @@ router.put('/:id', authorizeRole(['coach', 'admin']), [
     const [rows] = await connection.query(
       `SELECT id, name, muscle_group AS muscleGroup, secondary_muscles AS secondaryMuscles,
               equipment, level, type, image_url AS imageUrl, video_url AS videoUrl,
-              instructions, programs_count AS programsCount
+              instructions, common_mistakes AS commonMistakes, programs_count AS programsCount
        FROM exercises
        WHERE id = ?`,
       [req.params.id]

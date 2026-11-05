@@ -257,4 +257,35 @@ router.put('/eshop-banner/library', authenticateToken, authorizeRole(['coach', '
   }
 });
 
+const libraryTargets = {
+  logo: 'logo_url',
+  'login-logo': 'login_logo_url',
+  favicon: 'favicon_url',
+  'login-background': 'login_background_url',
+};
+
+router.put('/:kind/library', authenticateToken, authorizeRole(['coach', 'admin']), [
+  body('url').isString().isLength({ min: 1, max: 600 }).custom((url) => String(url).startsWith('/uploads/media/')),
+], async (req, res) => {
+  const column = libraryTargets[req.params.kind];
+  if (!column) return res.status(404).json({ message: 'Άγνωστος τύπος εικόνας.' });
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await ensureBrandingSchema(connection);
+    const [[asset]] = await connection.query('SELECT id FROM media_assets WHERE url = ? LIMIT 1', [req.body.url]);
+    if (!asset) return res.status(404).json({ message: 'Το αρχείο δεν υπάρχει στη Media Library.' });
+    await connection.query(`UPDATE branding SET ${column} = ? WHERE id = 1`, [req.body.url]);
+    return res.json(await getBranding(connection));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection?.release();
+  }
+});
+
 export default router;
