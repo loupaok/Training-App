@@ -619,14 +619,14 @@ function RegisterWizardContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-950">
+    <div className="min-h-screen bg-[#f4f4f2] text-foreground dark:bg-background">
       <div className="min-h-screen lg:grid lg:grid-cols-[260px_minmax(0,1fr)_320px]">
         <RegistrationSidebar activeIndex={stepIndex} appName={branding.appName} logoUrl={branding.logoUrl} />
 
-        <main className="min-w-0 bg-slate-50 px-4 py-5 sm:px-8 lg:px-10 lg:py-12">
-          <div className="mx-auto max-w-3xl">
+        <main className="min-w-0 bg-[#f4f4f2] px-4 py-5 sm:px-8 lg:px-10 lg:py-12 dark:bg-background">
+          <div className={`mx-auto ${stepIndex === 4 ? "max-w-6xl" : "max-w-3xl"}`}>
             <MobileRegistrationHeader appName={branding.appName} logoUrl={branding.logoUrl} />
-            <header className="mb-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+            <header className={`mb-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 ${stepIndex === 4 ? "hidden" : ""}`}>
               <div className="flex items-center justify-between gap-4 text-sm text-slate-500">
                 <span>Βήμα {stepIndex + 1} από {steps.length}</span>
                 <span>Περίπου 5 λεπτά</span>
@@ -650,7 +650,7 @@ function RegisterWizardContent() {
               />
             )}
 
-            <form onSubmit={submit} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8 [&_input:focus-visible]:border-green-600 [&_textarea:focus-visible]:border-green-600">
+            <form onSubmit={submit} className={`${stepIndex === 4 ? "" : "rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8"} [&_input:focus-visible]:border-green-600 [&_textarea:focus-visible]:border-green-600`}>
             {stepIndex === 0 && (
               <AccountStep account={account} updateAccount={updateAccount} emailStatus={emailStatus} confirmPassword={confirmPassword} onConfirmPasswordChange={setConfirmPassword} />
             )}
@@ -707,11 +707,11 @@ function RegisterWizardContent() {
                   </Button>
                 )}
                 {stepIndex < steps.length - 1 ? (
-                  <Button key="continue" type="button" disabled={savingStep} className="h-12 bg-[#1a1f2e] px-8 font-semibold text-white hover:bg-slate-800" onClick={goNext}>
+                  <Button key="continue" type="button" disabled={savingStep} className="h-12 bg-foreground px-8 font-semibold text-background hover:bg-foreground/90" onClick={goNext}>
                     {savingStep ? "Αποθήκευση..." : "Συνέχεια"} <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 ) : (
-                  <Button key="submit" type="submit" disabled={submitting} className="h-12 bg-[#1a1f2e] px-8 font-semibold text-white hover:bg-slate-800">
+                  <Button key="submit" type="submit" disabled={submitting} className="h-12 bg-foreground px-8 font-semibold text-background hover:bg-foreground/90">
                     {submitting ? "Ολοκλήρωση..." : "Ολοκλήρωση Εγγραφής"}
                   </Button>
                 )}
@@ -807,7 +807,7 @@ function MobileRegistrationHeader({ appName, logoUrl }: { appName: string; logoU
 
 function RegistrationSidebar({ activeIndex, appName, logoUrl }: { activeIndex: number; appName: string; logoUrl: string | null }) {
   return (
-    <aside className="hidden min-h-screen flex-col bg-[#1a1f2e] px-4 py-5 text-white lg:flex">
+    <aside className="hidden min-h-screen flex-col bg-[#0b0b0b] px-4 py-5 text-white lg:flex">
       <div className="flex items-center gap-3 px-3">
         {logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -819,13 +819,13 @@ function RegistrationSidebar({ activeIndex, appName, logoUrl }: { activeIndex: n
           const active = index === activeIndex;
           const complete = index < activeIndex;
           return (
-            <div key={step.key} className={`flex gap-3 rounded-lg px-3 py-3 ${active ? "bg-white/10" : ""}`}>
-              <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-semibold ${active ? "bg-[#16a34a] text-white" : complete ? "bg-green-900 text-green-200" : "bg-slate-700 text-slate-300"}`}>
+            <div key={step.key} className={`flex gap-3 rounded-[12px] px-3 py-3 ${active ? "bg-accent text-accent-foreground" : ""}`}>
+              <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-extrabold ${active || complete ? "bg-accent text-accent-foreground" : "bg-[#262626] text-[#8a8a8a]"}`}>
                 {complete ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
               </span>
               <span className="min-w-0">
-                <span className={`block text-sm ${active ? "font-semibold text-white" : "text-slate-300"}`}>{step.title}</span>
-                <span className={`mt-1 block text-xs ${active ? "text-green-300" : "text-slate-500"}`}>{step.subtitle}</span>
+                <span className={`block text-sm ${active ? "font-extrabold text-accent-foreground" : "text-[#c8c8c8]"}`}>{step.title}</span>
+                <span className={`mt-1 block text-xs ${active ? "text-[#0b0b0b]/70" : "text-[#8a8a8a]"}`}>{step.subtitle}</span>
               </span>
             </div>
           );
@@ -833,8 +833,8 @@ function RegistrationSidebar({ activeIndex, appName, logoUrl }: { activeIndex: n
       </nav>
       <div className="mt-auto rounded-xl border border-white/10 bg-white/5 p-4">
         <div className="flex items-center gap-2 text-sm font-semibold"><CircleHelp className="h-4 w-4" /> Έχεις ερωτήσεις;</div>
-        <p className="mt-2 text-xs leading-5 text-slate-300">Είμαστε εδώ για να σε βοηθήσουμε.</p>
-        <Button type="button" variant="outline" className="mt-4 w-full border-white/30 bg-transparent text-white hover:bg-white hover:text-[#1a1f2e]"><MessageCircle className="mr-2 h-4 w-4" /> Επικοινωνία</Button>
+        <p className="mt-2 text-xs leading-5 text-[#b5b5b5]">Είμαστε εδώ για να σε βοηθήσουμε.</p>
+        <Button type="button" variant="outline" className="mt-4 w-full border-white/60 bg-transparent text-white hover:bg-white hover:text-[#0b0b0b]"><MessageCircle className="mr-2 h-4 w-4" /> Επικοινωνία</Button>
       </div>
     </aside>
   );
@@ -1422,54 +1422,48 @@ function PlanStep({
     return <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Φόρτωση πλάνων...</p>;
   }
 
-  return (
-    <Section title="Επέλεξε το Πλάνο σου">
-      <div className="mb-5 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {[...new Set(plans.map((plan) => plan.durationMonths).filter((months): months is number => Boolean(months)))].map((months) => {
-          const selected = selectedDurationMonths === months;
-          return <button key={months} type="button" onClick={() => onDurationChange(months)} className={`h-10 shrink-0 rounded-full px-4 text-sm font-extrabold transition-colors ${selected ? "bg-[#0b0b0b] text-[#b0f90c]" : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-card dark:text-foreground"}`}>{months} {months === 1 ? "μήνας" : "μήνες"}</button>;
-        })}
-      </div>
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-        {plans.filter((plan) => plan.durationMonths === selectedDurationMonths).map((plan) => (
-          <PlanOption key={plan.id} plan={plan} selected={String(plan.id) === String(selectedPlanId)} onSelect={() => onSelect(plan.id)} />
-        ))}
-      </div>
-    </Section>
-  );
+  const durations = [...new Set(plans.map((plan) => plan.durationMonths).filter((months): months is number => Boolean(months)))].sort((a, b) => a - b)
+  const selectedPlan = plans.find((plan) => String(plan.id) === String(selectedPlanId)) || null
+  const plansForDuration = plans.filter((plan) => plan.durationMonths === selectedDurationMonths)
+  const basePlan = plansForDuration[0]
+  const commonFeatures = [...new Set(plans.flatMap((plan) => plan.features.filter((feature) => feature.included).map((feature) => feature.text)))].slice(0, 10)
+  const monthly = selectedPlan ? Number(selectedPlan.price) / Math.max(1, selectedDurationMonths) : 0
+  const saving = selectedPlan && selectedDurationMonths > 1 ? Math.max(0, Number(plans.find((plan) => plan.name === selectedPlan.name && plan.durationMonths === 1)?.price || 0) * selectedDurationMonths - Number(selectedPlan.price)) : 0
+
+  return <section className="space-y-6">
+    <div><p className="text-[12px] font-extrabold tracking-[1px] text-muted-foreground">ΒΗΜΑ 5 ΑΠΟ 7</p><h2 className="mt-1 text-[28px] font-extrabold tracking-[-.6px]">Διάλεξε το πακέτο σου</h2><p className="mt-1 max-w-3xl text-[14px] leading-6 text-muted-foreground">Εξατομικευμένη καθοδήγηση στην προπόνηση, στη διατροφή και στα συμπληρώματα, με τακτική αξιολόγηση της προόδου σου.</p></div>
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="min-w-0 space-y-5"><div><p className="mb-2 text-[13px] font-extrabold">Διάρκεια συνεργασίας</p><div className="grid grid-cols-2 rounded-[16px] border border-border bg-card p-[5px] sm:grid-cols-4">{durations.map((months) => { const selected = selectedDurationMonths === months; const oneMonth = plans.find((plan) => plan.durationMonths === 1 && plan.name === plansForDuration[0]?.name); const current = plans.find((plan) => plan.durationMonths === months && plan.name === plansForDuration[0]?.name); const discount = oneMonth && current ? Math.round((1 - Number(current.price) / (Number(oneMonth.price) * months)) * 100) : 0; return <button key={months} type="button" onClick={() => onDurationChange(months)} className={`flex h-[46px] items-center justify-center gap-1.5 rounded-[12px] text-[13px] font-extrabold ${selected ? "bg-foreground text-background" : "text-foreground hover:bg-muted"}`}>{months} {months === 1 ? "μήνας" : "μήνες"}{discount > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-extrabold ${selected ? "bg-accent text-accent-foreground" : "bg-[var(--sp-lime-soft)] text-foreground"}`}>−{discount}%</span>}</button> })}</div></div>
+      <RadioGroup value={String(selectedPlanId || "")} onValueChange={(value) => value && onSelect(value)} className="grid gap-[14px] sm:grid-cols-2">{plansForDuration.map((plan) => <PlanOption key={plan.id} plan={plan} selected={String(plan.id) === String(selectedPlanId)} onSelect={() => onSelect(plan.id)} basePrice={Number(basePlan?.price || 0)} />)}</RadioGroup>
+      <Card className="rounded-[20px] border-border shadow-none"><CardContent className="p-5"><h3 className="text-[16px] font-extrabold">Όλες οι διάρκειες περιλαμβάνουν τις ίδιες παροχές</h3><div className="mt-4 grid gap-2.5 sm:grid-cols-2">{commonFeatures.map((feature) => <p key={feature} className="flex gap-2 text-[13px] leading-5"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-accent" />{feature}</p>)}</div><p className="mt-4 rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">Η ημέρα update συμφωνείται από Δευτέρα έως Σάββατο. Η Κυριακή εξαιρείται.</p></CardContent></Card></div>
+      <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start"><Card className="overflow-hidden rounded-[22px] border-[#0b0b0b] bg-[#0b0b0b] text-white shadow-none"><CardContent className="relative space-y-4 p-[22px]"><span className="absolute -right-2 -top-4 h-24 w-3 -skew-x-[18deg] bg-accent" /><p className="text-[11px] font-extrabold tracking-[1px] text-neutral-400">Η ΕΠΙΛΟΓΗ ΣΟΥ</p><p className="text-[26px] font-extrabold italic">{selectedPlan?.name || "—"} <span className="text-sm not-italic font-medium text-neutral-300">· {selectedDurationMonths} μήνες</span></p><div className="space-y-2 border-y border-white/10 py-3 text-sm"><p className="flex justify-between"><span className="text-neutral-300">Ανά μήνα</span><b>{monthly.toLocaleString("el-GR", { maximumFractionDigits: 2 })} €</b></p>{saving > 0 && <p className="flex justify-between text-accent"><span>Εξοικονόμηση</span><b>−{saving.toLocaleString("el-GR")} €</b></p>}</div><p className="flex items-end justify-between"><span className="text-sm text-neutral-300">Σύνολο</span><b className="text-[32px] text-accent">{Number(selectedPlan?.price || 0).toLocaleString("el-GR")} €</b></p></CardContent></Card>
+      <Card className="rounded-[20px] border-border shadow-none"><CardContent className="p-5"><h3 className="mb-2 text-[15px] font-extrabold">Όλες οι τιμές (€)</h3><div className="overflow-x-auto"><table className="w-full text-[12px]"><thead className="text-[10px] tracking-wide text-muted-foreground"><tr><th></th>{plansForDuration.map((plan) => <th key={plan.id} className="px-1 py-1 text-right">{plan.name.toUpperCase()}</th>)}</tr></thead><tbody>{durations.map((months) => <tr key={months} className="border-t border-border/70"><th className="py-2 text-left">{months}μ</th>{plansForDuration.map((plan) => { const price = plans.find((item) => item.name === plan.name && item.durationMonths === months); const isSelected = price && String(price.id) === String(selectedPlanId); return <td key={plan.id} className={`cursor-pointer rounded-lg px-1 py-2 text-right ${isSelected ? "bg-[var(--sp-lime-soft)] font-extrabold" : ""}`} onClick={() => price && (onDurationChange(months), onSelect(price.id))}>{price ? Number(price.price).toLocaleString("el-GR") : "—"}</td>})}</tr>)}</tbody></table></div></CardContent></Card></aside>
+    </div>
+  </section>;
 }
 
-function PlanOption({ plan, selected, onSelect }: { plan: PricingPlan; selected: boolean; onSelect: () => void }) {
+function PlanOption({ plan, selected, onSelect, basePrice }: { plan: PricingPlan; selected: boolean; onSelect: () => void; basePrice: number }) {
   return (
     <button
       type="button"
       onClick={onSelect}
-      className={`relative rounded-xl border-2 p-5 text-left transition ${
-        selected ? "border-primary bg-primary/5 shadow-sm ring-2 ring-primary/20" : "border-slate-200 hover:border-slate-300 dark:border-slate-700"
+      className={`relative flex min-h-[270px] flex-col rounded-[20px] border-2 p-5 text-left transition ${
+        selected ? "border-foreground bg-card shadow-none ring-4 ring-accent/50" : "border-border bg-card hover:border-foreground"
       }`}
     >
       {plan.isPopular && (
-        <Badge className="absolute -top-3 left-4 h-auto rounded-full bg-primary px-3 py-1 text-[11px] font-bold text-white hover:bg-primary">
+        <Badge className="absolute -top-3 left-4 h-auto rounded-full bg-accent px-3 py-1 text-[11px] font-extrabold text-accent-foreground hover:bg-accent">
           Δημοφιλές
         </Badge>
       )}
-      {selected && (
-        <div className="absolute right-3 top-3 grid h-6 w-6 place-items-center rounded-full bg-primary text-white">
-          <CheckCircle2 className="h-4 w-4" />
-        </div>
-      )}
-      <div className="font-bold text-slate-950 dark:text-slate-50">{plan.name}</div>
-      <div className="mt-2">
-        {Number(plan.pointsReward || 0) > 0 && <span className="mb-1.5 inline-flex rounded-full bg-[color:var(--sp-lime-soft)] px-2 py-1 text-[10px] font-extrabold text-slate-950 dark:text-slate-50">+{new Intl.NumberFormat("el-GR").format(Number(plan.pointsReward))} πόντοι με την έγκριση</span>}
-        <span className="text-2xl font-bold text-slate-950 dark:text-slate-50">€{Number(plan.price).toFixed(0)}</span>
-        <span className="ml-1 text-xs text-muted-foreground">/{formatPeriodLabel(plan.period)}</span>
-      </div>
-      <ul className="mt-3 space-y-1.5">
+      <div className="flex items-center gap-2"><RadioGroupItem value={String(plan.id)} /><span className="text-[18px] font-extrabold">{plan.name}</span><span className="ml-auto flex gap-1">{Array.from({ length: 4 }, (_, index) => <i key={index} className={`h-[5px] w-[14px] rounded-full ${index <= plansLevel(plan.name) ? "bg-accent" : "bg-muted"}`} />)}</span></div>
+      <div className="mt-4"><span className="text-[36px] font-extrabold italic leading-none tracking-[-1px]">{Number(plan.price).toLocaleString("el-GR")} €</span><p className="mt-1 text-xs text-muted-foreground">για {plan.durationMonths} μήνες · {(Number(plan.price) / Math.max(1, Number(plan.durationMonths))).toLocaleString("el-GR", { maximumFractionDigits: 2 })} € / μήνα</p><p className="mt-1 text-xs text-muted-foreground">{basePrice && Number(plan.price) > basePrice ? `+${((Number(plan.price) - basePrice) / Math.max(1, Number(plan.durationMonths))).toLocaleString("el-GR")} €/μήνα από το Βασικό` : "η βάση της συνεργασίας"}</p></div>
+      <ul className="mt-4 space-y-1.5 border-t border-border pt-3">
         {plan.features
           .filter((feature) => feature.included)
           .map((feature, index) => (
-            <li key={index} className="flex items-start gap-1.5 text-xs text-slate-600 dark:text-slate-300">
-              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+            <li key={index} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
               {feature.text}
             </li>
           ))}
@@ -1477,6 +1471,8 @@ function PlanOption({ plan, selected, onSelect }: { plan: PricingPlan; selected:
     </button>
   );
 }
+
+function plansLevel(name: string) { const normalized = name.toLocaleLowerCase("el-GR"); return normalized.includes("direct") ? 3 : normalized.includes("premium") ? 2 : normalized.includes("plus") ? 1 : 0 }
 
 function PaymentStep({
   paymentMethod,
