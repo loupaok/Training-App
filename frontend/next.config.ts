@@ -20,6 +20,7 @@ const securityHeaders = [
       "form-action 'self'",
       "img-src 'self' data: blob: https:",
       "media-src 'self' blob:",
+      "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       `script-src ${scriptSources}`,
       "font-src 'self' data: https://fonts.gstatic.com",

@@ -216,6 +216,7 @@ export { ensureMediaCategories, registerWeeklyUpdatePhotos };
 
 router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+  const scope = req.query.scope === 'exercise' ? 'exercise' : null;
   const limit = req.query.limit === undefined ? null : Number(req.query.limit);
   if (limit !== null && (!Number.isSafeInteger(limit) || limit < 1)) {
     return res.status(400).json({ message: 'limit must be a positive integer' });
@@ -227,12 +228,16 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
     await registerPaymentProofs(connection);
 
     const params = [];
-    let filter = '';
+    const filters = [];
     if (search) {
       const pattern = `%${search.replace(/[!%_]/g, '!$&')}%`;
-      filter = `WHERE ma.title LIKE ? ESCAPE '!' OR SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(ma.url, '?', 1), '#', 1), '/', -1) LIKE ? ESCAPE '!'`;
+      filters.push(`(ma.title LIKE ? ESCAPE '!' OR SUBSTRING_INDEX(SUBSTRING_INDEX(SUBSTRING_INDEX(ma.url, '?', 1), '#', 1), '/', -1) LIKE ? ESCAPE '!')`);
       params.push(pattern, pattern);
     }
+    if (scope === 'exercise') {
+      filters.push(`NOT EXISTS (SELECT 1 FROM foods f WHERE f.image_url = ma.url)`);
+    }
+    const filter = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
     if (limit !== null) params.push(limit);
     const [mediaRows] = await connection.query(
       `SELECT ma.id, ma.title, ma.asset_type AS assetType, ma.url, ma.source,

@@ -26,7 +26,7 @@ import { ClientSupplementsCard } from "@/components/client/client-supplements-ca
 
 type NutritionFood = { id?: number; name: string; food_image?: string | null; food_image_url?: string | null; image_url?: string | null; imageUrl?: string | null; amount?: string | null; quantity?: string | null; calories?: number | string | null; protein_g?: number | string | null; carbs_g?: number | string | null; fat_g?: number | string | null }
 type NutritionMeal = { id?: number; name: string; title?: string | null; notes?: string | null; time?: string | null; day_of_week?: number | null; foods: NutritionFood[] }
-type NutritionPlan = { id: number; title: string; notes?: string | null; daily_calories?: number | string | null; protein_g?: number | string | null; carbs_g?: number | string | null; fat_g?: number | string | null; meals: NutritionMeal[] } | null
+type NutritionPlan = { id: number; title: string; notes?: string | null; updated_at?: string | null; daily_calories?: number | string | null; protein_g?: number | string | null; carbs_g?: number | string | null; fat_g?: number | string | null; meals: NutritionMeal[] } | null
 type Dashboard = { client?: { subscriptionStatus?: string | null }; unreadNotifications?: number }
 type NutritionOfflineCache = { nutrition: NutritionPlan; dashboard: Dashboard }
 type MacroTotals = { calories: number; protein: number; carbs: number; fats: number }
@@ -64,7 +64,20 @@ function formatQuantityForDays(item: ShoppingItem, days: number) {
 }
 
 function formatGrams(value: number | string | null | undefined) {
-  return `${numberValue(value).toLocaleString("el-GR", { maximumFractionDigits: 1 })}g`
+  return `${numberValue(value).toLocaleString("el-GR", { maximumFractionDigits: 1 })} g`
+}
+
+function formatPlanDate(value?: string | null) {
+  if (!value) return "—"
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("el-GR", { day: "numeric", month: "short" })
+}
+
+function FoodPhoto({ src, name, size = "default" }: { src?: string | null; name: string; size?: "default" | "small" }) {
+  const dimension = size === "small" ? "h-9 w-9 rounded-xl" : "h-[38px] w-[38px] rounded-xl"
+  const [failed, setFailed] = useState(false)
+  if (src && !failed) return <img src={resolveMediaUrl(src)} alt={name} loading="lazy" onError={() => setFailed(true)} className={`${dimension} shrink-0 object-cover`} />
+  return <span aria-hidden="true" className={`grid ${dimension} shrink-0 place-items-center bg-muted text-xs font-extrabold text-muted-foreground`}>{name.trim().charAt(0).toLocaleUpperCase("el-GR")}</span>
 }
 
 function shoppingCategory(name: string) {
@@ -88,6 +101,15 @@ function CalorieRing({ calories }: { calories: number }) {
 function MacroProgress({ label, value, calories, totalCalories, progressClass }: { label: string; value: number; calories: number; totalCalories: number; progressClass: string }) {
   const percentage = totalCalories > 0 ? Math.round((calories / totalCalories) * 100) : 0
   return <div className="space-y-2"><p className="text-base font-semibold">{label}</p><p className="text-2xl font-bold">{Math.round(value)} <span className="text-base font-medium text-muted-foreground">g</span></p><div className="flex items-center gap-3"><Progress value={percentage} className={`h-2 flex-1 ${progressClass}`} /><span className="text-sm text-muted-foreground">{percentage}%</span></div></div>
+}
+
+function MacroBar({ totals, macroCalories, compact = false }: { totals: MacroTotals; macroCalories: number; compact?: boolean }) {
+  const values = [
+    { label: "Πρωτεΐνη", short: "Π", grams: totals.protein, calories: totals.protein * 4, color: "bg-accent" },
+    { label: "Υδατάνθρακες", short: "Υδ/κες", grams: totals.carbs, calories: totals.carbs * 4, color: "bg-foreground" },
+    { label: "Λίπος", short: "Λ", grams: totals.fats, calories: totals.fats * 9, color: "bg-[#c9c9c4] dark:bg-[#6a6a6a]" },
+  ]
+  return <><div className="flex h-3 gap-[3px] overflow-hidden rounded-full">{values.map((macro) => <span key={macro.label} className={`${macro.color} min-w-[3px]`} style={{ flex: Math.max(macro.calories, 1) }} />)}</div><div className={compact ? "grid grid-cols-3 gap-2" : "space-y-3"}>{values.map((macro) => { const percentage = macroCalories ? Math.round((macro.calories / macroCalories) * 100) : 0; return <div key={macro.label} className={compact ? "min-w-0" : "flex items-center justify-between gap-3"}><p className={`flex items-center gap-2 ${compact ? "text-[11px] font-bold text-muted-foreground" : "text-[13px] font-bold"}`}><span className={`h-2.5 w-2.5 shrink-0 rounded-[3px] ${macro.color}`} />{compact ? macro.short : macro.label}</p><p className={compact ? "mt-1 text-[17px] font-extrabold" : "text-[15px] font-extrabold"}>{numberValue(macro.grams).toLocaleString("el-GR", { maximumFractionDigits: 1 })} g <span className="text-[12px] font-semibold text-muted-foreground">· {percentage}%</span></p></div> })}</div></>
 }
 
 function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
@@ -144,6 +166,9 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
   const [equivalentFood, setEquivalentFood] = useState<NutritionFood | null>(null)
   const [equivalents, setEquivalents] = useState<FoodEquivalent[]>([])
   const [equivalentsLoading, setEquivalentsLoading] = useState(false)
+  const [openMeal, setOpenMeal] = useState<string[]>(["meal-0"])
+  const [mobileSection, setMobileSection] = useState<"meals" | "supplements" | "cycle">("meals")
+  const [hasCycle, setHasCycle] = useState(false)
 
   useEffect(() => {
     try {
@@ -153,6 +178,19 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
     }
     setCheckedPlanId(plan.id)
   }, [plan.id, storageKey])
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(`nutrition_open_meals_${plan.id}`) || "[\"meal-0\"]")
+      setOpenMeal(Array.isArray(saved) ? saved.filter((value): value is string => typeof value === "string") : ["meal-0"])
+    } catch {
+      setOpenMeal(["meal-0"])
+    }
+  }, [plan.id])
+
+  useEffect(() => {
+    window.localStorage.setItem(`nutrition_open_meals_${plan.id}`, JSON.stringify(openMeal))
+  }, [openMeal, plan.id])
 
   useEffect(() => {
     if (checkedPlanId === plan.id) window.localStorage.setItem(storageKey, JSON.stringify(checked))
@@ -290,7 +328,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
             <div className="divide-y divide-border rounded-lg border">
               {equivalents.map((food) => (
                 <div key={food.id} className="flex items-center gap-3 p-3">
-                  {food.imageUrl ? <img src={resolveMediaUrl(food.imageUrl)} alt="" className="h-10 w-10 rounded-md object-cover" /> : <span className="grid h-10 w-10 place-items-center rounded-md bg-muted"><Utensils className="h-4 w-4 text-muted-foreground" /></span>}
+                  <FoodPhoto src={food.imageUrl} name={food.name} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">{food.name}</p>
                     <p className="text-xs text-muted-foreground">{food.quantityG}g · {food.calories} kcal</p>
@@ -305,6 +343,56 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
         </DialogContent>
       </Dialog>
 
+      <div className="space-y-5">
+        <div className="flex items-end justify-between gap-4 px-1 sm:px-0">
+          <div><h1 className="text-[24px] font-extrabold tracking-[-.4px] sm:text-[28px]">Πλάνο διατροφής</h1><p className="mt-1 text-[13px] text-muted-foreground sm:text-sm"><span className="hidden sm:inline">Τι τρως κάθε μέρα · </span>Ενημερώθηκε από τον coach · {formatPlanDate(plan.updated_at)}</p></div>
+          <Button onClick={() => setShoppingOpen(true)} className="hidden h-[46px] rounded-full bg-foreground px-5 text-sm font-extrabold text-background hover:bg-foreground/90 sm:inline-flex"><ShoppingCart className="mr-2 h-[17px] w-[17px]" />Λίστα για ψώνια</Button>
+        </div>
+
+        <section className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-[22px]">
+          <div className="min-w-0">
+            <Card className="rounded-[18px] border-border bg-card shadow-none lg:hidden"><CardContent className="space-y-3 p-4"><div className="flex items-baseline justify-between"><p className="text-[11px] font-extrabold tracking-[1px] text-muted-foreground">ΣΥΝΟΛΟ ΗΜΕΡΑΣ</p><p className="text-[26px] font-extrabold italic tracking-[-.6px]">{Math.round(totals.calories).toLocaleString("el-GR")} <span className="text-xs not-italic font-semibold text-muted-foreground">kcal</span></p></div><MacroBar totals={totals} macroCalories={macroCalories} compact /></CardContent></Card>
+
+            <div className="mt-4 flex rounded-[14px] border border-border bg-card p-1 lg:hidden">
+              {(["meals", "supplements"] as const).map((section) => <button key={section} type="button" onClick={() => setMobileSection(section)} className={`h-[38px] flex-1 rounded-[11px] text-[12px] font-extrabold ${mobileSection === section ? "bg-foreground text-background" : "text-muted-foreground"}`}>{section === "meals" ? "Γεύματα" : "Συμπληρώματα"}</button>)}
+              {hasCycle && <button type="button" onClick={() => setMobileSection("cycle")} className={`h-[38px] flex-1 rounded-[11px] text-[12px] font-extrabold ${mobileSection === "cycle" ? "bg-foreground text-background" : "text-muted-foreground"}`}>Cycle</button>}
+            </div>
+
+            <div className={`${mobileSection === "meals" ? "mt-4" : "hidden"} lg:mt-0 lg:block`}>
+              <div className="mb-3 hidden items-baseline justify-between px-1 lg:flex"><p className="text-[13px] font-extrabold tracking-[1px] text-muted-foreground">ΓΕΥΜΑΤΑ ΤΗΣ ΗΜΕΡΑΣ</p><p className="text-xs text-muted-foreground">Ίδιο πλάνο κάθε μέρα</p></div>
+              {isWeeklyPlan && <div className="mb-3 flex gap-1 overflow-x-auto pb-1">{weeklyDays.map((day) => <Button key={day} size="sm" variant={selectedDay === day ? "default" : "ghost"} className="shrink-0 rounded-full" onClick={() => setSelectedDay(day)}>{["Κυρ", "Δευ", "Τρι", "Τετ", "Πεμ", "Παρ", "Σαβ"][day] || `Ημέρα ${day}`}</Button>)}</div>}
+              <Accordion value={openMeal} onValueChange={setOpenMeal} className="space-y-3">
+                {visibleMeals.map((meal, mealIndex) => {
+                  const totalsForMeal = mealTotals(meal.foods)
+                  const planIndex = plan.meals.indexOf(meal)
+                  const name = mealTitle(meal, planIndex)
+                  const itemValue = `meal-${mealIndex}`
+                  if (!meal.foods.length) return <div key={meal.id ?? itemValue} className="flex items-center gap-3 rounded-[18px] border-[1.5px] border-dashed border-border p-3.5 sm:rounded-[20px] sm:px-[22px] sm:py-4"><div className="min-w-0 flex-1"><p className="text-[15px] font-extrabold sm:text-[17px]">{name}</p><p className="mt-0.5 text-[11px] text-muted-foreground sm:text-xs">Δεν έχει οριστεί ακόμα από τον coach</p></div><span className="text-sm font-bold text-muted-foreground">—</span></div>
+                  return <AccordionItem key={meal.id ?? itemValue} value={itemValue} className="overflow-hidden rounded-[18px] border border-border bg-card shadow-none sm:rounded-[20px]">
+                    <AccordionTrigger className="px-3.5 py-3.5 hover:bg-muted/30 hover:no-underline sm:px-[22px] sm:py-[18px]"><div className="flex min-w-0 flex-1 items-center gap-3 pr-2"><div className="min-w-0 flex-1 text-left"><p className="truncate text-[16px] font-extrabold sm:text-[18px]">{name}</p><p className="mt-0.5 text-[11px] text-muted-foreground sm:hidden">{Math.round(totalsForMeal.calories)} kcal · Π {Math.round(totalsForMeal.protein)} · Υ {Math.round(totalsForMeal.carbs)} · Λ {Math.round(totalsForMeal.fats)}</p><p className="mt-0.5 hidden text-xs text-muted-foreground sm:block">{meal.foods.length} τρόφιμα</p></div><div className="hidden items-center gap-1.5 sm:flex"><p className="mr-1 text-[18px] font-extrabold">{Math.round(totalsForMeal.calories)} <span className="text-xs font-semibold text-muted-foreground">kcal</span></p>{[["Π", totalsForMeal.protein], ["Υ", totalsForMeal.carbs], ["Λ", totalsForMeal.fats]].map(([label, value]) => <span key={String(label)} className="rounded-full bg-muted px-2 py-1 text-xs font-bold"><b className="mr-1 text-muted-foreground">{label}</b>{Math.round(Number(value))} g</span>)}</div></div></AccordionTrigger>
+                    <AccordionContent className="border-t border-border/70 pb-0">
+                      {meal.notes && <p className="mx-3.5 mt-3 rounded-xl bg-muted px-3 py-2 text-xs italic text-muted-foreground sm:mx-[22px]">{meal.notes}</p>}
+                      <div className="hidden grid-cols-[minmax(0,1fr)_90px_70px_64px_64px_64px_96px] gap-2 px-[22px] pb-1 pt-3 text-[10px] font-extrabold tracking-[.8px] text-muted-foreground sm:grid"><span>ΤΡΟΦΙΜΟ</span><span className="text-right">ΠΟΣΟΤΗΤΑ</span><span className="text-right">KCAL</span><span className="text-right">ΠΡΩΤ.</span><span className="text-right">ΥΔΑΤ.</span><span className="text-right">ΛΙΠΟΣ</span></div>
+                      <div className="px-3.5 sm:px-[22px]">{meal.foods.map((food, foodIndex) => { const quantity = parseQuantity(food.quantity ?? food.amount); const image = food.food_image ?? food.food_image_url ?? food.imageUrl ?? food.image_url; return <div key={food.id ?? `${food.name}-${foodIndex}`} className="grid grid-cols-[36px_minmax(0,1fr)_auto_30px] items-center gap-3 border-t border-border/60 py-[11px] first:border-t-0 sm:grid-cols-[minmax(0,1fr)_90px_70px_64px_64px_64px_96px] sm:gap-2 sm:py-[10px]"><div className="contents sm:flex sm:min-w-0 sm:items-center sm:gap-3"><FoodPhoto src={image} name={food.name} size="small" /><div className="min-w-0"><p className="truncate text-[14px] font-bold sm:text-[15px]">{food.name}</p><p className="mt-0.5 text-[11px] text-muted-foreground sm:hidden">Π {numberValue(food.protein_g).toLocaleString("el-GR", { maximumFractionDigits: 1 })} · Υ {numberValue(food.carbs_g).toLocaleString("el-GR", { maximumFractionDigits: 1 })} · Λ {numberValue(food.fat_g).toLocaleString("el-GR", { maximumFractionDigits: 1 })}</p></div></div><span className="text-right text-[14px] font-extrabold">{quantity.quantity === null ? "-" : formatQuantity({ key: "", name: "", quantity: quantity.quantity, unit: quantity.unit })}<small className="block text-[11px] font-medium text-muted-foreground sm:hidden">{Math.round(numberValue(food.calories))} kcal</small></span><span className="hidden text-right text-[14px] sm:block">{Math.round(numberValue(food.calories))}</span><span className="hidden text-right text-sm sm:block">{formatGrams(food.protein_g)}</span><span className="hidden text-right text-sm sm:block">{formatGrams(food.carbs_g)}</span><span className="hidden text-right text-sm sm:block">{formatGrams(food.fat_g)}</span><Button type="button" variant="outline" size="sm" className="h-[30px] w-[30px] rounded-full p-0 sm:w-auto sm:px-2.5" onClick={() => void showEquivalents(food)} aria-label={`Αλλαγή ${food.name}`}><ArrowRightLeft className="h-3.5 w-3.5" /><span className="ml-1 hidden sm:inline">Αλλαγή</span></Button></div> })}</div>
+                      <div className="mt-1 hidden items-center gap-2 border-t border-border/70 bg-muted/40 px-[22px] py-3 text-xs text-muted-foreground sm:flex"><ArrowRightLeft className="h-3.5 w-3.5" />Με το «Αλλαγή» διαλέγεις ισοδύναμο τρόφιμο με τις ίδιες θερμίδες.</div>
+                    </AccordionContent>
+                  </AccordionItem>
+                })}
+              </Accordion>
+              {plan.notes && <div className="mt-4 flex gap-2.5 rounded-[14px] bg-muted p-3 text-[13px] leading-[1.4] text-muted-foreground"><div><strong className="mb-0.5 block text-xs text-foreground">Σημείωση από τον coach</strong>{plan.notes}</div></div>}
+            </div>
+          </div>
+
+          <aside className="space-y-4 lg:sticky lg:top-5">
+            <Card className="hidden rounded-[20px] border-border bg-card shadow-none lg:block"><CardContent className="space-y-4 p-[22px]"><div className="flex items-start justify-between"><div><p className="text-xs font-extrabold tracking-[1px] text-muted-foreground">ΣΥΝΟΛΟ ΗΜΕΡΑΣ</p><p className="mt-1 text-[42px] font-extrabold italic leading-none tracking-[-1.2px]">{Math.round(totals.calories).toLocaleString("el-GR")} <span className="text-base not-italic font-bold tracking-normal text-muted-foreground">kcal</span></p></div><span className="rounded-full bg-[var(--sp-lime-soft)] px-2.5 py-1 text-[11px] font-extrabold">{visibleMeals.length} γεύματα</span></div><MacroBar totals={totals} macroCalories={macroCalories} /></CardContent></Card>
+            <div className={`${mobileSection === "supplements" ? "block" : "hidden"} lg:block`}><ClientSupplementsCard /></div>
+            <div className={`${mobileSection === "cycle" ? "block" : "hidden"} lg:block`}><ClientCycleCard onPresenceChange={setHasCycle} /></div>
+          </aside>
+        </section>
+        <div className="fixed inset-x-[14px] bottom-[88px] z-20 lg:hidden"><Button onClick={() => setShoppingOpen(true)} className="h-[52px] w-full rounded-full bg-foreground text-[15px] font-extrabold text-background shadow-[0_10px_30px_rgba(0,0,0,.2)] hover:bg-foreground/90"><ShoppingCart className="mr-2 h-[17px] w-[17px]" />Λίστα για ψώνια</Button></div>
+      </div>
+
+      {false && <>
       <Accordion className="lg:hidden">
         <AccordionItem value="daily-summary" className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
           <AccordionTrigger className="px-4 py-3 hover:bg-muted/30 hover:no-underline">
@@ -354,8 +442,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
         </CardContent>
       </Card>
 
-      <ClientCycleCard />
-      <ClientSupplementsCard />
+      {null}
 
       <section className="min-w-0">
         <div className="mb-4 flex items-center justify-between gap-4">
@@ -467,6 +554,8 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
         )}
       </section>
 
+      </>}
+
       <Sheet open={shoppingOpen} onOpenChange={setShoppingOpen}>
         <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-[460px]" showCloseButton={false}>
           <SheetHeader className="gap-3 border-b border-[#ececea] px-7 pb-4 pt-[22px]">
@@ -474,7 +563,7 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
             <div className="flex items-center justify-between gap-3"><span className="text-[13px] font-semibold">Για πόσες ημέρες;</span><div className="flex rounded-xl bg-muted p-[3px]">{([3, 7, 14] as const).map((days) => <button key={days} type="button" onClick={() => setShoppingDays(days)} className={`h-8 rounded-[9px] px-3.5 text-[13px] font-bold ${shoppingDays === days ? "bg-black text-accent" : "text-muted-foreground"}`}>{days}{days === 7 ? " ημέρες" : ""}</button>)}</div></div>
           </SheetHeader>
           <div className="min-h-0 flex-1 overflow-y-auto px-7 py-[18px]">
-            {shoppingGroups.map(([category, categoryItems]) => <section key={category} className="mb-4"><p className="pb-1.5 text-[11px] font-extrabold uppercase tracking-[1px] text-muted-foreground">{category}</p>{categoryItems.map((item) => { const isChecked = Boolean(checked[item.key]); return <label key={item.key} className={`flex cursor-pointer items-center gap-3 border-b border-[#f0f0ee] py-[9px] ${isChecked ? "text-[#9a9a9a]" : ""}`}><Checkbox checked={isChecked} onCheckedChange={(value) => setChecked((current) => ({ ...current, [item.key]: value === true }))} className="h-[22px] w-[22px] rounded-[7px] border-[#cfcfcb] data-[state=checked]:border-black data-[state=checked]:bg-black data-[state=checked]:text-accent" />{item.imageUrl ? <img src={resolveMediaUrl(item.imageUrl)} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" /> : <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#f2f2f0] text-xs font-bold text-[#6a6a6a]">{item.name.trim().charAt(0).toLocaleUpperCase("el-GR")}</span>}<span className={`min-w-0 flex-1 text-sm font-semibold ${isChecked ? "line-through" : ""}`}>{item.name}</span><span className="whitespace-nowrap text-[11px] text-[#9a9a9a]">{item.quantity === null ? "χωρίς ποσότητα" : `${formatQuantity(item)} × ${shoppingDays}`}</span><span className="w-16 shrink-0 text-right text-sm font-extrabold">{formatQuantityForDays(item, shoppingDays)}</span></label> })}</section>)}
+            {shoppingGroups.map(([category, categoryItems]) => <section key={category} className="mb-4"><p className="pb-1.5 text-[11px] font-extrabold uppercase tracking-[1px] text-muted-foreground">{category}</p>{categoryItems.map((item) => { const isChecked = Boolean(checked[item.key]); return <label key={item.key} className={`flex cursor-pointer items-center gap-3 border-b border-border/70 py-[9px] ${isChecked ? "text-muted-foreground" : ""}`}><Checkbox checked={isChecked} onCheckedChange={(value) => setChecked((current) => ({ ...current, [item.key]: value === true }))} className="h-[22px] w-[22px] rounded-[7px] border-border data-[state=checked]:border-accent data-[state=checked]:bg-accent data-[state=checked]:text-accent-foreground" /><FoodPhoto src={item.imageUrl} name={item.name} size="small" /><span className={`min-w-0 flex-1 text-sm font-semibold ${isChecked ? "line-through" : ""}`}>{item.name}</span><span className="whitespace-nowrap text-[11px] text-muted-foreground">{item.quantity === null ? "χωρίς ποσότητα" : `${formatQuantity(item)} × ${shoppingDays}`}</span><span className="w-16 shrink-0 text-right text-sm font-extrabold">{formatQuantityForDays(item, shoppingDays)}</span></label> })}</section>)}
           </div>
           <SheetFooter className="gap-2.5 border-t border-[#ececea] px-7 pb-5 pt-4"><p className="text-[11px] leading-4 text-[#8a8a8a]">Ποσότητα = ημερήσια ποσότητα του πλάνου × ημέρες. {Object.values(checked).filter(Boolean).length} από {shoppingItems.length} στο καλάθι.</p><Button variant="lime" className="h-[50px] w-full rounded-full" onClick={exportShoppingList}><Download className="mr-2 h-4 w-4" />Εξαγωγή PDF</Button></SheetFooter>
         </SheetContent>
@@ -586,7 +675,7 @@ function ClientNutritionContent() {
       .finally(() => setLoading(false))
   }, [user?.id])
 
-  return <ClientShell title="Διατροφή" user={user} logout={logout} paymentApproved={paymentApproved} unreadNotifications={unreadNotifications} active="nutrition"><main className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6"><div><h1 className="text-2xl font-bold">Πλάνο Διατροφής</h1><p className="mt-1 text-sm text-muted-foreground">Το καθημερινό σου διατροφικό πλάνο και η λίστα αγορών.</p></div>{error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}{loading ? <p className="text-muted-foreground">Φόρτωση...</p> : plan ? <ClientNutritionView plan={plan} /> : <Card><CardContent className="py-12 text-center text-muted-foreground">Δεν υπάρχει διαθέσιμο πλάνο διατροφής.</CardContent></Card>}</main></ClientShell>
+  return <ClientShell title="Διατροφή" user={user} logout={logout} paymentApproved={paymentApproved} unreadNotifications={unreadNotifications} active="nutrition"><main className="mx-auto max-w-6xl space-y-5 p-4 pb-28 sm:p-6 lg:p-8">{error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}{loading ? <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]"><div className="h-96 animate-pulse rounded-[20px] bg-muted" /><div className="h-64 animate-pulse rounded-[20px] bg-muted" /></div> : plan ? <ClientNutritionView plan={plan} /> : <Card className="rounded-[20px] border-border"><CardContent className="py-12 text-center text-muted-foreground">Ο coach ετοιμάζει το πλάνο διατροφής σου.</CardContent></Card>}</main></ClientShell>
 }
 
 export default function ClientNutritionPage() {

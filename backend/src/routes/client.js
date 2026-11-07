@@ -168,7 +168,21 @@ async function getPlans(connection, clientId) {
        WHERE tpe.day_id IN (?) ORDER BY tpe.sort_order`,
       [dayIds]
     ) : [[]];
-    training.days = days.map((day) => ({ ...day, name: day.title || `Day ${day.day_of_week}`, exercises: exercises.filter((exercise) => exercise.day_id === day.id).map((exercise) => ({ ...exercise, name: exercise.exercise_name || exercise.name })) }));
+    const exerciseIds = [...new Set(exercises.map((exercise) => exercise.exercise_id).filter(Boolean))];
+    const [exerciseImages] = exerciseIds.length ? await connection.query(
+      `SELECT exercise_id, image_url AS imageUrl FROM exercise_images WHERE exercise_id IN (?) ORDER BY is_primary DESC, sort_order ASC, id ASC`,
+      [exerciseIds]
+    ) : [[]];
+    const imagesByExercise = new Map();
+    exerciseImages.forEach((image) => {
+      const images = imagesByExercise.get(image.exercise_id) || [];
+      images.push(image.imageUrl);
+      imagesByExercise.set(image.exercise_id, images);
+    });
+    training.days = days.map((day) => ({ ...day, name: day.title || `Day ${day.day_of_week}`, exercises: exercises.filter((exercise) => exercise.day_id === day.id).map((exercise) => {
+      const imageUrls = imagesByExercise.get(exercise.exercise_id) || (exercise.image_url ? [exercise.image_url] : []);
+      return { ...exercise, name: exercise.exercise_name || exercise.name, imageUrls };
+    }) }));
   }
   if (nutrition) {
     const [meals] = await connection.query('SELECT * FROM nutrition_plan_meals WHERE nutrition_plan_id = ? ORDER BY day_of_week, sort_order', [nutrition.id]);

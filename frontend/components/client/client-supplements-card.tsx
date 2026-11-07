@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Link2, Pill } from "lucide-react";
+import { ExternalLink, MessageSquare, Pill } from "lucide-react";
 import { api } from "@/lib/api/client";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Card, CardContent } from "@/components/ui/card";
 
 type Supplement = {
   id: number;
@@ -14,7 +14,7 @@ type Supplement = {
   link: string | null;
 };
 
-export function ClientSupplementsCard() {
+export function ClientSupplementsCard({ className = "" }: { className?: string }) {
   const [supplements, setSupplements] = useState<Supplement[]>([]);
   const [generalNotes, setGeneralNotes] = useState("");
 
@@ -49,47 +49,44 @@ export function ClientSupplementsCard() {
   if (supplements.length === 0) return null;
 
   return (
-    <Accordion defaultValue={["supplements"]} className="overflow-hidden rounded-xl border border-border bg-card shadow-none">
-      <AccordionItem value="supplements" className="border-0">
-        <AccordionTrigger className="bg-[#E53935]/[0.08] px-5 py-4 hover:bg-[#E53935]/[0.12] hover:no-underline">
-          <div className="flex items-center gap-2 text-sm font-bold text-[#E53935]">
+    <Card className={`rounded-[20px] border-border bg-card shadow-none ${className}`}>
+      <CardContent className="space-y-3 p-5">
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-[34px] w-[34px] place-items-center rounded-[10px] bg-foreground text-accent">
             <Pill className="h-4 w-4" />
-            Συμπληρώματα
-          </div>
-        </AccordionTrigger>
-        <AccordionContent className="border-t border-[#E53935]/20">
-          <div className="space-y-2 p-5">
-            {supplements.map((supplement) => (
-              <div key={supplement.id} className="rounded-lg bg-muted/60 px-3 py-3">
-                {supplement.link ? (
-                  <a
-                    href={supplement.link}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex items-center gap-1.5 text-sm font-semibold text-[#E53935] hover:underline"
-                  >
-                    <Link2 className="h-3.5 w-3.5 shrink-0" />
-                    {supplement.name}
-                  </a>
-                ) : (
-                  <p className="text-sm font-semibold">{supplement.name}</p>
-                )}
-                <p className="mt-1 text-xs text-muted-foreground">
+          </span>
+          <h2 className="flex-1 text-[16px] font-extrabold">Συμπληρώματα</h2>
+          <span className="text-xs text-muted-foreground">{supplements.length}</span>
+        </div>
+        <div className="space-y-2">
+          {supplements.map((supplement) => (
+            <div key={supplement.id} className="flex items-center gap-3 rounded-[14px] border border-border p-3">
+              <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-xl bg-muted text-sm font-extrabold text-muted-foreground" aria-hidden="true">
+                {supplement.name.trim().charAt(0).toLocaleUpperCase("el-GR")}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-extrabold">{supplement.name}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {supplement.dose_amount ? `${supplement.dose_amount} ${supplement.dose_unit}` : null}
                   {supplement.dose_amount && supplement.times_per_day ? " · " : null}
-                  {supplement.times_per_day ? `${supplement.times_per_day}x / ημέρα` : null}
+                  {supplement.times_per_day ? `${supplement.times_per_day}× την ημέρα` : ""}
                 </p>
               </div>
-            ))}
-            {generalNotes && (
-              <div className="rounded-lg bg-muted/60 px-3 py-3 text-sm leading-6 text-muted-foreground">
-                <strong className="mb-0.5 block text-xs text-foreground">Σημείωση από τον coach</strong>
-                {generalNotes}
-              </div>
-            )}
+              {supplement.link && (
+                <a href={supplement.link} target="_blank" rel="noreferrer" className="inline-flex h-[30px] shrink-0 items-center gap-1 rounded-full bg-accent px-2.5 text-xs font-extrabold text-accent-foreground">
+                  eshop <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+        {generalNotes && (
+          <div className="flex gap-2.5 rounded-[14px] bg-muted p-3 text-[13px] leading-[1.4] text-muted-foreground">
+            <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <div><strong className="mb-0.5 block text-xs text-foreground">Σημείωση από τον coach</strong>{generalNotes}</div>
           </div>
-        </AccordionContent>
-      </AccordionItem>
-    </Accordion>
+        )}
+      </CardContent>
+    </Card>
   );
 }

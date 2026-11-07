@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ChevronLeft, Images, Save } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, Images, Save, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -23,7 +23,7 @@ type SupplementForm = { category: string; name: string; shortCode: string; form:
 const emptyFood: FoodForm = { nameGr: "", nameEn: "", category: "other", caloriesPer100g: "", proteinPer100g: "", carbsPer100g: "", fatsPer100g: "", fiberPer100g: "", servingSize: "100", servingUnit: "g", imageUrl: "" };
 const emptySupplement: SupplementForm = { category: "proteins", name: "", shortCode: "", form: "", dailyDose: "", doseUnit: "g", timing: "", linkUrl: "" };
 
-function FormCard({ index, title, text, children }: { index: string; title: string; text: string; children: React.ReactNode }) { return <Card className="rounded-[20px] border-border bg-card p-[22px] shadow-none"><div className="mb-5 flex items-center gap-3"><span className="grid size-[30px] place-items-center rounded-full bg-foreground text-[13px] font-extrabold text-accent">{index}</span><div><h2 className="text-[17px] font-extrabold">{title}</h2><p className="text-xs text-muted-foreground">{text}</p></div></div><div className="space-y-4">{children}</div></Card>; }
+function FormCard({ index, title, text, children }: { index: string; title: string; text: string; children: React.ReactNode }) { const uploadInputRef = useRef<HTMLInputElement>(null); const photoCard = title === "Φωτογραφία"; return <Card className="rounded-[20px] border-border bg-card p-[22px] shadow-none"><div className="mb-5 flex items-center gap-3"><span className="grid size-[30px] place-items-center rounded-full bg-foreground text-[13px] font-extrabold text-accent">{index}</span><div><h2 className="text-[17px] font-extrabold">{title}</h2><p className="text-xs text-muted-foreground">{text}</p></div></div>{photoCard ? <div className="flex flex-wrap gap-3 [&>div]:contents">{children}<input ref={uploadInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) window.dispatchEvent(new CustomEvent("catalog-food-photo", { detail: file })); event.target.value = ""; }} /><Button type="button" variant="outline" onClick={() => uploadInputRef.current?.click()} className="h-11 rounded-full"><Upload className="mr-2 size-4" />Ανέβασε φωτογραφία</Button></div> : <div className="space-y-4">{children}</div>}</Card>; }
 function Field({ label, children }: { label: string; children: React.ReactNode }) { return <Label className="grid gap-2 text-[13px] font-extrabold">{label}{children}</Label>; }
 
 function CatalogItemEditorContent({ kind, itemId }: { kind: "food" | "supplement"; itemId: string | null }) {
@@ -33,12 +33,31 @@ function CatalogItemEditorContent({ kind, itemId }: { kind: "food" | "supplement
   const [loading, setLoading] = useState(!creating); const [saving, setSaving] = useState(false); const [message, setMessage] = useState(""); const [pickerOpen, setPickerOpen] = useState(false);
   const back = isFood ? "/coach/foods" : "/coach/supplements";
 
+  useEffect(() => {
+    if (!isFood) return;
+    const onPhotoUpload = async (event: Event) => {
+      const file = (event as CustomEvent<File>).detail;
+      if (!file) return;
+      setMessage("");
+      try {
+        const data = new FormData();
+        data.append("file", file);
+        data.append("title", food.nameGr.trim() || file.name.replace(/\.[^.]+$/, "") || "Φωτογραφία τροφίμου");
+        data.append("assetType", "photo");
+        const uploaded = await api.upload<{ url: string }>("/media/upload", data);
+        setFood((current) => ({ ...current, imageUrl: uploaded.url }));
+      } catch (error) { setMessage(error instanceof Error ? error.message : "Δεν ανέβηκε η φωτογραφία."); }
+    };
+    window.addEventListener("catalog-food-photo", onPhotoUpload);
+    return () => window.removeEventListener("catalog-food-photo", onPhotoUpload);
+  }, [food.nameGr, isFood]);
+
   useEffect(() => { if (creating) return; let ignore = false; setLoading(true);
     const load = isFood ? api.get<Record<string, unknown>>(`/foods/${itemId}`) : api.get<{ items: Array<Record<string, unknown>> }>("/supplements").then((result) => result.items.find((item) => String(item.id) === itemId) || null);
     load.then((item) => { if (ignore || !item) return; if (isFood) setFood({ nameGr: String(item.nameGr || ""), nameEn: String(item.nameEn || ""), category: String(item.category || "other"), caloriesPer100g: item.caloriesPer100g == null ? "" : String(item.caloriesPer100g), proteinPer100g: item.proteinPer100g == null ? "" : String(item.proteinPer100g), carbsPer100g: item.carbsPer100g == null ? "" : String(item.carbsPer100g), fatsPer100g: item.fatsPer100g == null ? "" : String(item.fatsPer100g), fiberPer100g: item.fiberPer100g == null ? "" : String(item.fiberPer100g), servingSize: item.servingSize == null ? "100" : String(item.servingSize), servingUnit: String(item.servingUnit || "g"), imageUrl: String(item.imageUrl || "") }); else setSupplement({ category: String(item.category || "proteins"), name: String(item.name || ""), shortCode: String(item.shortCode || ""), form: String(item.form || ""), dailyDose: item.dailyDose == null ? "" : String(item.dailyDose), doseUnit: String(item.doseUnit || "g"), timing: String(item.timing || ""), linkUrl: String(item.linkUrl || "") }); }).catch(() => setMessage("Δεν φορτώθηκε το στοιχείο.")).finally(() => !ignore && setLoading(false)); return () => { ignore = true; };
   }, [creating, isFood, itemId]);
 
-  const save = async () => { const valid = isFood ? food.nameGr.trim() : supplement.name.trim(); if (!valid) { setMessage("Συμπλήρωσε το όνομα."); return; } setSaving(true); setMessage(""); try { const payload = isFood ? { ...food, caloriesPer100g: food.caloriesPer100g || null, proteinPer100g: food.proteinPer100g || null, carbsPer100g: food.carbsPer100g || null, fatsPer100g: food.fatsPer100g || null, fiberPer100g: food.fiberPer100g || null, servingSize: food.servingSize || null } : { ...supplement, dailyDose: supplement.dailyDose || null }; const path = isFood ? "/foods" : "/supplements"; if (creating) await api.post(path, payload); else await api.put(`${path}/${itemId}`, payload); router.push(back); } catch (error) { setMessage(error instanceof Error ? error.message : "Δεν αποθηκεύτηκαν οι αλλαγές."); } finally { setSaving(false); } };
+  const save = async () => { const valid = isFood ? food.nameGr.trim() : supplement.name.trim(); if (!valid) { setMessage("Συμπλήρωσε το όνομα."); return; } setSaving(true); setMessage(""); try { const payload = isFood ? { nameGr: food.nameGr.trim(), nameEn: food.nameEn.trim() || null, category: food.category, caloriesPer100g: food.caloriesPer100g === "" ? null : Number(food.caloriesPer100g), proteinPer100g: food.proteinPer100g === "" ? null : Number(food.proteinPer100g), carbsPer100g: food.carbsPer100g === "" ? null : Number(food.carbsPer100g), fatsPer100g: food.fatsPer100g === "" ? null : Number(food.fatsPer100g), fiberPer100g: food.fiberPer100g === "" ? null : Number(food.fiberPer100g), servingSize: food.servingSize === "" ? 100 : Number(food.servingSize), servingUnit: food.servingUnit, imageUrl: food.imageUrl.trim() || null } : { category: supplement.category, name: supplement.name.trim(), shortCode: supplement.shortCode.trim() || null, form: supplement.form.trim() || null, dailyDose: supplement.dailyDose === "" ? null : Number(supplement.dailyDose), doseUnit: supplement.doseUnit.trim() || null, timing: supplement.timing.trim() || null, linkUrl: supplement.linkUrl.trim() || null }; const path = isFood ? "/foods" : "/supplements"; if (creating) await api.post(path, payload); else await api.put(`${path}/${itemId}`, payload); router.push(back); } catch (error) { setMessage(error instanceof Error ? error.message : "Δεν αποθηκεύτηκαν οι αλλαγές."); } finally { setSaving(false); } };
   const updateFood = <K extends keyof FoodForm>(key: K, value: FoodForm[K]) => setFood((current) => ({ ...current, [key]: value }));
   const updateSupplement = <K extends keyof SupplementForm>(key: K, value: SupplementForm[K]) => setSupplement((current) => ({ ...current, [key]: value }));
   const name = isFood ? food.nameGr : supplement.name;

@@ -1,9 +1,26 @@
 "use client";
 
-import { startTransition, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import {
+  startTransition,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, ChevronDown, Play, Trash2, Plus, Search, Images, Upload } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronDown,
+  Play,
+  Trash2,
+  Plus,
+  Search,
+  Images,
+  Upload,
+  X,
+} from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -12,7 +29,12 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,11 +42,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { MediaLibraryPickerDialog } from "@/components/shared/media-library-picker-dialog";
+import { getVideoEmbedUrl } from "@/lib/video-embed";
 import {
   Select,
   SelectContent,
@@ -107,7 +139,9 @@ interface MediaAsset {
 }
 
 function withDefaults(values: string[], defaults: string[]): string[] {
-  return [...new Set([...(values || []), ...defaults].filter(Boolean))].sort((a, b) => a.localeCompare(b, "el"));
+  return [...new Set([...(values || []), ...defaults].filter(Boolean))].sort(
+    (a, b) => a.localeCompare(b, "el"),
+  );
 }
 
 function formatBytes(bytes: number): string {
@@ -151,16 +185,28 @@ function editFormFrom(exercise: Exercise): EditForm {
   };
 }
 
-function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: string | null; forceEdit?: boolean }) {
+function ExerciseFormContent({
+  exerciseId,
+  forceEdit = false,
+}: {
+  exerciseId: string | null;
+  forceEdit?: boolean;
+}) {
   const { user, logout } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const isCreatingRoute = exerciseId === null;
 
-  const [filters, setFilters] = useState<FiltersState>({ muscleGroups: [], equipment: [], types: [] });
+  const [filters, setFilters] = useState<FiltersState>({
+    muscleGroups: [],
+    equipment: [],
+    types: [],
+  });
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
-  const [modalMode, setModalMode] = useState<"view" | "edit">(isCreatingRoute || forceEdit ? "edit" : "view");
+  const [modalMode, setModalMode] = useState<"view" | "edit">(
+    isCreatingRoute || forceEdit ? "edit" : "view",
+  );
   const [isCreating, setIsCreating] = useState(isCreatingRoute);
   const [loading, setLoading] = useState(!isCreatingRoute);
   const [loadError, setLoadError] = useState("");
@@ -172,7 +218,9 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
   const [mediaSearch, setMediaSearch] = useState("");
   const [visibleMediaCount, setVisibleMediaCount] = useState(MEDIA_PAGE_SIZE);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
+  const dragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+  );
 
   useEffect(() => {
     api
@@ -208,10 +256,13 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
         setExercise(data);
         setEditForm(editFormFrom(data));
         setIsCreating(false);
-        setModalMode(forceEdit || searchParams.get("mode") === "edit" ? "edit" : "view");
+        setModalMode(
+          forceEdit || searchParams.get("mode") === "edit" ? "edit" : "view",
+        );
       })
       .catch((error) => {
-        if (!ignore) setLoadError(getErrorMessage(error, "Δεν φορτώθηκε η άσκηση."));
+        if (!ignore)
+          setLoadError(getErrorMessage(error, "Δεν φορτώθηκε η άσκηση."));
       })
       .finally(() => {
         if (!ignore) setLoading(false);
@@ -259,7 +310,16 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
     [filters.equipment],
   );
   const typeOptions = useMemo(
-    () => withDefaults(filters.types, ["Δύναμη", "Υπερτροφία", "Αντοχή", "Κινητικότητα", "Cardio", "Core", "Αποκατάσταση"]),
+    () =>
+      withDefaults(filters.types, [
+        "Δύναμη",
+        "Υπερτροφία",
+        "Αντοχή",
+        "Κινητικότητα",
+        "Cardio",
+        "Core",
+        "Αποκατάσταση",
+      ]),
     [filters.types],
   );
 
@@ -267,11 +327,20 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
     setExercise((current) => (current ? { ...current, ...patch } : current));
   };
 
-  const updateExerciseImages = (images: RawExerciseImage[], preferredImageUrl = "") => {
-    const normalizedImages = normalizeExerciseImages({ images, imageUrl: preferredImageUrl });
-    const primaryImage = normalizedImages.find((image) => image.isPrimary) || normalizedImages[0];
+  const updateExerciseImages = (
+    images: RawExerciseImage[],
+    preferredImageUrl = "",
+  ) => {
+    const normalizedImages = normalizeExerciseImages({
+      images,
+      imageUrl: preferredImageUrl,
+    });
+    const primaryImage =
+      normalizedImages.find((image) => image.isPrimary) || normalizedImages[0];
     const nextImageUrl = preferredImageUrl || primaryImage?.imageUrl || "";
-    setEditForm((current) => (current ? { ...current, imageUrl: nextImageUrl } : current));
+    setEditForm((current) =>
+      current ? { ...current, imageUrl: nextImageUrl } : current,
+    );
     updateExercise({
       imageUrl: nextImageUrl,
       images: normalizedImages,
@@ -279,11 +348,18 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
     });
   };
 
-  const updateEditField = <K extends keyof EditForm>(field: K, value: EditForm[K]) => {
-    setEditForm((current) => (current ? { ...current, [field]: value } : current));
+  const updateEditField = <K extends keyof EditForm>(
+    field: K,
+    value: EditForm[K],
+  ) => {
+    setEditForm((current) =>
+      current ? { ...current, [field]: value } : current,
+    );
   };
 
-  const saveExercise = async (draft?: Pick<EditForm, "instructions" | "commonMistakes">) => {
+  const saveExercise = async (
+    draft?: Pick<EditForm, "instructions" | "commonMistakes">,
+  ) => {
     if (!exercise || !editForm) return;
     setSaving(true);
     setMediaMessage("");
@@ -305,14 +381,20 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
 
       setExercise(updated);
       setEditForm(editFormFrom(updated));
-      setMediaMessage(isCreating ? "Η άσκηση προστέθηκε στη βάση." : "Η άσκηση ενημερώθηκε στη βάση.");
+      setMediaMessage(
+        isCreating
+          ? "Η άσκηση προστέθηκε στη βάση."
+          : "Η άσκηση ενημερώθηκε στη βάση.",
+      );
 
       if (isCreating) {
         setIsCreating(false);
         router.replace("/exercises");
       }
     } catch (error) {
-      setMediaMessage(getErrorMessage(error, "Δεν αποθηκεύτηκαν οι αλλαγές της άσκησης."));
+      setMediaMessage(
+        getErrorMessage(error, "Δεν αποθηκεύτηκαν οι αλλαγές της άσκησης."),
+      );
     } finally {
       setSaving(false);
     }
@@ -327,7 +409,9 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
       await api.delete(`/exercises/${exercise.id}`);
       router.push("/exercises");
     } catch (error) {
-      setMediaMessage(getErrorMessage(error, "Δεν έγινε διαγραφή της άσκησης."));
+      setMediaMessage(
+        getErrorMessage(error, "Δεν έγινε διαγραφή της άσκησης."),
+      );
       setSaving(false);
     }
   };
@@ -344,15 +428,24 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
     formData.append("image", compressedFile);
 
     try {
-      const response = await api.upload<{ imageId?: string; imageUrl: string }>(`/exercises/${exercise.id}/image`, formData);
+      const response = await api.upload<{ imageId?: string; imageUrl: string }>(
+        `/exercises/${exercise.id}/image`,
+        formData,
+      );
       const nextImages: RawExerciseImage[] = [
-        { id: response.imageId || `new-${Date.now()}`, imageUrl: response.imageUrl, isPrimary: true },
+        {
+          id: response.imageId || `new-${Date.now()}`,
+          imageUrl: response.imageUrl,
+          isPrimary: true,
+        },
         ...normalizeExerciseImages(exercise)
           .filter((image) => image.imageUrl !== response.imageUrl)
           .map((image) => ({ ...image, isPrimary: false })),
       ];
       updateExerciseImages(nextImages, response.imageUrl);
-      setMediaMessage(`Η φωτογραφία συμπιέστηκε και προστέθηκε στο gallery. ${formatBytes(file.size)} → ${formatBytes(compressedFile.size)}`);
+      setMediaMessage(
+        `Η φωτογραφία συμπιέστηκε και προστέθηκε στο gallery. ${formatBytes(file.size)} → ${formatBytes(compressedFile.size)}`,
+      );
     } catch (error) {
       setMediaMessage(getErrorMessage(error, "Το upload απέτυχε."));
     } finally {
@@ -365,18 +458,23 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
     if (!mediaPickerOpen) return;
     let ignore = false;
     const query = mediaSearch.trim();
-    const timer = window.setTimeout(async () => {
-      setVisibleMediaCount(MEDIA_PAGE_SIZE);
-      try {
-        const assets = await api.get<MediaAsset[]>(query ? `/media?search=${encodeURIComponent(query)}` : "/media");
-        if (ignore) return;
-        const photos = assets.filter((asset) => asset.assetType === "photo");
-        // Keep rendering a large result set from blocking input.
-        startTransition(() => setMediaAssets(photos));
-      } catch {
-        if (!ignore) setMediaAssets([]);
-      }
-    }, query ? 300 : 0);
+    const timer = window.setTimeout(
+      async () => {
+        setVisibleMediaCount(MEDIA_PAGE_SIZE);
+        try {
+          const assets = await api.get<MediaAsset[]>(
+            query ? `/media?search=${encodeURIComponent(query)}` : "/media",
+          );
+          if (ignore) return;
+          const photos = assets.filter((asset) => asset.assetType === "photo");
+          // Keep rendering a large result set from blocking input.
+          startTransition(() => setMediaAssets(photos));
+        } catch {
+          if (!ignore) setMediaAssets([]);
+        }
+      },
+      query ? 300 : 0,
+    );
     return () => {
       ignore = true;
       window.clearTimeout(timer);
@@ -401,15 +499,22 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
 
     setSaving(true);
     try {
-      const response = await api.post<{ images?: RawExerciseImage[] }>(`/exercises/${exercise.id}/images`, {
-        imageUrl: asset.url,
-        primary: true,
-      });
+      const response = await api.post<{ images?: RawExerciseImage[] }>(
+        `/exercises/${exercise.id}/images`,
+        {
+          imageUrl: asset.url,
+          primary: true,
+        },
+      );
       updateExerciseImages(response.images || [], asset.url);
-      setMediaMessage(`Προστέθηκε στο gallery από Media Library: ${asset.title}`);
+      setMediaMessage(
+        `Προστέθηκε στο gallery από Media Library: ${asset.title}`,
+      );
     } catch (error) {
       updateEditField("imageUrl", asset.url);
-      setMediaMessage(getErrorMessage(error, "Δεν προστέθηκε η εικόνα στο gallery."));
+      setMediaMessage(
+        getErrorMessage(error, "Δεν προστέθηκε η εικόνα στο gallery."),
+      );
     } finally {
       setSaving(false);
     }
@@ -426,15 +531,20 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
 
     setSaving(true);
     try {
-      const response = await api.post<{ images?: RawExerciseImage[] }>(`/exercises/${exercise.id}/images`, {
-        imageUrl: url,
-        primary: true,
-      });
+      const response = await api.post<{ images?: RawExerciseImage[] }>(
+        `/exercises/${exercise.id}/images`,
+        {
+          imageUrl: url,
+          primary: true,
+        },
+      );
       updateExerciseImages(response.images || [], url);
       setMediaMessage("Προστέθηκε στο gallery από Media Library.");
     } catch (error) {
       updateEditField("imageUrl", url);
-      setMediaMessage(getErrorMessage(error, "Δεν προστέθηκε η εικόνα στο gallery."));
+      setMediaMessage(
+        getErrorMessage(error, "Δεν προστέθηκε η εικόνα στο gallery."),
+      );
     } finally {
       setSaving(false);
     }
@@ -442,17 +552,29 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
 
   const clearThumbnail = () => {
     updateEditField("imageUrl", "");
-    setMediaMessage("Το thumbnail αφαιρέθηκε. Πάτησε αποθήκευση για να ενημερωθεί η άσκηση.");
+    setMediaMessage(
+      "Το thumbnail αφαιρέθηκε. Πάτησε αποθήκευση για να ενημερωθεί η άσκηση.",
+    );
   };
 
   const deleteExerciseImage = async (image: NormalizedExerciseImage) => {
-    if (!image?.id || !exercise || isCreating || String(image.id).startsWith("local")) return;
-    const confirmed = window.confirm("Να διαγραφεί αυτή η φωτογραφία από την άσκηση;");
+    if (
+      !image?.id ||
+      !exercise ||
+      isCreating ||
+      String(image.id).startsWith("local")
+    )
+      return;
+    const confirmed = window.confirm(
+      "Να διαγραφεί αυτή η φωτογραφία από την άσκηση;",
+    );
     if (!confirmed) return;
 
     setSaving(true);
     try {
-      const response = await api.delete<{ images?: RawExerciseImage[] }>(`/exercises/${exercise.id}/images/${image.id}`);
+      const response = await api.delete<{ images?: RawExerciseImage[] }>(
+        `/exercises/${exercise.id}/images/${image.id}`,
+      );
       updateExerciseImages(response.images || []);
       setMediaMessage("Η φωτογραφία διαγράφηκε από την άσκηση.");
     } catch (error) {
@@ -471,20 +593,32 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
 
     const reordered = arrayMove(currentImages, oldIndex, newIndex);
     const nextImageUrl = reordered[0]?.imageUrl || "";
-    setEditForm((current) => (current ? { ...current, imageUrl: nextImageUrl } : current));
+    setEditForm((current) =>
+      current ? { ...current, imageUrl: nextImageUrl } : current,
+    );
     updateExercise({
-      images: reordered.map((image, index) => ({ id: image.id, imageUrl: image.imageUrl, altText: image.altText, isPrimary: index === 0 })),
+      images: reordered.map((image, index) => ({
+        id: image.id,
+        imageUrl: image.imageUrl,
+        altText: image.altText,
+        isPrimary: index === 0,
+      })),
       imageUrls: reordered.map((image) => image.imageUrl),
       imageUrl: nextImageUrl,
     });
 
     try {
-      const response = await api.put<{ images?: RawExerciseImage[] }>(`/exercises/${exercise.id}/images/reorder`, {
-        order: reordered.map((image) => image.id),
-      });
+      const response = await api.put<{ images?: RawExerciseImage[] }>(
+        `/exercises/${exercise.id}/images/reorder`,
+        {
+          order: reordered.map((image) => image.id),
+        },
+      );
       updateExerciseImages(response.images || []);
     } catch (error) {
-      setMediaMessage(getErrorMessage(error, "Δεν αποθηκεύτηκε η σειρά των φωτογραφιών."));
+      setMediaMessage(
+        getErrorMessage(error, "Δεν αποθηκεύτηκε η σειρά των φωτογραφιών."),
+      );
     }
   };
 
@@ -497,31 +631,78 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
   const filteredMediaAssets = mediaAssets;
 
   const isReadOnly = modalMode === "view";
-  const currentImages = exercise && editForm ? normalizeExerciseImages({ ...exercise, imageUrl: editForm.imageUrl }) : [];
+  const currentImages =
+    exercise && editForm
+      ? normalizeExerciseImages({ ...exercise, imageUrl: editForm.imageUrl })
+      : [];
 
   if (forceEdit && !loading && exercise && editForm) {
-    return <CoachShell title={isCreating ? "Νέα άσκηση" : "Επεξεργασία άσκησης"} user={user} logout={logout}>
-      <AdminExerciseEditor
-        creating={isCreating}
-        form={editForm}
-        images={currentImages}
-        saving={saving}
-        message={mediaMessage}
-        onChange={updateEditField}
-        onSave={(draft) => saveExercise(draft)}
-        onDelete={() => setDeleteDialogOpen(true)}
-        onCancel={() => router.push("/exercises")}
-        onPickMedia={openMediaPicker}
-        onUploadClick={() => fileInputRef.current?.click()}
-      />
-      <input ref={fileInputRef} type="file" accept="image/*" onChange={uploadImage} className="hidden" />
-      <MediaLibraryPickerDialog open={mediaPickerOpen} onOpenChange={setMediaPickerOpen} onSelect={chooseMediaAssetUrl} title="Επιλογή από Media Library" />
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Διαγραφή άσκησης;</AlertDialogTitle><AlertDialogDescription>Η «{exercise.name}» θα διαγραφεί οριστικά από τη Βιβλιοθήκη Ασκήσεων.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel disabled={saving}>Ακύρωση</AlertDialogCancel><AlertDialogAction onClick={deleteExercise} disabled={saving} className="bg-red-600 text-white hover:bg-red-700">{saving ? "Διαγραφή…" : "Ναι, διαγραφή"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-    </CoachShell>;
+    return (
+      <CoachShell
+        title={isCreating ? "Νέα άσκηση" : "Επεξεργασία άσκησης"}
+        user={user}
+        logout={logout}
+      >
+        <AdminExerciseEditor
+          creating={isCreating}
+          form={editForm}
+          images={currentImages}
+          saving={saving}
+          message={mediaMessage}
+          onChange={updateEditField}
+          onSave={(draft) => saveExercise(draft)}
+          onDelete={() => setDeleteDialogOpen(true)}
+          onCancel={() => router.push("/exercises")}
+          onPickMedia={openMediaPicker}
+          onUploadClick={() => fileInputRef.current?.click()}
+          onRemoveImage={deleteExerciseImage}
+          onReorderImages={reorderImages}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={uploadImage}
+          className="hidden"
+        />
+        <MediaLibraryPickerDialog
+          open={mediaPickerOpen}
+          onOpenChange={setMediaPickerOpen}
+          onSelect={chooseMediaAssetUrl}
+          title="Επιλογή από Media Library"
+          scope="exercise"
+        />
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Διαγραφή άσκησης;</AlertDialogTitle>
+              <AlertDialogDescription>
+                Η «{exercise.name}» θα διαγραφεί οριστικά από τη Βιβλιοθήκη
+                Ασκήσεων.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={saving}>Ακύρωση</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={deleteExercise}
+                disabled={saving}
+                className="bg-red-600 text-white hover:bg-red-700"
+              >
+                {saving ? "Διαγραφή…" : "Ναι, διαγραφή"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </CoachShell>
+    );
   }
 
   return (
-    <CoachShell title={isCreating ? "Νέα Άσκηση" : editForm?.name || "Άσκηση"} user={user} logout={logout}>
+    <CoachShell
+      title={isCreating ? "Νέα Άσκηση" : editForm?.name || "Άσκηση"}
+      user={user}
+      logout={logout}
+    >
       <div className="mb-6">
         <Button
           type="button"
@@ -536,13 +717,37 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
         </Button>
         <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="text-[28px] font-extrabold tracking-[-.5px]">{isCreating ? "Νέα άσκηση" : "Επεξεργασία άσκησης"}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{isCreating ? "Συμπλήρωσε τα βασικά, πρόσθεσε media και οδηγίες εκτέλεσης." : `Σε ${exercise?.programsCount || 0} προγράμματα · οι αλλαγές αποθηκεύονται στην άσκηση.`}</p>
+            <h1 className="text-[28px] font-extrabold tracking-[-.5px]">
+              {isCreating ? "Νέα άσκηση" : "Επεξεργασία άσκησης"}
+            </h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {isCreating
+                ? "Συμπλήρωσε τα βασικά, πρόσθεσε media και οδηγίες εκτέλεσης."
+                : `Σε ${exercise?.programsCount || 0} προγράμματα · οι αλλαγές αποθηκεύονται στην άσκηση.`}
+            </p>
           </div>
-          {!loading && <div className="flex items-center gap-2">
-            {!isCreating && <Button type="button" variant="outline" onClick={() => router.push("/exercises")} className="h-[46px] rounded-full px-5 font-extrabold">Ακύρωση</Button>}
-            <Button type="button" onClick={() => saveExercise()} disabled={saving} className="h-[46px] rounded-full bg-accent px-6 font-extrabold text-accent-foreground hover:bg-accent/85">{saving ? "Αποθήκευση…" : "Αποθήκευση"}</Button>
-          </div>}
+          {!loading && (
+            <div className="flex items-center gap-2">
+              {!isCreating && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => router.push("/exercises")}
+                  className="h-[46px] rounded-full px-5 font-extrabold"
+                >
+                  Ακύρωση
+                </Button>
+              )}
+              <Button
+                type="button"
+                onClick={() => saveExercise()}
+                disabled={saving}
+                className="h-[46px] rounded-full bg-accent px-6 font-extrabold text-accent-foreground hover:bg-accent/85"
+              >
+                {saving ? "Αποθήκευση…" : "Αποθήκευση"}
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -553,7 +758,9 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
       )}
 
       {loading ? (
-        <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Φόρτωση...</p>
+        <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">
+          Φόρτωση...
+        </p>
       ) : exercise && editForm ? (
         <div className="mx-auto max-w-[1180px] pb-24">
           {/* TOP — two columns */}
@@ -561,7 +768,14 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
             {/* LEFT — image + gallery */}
             <div>
               <div className="group relative aspect-square overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-800">
-                <ExerciseImageSlider exercise={{ ...exercise, name: editForm.name, imageUrl: editForm.imageUrl }} large />
+                <ExerciseImageSlider
+                  exercise={{
+                    ...exercise,
+                    name: editForm.name,
+                    imageUrl: editForm.imageUrl,
+                  }}
+                  large
+                />
                 {!isReadOnly && (
                   <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/0 opacity-0 transition-all duration-200 group-hover:bg-black/40 group-hover:opacity-100">
                     <DropdownMenu>
@@ -576,8 +790,13 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
                         }
                       />
                       <DropdownMenuContent align="center">
-                        <DropdownMenuItem onClick={openMediaPicker}>📁 Από Media Library</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => fileInputRef.current?.click()} disabled={isCreating}>
+                        <DropdownMenuItem onClick={openMediaPicker}>
+                          📁 Από Media Library
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isCreating}
+                        >
                           💻 Από τον υπολογιστή
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -613,9 +832,15 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
                           className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800"
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={resolveMediaUrl(image.imageUrl)} alt="" className="h-full w-full object-cover" />
+                          <img
+                            src={resolveMediaUrl(image.imageUrl)}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
                           {(image.isPrimary || index === 0) && (
-                            <span className="absolute left-1 top-1 rounded bg-accent px-1.5 py-0.5 text-[9px] font-medium text-accent-foreground">1</span>
+                            <span className="absolute left-1 top-1 rounded bg-accent px-1.5 py-0.5 text-[9px] font-medium text-accent-foreground">
+                              1
+                            </span>
                           )}
                         </div>
                       ))}
@@ -624,22 +849,43 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
                   </ScrollArea>
                 )
               ) : (
-                <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleImageDragEnd}>
+                <DndContext
+                  sensors={dragSensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleImageDragEnd}
+                >
                   <ScrollArea className="mt-4 w-full whitespace-nowrap">
                     <div className="flex gap-3 pb-2">
-                      <SortableContext items={currentImages.map((image) => String(image.id))} strategy={horizontalListSortingStrategy}>
+                      <SortableContext
+                        items={currentImages.map((image) => String(image.id))}
+                        strategy={horizontalListSortingStrategy}
+                      >
                         {currentImages.map((image, index) => (
                           <SortableThumb
                             key={image.id}
                             image={image}
-                            isPrimary={image.isPrimary || image.imageUrl === editForm.imageUrl || index === 0}
-                            dragDisabled={currentImages.length < 2 || String(image.id).startsWith("local")}
-                            deleteDisabled={saving || !image.id || String(image.id).startsWith("local")}
+                            isPrimary={
+                              image.isPrimary ||
+                              image.imageUrl === editForm.imageUrl ||
+                              index === 0
+                            }
+                            dragDisabled={
+                              currentImages.length < 2 ||
+                              String(image.id).startsWith("local")
+                            }
+                            deleteDisabled={
+                              saving ||
+                              !image.id ||
+                              String(image.id).startsWith("local")
+                            }
                             onDelete={() => deleteExerciseImage(image)}
                           />
                         ))}
                       </SortableContext>
-                      <AddImageTile onPickLibrary={openMediaPicker} onPickUpload={() => fileInputRef.current?.click()} />
+                      <AddImageTile
+                        onPickLibrary={openMediaPicker}
+                        onPickUpload={() => fileInputRef.current?.click()}
+                      />
                     </div>
                     <ScrollBar orientation="horizontal" />
                   </ScrollArea>
@@ -647,10 +893,16 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
               )}
 
               {!isReadOnly && currentImages.length > 1 && (
-                <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">Σύρε για αλλαγή σειράς — η πρώτη είναι η κύρια εικόνα.</p>
+                <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+                  Σύρε για αλλαγή σειράς — η πρώτη είναι η κύρια εικόνα.
+                </p>
               )}
 
-              {mediaMessage && <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">{mediaMessage}</div>}
+              {mediaMessage && (
+                <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">
+                  {mediaMessage}
+                </div>
+              )}
             </div>
 
             {/* RIGHT — identity + description */}
@@ -663,24 +915,36 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
 
               <div className="flex flex-wrap items-start justify-between gap-3">
                 {isReadOnly ? (
-                  <h1 className="text-2xl font-bold dark:text-slate-50">{editForm.name || "Χωρίς όνομα"}</h1>
+                  <h1 className="text-2xl font-bold dark:text-slate-50">
+                    {editForm.name || "Χωρίς όνομα"}
+                  </h1>
                 ) : (
                   <Input
                     value={editForm.name}
-                    onChange={(event) => updateEditField("name", event.target.value)}
+                    onChange={(event) =>
+                      updateEditField("name", event.target.value)
+                    }
                     placeholder="Όνομα άσκησης"
                     className="h-auto flex-1 border-none bg-transparent p-0 text-2xl font-bold shadow-none focus-visible:ring-0 dark:text-slate-50"
                   />
                 )}
                 {isReadOnly && !isCreating && (
-                  <Button type="button" variant="outline" size="sm" onClick={() => setModalMode("edit")} className="shrink-0 gap-1.5 font-normal">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setModalMode("edit")}
+                    className="shrink-0 gap-1.5 font-normal"
+                  >
                     ✏️ Επεξεργασία
                   </Button>
                 )}
               </div>
 
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                {[editForm.equipment, editForm.type].filter(Boolean).join(" · ") || "—"}
+                {[editForm.equipment, editForm.type]
+                  .filter(Boolean)
+                  .join(" · ") || "—"}
               </p>
 
               <Separator className="my-5" />
@@ -692,7 +956,9 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
               ) : (
                 <Textarea
                   value={editForm.instructions}
-                  onChange={(event) => updateEditField("instructions", event.target.value)}
+                  onChange={(event) =>
+                    updateEditField("instructions", event.target.value)
+                  }
                   placeholder="Περιγραφή / οδηγίες εκτέλεσης..."
                   className="min-h-28 w-full resize-none border-none bg-transparent p-0 text-sm leading-relaxed shadow-none focus-visible:ring-0"
                 />
@@ -704,17 +970,43 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
           <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {isReadOnly ? (
               <>
-                <StatBox label="Μυϊκή ομάδα" value={editForm.muscleGroup || "—"} />
+                <StatBox
+                  label="Μυϊκή ομάδα"
+                  value={editForm.muscleGroup || "—"}
+                />
                 <StatBox label="Εξοπλισμός" value={editForm.equipment || "—"} />
                 <StatBox label="Τύπος" value={editForm.type || "—"} />
-                <StatBox label="Σε προγράμματα" value={editForm.programsCount || 0} />
+                <StatBox
+                  label="Σε προγράμματα"
+                  value={editForm.programsCount || 0}
+                />
               </>
             ) : (
               <>
-                <EditSelect label="Μυϊκή ομάδα" value={editForm.muscleGroup} onChange={(value) => updateEditField("muscleGroup", value)} options={muscleGroupOptions} />
-                <EditSelect label="Εξοπλισμός" value={editForm.equipment} onChange={(value) => updateEditField("equipment", value)} options={equipmentOptions} />
-                <EditSelect label="Τύπος" value={editForm.type} onChange={(value) => updateEditField("type", value)} options={typeOptions} />
-                <EditInput label="Σε προγράμματα" type="number" value={editForm.programsCount} onChange={(value) => updateEditField("programsCount", value)} />
+                <EditSelect
+                  label="Μυϊκή ομάδα"
+                  value={editForm.muscleGroup}
+                  onChange={(value) => updateEditField("muscleGroup", value)}
+                  options={muscleGroupOptions}
+                />
+                <EditSelect
+                  label="Εξοπλισμός"
+                  value={editForm.equipment}
+                  onChange={(value) => updateEditField("equipment", value)}
+                  options={equipmentOptions}
+                />
+                <EditSelect
+                  label="Τύπος"
+                  value={editForm.type}
+                  onChange={(value) => updateEditField("type", value)}
+                  options={typeOptions}
+                />
+                <EditInput
+                  label="Σε προγράμματα"
+                  type="number"
+                  value={editForm.programsCount}
+                  onChange={(value) => updateEditField("programsCount", value)}
+                />
               </>
             )}
           </div>
@@ -737,7 +1029,9 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
                 {!isReadOnly && (
                   <Input
                     value={editForm.videoUrl}
-                    onChange={(event) => updateEditField("videoUrl", event.target.value)}
+                    onChange={(event) =>
+                      updateEditField("videoUrl", event.target.value)
+                    }
                     placeholder="YouTube, Vimeo ή embed URL"
                     className="h-10"
                   />
@@ -764,11 +1058,25 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
                   <span />
                 )}
                 <div className="flex gap-2">
-                  <Button type="button" variant="outline" onClick={() => router.push("/exercises")} className="font-normal">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => router.push("/exercises")}
+                    className="font-normal"
+                  >
                     Ακύρωση
                   </Button>
-                  <Button onClick={() => saveExercise()} disabled={saving} className="gap-2 px-6 font-medium">
-                    💾 {saving ? "Αποθήκευση..." : isCreating ? "Προσθήκη Άσκησης" : "Αποθήκευση"}
+                  <Button
+                    onClick={() => saveExercise()}
+                    disabled={saving}
+                    className="gap-2 px-6 font-medium"
+                  >
+                    💾{" "}
+                    {saving
+                      ? "Αποθήκευση..."
+                      : isCreating
+                        ? "Προσθήκη Άσκησης"
+                        : "Αποθήκευση"}
                   </Button>
                 </div>
               </div>
@@ -780,12 +1088,19 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
       <Dialog open={mediaPickerOpen} onOpenChange={setMediaPickerOpen}>
         <DialogContent className="h-[100dvh] w-[100vw] max-w-none overflow-hidden rounded-none border-0 p-5 shadow-none sm:max-w-none sm:p-7">
           <DialogHeader>
-            <DialogTitle className="text-2xl">Επιλογή από Media Library</DialogTitle>
-            <DialogDescription>Διάλεξε φωτογραφία που είναι ήδη αποθηκευμένη στη βάση.</DialogDescription>
+            <DialogTitle className="text-2xl">
+              Επιλογή από Media Library
+            </DialogTitle>
+            <DialogDescription>
+              Διάλεξε φωτογραφία που είναι ήδη αποθηκευμένη στη βάση.
+            </DialogDescription>
           </DialogHeader>
           <div>
             <div className="relative">
-              <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+              <Search
+                aria-hidden="true"
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500"
+              />
               <Input
                 value={mediaSearch}
                 onChange={(event) => {
@@ -811,7 +1126,9 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
                   </div>
                   <div className="p-3">
                     <div className="truncate font-bold">{asset.title}</div>
-                    <div className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">{asset.folderName || asset.source}</div>
+                    <div className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
+                      {asset.folderName || asset.source}
+                    </div>
                   </div>
                 </Button>
               ))}
@@ -820,10 +1137,13 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
               <Button
                 type="button"
                 variant="ghost"
-                onClick={() => setVisibleMediaCount((count) => count + MEDIA_PAGE_SIZE)}
+                onClick={() =>
+                  setVisibleMediaCount((count) => count + MEDIA_PAGE_SIZE)
+                }
                 className="mt-4 w-full font-medium text-slate-500 hover:text-red-600 dark:text-slate-400"
               >
-                Φόρτωση περισσότερων ({filteredMediaAssets.length - visibleMediaCount} ακόμα)
+                Φόρτωση περισσότερων (
+                {filteredMediaAssets.length - visibleMediaCount} ακόμα)
               </Button>
             )}
             {!filteredMediaAssets.length && (
@@ -838,48 +1158,612 @@ function ExerciseFormContent({ exerciseId, forceEdit = false }: { exerciseId: st
   );
 }
 
-function AdminExerciseEditor({ creating, form, images, saving, message, onChange, onSave, onDelete, onCancel, onPickMedia, onUploadClick }: {
-  creating: boolean; form: EditForm; images: NormalizedExerciseImage[]; saving: boolean; message: string;
+function AdminExerciseEditor({
+  creating,
+  form,
+  images,
+  saving,
+  message,
+  onChange,
+  onSave,
+  onDelete,
+  onCancel,
+  onPickMedia,
+  onUploadClick,
+  onRemoveImage,
+  onReorderImages,
+}: {
+  creating: boolean;
+  form: EditForm;
+  images: NormalizedExerciseImage[];
+  saving: boolean;
+  message: string;
   onChange: <K extends keyof EditForm>(field: K, value: EditForm[K]) => void;
-  onSave: (draft: Pick<EditForm, "instructions" | "commonMistakes">) => void; onDelete: () => void; onCancel: () => void; onPickMedia: () => void; onUploadClick: () => void;
+  onSave: (draft: Pick<EditForm, "instructions" | "commonMistakes">) => void;
+  onDelete: () => void;
+  onCancel: () => void;
+  onPickMedia: () => void;
+  onUploadClick: () => void;
+  onRemoveImage: (image: NormalizedExerciseImage) => void;
+  onReorderImages: (fromId: string, toId: string) => void;
 }) {
-  const [mistakes, setMistakesState] = useState<string[]>(() => form.commonMistakes ? form.commonMistakes.split("\n") : []);
-  const muscles = ["Στήθος", "Πλάτη", "Ώμοι", "Δικέφαλα", "Τρικέφαλα", "Κοιλιακοί", "Τετρακέφαλοι", "Οπίσθιοι μηριαίοι", "Γλουτοί", "Γάμπες"];
+  const [mistakes, setMistakesState] = useState<string[]>(() =>
+    form.commonMistakes ? form.commonMistakes.split("\n") : [],
+  );
+  const muscles = [
+    "Στήθος",
+    "Πλάτη",
+    "Ώμοι",
+    "Δικέφαλα",
+    "Τρικέφαλα",
+    "Κοιλιακοί",
+    "Τετρακέφαλοι",
+    "Οπίσθιοι μηριαίοι",
+    "Γλουτοί",
+    "Γάμπες",
+  ];
   const types = ["Δύναμη", "Cardio", "Διάταση", "Κινητικότητα"];
   const levels = ["Αρχάριος", "Μέσος", "Προχωρημένος"];
-  const [steps, setStepsState] = useState<string[]>(() => form.instructions ? form.instructions.split("\n") : []);
+  const [steps, setStepsState] = useState<string[]>(() =>
+    form.instructions ? form.instructions.split("\n") : [],
+  );
   const stepsRef = useRef(steps);
   const mistakesRef = useRef(mistakes);
-  useEffect(() => { const next = form.instructions ? form.instructions.split("\n") : []; stepsRef.current = next; setStepsState(next); }, [form.instructions]);
-  useEffect(() => { const next = form.commonMistakes ? form.commonMistakes.split("\n") : []; mistakesRef.current = next; setMistakesState(next); }, [form.commonMistakes]);
-  const setSteps = (next: string[]) => { stepsRef.current = next; setStepsState(next); onChange("instructions", next.join("\n")); };
-  const setMistakes = (next: string[]) => { mistakesRef.current = next; setMistakesState(next); onChange("commonMistakes", next.join("\n")); };
-  const ready = [Boolean(form.name && form.muscleGroup), Boolean(form.equipment), Boolean(form.videoUrl || images.length), Boolean(form.instructions?.trim())];
+  useEffect(() => {
+    const next = form.instructions ? form.instructions.split("\n") : [];
+    stepsRef.current = next;
+    setStepsState(next);
+  }, [form.instructions]);
+  useEffect(() => {
+    const next = form.commonMistakes ? form.commonMistakes.split("\n") : [];
+    mistakesRef.current = next;
+    setMistakesState(next);
+  }, [form.commonMistakes]);
+  const setSteps = (next: string[]) => {
+    stepsRef.current = next;
+    setStepsState(next);
+    onChange("instructions", next.join("\n"));
+  };
+  const setMistakes = (next: string[]) => {
+    mistakesRef.current = next;
+    setMistakesState(next);
+    onChange("commonMistakes", next.join("\n"));
+  };
+  const ready = [
+    Boolean(form.name && form.muscleGroup),
+    Boolean(form.equipment),
+    Boolean(form.videoUrl || images.length),
+    Boolean(form.instructions?.trim()),
+  ];
   const completed = ready.filter(Boolean).length;
-  return <section className="mx-auto w-full max-w-[1180px] pb-24">
-    <div className="mb-[22px] flex flex-wrap items-end justify-between gap-4"><div><button type="button" onClick={onCancel} className="mb-3 flex items-center gap-1 text-[13px] font-extrabold"><ChevronLeft className="size-4" />Βιβλιοθήκη Ασκήσεων</button><h1 className="text-[28px] font-extrabold tracking-[-.5px]">{creating ? "Νέα άσκηση" : "Επεξεργασία άσκησης"}</h1><p className="mt-1 text-sm text-muted-foreground">{creating ? "Συμπλήρωσε τα βασικά, πρόσθεσε βίντεο ή φωτογραφίες και οδηγίες." : "Οι αλλαγές ενημερώνουν άμεσα τη Βιβλιοθήκη Ασκήσεων."}</p></div><div className="flex gap-2"><Button type="button" variant="outline" onClick={onCancel} className="h-[46px] rounded-full px-5 font-extrabold">Ακύρωση</Button><Button type="button" onClick={() => onSave({ instructions: stepsRef.current.join("\n"), commonMistakes: mistakesRef.current.join("\n") })} disabled={saving} className="h-[46px] rounded-full bg-accent px-6 font-extrabold text-accent-foreground hover:bg-accent/85">{saving ? "Αποθήκευση…" : "Αποθήκευση"}</Button></div></div>
-    {message && <div role="status" className="mb-5 rounded-[14px] border border-border bg-muted px-4 py-3 text-sm font-bold">{message}</div>}
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]"><div className="space-y-5">
-      <FormCard index="1" title="Βασικά" description="Όνομα, μυϊκή ομάδα και εξοπλισμός"><div className="grid gap-[14px] sm:grid-cols-2"><Field label="Όνομα άσκησης" required><Input value={form.name} onChange={(e) => onChange("name", e.target.value)} className="h-[46px] rounded-xl font-semibold" /></Field><Field label="Εναλλακτικό όνομα"><Input placeholder="προαιρετικό · βοηθά στην αναζήτηση" className="h-[46px] rounded-xl" /></Field></div><Field label="Κύρια μυϊκή ομάδα" required><div className="flex flex-wrap gap-2">{muscles.map((item) => <Pill key={item} active={form.muscleGroup === item} onClick={() => onChange("muscleGroup", item)}>{item}</Pill>)}</div></Field><div className="grid gap-[14px] sm:grid-cols-2"><Field label="Εξοπλισμός" required><Input value={form.equipment} onChange={(e) => onChange("equipment", e.target.value)} placeholder="π.χ. Σωματικό βάρος" className="h-[46px] rounded-xl" /></Field><Field label="Επίπεδο"><div className="flex flex-wrap gap-2">{levels.map((item) => <Pill key={item} active={form.level === item} onClick={() => onChange("level", item)}>{item}</Pill>)}</div></Field></div><Field label="Τύπος"><div className="flex flex-wrap gap-2">{types.map((item) => <Pill key={item} active={form.type === item} onClick={() => onChange("type", item)}>{item}</Pill>)}</div></Field></FormCard>
-      <FormCard index="2" title="Βίντεο & φωτογραφίες" description="Ο πελάτης τα βλέπει στην οθόνη της άσκησης"><Field label="Βίντεο" hint="Link YouTube ή Vimeo · προαιρετικό"><Input value={form.videoUrl} onChange={(e) => onChange("videoUrl", e.target.value)} placeholder="https://youtube.com/…" className="h-[46px] rounded-xl" /></Field><Field label="Φωτογραφίες" hint="Η πρώτη είναι το εξώφυλλο στη Βιβλιοθήκη"><div className="flex flex-wrap gap-3">{images.map((image, index) => <div key={image.id} className={cn("relative h-[150px] w-[150px] overflow-hidden rounded-[14px] bg-muted", index === 0 && "ring-3 ring-accent ring-inset")}><img src={resolveMediaUrl(image.imageUrl)} alt="" className="h-full w-full object-cover" />{index === 0 && <span className="absolute left-2 top-2 rounded-full bg-accent px-2 py-1 text-[10px] font-extrabold text-accent-foreground">Εξώφυλλο</span>}</div>)}<button type="button" onClick={onPickMedia} className="grid h-[150px] w-[150px] place-items-center gap-1.5 rounded-[14px] border-2 border-dashed border-border bg-muted/40 text-center text-xs font-extrabold text-muted-foreground"><Images className="size-5" />Πρόσθεσε<br />φωτογραφία</button><button type="button" onClick={onUploadClick} disabled={creating} className="grid h-[150px] w-[150px] place-items-center gap-1.5 rounded-[14px] border-2 border-dashed border-border bg-muted/40 text-center text-xs font-extrabold text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"><Upload className="size-5" />Ανέβασε<br />φωτογραφία</button></div></Field><div className="rounded-[14px] bg-muted px-4 py-3 text-xs font-bold">Ο πελάτης θα δει: <span className="ml-2 rounded-full bg-accent px-3 py-1 text-accent-foreground">{form.videoUrl && images.length ? "Βίντεο + φωτογραφίες" : images.length > 1 ? "Slider φωτογραφιών" : images.length ? "Μία φωτογραφία" : "Μόνο βίντεο"}</span></div></FormCard>
-      <FormCard index="3" title="Οδηγίες εκτέλεσης" description="Βήμα βήμα · ο πελάτης τις βλέπει αριθμημένα"><p className="text-[13px] font-extrabold">Οδηγίες</p><div className="space-y-2">{steps.map((step, index) => <div key={`step-${index}`} className="flex items-start gap-3.5 rounded-xl bg-muted px-4 py-2.5"><span className="shrink-0 pt-1 text-[#b5b5b5]">⠿</span><span className="mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-full bg-[#0b0b0b] text-[11px] font-extrabold text-accent">{index + 1}</span><DeferredTextarea value={step} onCommit={(value) => setSteps(steps.map((current, currentIndex) => currentIndex === index ? value : current))} className="min-h-6 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 pl-1 text-sm leading-[1.45] shadow-none focus-visible:ring-0" /><button type="button" onClick={() => setSteps(steps.filter((_, currentIndex) => currentIndex !== index))} aria-label="Διαγραφή βήματος" className="shrink-0 pt-1 text-muted-foreground hover:text-red-600">×</button></div>)}</div><button type="button" onClick={() => setSteps([...steps, ""])} className="flex h-[42px] w-full items-center gap-2 rounded-xl border-[1.5px] border-dashed border-[#d6d6d2] px-4 text-[13px] font-bold text-muted-foreground hover:border-foreground hover:text-foreground"><Plus className="size-4" />Πρόσθεσε βήμα</button><div className="pt-2"><p className="text-[13px] font-extrabold">Συχνά λάθη</p><p className="mt-0.5 text-xs text-muted-foreground">προαιρετικό · εμφανίζονται με κόκκινο θαυμαστικό</p><div className="mt-3 space-y-2">{mistakes.map((mistake, index) => <div key={`mistake-${index}`} className="flex items-center gap-3 rounded-xl bg-red-50 px-4 py-2.5"><span className="shrink-0 text-red-600">⚠</span><DeferredInput value={mistake} onCommit={(value) => setMistakes(mistakes.map((current, currentIndex) => currentIndex === index ? value : current))} className="h-auto min-w-0 flex-1 border-0 bg-transparent p-0 pl-1 text-sm shadow-none focus-visible:ring-0" /><button type="button" onClick={() => setMistakes(mistakes.filter((_, currentIndex) => currentIndex !== index))} aria-label="Διαγραφή λάθους" className="shrink-0 text-muted-foreground hover:text-red-600">×</button></div>)}</div><button type="button" onClick={() => setMistakes([...mistakes, ""])} className="mt-3 flex h-[42px] w-full items-center gap-2 rounded-xl border-[1.5px] border-dashed border-[#d6d6d2] px-4 text-[13px] font-bold text-muted-foreground hover:border-foreground hover:text-foreground"><Plus className="size-4" />Πρόσθεσε λάθος</button></div></FormCard>
-    </div><aside className="space-y-5"><Card className="rounded-[20px] border-border bg-card p-5 shadow-none"><div className="flex justify-between"><b>Ετοιμότητα</b><b>{completed} / 4</b></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full bg-accent" style={{ width: `${completed * 25}%` }} /></div><div className="mt-4 space-y-3 text-[13px] font-bold">{["Όνομα & μυϊκή ομάδα", "Εξοπλισμός", "Βίντεο ή φωτογραφία", "Οδηγίες εκτέλεσης"].map((label, index) => <p key={label} className={cn("flex items-center gap-2", ready[index] ? "text-foreground" : "text-muted-foreground")}><span className={cn("grid size-5 place-items-center rounded-full", ready[index] ? "bg-accent text-accent-foreground" : "bg-muted")}>{ready[index] ? "✓" : ""}</span>{label}</p>)}</div></Card><Card className="overflow-hidden rounded-[20px] border-border bg-card p-5 shadow-none"><div className="mb-3 flex justify-between"><b>Όπως το βλέπει ο πελάτης</b><span className="text-[11px] font-extrabold tracking-[1px] text-muted-foreground">LIVE</span></div><div className="overflow-hidden rounded-[26px] border-[7px] border-[#0b0b0b] bg-white"><div className="h-48 bg-muted">{images[0] && <img src={resolveMediaUrl(images[0].imageUrl)} alt="" className="h-full w-full object-cover" />}</div><div className="space-y-2 p-4"><span className="inline-flex rounded-full bg-[var(--sp-lime-soft)] px-2 py-1 text-[11px] font-extrabold">{form.muscleGroup || "Μυϊκή ομάδα"}</span><h2 className="text-lg font-extrabold">{form.name || "Όνομα άσκησης"}</h2>{form.instructions.split("\n").filter(Boolean).slice(0, 3).map((step, index) => <p key={`${step}-${index}`} className="text-xs leading-5"><b>{index + 1}.</b> {step}</p>)}</div></div></Card>{!creating && <Button type="button" variant="outline" onClick={onDelete} disabled={saving} className="h-11 w-full rounded-full border-red-200 text-red-600 hover:border-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/70 dark:hover:bg-red-950/30"><Trash2 className="size-4" />Διαγραφή άσκησης</Button>}</aside></div>
-  </section>;
+  return (
+    <section className="mx-auto w-full max-w-[1180px] pb-24">
+      <div className="mb-[22px] flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="mb-3 flex items-center gap-1 text-[13px] font-extrabold"
+          >
+            <ChevronLeft className="size-4" />
+            Βιβλιοθήκη Ασκήσεων
+          </button>
+          <h1 className="text-[28px] font-extrabold tracking-[-.5px]">
+            {creating ? "Νέα άσκηση" : "Επεξεργασία άσκησης"}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {creating
+              ? "Συμπλήρωσε τα βασικά, πρόσθεσε βίντεο ή φωτογραφίες και οδηγίες."
+              : "Οι αλλαγές ενημερώνουν άμεσα τη Βιβλιοθήκη Ασκήσεων."}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            className="h-[46px] rounded-full px-5 font-extrabold"
+          >
+            Ακύρωση
+          </Button>
+          <Button
+            type="button"
+            onClick={() =>
+              onSave({
+                instructions: stepsRef.current.join("\n"),
+                commonMistakes: mistakesRef.current.join("\n"),
+              })
+            }
+            disabled={saving}
+            className="h-[46px] rounded-full bg-accent px-6 font-extrabold text-accent-foreground hover:bg-accent/85"
+          >
+            {saving ? "Αποθήκευση…" : "Αποθήκευση"}
+          </Button>
+        </div>
+      </div>
+      {message && (
+        <div
+          role="status"
+          className="mb-5 rounded-[14px] border border-border bg-muted px-4 py-3 text-sm font-bold"
+        >
+          {message}
+        </div>
+      )}
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-5">
+          <FormCard
+            index="1"
+            title="Βασικά"
+            description="Όνομα, μυϊκή ομάδα και εξοπλισμός"
+          >
+            <div className="grid gap-[14px] sm:grid-cols-2">
+              <Field label="Όνομα άσκησης" required>
+                <Input
+                  value={form.name}
+                  onChange={(e) => onChange("name", e.target.value)}
+                  className="h-[46px] rounded-xl font-semibold"
+                />
+              </Field>
+              <Field label="Εναλλακτικό όνομα">
+                <Input
+                  placeholder="προαιρετικό · βοηθά στην αναζήτηση"
+                  className="h-[46px] rounded-xl"
+                />
+              </Field>
+            </div>
+            <Field label="Κύρια μυϊκή ομάδα" required>
+              <div className="flex flex-wrap gap-2">
+                {muscles.map((item) => (
+                  <Pill
+                    key={item}
+                    active={form.muscleGroup === item}
+                    onClick={() => onChange("muscleGroup", item)}
+                  >
+                    {item}
+                  </Pill>
+                ))}
+              </div>
+            </Field>
+            <div className="grid gap-[14px] sm:grid-cols-2">
+              <Field label="Εξοπλισμός" required>
+                <Input
+                  value={form.equipment}
+                  onChange={(e) => onChange("equipment", e.target.value)}
+                  placeholder="π.χ. Σωματικό βάρος"
+                  className="h-[46px] rounded-xl"
+                />
+              </Field>
+              <Field label="Επίπεδο">
+                <div className="flex flex-wrap gap-2">
+                  {levels.map((item) => (
+                    <Pill
+                      key={item}
+                      active={form.level === item}
+                      onClick={() => onChange("level", item)}
+                    >
+                      {item}
+                    </Pill>
+                  ))}
+                </div>
+              </Field>
+            </div>
+            <Field label="Τύπος">
+              <div className="flex flex-wrap gap-2">
+                {types.map((item) => (
+                  <Pill
+                    key={item}
+                    active={form.type === item}
+                    onClick={() => onChange("type", item)}
+                  >
+                    {item}
+                  </Pill>
+                ))}
+              </div>
+            </Field>
+          </FormCard>
+          <FormCard
+            index="2"
+            title="Βίντεο & φωτογραφίες"
+            description="Ο πελάτης τα βλέπει στην οθόνη της άσκησης"
+          >
+            <Field label="Βίντεο" hint="Link YouTube ή Vimeo · προαιρετικό">
+              <Input
+                value={form.videoUrl}
+                onChange={(e) => onChange("videoUrl", e.target.value)}
+                placeholder="https://youtube.com/…"
+                className="h-[46px] rounded-xl"
+              />
+            </Field>
+            <Field
+              label="Φωτογραφίες"
+              hint="Η πρώτη είναι το εξώφυλλο στη Βιβλιοθήκη"
+            >
+              <div className="flex flex-wrap gap-3">
+                {images.map((image, index) => (
+                  <div
+                    key={image.id}
+                    draggable={images.length > 1 && !String(image.id).startsWith("local")}
+                    onDragStart={(event) => event.dataTransfer.setData("text/plain", String(image.id))}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      onReorderImages(event.dataTransfer.getData("text/plain"), String(image.id));
+                    }}
+                    className={cn(
+                      "relative h-[150px] w-[150px] overflow-hidden rounded-[14px] bg-muted",
+                      index === 0 && "ring-3 ring-accent ring-inset",
+                      images.length > 1 && "cursor-grab active:cursor-grabbing",
+                    )}
+                  >
+                    <img
+                      src={resolveMediaUrl(image.imageUrl)}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                    {index === 0 && (
+                      <span className="absolute left-2 top-2 rounded-full bg-accent px-2 py-1 text-[10px] font-extrabold text-accent-foreground">
+                        Εξώφυλλο
+                      </span>
+                    )}
+                    {!creating && !String(image.id).startsWith("local") && (
+                      <button
+                        type="button"
+                        onClick={() => onRemoveImage(image)}
+                        disabled={saving}
+                        aria-label="Αφαίρεση φωτογραφίας από την άσκηση"
+                        title="Αφαίρεση από την άσκηση"
+                        className="absolute right-2 top-2 grid size-8 place-items-center rounded-full bg-[#0b0b0b]/90 text-white shadow-sm transition-colors hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <X className="size-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={onPickMedia}
+                  className="grid h-[150px] w-[150px] place-items-center gap-1.5 rounded-[14px] border-2 border-dashed border-border bg-muted/40 text-center text-xs font-extrabold text-muted-foreground"
+                >
+                  <Images className="size-5" />
+                  Πρόσθεσε
+                  <br />
+                  φωτογραφία
+                </button>
+                <button
+                  type="button"
+                  onClick={onUploadClick}
+                  disabled={creating}
+                  className="grid h-[150px] w-[150px] place-items-center gap-1.5 rounded-[14px] border-2 border-dashed border-border bg-muted/40 text-center text-xs font-extrabold text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Upload className="size-5" />
+                  Ανέβασε
+                  <br />
+                  φωτογραφία
+                </button>
+              </div>
+            </Field>
+            <div className="rounded-[14px] bg-muted px-4 py-3 text-xs font-bold">
+              Ο πελάτης θα δει:{" "}
+              <span className="ml-2 rounded-full bg-accent px-3 py-1 text-accent-foreground">
+                {form.videoUrl && images.length
+                  ? "Βίντεο + φωτογραφίες"
+                  : images.length > 1
+                    ? "Slider φωτογραφιών"
+                    : images.length
+                      ? "Μία φωτογραφία"
+                      : "Μόνο βίντεο"}
+              </span>
+            </div>
+          </FormCard>
+          <FormCard
+            index="3"
+            title="Οδηγίες εκτέλεσης"
+            description="Βήμα βήμα · ο πελάτης τις βλέπει αριθμημένα"
+          >
+            <p className="text-[13px] font-extrabold">Οδηγίες</p>
+            <div className="space-y-2">
+              {steps.map((step, index) => (
+                <div
+                  key={`step-${index}`}
+                  className="flex items-start gap-3.5 rounded-xl bg-muted px-4 py-2.5"
+                >
+                  <span className="shrink-0 pt-1 text-[#b5b5b5]">⠿</span>
+                  <span className="mt-0.5 grid size-[22px] shrink-0 place-items-center rounded-full bg-[#0b0b0b] text-[11px] font-extrabold text-accent">
+                    {index + 1}
+                  </span>
+                  <DeferredTextarea
+                    value={step}
+                    onCommit={(value) =>
+                      setSteps(
+                        steps.map((current, currentIndex) =>
+                          currentIndex === index ? value : current,
+                        ),
+                      )
+                    }
+                    className="min-h-6 min-w-0 flex-1 resize-none border-0 bg-transparent p-0 pl-1 text-sm leading-[1.45] shadow-none focus-visible:ring-0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSteps(
+                        steps.filter(
+                          (_, currentIndex) => currentIndex !== index,
+                        ),
+                      )
+                    }
+                    aria-label="Διαγραφή βήματος"
+                    className="shrink-0 pt-1 text-muted-foreground hover:text-red-600"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setSteps([...steps, ""])}
+              className="flex h-[42px] w-full items-center gap-2 rounded-xl border-[1.5px] border-dashed border-[#d6d6d2] px-4 text-[13px] font-bold text-muted-foreground hover:border-foreground hover:text-foreground"
+            >
+              <Plus className="size-4" />
+              Πρόσθεσε βήμα
+            </button>
+            <div className="pt-2">
+              <p className="text-[13px] font-extrabold">Συχνά λάθη</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                προαιρετικό · εμφανίζονται με κόκκινο θαυμαστικό
+              </p>
+              <div className="mt-3 space-y-2">
+                {mistakes.map((mistake, index) => (
+                  <div
+                    key={`mistake-${index}`}
+                    className="flex items-center gap-3 rounded-xl bg-red-50 px-4 py-2.5"
+                  >
+                    <span className="shrink-0 text-red-600">⚠</span>
+                    <DeferredInput
+                      value={mistake}
+                      onCommit={(value) =>
+                        setMistakes(
+                          mistakes.map((current, currentIndex) =>
+                            currentIndex === index ? value : current,
+                          ),
+                        )
+                      }
+                      className="h-auto min-w-0 flex-1 border-0 bg-transparent p-0 pl-1 text-sm shadow-none focus-visible:ring-0"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMistakes(
+                          mistakes.filter(
+                            (_, currentIndex) => currentIndex !== index,
+                          ),
+                        )
+                      }
+                      aria-label="Διαγραφή λάθους"
+                      className="shrink-0 text-muted-foreground hover:text-red-600"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setMistakes([...mistakes, ""])}
+                className="mt-3 flex h-[42px] w-full items-center gap-2 rounded-xl border-[1.5px] border-dashed border-[#d6d6d2] px-4 text-[13px] font-bold text-muted-foreground hover:border-foreground hover:text-foreground"
+              >
+                <Plus className="size-4" />
+                Πρόσθεσε λάθος
+              </button>
+            </div>
+          </FormCard>
+        </div>
+        <aside className="space-y-5">
+          <Card className="rounded-[20px] border-border bg-card p-5 shadow-none">
+            <div className="flex justify-between">
+              <b>Ετοιμότητα</b>
+              <b>{completed} / 4</b>
+            </div>
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full bg-accent"
+                style={{ width: `${completed * 25}%` }}
+              />
+            </div>
+            <div className="mt-4 space-y-3 text-[13px] font-bold">
+              {[
+                "Όνομα & μυϊκή ομάδα",
+                "Εξοπλισμός",
+                "Βίντεο ή φωτογραφία",
+                "Οδηγίες εκτέλεσης",
+              ].map((label, index) => (
+                <p
+                  key={label}
+                  className={cn(
+                    "flex items-center gap-2",
+                    ready[index] ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "grid size-5 place-items-center rounded-full",
+                      ready[index]
+                        ? "bg-accent text-accent-foreground"
+                        : "bg-muted",
+                    )}
+                  >
+                    {ready[index] ? "✓" : ""}
+                  </span>
+                  {label}
+                </p>
+              ))}
+            </div>
+          </Card>
+          <Card className="overflow-hidden rounded-[20px] border-border bg-card p-5 shadow-none">
+            <div className="mb-3 flex justify-between">
+              <b>Όπως το βλέπει ο πελάτης</b>
+              <span className="text-[11px] font-extrabold tracking-[1px] text-muted-foreground">
+                LIVE
+              </span>
+            </div>
+            <div className="overflow-hidden rounded-[26px] border-[7px] border-[#0b0b0b] bg-white">
+              <div className="h-48 bg-muted">
+                {images[0] && (
+                  <img
+                    src={resolveMediaUrl(images[0].imageUrl)}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                )}
+              </div>
+              <div className="space-y-2 p-4">
+                <span className="inline-flex rounded-full bg-[var(--sp-lime-soft)] px-2 py-1 text-[11px] font-extrabold">
+                  {form.muscleGroup || "Μυϊκή ομάδα"}
+                </span>
+                <h2 className="text-lg font-extrabold">
+                  {form.name || "Όνομα άσκησης"}
+                </h2>
+                {form.instructions
+                  .split("\n")
+                  .filter(Boolean)
+                  .slice(0, 3)
+                  .map((step, index) => (
+                    <p key={`${step}-${index}`} className="text-xs leading-5">
+                      <b>{index + 1}.</b> {step}
+                    </p>
+                  ))}
+              </div>
+            </div>
+          </Card>
+          {!creating && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onDelete}
+              disabled={saving}
+              className="h-11 w-full rounded-full border-red-200 text-red-600 hover:border-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900/70 dark:hover:bg-red-950/30"
+            >
+              <Trash2 className="size-4" />
+              Διαγραφή άσκησης
+            </Button>
+          )}
+        </aside>
+      </div>
+    </section>
+  );
 }
-function FormCard({ index, title, description, children }: { index: string; title: string; description: string; children: React.ReactNode }) { return <Card className="rounded-[20px] border-border bg-card p-[22px] shadow-none"><div className="mb-[18px] flex items-center gap-3"><span className="grid size-[30px] place-items-center rounded-full bg-foreground text-[13px] font-extrabold text-accent">{index}</span><div><h2 className="text-[17px] font-extrabold">{title}</h2><p className="text-xs text-muted-foreground">{description}</p></div></div><div className="space-y-[18px]">{children}</div></Card>; }
-function Field({ label, hint, required, children }: { label: string; hint?: string; required?: boolean; children: React.ReactNode }) { return <label className="block text-[13px] font-extrabold">{label} {required && <span className="text-red-600">*</span>}{hint && <small className="ml-1 block pt-0.5 text-xs font-medium text-muted-foreground">{hint}</small>}<span className="mt-2 block">{children}</span></label>; }
-function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) { return <button type="button" onClick={onClick} className={cn("h-[34px] rounded-full px-[14px] text-[13px] font-extrabold", active ? "bg-[#0b0b0b] text-white" : "bg-muted text-[#3a3a3a]")}>{children}</button>; }
+function FormCard({
+  index,
+  title,
+  description,
+  children,
+}: {
+  index: string;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card className="rounded-[20px] border-border bg-card p-[22px] shadow-none">
+      <div className="mb-[18px] flex items-center gap-3">
+        <span className="grid size-[30px] place-items-center rounded-full bg-foreground text-[13px] font-extrabold text-accent">
+          {index}
+        </span>
+        <div>
+          <h2 className="text-[17px] font-extrabold">{title}</h2>
+          <p className="text-xs text-muted-foreground">{description}</p>
+        </div>
+      </div>
+      <div className="space-y-[18px]">{children}</div>
+    </Card>
+  );
+}
+function Field({
+  label,
+  hint,
+  required,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="block text-[13px] font-extrabold">
+      {label} {required && <span className="text-red-600">*</span>}
+      {hint && (
+        <small className="ml-1 block pt-0.5 text-xs font-medium text-muted-foreground">
+          {hint}
+        </small>
+      )}
+      <div className="mt-2">{children}</div>
+    </div>
+  );
+}
+function Pill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "h-[34px] rounded-full px-[14px] text-[13px] font-extrabold",
+        active ? "bg-[#0b0b0b] text-white" : "bg-muted text-[#3a3a3a]",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
 
-function DeferredTextarea({ value: initialValue, onCommit, className }: { value: string; onCommit: (value: string) => void; className?: string }) {
+function DeferredTextarea({
+  value: initialValue,
+  onCommit,
+  className,
+}: {
+  value: string;
+  onCommit: (value: string) => void;
+  className?: string;
+}) {
   const [value, setValue] = useState(initialValue);
   useEffect(() => setValue(initialValue), [initialValue]);
-  return <Textarea value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => onCommit(value)} className={className} />;
+  return (
+    <Textarea
+      value={value}
+      onChange={(event) => setValue(event.target.value)}
+      onBlur={() => onCommit(value)}
+      className={className}
+    />
+  );
 }
 
-function DeferredInput({ value: initialValue, onCommit, className }: { value: string; onCommit: (value: string) => void; className?: string }) {
+function DeferredInput({
+  value: initialValue,
+  onCommit,
+  className,
+}: {
+  value: string;
+  onCommit: (value: string) => void;
+  className?: string;
+}) {
   const [value, setValue] = useState(initialValue);
   useEffect(() => setValue(initialValue), [initialValue]);
-  return <Input value={value} onChange={(event) => setValue(event.target.value)} onBlur={() => onCommit(value)} className={className} />;
+  return (
+    <Input
+      value={value}
+      onChange={(event) => setValue(event.target.value)}
+      onBlur={() => onCommit(value)}
+      className={className}
+    />
+  );
 }
 
 function SortableThumb({
@@ -895,7 +1779,14 @@ function SortableThumb({
   deleteDisabled: boolean;
   onDelete: () => void;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
     id: String(image.id),
     disabled: dragDisabled,
   });
@@ -912,8 +1803,17 @@ function SortableThumb({
       )}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={resolveMediaUrl(image.imageUrl)} alt="" className="h-full w-full object-cover" draggable={false} />
-      {isPrimary && <span className="absolute left-1 top-1 rounded bg-accent px-1.5 py-0.5 text-[9px] font-medium text-accent-foreground">1</span>}
+      <img
+        src={resolveMediaUrl(image.imageUrl)}
+        alt=""
+        className="h-full w-full object-cover"
+        draggable={false}
+      />
+      {isPrimary && (
+        <span className="absolute left-1 top-1 rounded bg-accent px-1.5 py-0.5 text-[9px] font-medium text-accent-foreground">
+          1
+        </span>
+      )}
       <button
         type="button"
         onClick={onDelete}
@@ -928,7 +1828,13 @@ function SortableThumb({
   );
 }
 
-function AddImageTile({ onPickLibrary, onPickUpload }: { onPickLibrary: () => void; onPickUpload: () => void }) {
+function AddImageTile({
+  onPickLibrary,
+  onPickUpload,
+}: {
+  onPickLibrary: () => void;
+  onPickUpload: () => void;
+}) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -944,8 +1850,12 @@ function AddImageTile({ onPickLibrary, onPickUpload }: { onPickLibrary: () => vo
         }
       />
       <DropdownMenuContent align="start">
-        <DropdownMenuItem onClick={onPickLibrary}>📁 Από Media Library</DropdownMenuItem>
-        <DropdownMenuItem onClick={onPickUpload}>💻 Από τον υπολογιστή</DropdownMenuItem>
+        <DropdownMenuItem onClick={onPickLibrary}>
+          📁 Από Media Library
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onPickUpload}>
+          💻 Από τον υπολογιστή
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -965,7 +1875,9 @@ function EditInput({
   return (
     <Label className="block">
       <span className="w-full">
-        <span className="block text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
+        <span className="block text-xs font-medium text-slate-500 dark:text-slate-400">
+          {label}
+        </span>
         <Input
           type={type}
           value={value}
@@ -988,15 +1900,23 @@ function EditSelect({
   onChange: (value: string) => void;
   options: string[];
 }) {
-  const selectOptions = value && !options.includes(value) ? [value, ...options] : options;
+  const selectOptions =
+    value && !options.includes(value) ? [value, ...options] : options;
 
   return (
     <label className="block">
-      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">{label}</span>
+      <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+        {label}
+      </span>
       <Select
-        items={[{ value: UNSET_VALUE, label: "Επιλογή" }, ...selectOptions.map((option) => ({ value: option, label: option }))]}
+        items={[
+          { value: UNSET_VALUE, label: "Επιλογή" },
+          ...selectOptions.map((option) => ({ value: option, label: option })),
+        ]}
         value={value || UNSET_VALUE}
-        onValueChange={(next: string | null) => onChange(!next || next === UNSET_VALUE ? "" : next)}
+        onValueChange={(next: string | null) =>
+          onChange(!next || next === UNSET_VALUE ? "" : next)
+        }
       >
         <SelectTrigger className="mt-1 h-9 w-full focus-visible:border-red-300">
           <SelectValue placeholder="Επιλογή" />
@@ -1019,7 +1939,11 @@ function PickerImage({ asset }: { asset: MediaAsset }) {
   const src = resolveMediaUrl(asset.url);
 
   if (!src || failed) {
-    return <div className="grid h-full place-items-center bg-slate-900 p-3 text-center text-xs font-bold text-white">{asset.title}</div>;
+    return (
+      <div className="grid h-full place-items-center bg-slate-900 p-3 text-center text-xs font-bold text-white">
+        {asset.title}
+      </div>
+    );
   }
 
   return (
@@ -1039,7 +1963,9 @@ function StatBox({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="rounded-lg bg-slate-50 px-3 py-2.5 dark:bg-slate-900">
       <div className="text-xs text-slate-500 dark:text-slate-400">{label}</div>
-      <div className="mt-0.5 truncate text-sm font-medium dark:text-slate-50">{value}</div>
+      <div className="mt-0.5 truncate text-sm font-medium dark:text-slate-50">
+        {value}
+      </div>
     </div>
   );
 }
@@ -1059,7 +1985,8 @@ function VideoEmbed({ url }: { url?: string }) {
   if (!embedUrl) {
     return (
       <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-400">
-        Το link αποθηκεύεται, αλλά δεν υποστηρίζεται embed preview για αυτόν τον τύπο URL.
+        Το link αποθηκεύεται, αλλά δεν υποστηρίζεται embed preview για αυτόν τον
+        τύπο URL.
       </div>
     );
   }
@@ -1077,29 +2004,13 @@ function VideoEmbed({ url }: { url?: string }) {
   );
 }
 
-function getVideoEmbedUrl(url?: string): string {
-  if (!url) return "";
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname.includes("youtube.com")) {
-      const id = parsed.searchParams.get("v") || parsed.pathname.split("/").filter(Boolean).pop();
-      return id ? `https://www.youtube.com/embed/${id}` : "";
-    }
-    if (parsed.hostname.includes("youtu.be")) {
-      const id = parsed.pathname.split("/").filter(Boolean)[0];
-      return id ? `https://www.youtube.com/embed/${id}` : "";
-    }
-    if (parsed.hostname.includes("vimeo.com")) {
-      const id = parsed.pathname.split("/").filter(Boolean).pop();
-      return id ? `https://player.vimeo.com/video/${id}` : "";
-    }
-    return parsed.pathname.includes("/embed/") ? url : "";
-  } catch {
-    return "";
-  }
-}
-
-export default function ExerciseFormPage({ exerciseId, forceEdit = false }: { exerciseId: string | null; forceEdit?: boolean }) {
+export default function ExerciseFormPage({
+  exerciseId,
+  forceEdit = false,
+}: {
+  exerciseId: string | null;
+  forceEdit?: boolean;
+}) {
   return (
     <ProtectedRoute>
       <ExerciseFormContent exerciseId={exerciseId} forceEdit={forceEdit} />

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { FolderOpen, ImageOff, PanelLeftClose, PanelLeftOpen, Search } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { FolderOpen, ImageOff, PanelLeftClose, PanelLeftOpen, Search, Upload } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { MediaFolderTree, type MediaFolder } from "@/components/shared/media-folder-tree";
@@ -41,11 +41,13 @@ export function MediaLibraryPickerDialog({
   onOpenChange,
   onSelect,
   title = "Επιλογή από Media Library",
+  scope = "all",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelect: (url: string) => void;
   title?: string;
+  scope?: "all" | "exercise";
 }) {
   const [loading, setLoading] = useState(true);
   const [folders, setFolders] = useState<MediaFolder[]>([]);
@@ -54,11 +56,13 @@ export function MediaLibraryPickerDialog({
   const [foldersVisible, setFoldersVisible] = useState(false);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    Promise.all([api.get<RawMediaItem[]>("/media"), api.get<MediaFolder[]>("/media/folders")])
+    Promise.all([api.get<RawMediaItem[]>(scope === "exercise" ? "/media?scope=exercise" : "/media"), api.get<MediaFolder[]>("/media/folders")])
       .then(([media, folderRows]) => {
         setAssets(
           media.filter(isPickablePhoto).map((item) => ({
@@ -75,7 +79,7 @@ export function MediaLibraryPickerDialog({
         setFolders([]);
       })
       .finally(() => setLoading(false));
-  }, [open]);
+  }, [open, scope]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => setDebouncedSearch(search), 300);
@@ -107,6 +111,29 @@ export function MediaLibraryPickerDialog({
     if (selectedFolderId === folder.id) setSelectedFolderId(folder.parentId);
   };
 
+  const uploadPhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !file.type.startsWith("image/")) {
+      event.target.value = "";
+      return;
+    }
+    setUploading(true);
+    try {
+      const data = new FormData();
+      data.append("file", file);
+      data.append("title", file.name.replace(/\.[^.]+$/, "") || "Φωτογραφία");
+      data.append("assetType", "photo");
+      if (selectedFolderId !== null) data.append("folderId", String(selectedFolderId));
+      const uploaded = await api.upload<PhotoAsset>("/media/upload", data);
+      setAssets((current) => [uploaded, ...current]);
+      onSelect(uploaded.url);
+      onOpenChange(false);
+    } finally {
+      setUploading(false);
+      event.target.value = "";
+    }
+  };
+
   const filteredAssets = useMemo(() => {
     return assets.filter((asset) => {
       const matchesFolder = selectedFolderId === null || asset.folderId === selectedFolderId;
@@ -123,9 +150,13 @@ export function MediaLibraryPickerDialog({
       <DialogContent className="flex h-[100dvh] w-[100vw] max-w-none flex-col gap-0 overflow-hidden rounded-none border-0 bg-card p-0 shadow-none sm:max-w-none">
         <DialogHeader className="flex-row items-center justify-between gap-4 border-b border-border px-5 py-4 sm:px-7 sm:py-5">
           <div className="min-w-0"><DialogTitle className="text-[18px] font-extrabold sm:text-[20px]">{title}</DialogTitle><DialogDescription className="mt-1 text-xs sm:text-sm">Μόνο φωτογραφίες εμφανίζονται εδώ — άλλα αρχεία (π.χ. PDF) αποκλείονται.</DialogDescription></div>
+          <div className="flex shrink-0 gap-2">
+            <input ref={uploadInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => void uploadPhoto(event)} />
+            <button type="button" disabled={uploading} onClick={() => uploadInputRef.current?.click()} className="inline-flex h-10 items-center gap-2 rounded-xl bg-foreground px-3 text-[12px] font-extrabold text-background hover:bg-foreground/90 disabled:opacity-60"><Upload className="size-4" /><span className="hidden sm:inline">{uploading ? "Ανέβασμα…" : "Ανέβασε φωτογραφία"}</span></button>
           <button type="button" onClick={() => setFoldersVisible((visible) => !visible)} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-border bg-muted/40 px-3 text-[12px] font-extrabold text-foreground hover:bg-muted" aria-expanded={foldersVisible}>
             {foldersVisible ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}<span className="hidden sm:inline">Φάκελοι</span><FolderOpen className="size-4 sm:hidden" />
           </button>
+          </div>
         </DialogHeader>
         <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
           <div className={cn("shrink-0 overflow-y-auto border-border bg-muted/20", foldersVisible ? "max-h-52 w-full border-b sm:max-h-none sm:w-64 sm:border-b-0 sm:border-r" : "hidden")}>
