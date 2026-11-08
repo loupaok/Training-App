@@ -1757,7 +1757,7 @@ router.post('/me/billing/:paymentId/stripe-checkout', authorizeRole(['client']),
   const connection = await pool.getConnection();
   try {
     const [rows] = await connection.query(
-      `SELECT p.id, p.amount, p.currency, p.status, p.method, s.plan_name, u.email
+      `SELECT p.id, p.amount, p.currency, p.status, p.method, s.plan_name, u.email, u.status AS user_status
        FROM payments p JOIN subscriptions s ON s.id = p.subscription_id
        JOIN users u ON u.id = p.client_id
        WHERE p.id = ? AND p.client_id = ? LIMIT 1`,
@@ -1765,10 +1765,11 @@ router.post('/me/billing/:paymentId/stripe-checkout', authorizeRole(['client']),
     );
     const payment = rows[0];
     if (!payment || payment.status !== 'pending' || payment.method !== 'stripe') return res.status(400).json({ message: 'Η πληρωμή δεν είναι διαθέσιμη για Stripe Checkout.' });
+    const returnUrl = payment.user_status === 'pending_payment' ? `${paymentFrontendUrl()}/client/pending` : `${paymentFrontendUrl()}/client-billing`;
     const params = new URLSearchParams({
       mode: 'payment',
-      success_url: `${paymentFrontendUrl()}/client-billing?stripe_payment_id=${payment.id}&stripe_session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${paymentFrontendUrl()}/client-billing?payment=cancelled&payment_id=${payment.id}`,
+      success_url: `${returnUrl}?stripe_payment_id=${payment.id}&stripe_session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${returnUrl}?payment=cancelled&payment_id=${payment.id}`,
       client_reference_id: `${payment.id}:${req.user.id}`,
       customer_email: payment.email || '',
       'line_items[0][price_data][currency]': String(payment.currency || 'EUR').toLowerCase(),
@@ -1911,16 +1912,18 @@ router.post('/me/billing/:paymentId/paypal-order', authorizeRole(['client']), as
   const connection = await pool.getConnection();
   try {
     const [rows] = await connection.query(
-      `SELECT p.id, p.amount, p.currency, p.status, p.method, s.plan_name
+      `SELECT p.id, p.amount, p.currency, p.status, p.method, s.plan_name, u.status AS user_status
        FROM payments p JOIN subscriptions s ON s.id = p.subscription_id
+       JOIN users u ON u.id = p.client_id
        WHERE p.id = ? AND p.client_id = ? LIMIT 1`, [paymentId, req.user.id]
     );
     const payment = rows[0];
     if (!payment || payment.status !== 'pending' || payment.method !== 'paypal') return res.status(400).json({ message: 'Η πληρωμή δεν είναι διαθέσιμη για PayPal.' });
     const { baseUrl, accessToken } = await getPayPalAccessToken();
+    const returnUrl = payment.user_status === 'pending_payment' ? `${paymentFrontendUrl()}/client/pending` : `${paymentFrontendUrl()}/client-billing`;
     const response = await fetch(`${baseUrl}/v2/checkout/orders`, {
       method: 'POST', headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'PayPal-Request-Id': `payment-${payment.id}` },
-      body: JSON.stringify({ intent: 'CAPTURE', purchase_units: [{ reference_id: String(payment.id), description: payment.plan_name, amount: { currency_code: String(payment.currency || 'EUR').toUpperCase(), value: Number(payment.amount).toFixed(2) } }], application_context: { return_url: `${paymentFrontendUrl()}/client-billing?paypal_payment_id=${payment.id}`, cancel_url: `${paymentFrontendUrl()}/client-billing?payment=cancelled&payment_id=${payment.id}`, user_action: 'PAY_NOW' } }),
+      body: JSON.stringify({ intent: 'CAPTURE', purchase_units: [{ reference_id: String(payment.id), description: payment.plan_name, amount: { currency_code: String(payment.currency || 'EUR').toUpperCase(), value: Number(payment.amount).toFixed(2) } }], application_context: { return_url: `${returnUrl}?paypal_payment_id=${payment.id}`, cancel_url: `${returnUrl}?payment=cancelled&payment_id=${payment.id}`, user_action: 'PAY_NOW' } }),
     });
     const order = await response.json();
     const approvalUrl = order.links?.find((link) => link.rel === 'approve')?.href;
@@ -1986,11 +1989,12 @@ router.post('/me/billing-proof', authorizeRole(['client']), (req, res, next) => 
       return res.status(404).json({ message: 'No pending bank transfer payment found' });
     }
 
+    const clientNote = String(req.body?.note || '').trim().slice(0, 500);
     await connection.query(
       `UPDATE payments
-       SET proof_url = ?, proof_uploaded_at = NOW(), notes = CONCAT(COALESCE(notes, ''), '\nΑνέβηκε αποδεικτικό πληρωμής.')
+       SET proof_url = ?, proof_uploaded_at = NOW(), notes = CONCAT(COALESCE(notes, ''), ?, '\nΑνέβηκε αποδεικτικό πληρωμής.')
        WHERE id = ?`,
-      [proofUrl, payments[0].id]
+      [proofUrl, clientNote ? `\nΣημείωση πελάτη: ${clientNote}` : '', payments[0].id]
     );
 
     const [[clientUser]] = await connection.query(

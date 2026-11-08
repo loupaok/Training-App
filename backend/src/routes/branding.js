@@ -42,7 +42,8 @@ export async function ensureBrandingSchema(connection) {
       ADD COLUMN IF NOT EXISTS eshop_banner_accent_text VARCHAR(100) NULL,
       ADD COLUMN IF NOT EXISTS eshop_banner_text VARCHAR(255) NULL,
       ADD COLUMN IF NOT EXISTS eshop_button_text VARCHAR(100) NULL,
-      ADD COLUMN IF NOT EXISTS eshop_banner_image_url VARCHAR(255) NULL
+      ADD COLUMN IF NOT EXISTS eshop_banner_image_url VARCHAR(255) NULL,
+      ADD COLUMN IF NOT EXISTS support_email VARCHAR(255) NULL
   `);
 }
 
@@ -66,6 +67,7 @@ function normalizeBranding(row) {
     eshopBannerText: row.eshop_banner_text,
     eshopButtonText: row.eshop_button_text || 'Πήγαινε στο eshop',
     eshopBannerImageUrl: row.eshop_banner_image_url,
+    supportEmail: row.support_email,
   };
 }
 
@@ -165,6 +167,7 @@ router.put('/', authenticateToken, authorizeRole(['coach']), [
   body('eshopBannerAccentText').optional({ nullable: true }).isString().isLength({ max: 100 }),
   body('eshopBannerText').optional({ nullable: true }).isString().isLength({ max: 255 }),
   body('eshopButtonText').optional({ nullable: true }).isString().isLength({ max: 100 }),
+  body('supportEmail').optional({ nullable: true }).isEmail().normalizeEmail(),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -178,7 +181,7 @@ router.put('/', authenticateToken, authorizeRole(['coach']), [
        SET app_name = ?, primary_color = ?, font_color = ?, title_color = ?,
            button_color = ?, button_hover_color = ?, button_text_color = ?,
            eshop_enabled = ?, eshop_url = ?, eshop_banner_title = ?, eshop_banner_accent_text = ?,
-           eshop_banner_text = ?, eshop_button_text = ?
+           eshop_banner_text = ?, eshop_button_text = ?, support_email = ?
        WHERE id = 1`,
       [
         req.body.appName,
@@ -194,6 +197,7 @@ router.put('/', authenticateToken, authorizeRole(['coach']), [
         req.body.eshopBannerAccentText || null,
         req.body.eshopBannerText || null,
         req.body.eshopButtonText || 'Πήγαινε στο eshop',
+        req.body.supportEmail || null,
       ]
     );
     res.json(await getBranding(connection));

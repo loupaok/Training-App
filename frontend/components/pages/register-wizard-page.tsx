@@ -7,11 +7,13 @@ import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
+  Camera,
   CalendarDays,
   CheckCircle2,
   CircleHelp,
   ClipboardCheck,
   Clock,
+  Copy,
   CreditCard,
   Dumbbell,
   FileText,
@@ -114,6 +116,25 @@ interface BankDetails {
   supportPhone: string;
 }
 
+interface PaymentBankAccount {
+  bankName: string;
+  accountHolder: string;
+  iban: string;
+  isDefault: boolean;
+  isVisible: boolean;
+  sortOrder: number;
+}
+
+interface PaymentOptions {
+  bankTransferEnabled: boolean;
+  cashEnabled: boolean;
+  stripeEnabled: boolean;
+  paypalEnabled: boolean;
+  bankAccounts?: PaymentBankAccount[];
+}
+
+type RegistrationPaymentMethod = "bank" | "stripe" | "paypal" | "cash";
+
 interface AccountForm {
   firstName: string;
   lastName: string;
@@ -135,6 +156,8 @@ interface BodyGoalForm {
 type RegisterResponse = {
   success: boolean;
   clientId: number;
+  paymentId: number;
+  paymentMethod: RegistrationPaymentMethod;
   user: AuthUser;
   redirectTo: string;
 };
@@ -149,7 +172,7 @@ type RegistrationProgress = {
     answers?: Record<number, AnswerValue>;
     selectedPlanId?: number | string | null;
     selectedDurationMonths?: number;
-    paymentMethod?: "bank" | "stripe";
+    paymentMethod?: RegistrationPaymentMethod;
   };
   files: { id: number; file_url: string; file_type: "photo" | "pdf"; original_name: string }[];
 };
@@ -186,6 +209,8 @@ const genderOptions = [
 ];
 
 type AnswerValue = string | string[] | Record<string, string>;
+type ProgressPhotoAngle = "front" | "side" | "back";
+type IntakePhoto = { file: File; angle: ProgressPhotoAngle };
 
 function isAnswerEmpty(value: AnswerValue | undefined): boolean {
   if (value === undefined) return true;
@@ -275,10 +300,11 @@ function RegisterWizardContent() {
   const [selectedPlanId, setSelectedPlanId] = useState<number | string | null>(null);
   const [selectedDurationMonths, setSelectedDurationMonths] = useState(1);
 
-  const [paymentMethod, setPaymentMethod] = useState<"bank" | "stripe">("bank");
+  const [paymentMethod, setPaymentMethod] = useState<RegistrationPaymentMethod>("bank");
+  const [paymentOptions, setPaymentOptions] = useState<PaymentOptions>({ bankTransferEnabled: true, cashEnabled: false, stripeEnabled: false, paypalEnabled: false });
   const [bankDetails, setBankDetails] = useState<BankDetails | null>(null);
 
-  const [intakePhotos, setIntakePhotos] = useState<File[]>([]);
+  const [intakePhotos, setIntakePhotos] = useState<IntakePhoto[]>([]);
   const [intakePdf, setIntakePdf] = useState<File | null>(null);
   const [filesError, setFilesError] = useState("");
 
@@ -333,6 +359,16 @@ function RegisterWizardContent() {
       .catch(() => {});
 
     api.get<BankDetails>("/bank-details").then(setBankDetails).catch(() => {});
+    api.get<PaymentOptions>("/pricing-plans/payment-options").then((options) => {
+      setPaymentOptions(options);
+      const available: RegistrationPaymentMethod[] = [
+        options.stripeEnabled ? "stripe" : null,
+        options.paypalEnabled ? "paypal" : null,
+        options.bankTransferEnabled ? "bank" : null,
+        options.cashEnabled ? "cash" : null,
+      ].filter((value): value is RegistrationPaymentMethod => Boolean(value));
+      if (available.length) setPaymentMethod((current) => available.includes(current) ? current : available[0]);
+    }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -408,7 +444,7 @@ function RegisterWizardContent() {
   const updateBodyGoal = (name: keyof BodyGoalForm, value: string) => setBodyGoal((current) => ({ ...current, [name]: value }));
   const updateAnswer = (id: number, value: AnswerValue) => setAnswers((current) => ({ ...current, [id]: value }));
 
-  const addIntakePhotos = (files: FileList | File[]) => {
+  const addIntakePhotos = (files: FileList | File[], angle: ProgressPhotoAngle) => {
     setFilesError("");
     const incoming = Array.from(files);
     const oversized = incoming.find((file) => file.size > MAX_PHOTO_SIZE_MB * 1024 * 1024);
@@ -416,13 +452,12 @@ function RegisterWizardContent() {
       setFilesError(`Η φωτογραφία "${oversized.name}" ξεπερνά τα ${MAX_PHOTO_SIZE_MB}MB.`);
       return;
     }
+    const [firstFile] = incoming;
+    if (!firstFile) return;
     setIntakePhotos((current) => {
-      const combined = [...current, ...incoming];
-      if (combined.length > MAX_INTAKE_PHOTOS) {
-        setFilesError(`Μπορείς να ανεβάσεις μέχρι ${MAX_INTAKE_PHOTOS} φωτογραφίες.`);
-        return combined.slice(0, MAX_INTAKE_PHOTOS);
-      }
-      return combined;
+      const existing = current.findIndex((photo) => photo.angle === angle);
+      if (existing === -1) return [...current, { file: firstFile, angle }];
+      return current.map((photo, index) => index === existing ? { file: firstFile, angle } : photo);
     });
   };
 
@@ -590,14 +625,29 @@ function RegisterWizardContent() {
     formData.append("payment_method", paymentMethod);
     formData.append("privacyConsent", "true");
     formData.append("answers", JSON.stringify(answersPayload));
-    intakePhotos.forEach((file) => formData.append("photos", file));
+    intakePhotos.forEach(({ file }) => formData.append("photos", file));
     if (intakePdf) formData.append("pdf", intakePdf);
 
     try {
       const result = await api.upload<RegisterResponse>("/register", formData);
       justCompletedRegistration.current = true;
       const loginResult = await login(account.email, account.password);
-      if (loginResult.success) updateUser(result.user);
+      if (!loginResult.success) {
+        throw new Error("Ο λογαριασμός δημιουργήθηκε, αλλά χρειάζεται σύνδεση για να συνεχίσεις στην πληρωμή.");
+      }
+      updateUser(result.user);
+
+      // Reuse the secure hosted checkout flow used in Συνδρομή & Πληρωμές.
+      // The amount and the payment row were created server-side from the plan.
+      if (paymentMethod === "stripe" || paymentMethod === "paypal") {
+        const endpoint = paymentMethod === "stripe"
+          ? `/clients/me/billing/${result.paymentId}/stripe-checkout`
+          : `/clients/me/billing/${result.paymentId}/paypal-order`;
+        const checkout = await api.post<{ checkoutUrl: string }>(endpoint, {});
+        if (!checkout.checkoutUrl) throw new Error("Δεν ήταν δυνατή η έναρξη της ασφαλούς πληρωμής.");
+        window.location.assign(checkout.checkoutUrl);
+        return;
+      }
 
       setStepError("");
       window.sessionStorage.removeItem("register-onboarding-started");
@@ -611,7 +661,7 @@ function RegisterWizardContent() {
   };
 
   if (stepIndex === steps.length) {
-    return <SuccessScreen appName={branding.appName} onContinue={() => router.push("/client-dashboard")} />;
+    return <SuccessScreen appName={branding.appName} paymentMethod={paymentMethod} selectedPlan={selectedPlan} onContinue={() => router.push("/client/pending")} />;
   }
 
   if (showIntro) {
@@ -620,22 +670,22 @@ function RegisterWizardContent() {
 
   return (
     <div className="min-h-screen bg-[#f4f4f2] text-foreground dark:bg-background">
-      <div className="min-h-screen lg:grid lg:grid-cols-[260px_minmax(0,1fr)_320px]">
-        <RegistrationSidebar activeIndex={stepIndex} appName={branding.appName} logoUrl={branding.logoUrl} />
+      <div className={`min-h-screen lg:grid ${stepIndex >= 4 ? "lg:grid-cols-[290px_minmax(0,1fr)]" : "lg:grid-cols-[290px_minmax(0,1fr)_320px]"}`}>
+        <RegistrationSidebar activeIndex={stepIndex} appName={branding.appName} logoUrl={branding.logoUrl} supportEmail={branding.supportEmail} />
 
         <main className="min-w-0 bg-[#f4f4f2] px-4 py-5 sm:px-8 lg:px-10 lg:py-12 dark:bg-background">
-          <div className={`mx-auto ${stepIndex === 4 ? "max-w-6xl" : "max-w-3xl"}`}>
-            <MobileRegistrationHeader appName={branding.appName} logoUrl={branding.logoUrl} />
-            <header className={`mb-5 rounded-xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 ${stepIndex === 4 ? "hidden" : ""}`}>
-              <div className="flex items-center justify-between gap-4 text-sm text-slate-500">
+          <div className={`mx-auto ${stepIndex >= 4 ? "max-w-6xl" : "max-w-3xl"}`}>
+            <MobileRegistrationHeader appName={branding.appName} logoUrl={branding.logoUrl} activeIndex={stepIndex} />
+            <header className={`mb-5 rounded-[20px] border border-border bg-card p-6 shadow-none sm:p-8 ${stepIndex >= 4 ? "hidden" : ""}`}>
+              <div className="flex items-center justify-between gap-4 text-sm text-muted-foreground">
                 <span>Βήμα {stepIndex + 1} από {steps.length}</span>
                 <span>Περίπου 5 λεπτά</span>
               </div>
-              <h1 className="mt-4 text-3xl font-bold text-slate-900">{stepContent[stepIndex].title}</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-green-700">{stepContent[stepIndex].subtitle}</p>
+              <h1 className="mt-4 text-3xl font-extrabold text-foreground">{stepContent[stepIndex].title}</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{stepContent[stepIndex].subtitle}</p>
               <div className="mt-5 flex items-center gap-4">
-                <Progress value={((stepIndex + 1) / steps.length) * 100} className="h-1.5 flex-1 [&_[data-slot=progress-track]]:bg-slate-200 [&_[data-slot=progress-indicator]]:bg-[#16a34a]" />
-                <span className="text-sm font-medium text-slate-600">{Math.round(((stepIndex + 1) / steps.length) * 100)}%</span>
+                <Progress value={((stepIndex + 1) / steps.length) * 100} className="h-1.5 flex-1 [&_[data-slot=progress-track]]:bg-muted [&_[data-slot=progress-indicator]]:bg-accent" />
+                <span className="text-sm font-medium text-muted-foreground">{Math.round(((stepIndex + 1) / steps.length) * 100)}%</span>
               </div>
             </header>
 
@@ -650,7 +700,7 @@ function RegisterWizardContent() {
               />
             )}
 
-            <form onSubmit={submit} className={`${stepIndex === 4 ? "" : "rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8"} [&_input:focus-visible]:border-green-600 [&_textarea:focus-visible]:border-green-600`}>
+            <form onSubmit={submit} className={`${stepIndex >= 4 ? "" : "rounded-[20px] border border-border bg-card p-5 shadow-none sm:p-8"} [&_input:focus-visible]:border-ring [&_textarea:focus-visible]:border-ring`}>
             {stepIndex === 0 && (
               <AccountStep account={account} updateAccount={updateAccount} emailStatus={emailStatus} confirmPassword={confirmPassword} onConfirmPasswordChange={setConfirmPassword} />
             )}
@@ -679,6 +729,8 @@ function RegisterWizardContent() {
                 onPaymentMethodChange={setPaymentMethod}
                 bankDetails={bankDetails}
                 selectedPlan={selectedPlan}
+                onChangePlan={() => setStepIndex(4)}
+                paymentOptions={paymentOptions}
               />
             )}
             {stepIndex === 6 && (
@@ -692,7 +744,7 @@ function RegisterWizardContent() {
               </label>
             )}
 
-            <div className="mt-8 flex items-center justify-between gap-3 border-t border-slate-200 pt-5">
+            <div className="mt-8 flex items-center justify-between gap-3 border-t border-border pt-5">
               {stepIndex > 0 ? (
                 <Button type="button" variant="outline" className="h-11 px-4 font-semibold" onClick={goBack}>
                   <ArrowLeft className="mr-2 h-4 w-4" /> Πίσω
@@ -712,7 +764,7 @@ function RegisterWizardContent() {
                   </Button>
                 ) : (
                   <Button key="submit" type="submit" disabled={submitting} className="h-12 bg-foreground px-8 font-semibold text-background hover:bg-foreground/90">
-                    {submitting ? "Ολοκλήρωση..." : "Ολοκλήρωση Εγγραφής"}
+                    {submitting ? "Ολοκλήρωση..." : paymentMethod === "stripe" ? "Συνέχεια στη Stripe" : paymentMethod === "paypal" ? "Συνέχεια στο PayPal" : "Ολοκλήρωση εγγραφής"}
                   </Button>
                 )}
               </div>
@@ -727,7 +779,7 @@ function RegisterWizardContent() {
             </p>
           </div>
         </main>
-        <RegistrationAside stepIndex={stepIndex} />
+        {stepIndex < 4 && <RegistrationAside stepIndex={stepIndex} />}
       </div>
     </div>
   );
@@ -742,15 +794,15 @@ function OnboardingIntro({ appName, logoUrl, imageUrl, onStart }: { appName: str
   ];
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 sm:p-6 lg:grid lg:grid-cols-2 lg:p-0">
-      <section className="relative min-h-72 overflow-hidden rounded-xl bg-slate-900 lg:min-h-screen lg:rounded-none">
+    <main className="min-h-screen bg-[#f4f4f2] p-4 sm:p-6 lg:grid lg:grid-cols-2 lg:p-0 dark:bg-background">
+      <section className="relative min-h-72 overflow-hidden rounded-[20px] bg-[#0b0b0b] lg:min-h-screen lg:rounded-none">
         {imageUrl ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img src={resolveMediaUrl(imageUrl)} alt="Fitness coaching" className="absolute inset-0 h-full w-full object-cover" />
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(22,163,74,0.35),transparent_40%),linear-gradient(145deg,#0f172a,#1e293b)]" />
         )}
-        <div className="absolute inset-0 bg-slate-950/45" />
+          <div className="absolute inset-0 bg-[#0b0b0b]/55" />
         <div className="relative flex h-full min-h-72 flex-col justify-between p-6 text-white sm:p-8 lg:p-12">
           <div className="flex items-center gap-3">
             {logoUrl ? (
@@ -759,82 +811,88 @@ function OnboardingIntro({ appName, logoUrl, imageUrl, onStart }: { appName: str
             ) : <span className="text-xl font-bold">{appName}</span>}
           </div>
           <div className="max-w-md">
-            <p className="text-sm font-semibold text-green-300">PERSONAL COACHING</p>
-            <h1 className="mt-4 text-3xl font-bold leading-tight sm:text-4xl">Ξεκίνα το ταξίδι σου με ένα πλάνο φτιαγμένο για εσένα.</h1>
+            <p className="inline-flex rounded-full bg-accent px-3 py-1 text-[11px] font-extrabold tracking-[.8px] text-accent-foreground">CONSISTENCY CREATES RESULTS</p>
+            <h1 className="mt-4 text-3xl font-extrabold leading-tight text-white sm:text-4xl">Ξεκίνα το ταξίδι σου με ένα πλάνο <span className="text-accent">φτιαγμένο για εσένα.</span></h1>
           </div>
         </div>
       </section>
 
-      <section className="flex items-center bg-white px-5 py-10 sm:px-10 lg:px-16 lg:py-16">
+      <section className="flex items-center bg-card px-5 py-10 sm:px-10 lg:px-16 lg:py-16">
         <div className="mx-auto w-full max-w-xl">
-          <p className="text-xs font-semibold tracking-[0.16em] text-green-700">PERSONAL COACHING</p>
-          <h2 className="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">Ας δημιουργήσουμε το πλάνο σου</h2>
-          <p className="mt-5 text-base leading-7 text-slate-600">Για να προσαρμόσουμε την προπόνηση και τη διατροφή σου στις ανάγκες σου, θέλουμε πρώτα να σε γνωρίσουμε λίγο καλύτερα.</p>
-          <p className="mt-3 text-sm leading-6 text-slate-500">Απάντησε σε μερικές σύντομες ερωτήσεις σχετικά με τον στόχο σου, την προπόνηση, τη διατροφή και την καθημερινότητά σου.</p>
+          <p className="text-xs font-extrabold tracking-[.16em] text-foreground">PERSONAL COACHING</p>
+          <h2 className="mt-4 text-3xl font-extrabold text-foreground sm:text-4xl">Ας δημιουργήσουμε το πλάνο σου</h2>
+          <p className="mt-5 text-base leading-7 text-muted-foreground">Για να προσαρμόσουμε την προπόνηση και τη διατροφή σου στις ανάγκες σου, θέλουμε πρώτα να σε γνωρίσουμε λίγο καλύτερα.</p>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">Απάντησε σε μερικές σύντομες ερωτήσεις σχετικά με τον στόχο σου, την προπόνηση, τη διατροφή και την καθημερινότητά σου.</p>
 
-          <div className="mt-8 divide-y divide-slate-200 border-y border-slate-200">
+          <div className="mt-8 divide-y divide-border border-y border-border">
             {sections.map(({ number, title, description, icon: Icon }) => (
               <div key={number} className="flex items-center gap-4 py-4">
-                <span className="w-7 text-sm font-semibold text-green-700">{number}</span>
-                <Icon className="h-5 w-5 text-slate-600" />
-                <div><p className="text-sm font-semibold text-slate-900">{title}</p><p className="mt-0.5 text-sm text-slate-500">{description}</p></div>
+                <span className="w-7 text-sm font-extrabold text-foreground">{number}</span>
+                <span className="grid h-9 w-9 place-items-center rounded-[11px] bg-[var(--sp-lime-soft)]"><Icon className="h-4 w-4 text-foreground" /></span>
+                <div><p className="text-sm font-extrabold text-foreground">{title}</p><p className="mt-0.5 text-sm text-muted-foreground">{description}</p></div>
               </div>
             ))}
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600"><span className="flex items-center gap-2"><Clock className="h-4 w-4 text-green-700" />Περίπου 5 λεπτά</span><span>Μπορείς να επιστρέψεις όποτε είσαι έτοιμος.</span></div>
-          <Button type="button" size="lg" className="mt-8 h-12 w-full bg-[#1a1f2e] font-semibold text-white hover:bg-slate-800 sm:w-auto sm:px-8" onClick={onStart}>Ξεκίνα <ArrowRight className="ml-2 h-4 w-4" /></Button>
-          <p className="mt-5 text-sm text-slate-600">Έχεις ήδη λογαριασμό; <Link href="/login" className="font-semibold text-green-700 hover:underline">Σύνδεση</Link></p>
+          <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground"><span className="flex items-center gap-2"><Clock className="h-4 w-4 text-foreground" />Περίπου 5 λεπτά</span><span>Μπορείς να επιστρέψεις όποτε είσαι έτοιμος.</span></div>
+          <Button type="button" size="lg" className="mt-8 h-12 w-full bg-accent font-extrabold text-accent-foreground hover:bg-accent/85 sm:w-auto sm:px-8" onClick={onStart}>Ξεκίνα <ArrowRight className="ml-2 h-4 w-4" /></Button>
+          <p className="mt-5 text-sm text-muted-foreground">Έχεις ήδη λογαριασμό; <Link href="/login" className="font-extrabold text-foreground hover:underline">Σύνδεση</Link></p>
         </div>
       </section>
     </main>
   );
 }
 
-function MobileRegistrationHeader({ appName, logoUrl }: { appName: string; logoUrl: string | null }) {
+function MobileRegistrationHeader({ appName, logoUrl, activeIndex }: { appName: string; logoUrl: string | null; activeIndex: number }) {
   return (
-    <div className="mb-5 flex items-center justify-between lg:hidden">
+    <div className="-mx-4 mb-5 bg-[#0b0b0b] px-4 py-4 text-white sm:-mx-8 sm:px-8 lg:hidden">
+      <div className="flex items-center justify-between gap-3">
       <div className="flex items-center gap-2.5">
         {logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={resolveMediaUrl(logoUrl)} alt={appName} className="h-8 max-w-28 object-contain" />
-        ) : <span className="text-lg font-bold text-slate-900">{appName}</span>}
+        ) : <span className="text-lg font-extrabold">{appName}</span>}
       </div>
-      <span className="text-xs text-slate-500">Έχεις ήδη λογαριασμό; <Link href="/login" className="font-semibold text-slate-900">Σύνδεση</Link></span>
+      <span className="text-xs text-neutral-300">Βήμα {activeIndex + 1} / {steps.length}</span>
+      </div>
+      <div className="mt-3 flex gap-1.5">{steps.map((step, index) => <span key={step.key} className={`h-1 flex-1 rounded-full ${index <= activeIndex ? "bg-accent" : "bg-[#333333]"}`} />)}</div>
+      <p className="mt-2 text-[11px] text-neutral-400">{steps[activeIndex]?.title} · Επόμενο: {steps[activeIndex + 1]?.title || "Ολοκλήρωση"}</p>
     </div>
   );
 }
 
-function RegistrationSidebar({ activeIndex, appName, logoUrl }: { activeIndex: number; appName: string; logoUrl: string | null }) {
+function RegistrationSidebar({ activeIndex, appName, logoUrl, supportEmail }: { activeIndex: number; appName: string; logoUrl: string | null; supportEmail: string | null }) {
   return (
-    <aside className="hidden min-h-screen flex-col bg-[#0b0b0b] px-4 py-5 text-white lg:flex">
-      <div className="flex items-center gap-3 px-3">
+    <aside className="hidden min-h-screen w-[290px] shrink-0 flex-col gap-[26px] bg-[#0b0b0b] px-[18px] py-[26px] text-white lg:flex">
+      <div className="flex items-center px-[6px]">
         {logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={resolveMediaUrl(logoUrl)} alt={appName} className="h-9 max-w-32 object-contain" />
+          <img src={resolveMediaUrl(logoUrl)} alt={appName} className="h-[26px] max-w-36 object-contain" />
         ) : <span className="text-2xl font-bold">{appName}</span>}
       </div>
-      <nav className="mt-10 space-y-2">
+      <div className="px-[6px]"><div className="flex justify-between text-[12px] font-bold text-[#9a9a9a]"><span>Εγγραφή · Βήμα {activeIndex + 1} από 7</span><span className="text-accent">{Math.round(((activeIndex + 1) / steps.length) * 100)}%</span></div><div className="mt-2 h-[6px] overflow-hidden rounded-full bg-[#262626]"><span className="block h-full rounded-full bg-accent" style={{ width: `${((activeIndex + 1) / steps.length) * 100}%` }} /></div></div>
+      <nav className="space-y-[10px]">
         {steps.map((step, index) => {
           const active = index === activeIndex;
           const complete = index < activeIndex;
           return (
-            <div key={step.key} className={`flex gap-3 rounded-[12px] px-3 py-3 ${active ? "bg-accent text-accent-foreground" : ""}`}>
-              <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-sm font-extrabold ${active || complete ? "bg-accent text-accent-foreground" : "bg-[#262626] text-[#8a8a8a]"}`}>
+            <div key={step.key} className={`relative flex items-center gap-3 rounded-[14px] px-[13px] py-[9px] ${active ? "bg-accent text-accent-foreground" : ""}`}>
+              <span className={`grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full text-[13px] font-extrabold ${active ? "bg-[#0b0b0b] text-accent" : complete ? "bg-accent text-accent-foreground" : "border-[1.5px] border-[#3a3a3a] text-[#8a8a8a]"}`}>
                 {complete ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
               </span>
-              <span className="min-w-0">
-                <span className={`block text-sm ${active ? "font-extrabold text-accent-foreground" : "text-[#c8c8c8]"}`}>{step.title}</span>
-                <span className={`mt-1 block text-xs ${active ? "text-[#0b0b0b]/70" : "text-[#8a8a8a]"}`}>{step.subtitle}</span>
+              <span className="min-w-0 flex flex-col gap-px">
+                <span className={`block text-[14px] font-extrabold ${active ? "text-accent-foreground" : complete ? "text-white" : "text-[#8a8a8a]"}`}>{step.title}</span>
+                <span className={`block text-[11px] ${active ? "text-[#2c3a00]" : complete ? "text-[#8a8a8a]" : "text-[#5a5a5a]"}`}>{step.subtitle}</span>
               </span>
+              {index < steps.length - 1 && <span aria-hidden="true" className={`absolute left-[28px] top-[46px] h-[22px] w-[2px] ${index < activeIndex ? "bg-accent" : "bg-[#2a2a2a]"}`} />}
             </div>
           );
         })}
       </nav>
-      <div className="mt-auto rounded-xl border border-white/10 bg-white/5 p-4">
-        <div className="flex items-center gap-2 text-sm font-semibold"><CircleHelp className="h-4 w-4" /> Έχεις ερωτήσεις;</div>
-        <p className="mt-2 text-xs leading-5 text-[#b5b5b5]">Είμαστε εδώ για να σε βοηθήσουμε.</p>
-        <Button type="button" variant="outline" className="mt-4 w-full border-white/60 bg-transparent text-white hover:bg-white hover:text-[#0b0b0b]"><MessageCircle className="mr-2 h-4 w-4" /> Επικοινωνία</Button>
+      <div className="mt-auto rounded-[16px] bg-[#161616] p-4">
+        <div className="flex items-center gap-2 text-[14px] font-extrabold"><CircleHelp className="h-4 w-4" /> Έχεις ερωτήσεις;</div>
+        <p className="mt-2 text-xs leading-[1.45] text-[#9a9a9a]">Γράψε μας και σου απαντάμε μέσα στη μέρα.</p>
+        {supportEmail ? <a href={`mailto:${supportEmail}`} className="mt-[10px] inline-flex h-10 w-full items-center justify-center rounded-full border border-[#333333] text-[13px] font-extrabold text-white transition-colors hover:bg-white hover:text-[#0b0b0b]"><MessageCircle className="mr-2 h-[15px] w-[15px]" /> Επικοινωνία</a> : <Button type="button" variant="outline" disabled className="mt-[10px] h-10 w-full rounded-full border-[#333333] bg-transparent text-[13px] text-white"><MessageCircle className="mr-2 h-[15px] w-[15px]" /> Επικοινωνία</Button>}
       </div>
     </aside>
   );
@@ -852,21 +910,16 @@ function RegistrationAside({ stepIndex }: { stepIndex: number }) {
   ][stepIndex] || ["Καλώς ήρθες", ""];
 
   return (
-    <aside className="hidden bg-white p-5 xl:block">
+    <aside className="hidden bg-[#f4f4f2] p-5 dark:bg-background xl:block">
       <div className="sticky top-6 space-y-5">
-        <Card className="overflow-hidden border-slate-200 bg-slate-50 shadow-sm">
-          <div className="min-h-52 bg-[linear-gradient(145deg,#dbeafe,#f8fafc_55%,#bbf7d0)] p-6">
-            <p className="text-xl font-medium italic leading-8 text-slate-800">“{content[0]}”</p>
-          </div>
-        </Card>
-        <Card className="border-green-100 bg-green-50 shadow-none">
-          <CardContent className="p-5"><ShieldCheck className="h-6 w-6 text-green-600" /><h2 className="mt-3 text-base font-semibold text-slate-900">Γιατί αυτά τα στοιχεία;</h2><p className="mt-2 text-sm leading-6 text-slate-600">{content[1]}</p></CardContent>
+        <Card className="rounded-[20px] border-border bg-card shadow-none">
+          <CardContent className="p-5"><span className="grid h-10 w-10 place-items-center rounded-[12px] bg-accent text-accent-foreground"><ShieldCheck className="h-5 w-5" /></span><h2 className="mt-3 text-base font-extrabold text-foreground">Γιατί αυτά τα στοιχεία;</h2><p className="mt-2 text-sm leading-6 text-muted-foreground">{content[1]}</p></CardContent>
         </Card>
         <div className="space-y-4 px-1">
-          <h2 className="text-lg font-bold text-slate-900">Τι κερδίζεις</h2>
+          <h2 className="text-lg font-extrabold text-foreground">Τι κερδίζεις</h2>
           {[[Dumbbell, "Εξατομικευμένο πρόγραμμα"], [HeartPulse, "Σωστή διατροφή"], [MessageCircle, "Συνεχής υποστήριξη"], [Target, "Πραγματικά αποτελέσματα"]].map(([Icon, label]) => {
             const BenefitIcon = Icon as typeof Dumbbell;
-            return <div key={label as string} className="flex gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-100"><BenefitIcon className="h-4 w-4 text-slate-700" /></span><div><p className="text-sm font-semibold text-slate-800">{label as string}</p><p className="text-xs leading-5 text-slate-500">Υποστήριξη προσαρμοσμένη στους στόχους σου.</p></div></div>;
+            return <div key={label as string} className="flex gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-muted"><BenefitIcon className="h-4 w-4 text-foreground" /></span><div><p className="text-sm font-extrabold text-foreground">{label as string}</p><p className="text-xs leading-5 text-muted-foreground">Υποστήριξη προσαρμοσμένη στους στόχους σου.</p></div></div>;
           })}
         </div>
       </div>
@@ -874,20 +927,29 @@ function RegistrationAside({ stepIndex }: { stepIndex: number }) {
   );
 }
 
-function SuccessScreen({ appName, onContinue }: { appName: string; onContinue: () => void }) {
+function SuccessScreen({ appName, paymentMethod, selectedPlan, onContinue }: { appName: string; paymentMethod: RegistrationPaymentMethod; selectedPlan: PricingPlan | null; onContinue: () => void }) {
+  const offline = paymentMethod === "bank" || paymentMethod === "cash";
+  const methodLabel = paymentMethod === "cash" ? "μετρητά" : paymentMethod === "bank" ? "τραπεζικό έμβασμα" : paymentMethod === "paypal" ? "PayPal" : "κάρτα";
+  const amount = Number(selectedPlan?.price || 0).toLocaleString("el-GR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return (
-    <main className="grid min-h-screen place-items-center bg-slate-100 p-5">
-      <Card className="w-full max-w-lg border-slate-200 bg-white shadow-xl"><CardContent className="p-8 text-center sm:p-12">
-        <span className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-green-100 text-green-600"><CheckCircle2 className="h-11 w-11" /></span>
-        <h1 className="mt-6 text-3xl font-bold text-slate-900">Καλώς ήρθες!</h1>
-        <p className="mt-3 text-sm leading-6 text-slate-600">Η εγγραφή σου στο {appName} ολοκληρώθηκε επιτυχώς.</p>
-        <div className="mt-7 space-y-3 text-left text-sm text-slate-700">
-          {["Έλεγχος email επιβεβαίωσης", "Ο coach θα εξετάσει τα στοιχεία σου", "Θα λάβεις το προσωπικό σου πρόγραμμα"].map((item) => <p key={item} className="flex items-center gap-3"><CheckCircle2 className="h-5 w-5 text-green-600" />{item}</p>)}
+    <main className="grid min-h-screen place-items-center bg-[#f4f4f2] p-5 dark:bg-background">
+      <Card className="w-full max-w-[440px] rounded-[28px] border-border bg-card shadow-[0_30px_80px_rgba(0,0,0,.08)]"><CardContent className="flex flex-col items-center gap-[22px] p-8 text-center sm:px-10 sm:pb-9 sm:pt-10">
+        <span className={`grid h-[84px] w-[84px] place-items-center rounded-full text-foreground ${offline ? "bg-[var(--sp-lime-soft)]" : "bg-accent shadow-[0_0_0_10px_rgba(176,249,12,.22)]"}`}>{offline ? <Clock className="h-[34px] w-[34px]" /> : <CheckCircle2 className="h-[34px] w-[34px]" />}</span>
+        <div><h1 className="text-[28px] font-extrabold tracking-[-.5px] text-foreground">{offline ? "Η εγγραφή σου στάλθηκε!" : "Καλώς ήρθες στην ομάδα!"}</h1><p className="mt-2 text-[15px] leading-6 text-muted-foreground">{offline ? <>Κάνε την πληρωμή <b className="text-foreground">{amount} €</b> με {methodLabel} και η συνδρομή <b className="text-foreground">{selectedPlan?.name || "σου"}</b> ενεργοποιείται μόλις την επιβεβαιώσει ο coach.</> : <>Η πληρωμή ολοκληρώθηκε και η συνδρομή <b className="text-foreground">{selectedPlan?.name || "σου"}</b> είναι ήδη ενεργή.</>}</p></div>
+        <div className="w-full space-y-3 rounded-[18px] bg-muted p-[18px] text-left text-[14px]">
+          <SuccessTimelineRow complete text={offline ? "Η εγγραφή σου ολοκληρώθηκε" : `Η πληρωμή ${amount} € ολοκληρώθηκε`} />
+          <SuccessTimelineRow complete={!offline} text={offline ? `${paymentMethod === "cash" ? "Παράδοση μετρητών" : "Κατάθεση"} με αιτιολογία που θα δεις στην αρχική` : "Ο coach ετοιμάζει το πρόγραμμά σου"} />
+          <SuccessTimelineRow text={offline ? "Έγκριση από τον coach" : "Επιβεβαίωσε το email σου"} />
         </div>
-        <Button className="mt-8 h-12 w-full bg-[#1a1f2e] text-white hover:bg-slate-800" onClick={onContinue}>Μετάβαση στον λογαριασμό μου <ArrowRight className="ml-2 h-4 w-4" /></Button>
+        <p className="text-[12px] leading-5 text-muted-foreground">Στείλαμε email επιβεβαίωσης στη διεύθυνσή σου. Πάτησε τον σύνδεσμο για να την επιβεβαιώσεις.</p>
+        <Button className={`h-[52px] w-full rounded-full font-extrabold ${offline ? "bg-foreground text-background hover:bg-foreground/90" : "bg-accent text-accent-foreground hover:bg-accent/85"}`} onClick={onContinue}>{offline ? "Δες την κατάσταση πληρωμής" : "Πάμε στην αρχική"} <ArrowRight className="ml-2 h-4 w-4" /></Button>
       </CardContent></Card>
     </main>
   );
+}
+
+function SuccessTimelineRow({ complete = false, text }: { complete?: boolean; text: string }) {
+  return <p className={`flex items-center gap-3 ${complete ? "text-foreground" : "text-muted-foreground"}`}><span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${complete ? "bg-accent text-accent-foreground" : "border-[1.5px] border-dashed border-border"}`}>{complete && <CheckCircle2 className="h-3.5 w-3.5" />}</span>{text}</p>;
 }
 
 function FormError({ message }: { message: string }) {
@@ -1083,6 +1145,57 @@ function BodyGoalStep({ bodyGoal, updateBodyGoal }: { bodyGoal: BodyGoalForm; up
   );
 }
 
+function RegistrationBankAccounts({ accounts, amount, onCopy }: { accounts: PaymentBankAccount[]; amount: number; onCopy: (value: string) => void }) {
+  return (
+    <div className="flex flex-col gap-[10px]">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[13px] font-extrabold">Στοιχεία κατάθεσης</p>
+        {accounts.length > 1 && <span className="inline-flex h-[26px] items-center rounded-full bg-muted px-2.5 text-[12px] font-extrabold">{accounts.length} λογαριασμοί</span>}
+      </div>
+      <div className="space-y-[10px]">
+        {accounts.map((account, index) => (
+          <div key={`${account.iban}-${index}`} className="rounded-[14px] border border-border bg-muted p-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-[12px] font-extrabold">{account.bankName || "Τραπεζικός λογαριασμός"}</p>
+              {index === 0 && <span className="rounded-full bg-card px-2 py-1 text-[10px] font-extrabold text-muted-foreground">Προτεινόμενος</span>}
+            </div>
+            <div className="grid gap-[10px] sm:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
+              <RegistrationBankValue label="Δικαιούχος" value={account.accountHolder} onCopy={onCopy} />
+              <RegistrationBankValue label="IBAN" value={account.iban} onCopy={onCopy} mono />
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="text-[13px] text-muted-foreground">Στην αιτιολογία γράψε <b className="text-foreground">ονοματεπώνυμο + πλάνο</b> · ποσό {amount.toLocaleString("el-GR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €.</p>
+    </div>
+  );
+}
+
+function RegistrationBankValue({ label, value, onCopy, mono = false }: { label: string; value: string; onCopy: (value: string) => void; mono?: boolean }) {
+  return (
+    <div className="flex min-w-0 items-center gap-[10px] rounded-[12px] bg-card px-[14px] py-3">
+      <div className="min-w-0 flex-1"><p className="text-[11px] text-muted-foreground">{label}</p><p className={`truncate text-[14px] font-extrabold ${mono ? "tracking-[.3px] tabular-nums" : ""}`}>{value || "—"}</p></div>
+      {value && <button type="button" aria-label={`Αντιγραφή ${label}`} onClick={() => onCopy(value)} className="grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[10px] border border-border bg-card transition-colors hover:bg-muted"><Copy className="h-[15px] w-[15px]" /></button>}
+    </div>
+  );
+}
+
+function PaymentActivationInfo({ paymentOptions }: { paymentOptions: PaymentOptions }) {
+  const instantMethods = [paymentOptions.stripeEnabled && "κάρτα (Stripe)", paymentOptions.paypalEnabled && "PayPal"].filter(Boolean) as string[];
+  const instantLabel = instantMethods.length === 2 ? "Κάρτα (Stripe) / PayPal" : instantMethods[0] || "Online πληρωμή";
+  const offlineMethods = [paymentOptions.bankTransferEnabled && "έμβασμα", paymentOptions.cashEnabled && "μετρητά"].filter(Boolean) as string[];
+  const offlineLabel = offlineMethods.length === 2 ? "έμβασμα ή μετρητά" : offlineMethods[0] || "άλλο τρόπο πληρωμής";
+
+  return (
+    <div className="mt-3 space-y-2 text-[13px] leading-5 text-muted-foreground">
+      {instantMethods.length > 0 && <p><b className="text-foreground">{instantLabel}:</b> η πληρωμή επιβεβαιώνεται άμεσα.</p>}
+      {offlineMethods.length > 0 && <p>Με {offlineLabel}, περιμένει πρώτα την επιβεβαίωση του coach.</p>}
+      <p>Έπειτα ο coach αξιολογεί το ερωτηματολόγιό σου και ετοιμάζει το πρόγραμμα προπόνησης και διατροφής.</p>
+      <p className="font-bold text-foreground">Ο λογαριασμός σου ενεργοποιείται μόλις σου σταλούν τα πλάνα.</p>
+    </div>
+  );
+}
+
 function displayAnswer(value: AnswerValue | undefined): string {
   if (value === undefined || value === "") return "-";
   if (Array.isArray(value)) return value.join(", ") || "-";
@@ -1090,14 +1203,34 @@ function displayAnswer(value: AnswerValue | undefined): string {
   return value;
 }
 
-function ConfirmationStep({ account, bodyGoal, questions, answers, selectedPlan, paymentMethod, onEdit }: { account: AccountForm; bodyGoal: BodyGoalForm; questions: QuestionnaireQuestion[]; answers: Record<number, AnswerValue>; selectedPlan: PricingPlan | null; paymentMethod: "bank" | "stripe"; onEdit: (index: number) => void }) {
+function ConfirmationStep({ account, bodyGoal, questions, answers, selectedPlan, paymentMethod, onEdit }: { account: AccountForm; bodyGoal: BodyGoalForm; questions: QuestionnaireQuestion[]; answers: Record<number, AnswerValue>; selectedPlan: PricingPlan | null; paymentMethod: RegistrationPaymentMethod; onEdit: (index: number) => void }) {
   const sections = [
     { title: "Βασικά στοιχεία", icon: UserRound, step: 0, lines: [`${account.firstName} ${account.lastName}`, account.email, account.phone] },
     { title: "Σώμα & στόχος", icon: Weight, step: 1, lines: [`${bodyGoal.height || "-"} cm · ${bodyGoal.currentWeight || "-"} kg`, `Στόχος: ${bodyGoal.goal || "-"}`] },
     { title: "Ερωτηματολόγιο Coach", icon: ClipboardCheck, step: 2, lines: questions.slice(0, 3).map((question) => `${question.question}: ${displayAnswer(answers[question.id])}`) },
-    { title: "Πλάνο & πληρωμή", icon: CreditCard, step: 4, lines: [selectedPlan?.name || "-", paymentMethod === "bank" ? "Τραπεζικό έμβασμα" : "Κάρτα"] },
+    { title: "Πλάνο & πληρωμή", icon: CreditCard, step: 4, lines: [selectedPlan?.name || "-", ({ bank: "Τραπεζικό έμβασμα", stripe: "Κάρτα", paypal: "PayPal", cash: "Μετρητά" } as const)[paymentMethod]] },
   ];
-  return <div className="space-y-3">{sections.map(({ title, icon: Icon, step, lines }) => <Collapsible key={title} defaultOpen><div className="rounded-xl border border-slate-200"><CollapsibleTrigger render={<button type="button" className="flex w-full items-center gap-3 p-4 text-left" />}><span className="grid h-9 w-9 place-items-center rounded-full bg-green-50"><Icon className="h-4 w-4 text-green-700" /></span><span className="flex-1 text-sm font-semibold text-slate-900">{title}</span></CollapsibleTrigger><CollapsibleContent className="border-t border-slate-100 px-4 pb-4 pt-3"><div className="space-y-1.5 pl-12 text-sm text-slate-600">{lines.map((line, index) => <p key={index}>{line}</p>)}<Button type="button" variant="link" className="mt-2 h-auto px-0 text-green-700" onClick={() => onEdit(step)}>Επεξεργασία</Button></div></CollapsibleContent></div></Collapsible>)}</div>;
+  return (
+    <div className="space-y-3">
+      {sections.map(({ title, icon: Icon, step, lines }, index) => (
+        <Collapsible key={title} defaultOpen={index === 0}>
+          <div className="overflow-hidden rounded-[18px] border border-border bg-card shadow-none transition-colors data-[open]:border-foreground/30">
+            <CollapsibleTrigger render={<button type="button" className="group flex w-full items-center gap-3 px-4 py-4 text-left transition-colors hover:bg-muted/60 sm:px-5" />}>
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[12px] bg-[var(--sp-lime-soft)] text-foreground"><Icon className="h-[18px] w-[18px]" /></span>
+              <span className="min-w-0 flex-1"><span className="block text-[15px] font-extrabold text-foreground">{title}</span><span className="mt-0.5 block truncate text-[12px] text-muted-foreground">{lines.filter(Boolean).slice(0, 2).join(" · ")}</span></span>
+              <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition-transform group-data-[open]:rotate-90">›</span>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="border-t border-border bg-muted/35 px-4 py-4 sm:px-5">
+              <div className="space-y-2.5">
+                {lines.filter(Boolean).map((line, lineIndex) => <p key={lineIndex} className="rounded-[11px] border border-border/70 bg-card px-3 py-2.5 text-[13px] leading-5 text-foreground">{line}</p>)}
+                <Button type="button" variant="outline" className="mt-1 h-9 rounded-full border-foreground px-4 text-[12px] font-extrabold" onClick={() => onEdit(step)}>Επεξεργασία</Button>
+              </div>
+            </CollapsibleContent>
+          </div>
+        </Collapsible>
+      ))}
+    </div>
+  );
 }
 
 function QuestionnaireStep({
@@ -1273,14 +1406,21 @@ function FilesStep({
   onRemovePhoto,
   onSetPdf,
 }: {
-  photos: File[];
+  photos: IntakePhoto[];
   pdf: File | null;
   error: string;
-  onAddPhotos: (files: FileList | File[]) => void;
+  onAddPhotos: (files: FileList | File[], angle: ProgressPhotoAngle) => void;
   onRemovePhoto: (index: number) => void;
   onSetPdf: (file: File | null) => void;
 }) {
   const [dragActive, setDragActive] = useState(false);
+  const [selectedAngle, setSelectedAngle] = useState<ProgressPhotoAngle>("front");
+  const angles: { value: ProgressPhotoAngle; label: string }[] = [
+    { value: "front", label: "Μπροστά" },
+    { value: "side", label: "Πλάι" },
+    { value: "back", label: "Πίσω" },
+  ];
+  const selectedPhoto = photos.find((photo) => photo.angle === selectedAngle);
 
   return (
     <Section title="Αρχικές Φωτογραφίες & Αρχεία">
@@ -1300,50 +1440,38 @@ function FilesStep({
       )}
 
       <div className="mb-8">
-        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">📷 Φωτογραφίες Προόδου</span>
-        <p className="mb-3 text-xs text-muted-foreground">Μέχρι {MAX_INTAKE_PHOTOS} φωτογραφίες</p>
+        <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Φωτογραφίες Προόδου</span>
+        <p className="mb-3 text-xs text-muted-foreground">Προαιρετικά, μία φωτογραφία για κάθε πλευρά.</p>
+        <div className="mb-4 grid grid-cols-3 rounded-[14px] border border-border bg-muted p-1">
+          {angles.map((angle) => <button key={angle.value} type="button" onClick={() => setSelectedAngle(angle.value)} className={`h-10 rounded-[10px] text-[13px] font-extrabold transition-colors ${selectedAngle === angle.value ? "bg-foreground text-background" : "text-muted-foreground hover:bg-card hover:text-foreground"}`}>{angle.label}</button>)}
+        </div>
 
-        {photos.length < MAX_INTAKE_PHOTOS && (
+        {!selectedPhoto && <>
           <label
-            onDragOver={(event) => {
-              event.preventDefault();
-              setDragActive(true);
-            }}
+            onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
             onDragLeave={() => setDragActive(false)}
-            onDrop={(event) => {
-              event.preventDefault();
-              setDragActive(false);
-              if (event.dataTransfer.files?.length) onAddPhotos(event.dataTransfer.files);
-            }}
-            className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
-              dragActive ? "border-primary bg-primary/5" : "border-slate-300 dark:border-slate-700"
-            }`}
+            onDrop={(event) => { event.preventDefault(); setDragActive(false); if (event.dataTransfer.files?.length) onAddPhotos(event.dataTransfer.files, selectedAngle); }}
+            className={`hidden cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed p-8 text-center transition-colors sm:flex ${dragActive ? "border-primary bg-primary/5" : "border-slate-300 dark:border-slate-700"}`}
           >
             <ImagePlus className="h-8 w-8 text-slate-400" />
-            <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">
-              Σύρε φωτογραφίες εδώ ή κάνε κλικ για επιλογή
-            </span>
+            <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">Σύρε τη φωτογραφία {angles.find((angle) => angle.value === selectedAngle)?.label.toLowerCase()} εδώ ή κάνε κλικ για επιλογή</span>
             <span className="text-xs text-muted-foreground">JPG, PNG, WEBP · Max {MAX_PHOTO_SIZE_MB}MB</span>
-            <input
-              type="file"
-              accept=".jpg,.jpeg,.png,.webp"
-              multiple
-              className="hidden"
-              onChange={(event) => {
-                if (event.target.files?.length) onAddPhotos(event.target.files);
-                event.target.value = "";
-              }}
-            />
+            <input type="file" accept=".jpg,.jpeg,.png,.webp" className="hidden" onChange={(event) => { if (event.target.files?.length) onAddPhotos(event.target.files, selectedAngle); event.target.value = ""; }} />
           </label>
-        )}
-
-        {photos.length > 0 && (
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {photos.map((file, index) => (
-              <PhotoThumb key={`${file.name}-${index}`} file={file} onRemove={() => onRemovePhoto(index)} />
-            ))}
+          <div className="grid gap-2 sm:hidden">
+            <label className="flex h-[52px] cursor-pointer items-center justify-center gap-2 rounded-full bg-foreground text-[14px] font-extrabold text-background">
+              <ImagePlus className="h-4 w-4" /> Επίλεξε φωτογραφία
+              <input type="file" accept="image/*" className="hidden" onChange={(event) => { if (event.target.files?.length) onAddPhotos(event.target.files, selectedAngle); event.target.value = ""; }} />
+            </label>
+            <label className="flex h-[52px] cursor-pointer items-center justify-center gap-2 rounded-full border-[1.5px] border-foreground text-[14px] font-extrabold text-foreground">
+              <Camera className="h-4 w-4" /> Βγάλε φωτογραφία
+              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(event) => { if (event.target.files?.length) onAddPhotos(event.target.files, selectedAngle); event.target.value = ""; }} />
+            </label>
           </div>
-        )}
+        </>}
+
+        {selectedPhoto && <div className="mt-3"><PhotoThumb file={selectedPhoto.file} label={angles.find((angle) => angle.value === selectedAngle)?.label || ""} onRemove={() => onRemovePhoto(photos.findIndex((photo) => photo.angle === selectedAngle))} /></div>}
+        {photos.length > 0 && <div className="mt-4 grid grid-cols-3 gap-2">{angles.map((angle) => { const photo = photos.find((item) => item.angle === angle.value); return <button key={angle.value} type="button" onClick={() => setSelectedAngle(angle.value)} className={`h-10 rounded-[12px] border text-xs font-extrabold ${selectedAngle === angle.value ? "border-foreground bg-card ring-2 ring-accent" : "border-border bg-muted text-muted-foreground"}`}>{photo ? `✓ ${angle.label}` : angle.label}</button> })}</div>}
       </div>
 
       <div>
@@ -1378,7 +1506,7 @@ function FilesStep({
   );
 }
 
-function PhotoThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
+function PhotoThumb({ file, label, onRemove }: { file: File; label: string; onRemove: () => void }) {
   const [url, setUrl] = useState("");
 
   useEffect(() => {
@@ -1388,10 +1516,10 @@ function PhotoThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
   }, [file]);
 
   return (
-    <div className="group relative aspect-square overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800">
+    <div className="group relative aspect-[4/3] max-w-sm overflow-hidden rounded-[14px] bg-slate-100 dark:bg-slate-800">
       {url && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt={file.name} className="h-full w-full object-cover" />
+        <img src={url} alt={`Φωτογραφία ${label}`} className="h-full w-full object-cover" />
       )}
       <button
         type="button"
@@ -1401,6 +1529,7 @@ function PhotoThumb({ file, onRemove }: { file: File; onRemove: () => void }) {
       >
         <X className="h-3.5 w-3.5" />
       </button>
+      <span className="absolute bottom-2 left-2 rounded-full bg-[#0b0b0b]/80 px-2 py-1 text-[10px] font-extrabold text-white">{label}</span>
     </div>
   );
 }
@@ -1427,8 +1556,6 @@ function PlanStep({
   const plansForDuration = plans.filter((plan) => plan.durationMonths === selectedDurationMonths)
   const basePlan = plansForDuration[0]
   const commonFeatures = [...new Set(plans.flatMap((plan) => plan.features.filter((feature) => feature.included).map((feature) => feature.text)))].slice(0, 10)
-  const monthly = selectedPlan ? Number(selectedPlan.price) / Math.max(1, selectedDurationMonths) : 0
-  const saving = selectedPlan && selectedDurationMonths > 1 ? Math.max(0, Number(plans.find((plan) => plan.name === selectedPlan.name && plan.durationMonths === 1)?.price || 0) * selectedDurationMonths - Number(selectedPlan.price)) : 0
 
   return <section className="space-y-6">
     <div><p className="text-[12px] font-extrabold tracking-[1px] text-muted-foreground">ΒΗΜΑ 5 ΑΠΟ 7</p><h2 className="mt-1 text-[28px] font-extrabold tracking-[-.6px]">Διάλεξε το πακέτο σου</h2><p className="mt-1 max-w-3xl text-[14px] leading-6 text-muted-foreground">Εξατομικευμένη καθοδήγηση στην προπόνηση, στη διατροφή και στα συμπληρώματα, με τακτική αξιολόγηση της προόδου σου.</p></div>
@@ -1436,7 +1563,7 @@ function PlanStep({
       <div className="min-w-0 space-y-5"><div><p className="mb-2 text-[13px] font-extrabold">Διάρκεια συνεργασίας</p><div className="grid grid-cols-2 rounded-[16px] border border-border bg-card p-[5px] sm:grid-cols-4">{durations.map((months) => { const selected = selectedDurationMonths === months; const oneMonth = plans.find((plan) => plan.durationMonths === 1 && plan.name === plansForDuration[0]?.name); const current = plans.find((plan) => plan.durationMonths === months && plan.name === plansForDuration[0]?.name); const discount = oneMonth && current ? Math.round((1 - Number(current.price) / (Number(oneMonth.price) * months)) * 100) : 0; return <button key={months} type="button" onClick={() => onDurationChange(months)} className={`flex h-[46px] items-center justify-center gap-1.5 rounded-[12px] text-[13px] font-extrabold ${selected ? "bg-foreground text-background" : "text-foreground hover:bg-muted"}`}>{months} {months === 1 ? "μήνας" : "μήνες"}{discount > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-extrabold ${selected ? "bg-accent text-accent-foreground" : "bg-[var(--sp-lime-soft)] text-foreground"}`}>−{discount}%</span>}</button> })}</div></div>
       <RadioGroup value={String(selectedPlanId || "")} onValueChange={(value) => value && onSelect(value)} className="grid gap-[14px] sm:grid-cols-2">{plansForDuration.map((plan) => <PlanOption key={plan.id} plan={plan} selected={String(plan.id) === String(selectedPlanId)} onSelect={() => onSelect(plan.id)} basePrice={Number(basePlan?.price || 0)} />)}</RadioGroup>
       <Card className="rounded-[20px] border-border shadow-none"><CardContent className="p-5"><h3 className="text-[16px] font-extrabold">Όλες οι διάρκειες περιλαμβάνουν τις ίδιες παροχές</h3><div className="mt-4 grid gap-2.5 sm:grid-cols-2">{commonFeatures.map((feature) => <p key={feature} className="flex gap-2 text-[13px] leading-5"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-accent" />{feature}</p>)}</div><p className="mt-4 rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">Η ημέρα update συμφωνείται από Δευτέρα έως Σάββατο. Η Κυριακή εξαιρείται.</p></CardContent></Card></div>
-      <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start"><Card className="overflow-hidden rounded-[22px] border-[#0b0b0b] bg-[#0b0b0b] text-white shadow-none"><CardContent className="relative space-y-4 p-[22px]"><span className="absolute -right-2 -top-4 h-24 w-3 -skew-x-[18deg] bg-accent" /><p className="text-[11px] font-extrabold tracking-[1px] text-neutral-400">Η ΕΠΙΛΟΓΗ ΣΟΥ</p><p className="text-[26px] font-extrabold italic">{selectedPlan?.name || "—"} <span className="text-sm not-italic font-medium text-neutral-300">· {selectedDurationMonths} μήνες</span></p><div className="space-y-2 border-y border-white/10 py-3 text-sm"><p className="flex justify-between"><span className="text-neutral-300">Ανά μήνα</span><b>{monthly.toLocaleString("el-GR", { maximumFractionDigits: 2 })} €</b></p>{saving > 0 && <p className="flex justify-between text-accent"><span>Εξοικονόμηση</span><b>−{saving.toLocaleString("el-GR")} €</b></p>}</div><p className="flex items-end justify-between"><span className="text-sm text-neutral-300">Σύνολο</span><b className="text-[32px] text-accent">{Number(selectedPlan?.price || 0).toLocaleString("el-GR")} €</b></p></CardContent></Card>
+      <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start"><Card className="overflow-hidden rounded-[22px] border-[#0b0b0b] bg-[#0b0b0b] text-white shadow-none"><CardContent className="relative flex flex-col gap-4 p-[22px]"><span className="absolute right-[26px] -top-5 h-[70px] w-[10px] -skew-x-[18deg] bg-accent" /><p className="relative text-[11px] font-extrabold tracking-[1px] text-[#9a9a9a]">Η ΕΠΙΛΟΓΗ ΣΟΥ</p><div className="relative flex items-center gap-2"><p className="text-[26px] font-extrabold italic">{selectedPlan?.name || "—"}</p>{selectedPlan?.isPopular && <span className="inline-flex h-6 items-center gap-1 rounded-full bg-accent px-2 text-[11px] font-extrabold text-accent-foreground">★ Δημοφιλές</span>}</div><div className="relative flex flex-col gap-[10px] border-y border-[#262626] py-[14px] text-[14px]"><p className="flex justify-between"><span className="text-[#9a9a9a]">Διάρκεια</span><b>{selectedDurationMonths} {selectedDurationMonths === 1 ? "μήνας" : "μήνες"}</b></p><p className="flex justify-between"><span className="text-[#9a9a9a]">Πόντοι που κερδίζεις</span><b>+{Number(selectedPlan?.pointsReward || 0).toLocaleString("el-GR")}</b></p></div><p className="relative flex items-baseline justify-between"><span className="text-[14px] text-[#bdbdbd]">Σύνολο</span><b className="text-[30px] text-accent">{Number(selectedPlan?.price || 0).toLocaleString("el-GR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</b></p></CardContent></Card>
       <Card className="rounded-[20px] border-border shadow-none"><CardContent className="p-5"><h3 className="mb-2 text-[15px] font-extrabold">Όλες οι τιμές (€)</h3><div className="overflow-x-auto"><table className="w-full text-[12px]"><thead className="text-[10px] tracking-wide text-muted-foreground"><tr><th></th>{plansForDuration.map((plan) => <th key={plan.id} className="px-1 py-1 text-right">{plan.name.toUpperCase()}</th>)}</tr></thead><tbody>{durations.map((months) => <tr key={months} className="border-t border-border/70"><th className="py-2 text-left">{months}μ</th>{plansForDuration.map((plan) => { const price = plans.find((item) => item.name === plan.name && item.durationMonths === months); const isSelected = price && String(price.id) === String(selectedPlanId); return <td key={plan.id} className={`cursor-pointer rounded-lg px-1 py-2 text-right ${isSelected ? "bg-[var(--sp-lime-soft)] font-extrabold" : ""}`} onClick={() => price && (onDurationChange(months), onSelect(price.id))}>{price ? Number(price.price).toLocaleString("el-GR") : "—"}</td>})}</tr>)}</tbody></table></div></CardContent></Card></aside>
     </div>
   </section>;
@@ -1458,6 +1585,7 @@ function PlanOption({ plan, selected, onSelect, basePrice }: { plan: PricingPlan
       )}
       <div className="flex items-center gap-2"><RadioGroupItem value={String(plan.id)} /><span className="text-[18px] font-extrabold">{plan.name}</span><span className="ml-auto flex gap-1">{Array.from({ length: 4 }, (_, index) => <i key={index} className={`h-[5px] w-[14px] rounded-full ${index <= plansLevel(plan.name) ? "bg-accent" : "bg-muted"}`} />)}</span></div>
       <div className="mt-4"><span className="text-[36px] font-extrabold italic leading-none tracking-[-1px]">{Number(plan.price).toLocaleString("el-GR")} €</span><p className="mt-1 text-xs text-muted-foreground">για {plan.durationMonths} μήνες · {(Number(plan.price) / Math.max(1, Number(plan.durationMonths))).toLocaleString("el-GR", { maximumFractionDigits: 2 })} € / μήνα</p><p className="mt-1 text-xs text-muted-foreground">{basePrice && Number(plan.price) > basePrice ? `+${((Number(plan.price) - basePrice) / Math.max(1, Number(plan.durationMonths))).toLocaleString("el-GR")} €/μήνα από το Βασικό` : "η βάση της συνεργασίας"}</p></div>
+      <div className="mt-3 inline-flex w-fit items-center rounded-full bg-[var(--sp-lime-soft)] px-2.5 py-1 text-[11px] font-extrabold text-foreground">+{Number(plan.pointsReward || 0).toLocaleString("el-GR")} πόντοι</div>
       <ul className="mt-4 space-y-1.5 border-t border-border pt-3">
         {plan.features
           .filter((feature) => feature.included)
@@ -1477,58 +1605,55 @@ function plansLevel(name: string) { const normalized = name.toLocaleLowerCase("e
 function PaymentStep({
   paymentMethod,
   onPaymentMethodChange,
-  bankDetails,
+  bankDetails: fallbackBankDetails,
   selectedPlan,
+  onChangePlan,
+  paymentOptions,
 }: {
-  paymentMethod: "bank" | "stripe";
-  onPaymentMethodChange: (value: "bank" | "stripe") => void;
+  paymentMethod: RegistrationPaymentMethod;
+  onPaymentMethodChange: (value: RegistrationPaymentMethod) => void;
   bankDetails: BankDetails | null;
   selectedPlan: PricingPlan | null;
+  onChangePlan: () => void;
+  paymentOptions: PaymentOptions;
 }) {
+  const amount = Number(selectedPlan?.price || 0);
+  const copy = (value: string) => navigator.clipboard?.writeText(value).catch(() => {});
+  const bankAccounts = (paymentOptions.bankAccounts || [])
+    .filter((account) => account.isVisible)
+    .sort((left, right) => Number(right.isDefault) - Number(left.isDefault) || left.sortOrder - right.sortOrder);
+  if (!bankAccounts.length && fallbackBankDetails?.iban) {
+    bankAccounts.push({
+      bankName: fallbackBankDetails.bankName,
+      accountHolder: fallbackBankDetails.beneficiary,
+      iban: fallbackBankDetails.iban,
+      isDefault: true,
+      isVisible: true,
+      sortOrder: 0,
+    });
+  }
+  // The compact legacy account card below is deliberately suppressed. The
+  // registration flow now uses the same multi-account layout as client billing.
+  const bankDetails: BankDetails | null = (false as boolean) ? fallbackBankDetails : null;
+  const methods = [
+    paymentOptions.stripeEnabled && { value: "stripe" as const, title: "Κάρτα", description: "Visa · Mastercard", instant: true, icon: CreditCard },
+    paymentOptions.paypalEnabled && { value: "paypal" as const, title: "PayPal", description: "λογαριασμός PayPal", instant: true, icon: CreditCard },
+    paymentOptions.bankTransferEnabled && { value: "bank" as const, title: "Έμβασμα", description: "έγκριση από coach", instant: false, icon: CreditCard },
+    paymentOptions.cashEnabled && { value: "cash" as const, title: "Μετρητά", description: "στον coach", instant: false, icon: CreditCard },
+  ].filter((method): method is { value: RegistrationPaymentMethod; title: string; description: string; instant: boolean; icon: typeof CreditCard } => Boolean(method));
   return (
-    <Section title="Τρόπος Πληρωμής">
-      <div className="mb-6 rounded-xl bg-muted p-4">
-        <div className="text-sm font-medium text-muted-foreground">Επιλεγμένο πλάνο</div>
-        {selectedPlan ? (
-          <div className="mt-2 flex items-end justify-between gap-4">
-            <span className="font-semibold">{selectedPlan.name}</span>
-            <span className="text-xl font-bold">€{Number(selectedPlan.price).toFixed(0)}<span className="ml-1 text-sm font-normal text-muted-foreground">/{formatPeriodLabel(selectedPlan.period)}</span></span>
-          </div>
-        ) : (
-          <div className="mt-2 text-sm text-muted-foreground">Δεν έχει επιλεγεί πλάνο.</div>
-        )}
+    <section className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="min-w-0 space-y-5">
+        <div><p className="text-[12px] font-extrabold tracking-[1px] text-muted-foreground">ΒΗΜΑ 6 ΑΠΟ 7</p><h2 className="mt-1 text-[30px] font-extrabold tracking-[-.6px]">Πληρωμή</h2><p className="mt-1 text-[15px] text-muted-foreground">Διάλεξε πώς θέλεις να πληρώσεις για να ολοκληρωθεί η εγγραφή σου.</p></div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[16px] border border-border bg-card px-[18px] py-[14px] text-[13px]"><span className="text-muted-foreground">Επιλεγμένο πακέτο</span><b>{selectedPlan?.name || "—"} · {selectedPlan?.durationMonths || "—"} μήνες</b><button type="button" onClick={onChangePlan} className="ml-auto font-extrabold underline underline-offset-2">Αλλαγή</button></div>
+        <RadioGroup value={paymentMethod} onValueChange={(value) => onPaymentMethodChange(value as RegistrationPaymentMethod)} className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          {methods.map(({ value, title, description, instant, icon: Icon }) => { const active = paymentMethod === value; return <label key={value} className={`flex min-h-[112px] cursor-pointer flex-col rounded-[16px] border p-[14px] transition ${active ? "border-2 border-[#0b0b0b] bg-card shadow-[0_0_0_3px_rgba(176,249,12,.5)] dark:border-foreground" : "border-border bg-card hover:border-foreground"}`}><div className="flex items-center gap-2"><Icon className="h-[19px] w-[19px]" />{instant && <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-extrabold text-accent-foreground">⚡ Άμεσα</span>}<RadioGroupItem value={value} className="ml-auto" /></div><span className="mt-4 text-[15px] font-extrabold">{title}</span><span className="mt-0.5 text-[12px] text-muted-foreground">{description}</span></label> })}
+        </RadioGroup>
+        {paymentMethod === "bank" && bankAccounts.length > 0 && <RegistrationBankAccounts accounts={bankAccounts} amount={amount} onCopy={copy} />}
+        {(paymentMethod === "stripe" || paymentMethod === "paypal") ? <Card className="rounded-[18px] border-border bg-card shadow-none"><CardContent className="space-y-3 p-[18px]"><div className="flex flex-wrap gap-2">{paymentMethod === "stripe" ? ["VISA", "Mastercard", "Apple Pay", "Google Pay"].map((name) => <span key={name} className="rounded-[8px] border border-border px-2.5 py-1.5 text-[11px] font-extrabold">{name}</span>) : <span className="rounded-[8px] border border-border px-2.5 py-1.5 text-[11px] font-extrabold">PayPal</span>}</div><p className="text-[13px] text-muted-foreground">{paymentMethod === "stripe" ? "Ασφαλής πληρωμή μέσω Stripe. Θα μεταφερθείς στη σελίδα πληρωμής και επιστρέφεις αυτόματα." : "Θα μεταφερθείς με ασφάλεια στο PayPal για να ολοκληρώσεις την πληρωμή σου."}</p><p className="rounded-[12px] bg-[var(--sp-lime-soft)] px-3 py-3 text-[13px] font-bold text-foreground">⚡ Η πληρωμή επιβεβαιώνεται αμέσως. Ο coach θα αξιολογήσει το ερωτηματολόγιό σου πριν σου στείλει τα πλάνα.</p></CardContent></Card> : paymentMethod === "cash" ? <Card className="rounded-[18px] border-border bg-card shadow-none"><CardContent className="p-[18px]"><h3 className="text-[15px] font-extrabold">Πληρωμή με μετρητά</h3><p className="mt-2 text-[13px] leading-5 text-muted-foreground">Δίνεις το ποσό στον coach από κοντά. Η πληρωμή και τα πλάνα σου περιμένουν την επιβεβαίωσή του.</p></CardContent></Card> : bankDetails && <Card className="rounded-[18px] border-border bg-card shadow-none"><CardContent className="p-[18px]"><div className="mb-4 flex items-center justify-between"><h3 className="text-[15px] font-extrabold">Στοιχεία κατάθεσης</h3><span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-extrabold">{bankDetails.bankName}</span></div><div className="grid gap-3 sm:grid-cols-2">{[["Δικαιούχος", bankDetails.beneficiary], ["IBAN", bankDetails.iban], ["Ποσό", `${amount.toLocaleString("el-GR", { minimumFractionDigits: 2 })} €`], ["Αιτιολογία", "Θα δοθεί μετά την ολοκλήρωση"]].map(([label, value]) => <div key={label} className="flex min-w-0 items-center gap-2 rounded-[13px] bg-muted p-3"><span className="min-w-0 flex-1"><small className="block text-[11px] text-muted-foreground">{label}</small><b className="block truncate text-[12px]">{value}</b></span>{label !== "Ποσό" && <button type="button" aria-label={`Αντιγραφή ${label}`} onClick={() => copy(value)} className="grid h-8 w-8 shrink-0 place-items-center rounded-[9px] border border-border bg-card"><Copy className="h-3.5 w-3.5" /></button>}</div>)}</div><p className="mt-4 text-[12px] text-muted-foreground">Μπορείς να κάνεις την κατάθεση και αργότερα. Τα στοιχεία θα σε περιμένουν στην αρχική σου.</p></CardContent></Card>}
       </div>
-      <RadioGroup value={paymentMethod} onValueChange={(value) => onPaymentMethodChange((value as "bank" | "stripe") ?? "bank")} className="space-y-3">
-        <label
-          className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm font-bold ${
-            paymentMethod === "bank" ? "border-primary bg-primary/5" : "border-slate-200 dark:border-slate-700"
-          }`}
-        >
-          <RadioGroupItem value="bank" />
-          Τραπεζικό έμβασμα
-        </label>
-        <label
-          className={`flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm font-bold ${
-            paymentMethod === "stripe" ? "border-primary bg-primary/5" : "border-slate-200 dark:border-slate-700"
-          }`}
-        >
-          <RadioGroupItem value="stripe" />
-          Πιστωτική/Χρεωστική κάρτα
-          <span className="ml-auto text-xs font-semibold text-slate-400">Σύντομα διαθέσιμο</span>
-        </label>
-      </RadioGroup>
-
-      {paymentMethod === "bank" && bankDetails && (
-        <div className="mt-4 space-y-3 rounded-xl border bg-muted/50 p-5 text-sm dark:bg-slate-800">
-          <div><span className="text-muted-foreground">Τράπεζα</span><div className="mt-1 font-semibold">{bankDetails.bankName}</div></div>
-          <div><span className="text-muted-foreground">Δικαιούχος</span><div className="mt-1 font-semibold">{bankDetails.beneficiary}</div></div>
-          <div><span className="text-muted-foreground">IBAN</span><div className="mt-1 break-all font-semibold tracking-wide">{bankDetails.iban}</div></div>
-          <div className="pt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            Θα λάβεις αριθμό αναφοράς πληρωμής μετά την ολοκλήρωση της εγγραφής.
-          </div>
-        </div>
-      )}
-    </Section>
+      <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start"><Card className="overflow-hidden rounded-[22px] border-[#0b0b0b] bg-[#0b0b0b] text-white shadow-none"><CardContent className="relative flex flex-col gap-4 p-[22px]"><span className="absolute right-[26px] -top-5 h-[70px] w-[10px] -skew-x-[18deg] bg-accent" /><p className="relative text-[11px] font-extrabold tracking-[1px] text-[#9a9a9a]">Η ΕΠΙΛΟΓΗ ΣΟΥ</p><div className="relative flex items-center gap-2"><p className="text-[26px] font-extrabold italic">{selectedPlan?.name || "—"}</p>{selectedPlan?.isPopular && <span className="inline-flex h-6 items-center gap-1 rounded-full bg-accent px-2 text-[11px] font-extrabold text-accent-foreground">★ Δημοφιλές</span>}</div><div className="relative flex flex-col gap-[10px] border-y border-[#262626] py-[14px] text-[14px]"><p className="flex justify-between"><span className="text-[#9a9a9a]">Διάρκεια</span><b>{selectedPlan?.durationMonths === 1 ? "1 μήνας" : `${selectedPlan?.durationMonths || "—"} μήνες`}</b></p><p className="flex justify-between"><span className="text-[#9a9a9a]">Πόντοι που κερδίζεις</span><b>+{Number(selectedPlan?.pointsReward || 0).toLocaleString("el-GR")}</b></p></div><p className="relative flex items-baseline justify-between"><span className="text-[14px] text-[#bdbdbd]">Σύνολο</span><b className="text-[30px] text-accent">{amount.toLocaleString("el-GR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €</b></p></CardContent></Card><Card className="rounded-[20px] border-border shadow-none"><CardContent className="p-5"><h3 className="text-[15px] font-extrabold">Πότε ξεκινάς</h3><PaymentActivationInfo paymentOptions={paymentOptions} /></CardContent></Card></aside>
+    </section>
   );
 }
 

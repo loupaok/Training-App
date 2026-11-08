@@ -647,7 +647,12 @@ router.get('/payments', async (req, res) => {
   try {
     await ensurePaymentConsentColumns(connection);
     const [subscriptions] = await connection.query("SELECT plan_name, price, status, start_date, end_date, DATEDIFF(end_date, CURDATE()) AS days_remaining FROM subscriptions WHERE client_id = ? AND status IN ('active', 'expiring_soon') AND start_date <= CURDATE() AND end_date >= CURDATE() ORDER BY end_date DESC LIMIT 1", [req.user.id]);
-    const [pendingSubscriptions] = await connection.query("SELECT plan_name, price, status, start_date, end_date FROM subscriptions WHERE client_id = ? AND status = 'pending_payment' ORDER BY created_at DESC LIMIT 1", [req.user.id]);
+    const [pendingSubscriptions] = await connection.query(`SELECT s.plan_name, s.price, s.status, s.start_date, s.end_date, s.duration_months,
+      COALESCE(pp.is_popular, 0) AS is_popular
+      FROM subscriptions s
+      LEFT JOIN pricing_plans pp ON pp.id = s.plan_id
+      WHERE s.client_id = ? AND s.status = 'pending_payment'
+      ORDER BY s.created_at DESC LIMIT 1`, [req.user.id]);
     const [upcomingSubscriptions] = await connection.query("SELECT s.plan_name, s.price, s.currency, s.status, s.start_date, s.end_date FROM subscriptions s INNER JOIN payments p ON p.subscription_id = s.id AND p.status = 'completed' WHERE s.client_id = ? AND s.status = 'active' AND s.start_date > CURDATE() ORDER BY s.start_date ASC", [req.user.id]);
     const [payments] = await connection.query(`SELECT p.id, p.amount, p.currency, p.method, p.status, p.reference_number AS referenceNumber,
       p.paid_at AS paidAt, p.created_at AS createdAt, p.notes, p.proof_url AS proofUrl, p.privacy_policy_accepted_at AS privacyPolicyAcceptedAt, p.privacy_policy_version AS privacyPolicyVersion, s.plan_name AS planName

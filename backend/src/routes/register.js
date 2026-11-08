@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import bcrypt from 'bcryptjs';
@@ -89,6 +90,41 @@ async function ensureSubscriptionPendingStatus(connection) {
   await connection.query(
     "ALTER TABLE subscriptions MODIFY COLUMN status ENUM('pending_payment', 'active', 'expiring_soon', 'paused', 'cancelled', 'expired') NOT NULL DEFAULT 'active'"
   );
+}
+
+async function ensureRegistrationPaymentMethods(connection) {
+  await connection.query(
+    "ALTER TABLE users MODIFY COLUMN payment_method ENUM('bank', 'stripe', 'paypal', 'cash') DEFAULT 'bank'"
+  );
+}
+
+async function ensureRegistrationEmailVerificationSchema(connection) {
+  try {
+    await connection.query('ALTER TABLE users ADD COLUMN email_verified_at TIMESTAMP NULL');
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS email_verifications (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      token_hash CHAR(64) NOT NULL UNIQUE,
+      expires_at TIMESTAMP NOT NULL,
+      used_at TIMESTAMP NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      INDEX idx_email_verification_user (user_id),
+      INDEX idx_email_verification_expiry (expires_at)
+    )
+  `);
+}
+
+function verificationEmail(clientName, verificationUrl) {
+  const safeName = String(clientName || '');
+  return {
+    subject: 'Επιβεβαίωσε το email σου',
+    html: `<div style="background:#f4f4f2;padding:32px 16px;font-family:Arial,sans-serif;color:#0b0b0b"><div style="max-width:560px;margin:auto;border-radius:20px;background:#fff;padding:32px"><div style="width:48px;height:48px;border-radius:50%;background:#b0f90c;display:grid;place-items:center;font-size:24px">✓</div><h1 style="margin:22px 0 10px;font-size:26px">Επιβεβαίωσε το email σου</h1><p style="line-height:1.6;color:#555">Γεια σου ${safeName}, η εγγραφή σου καταχωρήθηκε. Επιβεβαίωσε τη διεύθυνση email σου για να λαμβάνεις ενημερώσεις για την πληρωμή και τα πλάνα σου.</p><a href="${verificationUrl}" style="display:inline-block;margin-top:18px;border-radius:999px;background:#b0f90c;padding:14px 22px;color:#0b0b0b;font-weight:800;text-decoration:none">Επιβεβαίωση email</a><p style="margin-top:22px;font-size:12px;color:#6a6a6a">Ο σύνδεσμος ισχύει για 24 ώρες.</p></div></div>`,
+  };
 }
 
 // A reliable reference back to the pricing plan a subscription was created
@@ -310,6 +346,38 @@ router.post('/register/progress/files', authenticateToken, authorizeRole(['clien
   }
 });
 
+router.get('/verify-email', async (req, res) => {
+  const token = String(req.query.token || '');
+  if (!/^[a-f0-9]{64}$/i.test(token)) {
+    return res.status(400).send('Μη έγκυρος σύνδεσμος επιβεβαίωσης.');
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    await ensureRegistrationEmailVerificationSchema(connection);
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const [rows] = await connection.query(
+      `SELECT id, user_id FROM email_verifications
+       WHERE token_hash = ? AND used_at IS NULL AND expires_at > NOW()
+       LIMIT 1`,
+      [tokenHash]
+    );
+    if (!rows.length) return res.status(400).send('Ο σύνδεσμος επιβεβαίωσης έχει λήξει ή έχει ήδη χρησιμοποιηθεί.');
+
+    await connection.beginTransaction();
+    await connection.query('UPDATE email_verifications SET used_at = NOW() WHERE id = ?', [rows[0].id]);
+    await connection.query('UPDATE users SET email_verified_at = NOW() WHERE id = ?', [rows[0].user_id]);
+    await connection.commit();
+    return res.redirect(`${(process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '')}/register/success?email=verified`);
+  } catch (error) {
+    await connection.rollback();
+    console.error('Email verification failed', error);
+    return res.status(500).send('Δεν ήταν δυνατή η επιβεβαίωση του email.');
+  } finally {
+    connection.release();
+  }
+});
+
 router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name: 'pdf', maxCount: 1 }]), [
   body('firstName').notEmpty(),
   body('lastName').notEmpty(),
@@ -325,7 +393,7 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
   body('plan_id').optional({ nullable: true, checkFalsy: true }).isInt(),
   body('package_id').optional({ nullable: true, checkFalsy: true }).isInt({ min: 1 }),
   body('duration_months').optional({ nullable: true, checkFalsy: true }).isInt({ min: 1, max: 24 }),
-  body('payment_method').isIn(['bank', 'stripe']),
+  body('payment_method').isIn(['bank', 'stripe', 'paypal', 'cash']),
   body('privacyConsent').equals('true').withMessage('Privacy policy acceptance is required'),
 ], async (req, res) => {
   const errors = validationResult(req);
@@ -395,7 +463,19 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     await ensureClientIntakeFilesSchema(connection);
     await ensureRegistrationProgressSchema(connection);
     await ensureSubscriptionPendingStatus(connection);
+    await ensureRegistrationPaymentMethods(connection);
+    await ensureRegistrationEmailVerificationSchema(connection);
     await ensureSubscriptionPlanIdColumn(connection);
+
+    const paymentSettings = await getPaymentSettings(connection, { publicOnly: true });
+    const paymentEnabled = (paymentMethod === 'bank' && paymentSettings.bankTransferEnabled)
+      || (paymentMethod === 'stripe' && paymentSettings.stripeEnabled)
+      || (paymentMethod === 'paypal' && paymentSettings.paypalEnabled)
+      || (paymentMethod === 'cash' && paymentSettings.cashEnabled);
+    if (!paymentEnabled) {
+      connection.release();
+      return res.status(400).json({ message: 'Ο επιλεγμένος τρόπος πληρωμής δεν είναι διαθέσιμος.' });
+    }
 
     const [existingRows] = await connection.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email]);
     if (existingRows.length) {
@@ -459,9 +539,16 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     const [userResult] = await connection.query(
       `INSERT INTO users (email, password, full_name, first_name, last_name, role, status, payment_method, privacy_accepted_at, terms_accepted_at)
        VALUES (?, ?, ?, ?, ?, 'client', 'pending_payment', ?, NOW(), NOW())`,
-      [email, hashedPassword, fullName, firstName, lastName, paymentMethod === 'stripe' ? 'stripe' : 'bank']
+      [email, hashedPassword, fullName, firstName, lastName, ['stripe', 'paypal', 'cash'].includes(paymentMethod) ? paymentMethod : 'bank']
     );
     const userId = userResult.insertId;
+    const emailVerificationToken = crypto.randomBytes(32).toString('hex');
+    const emailVerificationHash = crypto.createHash('sha256').update(emailVerificationToken).digest('hex');
+    await connection.query('DELETE FROM email_verifications WHERE user_id = ?', [userId]);
+    await connection.query(
+      'INSERT INTO email_verifications (user_id, token_hash, expires_at) VALUES (?, ?, ?)',
+      [userId, emailVerificationHash, new Date(Date.now() + 24 * 60 * 60 * 1000)]
+    );
 
     await connection.query(
       `INSERT INTO clients (user_id, date_of_birth, gender, phone, height_cm, weight_kg, target_weight_kg, fitness_goal)
@@ -539,7 +626,7 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
         plan.currency || 'EUR',
         pendingDate,
         pendingDate,
-        paymentMethod === 'stripe' ? 'Η πληρωμή με κάρτα αναμένει έγκριση coach.' : 'Το τραπεζικό έμβασμα αναμένει έγκριση coach.',
+        paymentMethod === 'stripe' ? 'Η πληρωμή με κάρτα αναμένει επιβεβαίωση.' : paymentMethod === 'paypal' ? 'Η πληρωμή με PayPal αναμένει επιβεβαίωση.' : paymentMethod === 'cash' ? 'Η πληρωμή με μετρητά αναμένει επιβεβαίωση coach.' : 'Το τραπεζικό έμβασμα αναμένει έγκριση coach.',
         packageQuote?.package.id || null,
         packageQuote?.duration.months || null,
         packageQuote?.priceCents || null,
@@ -558,9 +645,9 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
         subscriptionResult.insertId,
         plan.price,
         plan.currency || 'EUR',
-        paymentMethod === 'stripe' ? 'stripe' : 'bank_transfer',
+        paymentMethod === 'stripe' ? 'stripe' : paymentMethod === 'paypal' ? 'paypal' : paymentMethod === 'cash' ? 'cash' : 'bank_transfer',
         referenceNumber,
-        paymentMethod === 'stripe' ? 'Stripe integration pending.' : 'Αναμένεται τραπεζικό έμβασμα.',
+        paymentMethod === 'stripe' ? 'Stripe integration pending.' : paymentMethod === 'paypal' ? 'PayPal integration pending.' : paymentMethod === 'cash' ? 'Αναμένεται παραλαβή μετρητών από τον coach.' : 'Αναμένεται τραπεζικό έμβασμα.',
         packageQuote?.package.id || null,
         packageQuote?.duration.months || null,
         packageQuote?.priceCents || null,
@@ -582,7 +669,7 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
       paymentId: paymentResult.insertId,
       type: 'payment_request_created',
       title: 'Νέα εγγραφή πελάτη',
-      body: `${fullName} εγγράφηκε στο πλάνο ${plan.name} (${Number(plan.price).toFixed(2)} ${plan.currency || 'EUR'}, ${paymentMethod === 'stripe' ? 'Stripe' : 'Τραπεζικό έμβασμα'}).`,
+      body: `${fullName} εγγράφηκε στο πλάνο ${plan.name} (${Number(plan.price).toFixed(2)} ${plan.currency || 'EUR'}, ${paymentMethod === 'stripe' ? 'Stripe' : paymentMethod === 'paypal' ? 'PayPal' : paymentMethod === 'cash' ? 'Μετρητά' : 'Τραπεζικό έμβασμα'}).`,
       linkUrl: `/clients/${userId}`,
     });
 
@@ -640,6 +727,9 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
         to: email,
         ...(template || registrationEmail(firstName, plan.name)),
       })).catch((error) => console.error('Email failed', error));
+      const verificationUrl = `${(process.env.BACKEND_URL || 'http://localhost:5000').replace(/\/$/, '')}/api/verify-email?token=${emailVerificationToken}`;
+      sendMail({ to: email, ...verificationEmail(firstName, verificationUrl) })
+        .catch((error) => console.error('Email verification failed', error));
     } catch (error) {
       console.error('Email failed', error);
     }
@@ -655,6 +745,8 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     res.status(201).json({
       success: true,
       clientId: userId,
+      paymentId: paymentResult.insertId,
+      paymentMethod,
       message: 'Η εγγραφή ολοκληρώθηκε.',
       accessToken,
       refreshToken,

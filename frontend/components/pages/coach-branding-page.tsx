@@ -38,6 +38,7 @@ const emptyBranding: Branding = {
   eshopBannerText: null,
   eshopButtonText: "Πήγαινε στο eshop",
   eshopBannerImageUrl: null,
+  supportEmail: null,
 };
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -132,6 +133,7 @@ function CoachBrandingContent() {
         eshopBannerAccentText: branding.eshopBannerAccentText?.trim() || null,
         eshopBannerText: branding.eshopBannerText?.trim() || null,
         eshopButtonText: branding.eshopButtonText?.trim() || "Πήγαινε στο eshop",
+        supportEmail: branding.supportEmail?.trim() || null,
       }));
       await refreshBranding();
       toast.success("Οι αλλαγές αποθηκεύτηκαν.");
@@ -197,6 +199,18 @@ function CoachBrandingContent() {
                 placeholder="CoachApp"
                 disabled={loading}
               />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="support-email">Email επικοινωνίας εγγραφής</Label>
+              <Input
+                id="support-email"
+                type="email"
+                value={branding.supportEmail || ""}
+                onChange={(event) => updateBranding("supportEmail", event.target.value || null)}
+                placeholder="coach@example.com"
+                disabled={loading}
+              />
+              <p className="text-xs text-muted-foreground">Το κουμπί «Επικοινωνία» στην εγγραφή ανοίγει νέο email προς αυτή τη διεύθυνση.</p>
             </div>
             <div className="hidden" aria-hidden="true">
               <Label htmlFor="primary-color">Βασικό χρώμα</Label>

@@ -1226,6 +1226,16 @@ function paymentMethodLabel(method?: string): string {
   return method ? labels[method] || method : "-";
 }
 
+function clientPaymentNote(notes?: string | null): string | null {
+  if (!notes?.trim()) return null;
+  const lines = notes.split("\n").map((line) => line.trim()).filter(Boolean);
+  const labelled = lines.find((line) => line.startsWith("Σημείωση πελάτη:"));
+  if (labelled) return labelled.replace(/^Σημείωση πελάτη:\s*/, "").trim() || null;
+
+  const manualLines = lines.filter((line) => !/^(Αναμένεται|Ανέβηκε αποδεικτικό|Επιβεβαιώθηκε online|Ακυρώθηκε από)/i.test(line));
+  return manualLines.join(" ") || null;
+}
+
 function dateInputValue(date: Date): string {
   const offset = date.getTimezoneOffset() * 60000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
@@ -2576,11 +2586,11 @@ function PaymentsTab({
                   </Button>
                 ) : payment.method === "bank_transfer" || payment.method === "bank" ? <span className="text-xs text-muted-foreground">Δεν ανέβηκε αποδεικτικό εμβάσματος</span> : <span className="text-xs text-muted-foreground">—</span>}
               </TableCell>
-              <TableCell className="max-w-44 whitespace-normal px-5 py-4">
-                {payment.notes ? (
+              <TableCell className="max-w-56 whitespace-normal px-5 py-4">
+                {clientPaymentNote(payment.notes) ? (
                   <Tooltip>
-                    <TooltipTrigger render={<span className="block cursor-default truncate text-sm text-muted-foreground" />}>{payment.notes}</TooltipTrigger>
-                    <TooltipContent>{payment.notes}</TooltipContent>
+                    <TooltipTrigger render={<span className="block cursor-default truncate text-sm text-muted-foreground" />}>{clientPaymentNote(payment.notes)}</TooltipTrigger>
+                    <TooltipContent>{clientPaymentNote(payment.notes)}</TooltipContent>
                   </Tooltip>
                 ) : <span className="text-muted-foreground">-</span>}
               </TableCell>
