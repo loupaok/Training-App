@@ -75,9 +75,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!storageReady) return () => { ignore = true; };
 
-    // Public auth pages do not need a profile refresh. Avoid surfacing expected
-    // 403/401 responses when a visitor has an expired session in local storage.
-    if (pathname === "/login" || pathname === "/register") {
+    // Visitors do not need a profile refresh on public auth pages. An existing
+    // session does: without it, a signed-in client could reopen /register and
+    // see an old wizard draft instead of being redirected to their account.
+    if ((pathname === "/login" || pathname === "/register") && !token) {
       setRefreshingProfile(false);
       return () => {
         ignore = true;
@@ -141,7 +142,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       ignore = true;
     };
-  }, [pathname, storageReady]);
+  }, [pathname, storageReady, token]);
 
   const login = async (email: string, password: string): Promise<AuthResult> => {
     setLoading(true);

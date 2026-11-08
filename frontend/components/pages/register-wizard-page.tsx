@@ -48,7 +48,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { api } from "@/lib/api/client";
-import { useAuth } from "@/lib/auth/auth-context";
+import { getAuthRedirect, useAuth } from "@/lib/auth/auth-context";
 import { useBranding } from "@/contexts/BrandingContext";
 import { resolveMediaUrl } from "@/lib/media";
 import type { AuthUser } from "@/types/auth";
@@ -211,6 +211,7 @@ const genderOptions = [
 type AnswerValue = string | string[] | Record<string, string>;
 type ProgressPhotoAngle = "front" | "side" | "back";
 type IntakePhoto = { file: File; angle: ProgressPhotoAngle };
+type RegistrationIssue = { step: number; message: string };
 
 function isAnswerEmpty(value: AnswerValue | undefined): boolean {
   if (value === undefined) return true;
@@ -316,6 +317,7 @@ function RegisterWizardContent() {
   const [editingFromConfirmation, setEditingFromConfirmation] = useState(false);
   const [legalAccepted, setLegalAccepted] = useState(false);
   const [draftRestored, setDraftRestored] = useState(false);
+  const [confirmationIssues, setConfirmationIssues] = useState<RegistrationIssue[]>([]);
 
   useEffect(() => {
     api
@@ -389,12 +391,18 @@ function RegisterWizardContent() {
   // authenticated at this point, so this simply never fires for them.
   useEffect(() => {
     if (!authReady || user?.role !== "client") return;
+    // A completed registration must never reopen the wizard. This also covers
+    // users who revisit /register from a bookmark while they are still signed in.
+    if (user.onboardingCompleted && !justCompletedRegistration.current) {
+      router.replace(getAuthRedirect(user));
+      return;
+    }
     let active = true;
     api.get<RegistrationProgress>("/register/progress")
       .then((progress) => {
         if (!active) return;
         if ((progress.completed || progress.status === "completed") && !justCompletedRegistration.current) {
-          router.replace("/client/dashboard");
+          router.replace(getAuthRedirect(user));
           return;
         }
         if (progress.status !== "in_progress") return;
@@ -410,7 +418,7 @@ function RegisterWizardContent() {
       })
       .catch(() => {});
     return () => { active = false; };
-  }, [authReady, router, user?.role]);
+  }, [authReady, router, user]);
 
   // No account exists until final submit, so this sessionStorage draft is
   // the only thing that survives an accidental refresh. The password is
@@ -524,22 +532,26 @@ function RegisterWizardContent() {
     return "";
   };
 
-  const validateRegistration = (): string => {
+  const getRegistrationIssues = (): RegistrationIssue[] => {
+    const issues: RegistrationIssue[] = [];
     if (!account.firstName || !account.lastName || !account.email || !account.phone || account.password.length < 6) {
-      return "Συμπλήρωσε όλα τα υποχρεωτικά προσωπικά στοιχεία.";
+      issues.push({ step: 0, message: "Συμπλήρωσε όλα τα υποχρεωτικά προσωπικά στοιχεία και έναν κωδικό με τουλάχιστον 6 χαρακτήρες." });
     }
-    if (!birthDateToIso(account.dateOfBirth)) return "Συμπλήρωσε έγκυρη ημερομηνία γέννησης στη μορφή dd/mm/yyyy.";
-    if (!account.gender) return "Επίλεξε φύλο για να συνεχίσεις.";
-    if (account.password !== confirmPassword) return "Η επιβεβαίωση κωδικού δεν ταιριάζει.";
-    if (!bodyGoal.height || !bodyGoal.currentWeight || !bodyGoal.goal) return "Συμπλήρωσε ύψος, τρέχον βάρος και στόχο.";
-
-    const missingRequiredAnswer = questions.some(
-      (question) => question.isRequired && isAnswerEmpty(fixedAnswerForQuestion(question) ?? answers[question.id]),
-    );
-    if (missingRequiredAnswer) return "Συμπλήρωσε όλες τις υποχρεωτικές ερωτήσεις του ερωτηματολογίου.";
-    if (!selectedPlanId) return "Επέλεξε ένα πλάνο συνδρομής.";
-    return "";
+    if (!birthDateToIso(account.dateOfBirth)) issues.push({ step: 0, message: "Συμπλήρωσε έγκυρη ημερομηνία γέννησης." });
+    if (!account.gender) issues.push({ step: 0, message: "Επίλεξε φύλο." });
+    if (account.password !== confirmPassword) issues.push({ step: 0, message: "Η επιβεβαίωση κωδικού δεν ταιριάζει." });
+    if (!bodyGoal.height || !bodyGoal.currentWeight || !bodyGoal.goal) {
+      issues.push({ step: 1, message: "Συμπλήρωσε ύψος, τρέχον βάρος και στόχο." });
+    }
+    if (questions.some((question) => question.isRequired && isAnswerEmpty(fixedAnswerForQuestion(question) ?? answers[question.id]))) {
+      issues.push({ step: 2, message: "Συμπλήρωσε όλες τις υποχρεωτικές ερωτήσεις του ερωτηματολογίου." });
+    }
+    if (!selectedPlanId) issues.push({ step: 4, message: "Επίλεξε ένα πλάνο συνδρομής." });
+    if (!legalAccepted) issues.push({ step: 6, message: "Αποδέξου τους Όρους Χρήσης και την Πολιτική Απορρήτου." });
+    return issues;
   };
+
+  const validateRegistration = (): string => getRegistrationIssues()[0]?.message || "";
 
   const getProgressData = () => {
     const savedAccount: Omit<AccountForm, "password"> = {
@@ -562,12 +574,15 @@ function RegisterWizardContent() {
   };
 
   useEffect(() => {
-    if (!draftRestored) return;
+    // Never recreate an old draft once the registration has completed.
+    // Otherwise revisiting /register could restore already submitted details.
+    if (!draftRestored || stepIndex >= steps.length || justCompletedRegistration.current) return;
     window.sessionStorage.setItem("register-wizard-draft", JSON.stringify({ ...getProgressData(), stepIndex }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftRestored, account, bodyGoal, answers, selectedPlanId, selectedDurationMonths, paymentMethod, stepIndex]);
 
   const goNext = () => {
+    setConfirmationIssues([]);
     const message = validateStep();
     if (message) {
       setStepError(message);
@@ -578,21 +593,21 @@ function RegisterWizardContent() {
   };
 
   const goBack = () => {
+    setConfirmationIssues([]);
     setStepError("");
     setStepIndex((value) => Math.max(value - 1, 0));
   };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!legalAccepted) {
-      setStepError("Χρειάζεται να αποδεχθείς τους Όρους και την Πολιτική Απορρήτου.");
+    const issues = getRegistrationIssues();
+    if (issues.length) {
+      setConfirmationIssues(issues);
+      setStepError("");
       return;
     }
-    const message = validateRegistration();
-    if (message) {
-      setStepError(message);
-      return;
-    }
+
+    setConfirmationIssues([]);
 
     setSubmitting(true);
     setSubmitError("");
@@ -734,11 +749,11 @@ function RegisterWizardContent() {
               />
             )}
             {stepIndex === 6 && (
-              <ConfirmationStep account={account} bodyGoal={bodyGoal} questions={questions} answers={answers} selectedPlan={selectedPlan} paymentMethod={paymentMethod} onEdit={(index) => { setEditingFromConfirmation(true); setStepIndex(index); }} />
+              <ConfirmationStep account={account} bodyGoal={bodyGoal} questions={questions} answers={answers} selectedPlan={selectedPlan} paymentMethod={paymentMethod} issues={confirmationIssues} onFixIssue={(issue) => { setConfirmationIssues([]); setStepError(""); if (issue.step === 6) { document.getElementById("registration-legal-consent")?.scrollIntoView({ behavior: "smooth", block: "center" }); return; } setEditingFromConfirmation(true); setStepIndex(issue.step); }} onEdit={(index) => { setConfirmationIssues([]); setEditingFromConfirmation(true); setStepIndex(index); }} />
             )}
 
             {stepIndex === steps.length - 1 && (
-              <label className="mt-6 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+              <label id="registration-legal-consent" className="mt-6 flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
                 <Checkbox checked={legalAccepted} onCheckedChange={(checked) => setLegalAccepted(Boolean(checked))} className="mt-1" />
                 <span>Αποδέχομαι τους <Link href="/terms" target="_blank" className="font-semibold text-primary hover:underline">Όρους Χρήσης</Link> και την <Link href="/privacy" target="_blank" className="font-semibold text-primary hover:underline">Πολιτική Απορρήτου</Link>, συμπεριλαμβανομένης της επεξεργασίας των στοιχείων και των φωτογραφιών προόδου που επιλέγω να υποβάλω.</span>
               </label>
@@ -1203,15 +1218,16 @@ function displayAnswer(value: AnswerValue | undefined): string {
   return value;
 }
 
-function ConfirmationStep({ account, bodyGoal, questions, answers, selectedPlan, paymentMethod, onEdit }: { account: AccountForm; bodyGoal: BodyGoalForm; questions: QuestionnaireQuestion[]; answers: Record<number, AnswerValue>; selectedPlan: PricingPlan | null; paymentMethod: RegistrationPaymentMethod; onEdit: (index: number) => void }) {
+function ConfirmationStep({ account, bodyGoal, questions, answers, selectedPlan, paymentMethod, issues, onFixIssue, onEdit }: { account: AccountForm; bodyGoal: BodyGoalForm; questions: QuestionnaireQuestion[]; answers: Record<number, AnswerValue>; selectedPlan: PricingPlan | null; paymentMethod: RegistrationPaymentMethod; issues: RegistrationIssue[]; onFixIssue: (issue: RegistrationIssue) => void; onEdit: (index: number) => void }) {
   const sections = [
-    { title: "Βασικά στοιχεία", icon: UserRound, step: 0, lines: [`${account.firstName} ${account.lastName}`, account.email, account.phone] },
+    { title: "Βασικά στοιχεία", icon: UserRound, step: 0, lines: [`${account.firstName} ${account.lastName}`, account.email, account.phone, account.password ? "Κωδικός: ••••••••" : "Κωδικός: δεν έχει συμπληρωθεί"] },
     { title: "Σώμα & στόχος", icon: Weight, step: 1, lines: [`${bodyGoal.height || "-"} cm · ${bodyGoal.currentWeight || "-"} kg`, `Στόχος: ${bodyGoal.goal || "-"}`] },
     { title: "Ερωτηματολόγιο Coach", icon: ClipboardCheck, step: 2, lines: questions.slice(0, 3).map((question) => `${question.question}: ${displayAnswer(answers[question.id])}`) },
     { title: "Πλάνο & πληρωμή", icon: CreditCard, step: 4, lines: [selectedPlan?.name || "-", ({ bank: "Τραπεζικό έμβασμα", stripe: "Κάρτα", paypal: "PayPal", cash: "Μετρητά" } as const)[paymentMethod]] },
   ];
   return (
     <div className="space-y-3">
+      {issues.length > 0 && <div className="rounded-[16px] border border-destructive/30 bg-destructive/5 p-4"><p className="flex items-center gap-2 text-[14px] font-extrabold text-destructive"><AlertCircle className="h-4 w-4" />Χρειάζονται μερικές διορθώσεις</p><div className="mt-3 space-y-2">{issues.map((issue) => <button key={`${issue.step}-${issue.message}`} type="button" onClick={() => onFixIssue(issue)} className="block w-full rounded-[10px] border border-destructive/20 bg-card px-3 py-2 text-left text-[13px] font-semibold text-foreground transition-colors hover:bg-muted"><span className="mr-2 text-destructive">→</span>{issue.message}</button>)}</div></div>}
       {sections.map(({ title, icon: Icon, step, lines }, index) => (
         <Collapsible key={title} defaultOpen={index === 0}>
           <div className="overflow-hidden rounded-[18px] border border-border bg-card shadow-none transition-colors data-[open]:border-foreground/30">
