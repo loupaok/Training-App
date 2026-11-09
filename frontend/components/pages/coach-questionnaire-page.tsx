@@ -218,7 +218,7 @@ function QuestionSetEditor({
   const [error, setError] = useState("");
 
   const selectedQuestion = useMemo(() => questions.find((item) => item.id === selectedId) || null, [questions, selectedId]);
-  const isLockedStandardQuestion = form.standardKey === "update_day";
+  const isLockedStandardQuestion = Boolean(form.standardKey);
   const activeCount = questions.filter((item) => item.isActive).length;
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -304,7 +304,7 @@ function QuestionSetEditor({
   };
 
   const toggleActive = async (targetQuestion: Question, nextActive: boolean) => {
-    if (targetQuestion.standardKey === "update_day") return;
+    if (targetQuestion.standardKey) return;
     setQuestions((current) => current.map((item) => (item.id === targetQuestion.id ? { ...item, isActive: nextActive } : item)));
     if (selectedId === targetQuestion.id) update("isActive", nextActive);
     try {
@@ -417,7 +417,7 @@ function QuestionSetEditor({
                   <AlertDialogHeader>
                     <AlertDialogTitle>Διαγραφή ερώτησης;</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Η ερώτηση &ldquo;{form.question}&rdquo; θα διαγραφεί οριστικά, μαζί με τυχόν απαντήσεις πελατών. Η ενέργεια δεν αναιρείται.
+                      Η ερώτηση &ldquo;{form.question}&rdquo; θα αφαιρεθεί από τη φόρμα. Οι ήδη υποβλημένες απαντήσεις διατηρούνται στο ιστορικό των πελατών.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>

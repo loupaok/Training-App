@@ -10,8 +10,8 @@ const QUESTION_TYPES = ['single_select', 'multi_select', 'text', 'number', 'text
 // (e.g. reading which day a client wants their weekly update) — at most one
 // question can hold a given key, so consumers can look it up reliably
 // instead of guessing by question type.
-const UPDATE_DAY_OPTIONS = ['Δευτέρα', 'Τρίτη', 'Τετάρτη', 'Πέμπτη', 'Παρασκευή', 'Σάββατο', 'Κυριακή'];
-const UPDATE_DAY_QUESTION = 'Ημέρα Update';
+const UPDATE_DAY_OPTIONS = ['Δευτέρα', 'Τρίτη', 'Τετάρτη', 'Πέμπτη', 'Παρασκευή', 'Σάββατο'];
+const UPDATE_DAY_QUESTION = '1. Ποια ημέρα σε εξυπηρετεί για το σταθερό update;';
 
 function parseOptions(value) {
   try {
@@ -23,8 +23,10 @@ function parseOptions(value) {
 
 function isLegacyUpdateDayQuestion(row) {
   const options = parseOptions(row.options);
-  return options.length === UPDATE_DAY_OPTIONS.length
-    && UPDATE_DAY_OPTIONS.every((day) => options.includes(day));
+  // Παλαιότερα το πεδίο περιείχε και Κυριακή. Το αναγνωρίζουμε για να το
+  // μετατρέψουμε στην ίδια, κλειδωμένη ερώτηση αντί να δημιουργηθεί διπλό.
+  return UPDATE_DAY_OPTIONS.every((day) => options.includes(day))
+    && options.every((day) => UPDATE_DAY_OPTIONS.includes(day) || day === 'Κυριακή');
 }
 
 const seedQuestions = [
@@ -109,6 +111,77 @@ const seedQuestions = [
     sortOrder: 10,
   },
 ];
+
+const COACH_QUESTIONNAIRE_VERSION = 2;
+const coachQuestionnaireDefaults = [
+  { question: 'Υπάρχει κάποιο πρόβλημα υγείας, τραυματισμός ή πόνος;', placeholder: 'Αν ναι, ποιο και αν υπάρχει σχετική οδηγία γιατρού;', isRequired: true },
+  { question: 'Παίρνεις κάποια φαρμακευτική αγωγή;', placeholder: 'Αν ναι, ποια και σε τι δοσολογία;', isRequired: true },
+  { question: 'Έχεις κάνει ή κάνεις χρήση αναβολικών ή άλλων ουσιών ενίσχυσης απόδοσης;', placeholder: 'Αν ναι, ποιων, πότε και για πόσο διάστημα; Υπάρχει τρέχουσα χρήση;', isRequired: true },
+  { question: 'Έχεις αλλεργίες, δυσανεξίες ή τροφές που αποφεύγεις;', placeholder: 'Περιέγραψε ό,τι πρέπει να γνωρίζουμε.', isRequired: true },
+  { question: 'Πώς είναι περίπου η διατροφή σου τώρα;', placeholder: 'Περιέγραψε μία συνηθισμένη ημέρα και τι αλλάζει το Σαββατοκύριακο.', isRequired: true },
+  { question: 'Πώς προπονείσαι τώρα και πόσο καιρό;', placeholder: 'Πόσες ημέρες μπορείς να προπονείσαι, πόση ώρα και με τι εξοπλισμό;', isRequired: true },
+  { question: 'Πώς είναι ο ύπνος σου;', placeholder: 'Ώρες ανά βράδυ, ποιότητα και αν ξυπνάς ξεκούραστος.', isRequired: true },
+  { question: 'Πώς είναι η εργασία και η καθημερινότητά σου;', placeholder: 'Ωράριο ή βάρδιες, καθιστική ή σωματική εργασία και επίπεδο στρες.', isRequired: true },
+  { question: 'Πώς μας βρήκες και τι σε έκανε να επιλέξεις εμένα για τη συνεργασία;', placeholder: 'Προαιρετικά.', isRequired: false },
+  { question: 'Υπάρχει κάτι άλλο που πρέπει να γνωρίζω;', placeholder: 'Κάποια δυσκολία, υποχρέωση ή προηγούμενη εμπειρία που επηρεάζει την προσπάθειά σου;', isRequired: false },
+];
+
+const legacyDefaultQuestions = [
+  'Ποιος είναι ο κύριος στόχος σου;',
+  'Ποιο είναι το επίπεδό σου;',
+  'Πόσες μέρες μπορείς να προπονηθείς;',
+  'Έχεις πρόσβαση σε γυμναστήριο;',
+  'Έχεις τραυματισμούς ή προβλήματα υγείας;',
+  'Ποιο είναι το τρέχον βάρος σου (kg);',
+  'Ποιο είναι το ύψος σου (cm);',
+  'Έχεις διατροφικούς περιορισμούς ή αλλεργίες;',
+  'Πώς μας βρήκες;',
+];
+
+async function ensureCoachQuestionnaireDefaults(connection, updateDayQuestionId) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS app_schema_versions (
+      version_key VARCHAR(100) PRIMARY KEY,
+      version_number INT NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+  const [[versionRow]] = await connection.query('SELECT version_number FROM app_schema_versions WHERE version_key = ?', ['coach_questionnaire']);
+  if (Number(versionRow?.version_number || 0) >= COACH_QUESTIONNAIRE_VERSION) return;
+
+  // Keep custom questions and historical answers intact. Only the original,
+  // untouched defaults are retired before inserting the new editable set.
+  await connection.query(
+    `UPDATE questionnaire_questions
+     SET is_active = 0
+     WHERE standard_key IS NULL AND question IN (?)`,
+    [legacyDefaultQuestions]
+  );
+  await connection.query(
+    `INSERT INTO questionnaire_questions
+       (question, type, options, is_required, placeholder, allow_photos, max_photos, allow_pdf, sort_order, is_active)
+     VALUES ?`,
+    [coachQuestionnaireDefaults.map((question, index) => [
+      question.question,
+      'textarea',
+      null,
+      question.isRequired ? 1 : 0,
+      question.placeholder,
+      0,
+      4,
+      0,
+      index + 1,
+      1,
+    ])]
+  );
+  await connection.query('UPDATE questionnaire_questions SET sort_order = ? WHERE id = ?', [coachQuestionnaireDefaults.length + 1, updateDayQuestionId]);
+  await connection.query(
+    `INSERT INTO app_schema_versions (version_key, version_number)
+     VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE version_number = VALUES(version_number)`,
+    ['coach_questionnaire', COACH_QUESTIONNAIRE_VERSION]
+  );
+}
 
 export async function ensureQuestionnaireSchema(connection) {
   await connection.query(`
@@ -222,6 +295,8 @@ export async function ensureQuestionnaireSchema(connection) {
     'UPDATE questionnaire_questions SET standard_key = NULL WHERE standard_key = ? AND id != ?',
     ['update_day', updateDayQuestionId]
   );
+
+  await ensureCoachQuestionnaireDefaults(connection, updateDayQuestionId);
 }
 
 export async function syncUpdateDayQuestionnaireAnswer(connection, clientId, dayOfWeek) {

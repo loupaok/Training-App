@@ -19,76 +19,74 @@ const UPDATE_QUESTION_TYPES = ['single_select', 'multi_select', 'text', 'number'
 // (e.g. reading the client's weekly weight) — at most one question can hold
 // a given key, so consumers can look it up reliably instead of guessing by
 // question type or matching text.
-const UPDATE_QUESTION_STANDARD_KEYS = ['weight_kg'];
+const UPDATE_QUESTION_STANDARD_KEYS = ['nutrition_consistency', 'nutrition_changes', 'nutrition_details', 'training_details', 'training_tags', 'training_consistency', 'sleep_hours', 'sleep_quality', 'recovery_quality', 'recovery_details', 'weight_kg', 'activity_details', 'health_change', 'health_details', 'next_week_tags', 'next_week_needs', 'other_notes', 'progress_photos'];
 
-const seedUpdateQuestions = [
-  {
-    question: 'Πώς ήταν η εβδομάδα σου;',
-    type: 'rating',
-    options: null,
-    isRequired: true,
-    placeholder: null,
-    allowPhotos: false,
-    maxPhotos: 4,
-    allowPdf: false,
-    sortOrder: 1,
-  },
-  {
-    question: 'Τρέχον βάρος (kg);',
-    type: 'number',
-    options: null,
-    isRequired: true,
-    placeholder: 'π.χ. 82.5',
-    allowPhotos: false,
-    maxPhotos: 4,
-    allowPdf: false,
-    sortOrder: 2,
-  },
-  {
-    question: 'Πώς πήγαν οι προπονήσεις;',
-    type: 'rating',
-    options: null,
-    isRequired: true,
-    placeholder: null,
-    allowPhotos: false,
-    maxPhotos: 4,
-    allowPdf: false,
-    sortOrder: 3,
-  },
-  {
-    question: 'Πώς ήταν η διατροφή σου;',
-    type: 'rating',
-    options: null,
-    isRequired: true,
-    placeholder: null,
-    allowPhotos: false,
-    maxPhotos: 4,
-    allowPdf: false,
-    sortOrder: 4,
-  },
-  {
-    question: 'Φωτογραφίες προόδου',
-    type: 'photos',
-    options: null,
-    isRequired: false,
-    placeholder: null,
-    allowPhotos: true,
-    maxPhotos: 4,
-    allowPdf: false,
-    sortOrder: 5,
-  },
-  {
-    question: 'Σημειώσεις / Ερωτήσεις προς τον coach',
-    type: 'textarea',
-    options: null,
-    isRequired: false,
-    placeholder: 'Γράψε ό,τι θέλεις...',
-    allowPhotos: false,
-    maxPhotos: 4,
-    allowPdf: false,
-    sortOrder: 6,
-  },
+const standardUpdateQuestions = [
+  { standardKey: 'nutrition_consistency', question: '1. Πόσο συνεπής ήσουν στη διατροφή σου;', type: 'rating', isRequired: true, placeholder: '5: πλήρης εφαρμογή · 4: σχεδόν πλήρης · 3: περίπου τις μισές ημέρες · 2: λίγες ημέρες · 1: ουσιαστικά καθόλου', sortOrder: 1 },
+  { standardKey: 'nutrition_changes', question: 'Τι άλλαξε από το πλάνο;', type: 'multi_select', options: ['Έφαγα έξω', 'Παρέλειψα γεύμα', 'Τσιμπολόγημα', 'Αλκοόλ', 'Άλλαξα ποσότητες'], isRequired: false, placeholder: null, sortOrder: 2 },
+  { standardKey: 'nutrition_details', question: 'Λεπτομέρειες διατροφής', type: 'textarea', isRequired: false, placeholder: 'Ποιο γεύμα, πόσες φορές και για ποιον λόγο;', sortOrder: 3 },
+  { standardKey: 'training_consistency', question: 'Πόσο συνεπής ήσουν στο πρόγραμμα;', type: 'rating', isRequired: true, placeholder: 'Η αύξηση δύναμης δεν είναι απαραίτητη για να επιλέξεις 5.', sortOrder: 4 },
+  { standardKey: 'training_tags', question: 'Κάτι για την προπόνηση;', type: 'multi_select', options: ['Πόνος / ενόχληση', 'Δυσκολία σε άσκηση', 'Έλειψα (υποχρεώσεις)', 'Ένιωσα δυνατός'], isRequired: false, placeholder: null, sortOrder: 5 },
+  { standardKey: 'training_details', question: 'Σημειώσεις προπόνησης', type: 'textarea', isRequired: false, placeholder: 'Γράψε τι σε δυσκόλεψε ή σε ποια άσκηση είδες πρόοδο.', sortOrder: 6 },
+  { standardKey: 'sleep_hours', question: '3. Μέσες ώρες ύπνου', type: 'single_select', options: ['<5', '5–6', '6–7', '7–8', '8+'], isRequired: true, placeholder: null, sortOrder: 7 },
+  { standardKey: 'sleep_quality', question: 'Ποιότητα ύπνου', type: 'rating', isRequired: true, placeholder: null, sortOrder: 8 },
+  { standardKey: 'recovery_quality', question: '4. Πώς ήταν η αποκατάστασή σου;', type: 'rating', isRequired: true, placeholder: null, sortOrder: 9 },
+  { standardKey: 'recovery_details', question: 'Σημειώσεις ύπνου & αποκατάστασης', type: 'textarea', isRequired: false, placeholder: 'Κόπωση, πιάσιμο, ύπνος, στρες, εργασία ή κάτι άλλο;', sortOrder: 10 },
+  { standardKey: 'weight_kg', question: '5. Τελευταίο πρωινό βάρος (kg)', type: 'number', isRequired: true, placeholder: 'π.χ. 82,5', sortOrder: 9 },
+  { standardKey: 'activity_details', question: 'Βάρος και δραστηριότητα: επιπλέον στοιχεία', type: 'textarea', isRequired: false, placeholder: 'Ημερομηνία μέτρησης, μέσο εβδομαδιαίο βάρος, βήματα/ημέρα και αερόβια.', sortOrder: 11 },
+  { standardKey: 'health_change', question: 'Υπήρξε αλλαγή στην υγεία σου;', type: 'single_select', options: ['Όχι', 'Ναι'], isRequired: true, placeholder: null, sortOrder: 12 },
+  { standardKey: 'health_details', question: 'Διευκρίνισε την αλλαγή στην υγεία', type: 'textarea', isRequired: false, placeholder: 'Τραυματισμός, ασθένεια, επίμονος πόνος, φάρμακα ή οδηγία γιατρού.', sortOrder: 13 },
+  { standardKey: 'next_week_tags', question: 'Τι χρειάζεσαι για την επόμενη εβδομάδα;', type: 'multi_select', options: ['Ταξίδι', 'Βάρδιες', 'Εκδήλωση', 'Λιγότερος χρόνος', 'Τίποτα'], isRequired: false, placeholder: null, sortOrder: 14 },
+  { standardKey: 'next_week_needs', question: 'Λεπτομέρειες επόμενης εβδομάδας', type: 'textarea', isRequired: false, placeholder: 'Υπάρχει κάτι που χρειάζεται να λάβουμε υπόψη;', sortOrder: 15 },
+  { standardKey: 'other_notes', question: 'Κάτι άλλο για τον coach;', type: 'textarea', isRequired: false, placeholder: 'Γράψε ελεύθερα…', sortOrder: 16 },
+  { standardKey: 'progress_photos', question: 'Φωτογραφίες & υποβολή', type: 'photos', isRequired: false, placeholder: 'Μπροστά, πλάι και πίσω, με ίδιο φωτισμό, απόσταση και στάση όπως στις προηγούμενες φωτογραφίες, χωρίς φίλτρα.', allowPhotos: true, maxPhotos: 3, sortOrder: 17 },
 ];
+
+const legacyUpdateQuestions = ['Πώς ήταν η εβδομάδα σου;', 'Τρέχον βάρος (kg);', 'Πώς πήγαν οι προπονήσεις;', 'Πώς ήταν η διατροφή σου;', 'Φωτογραφίες προόδου', 'Σημειώσεις / Ερωτήσεις προς τον coach'];
+
+async function ensureStandardUpdateQuestions(connection) {
+  // Retire only the original defaults; coach-created additions remain intact.
+  await connection.query(
+    'UPDATE update_questions SET is_active = 0 WHERE standard_key IS NULL AND question IN (?)',
+    [legacyUpdateQuestions],
+  );
+
+  for (const item of standardUpdateQuestions) {
+    const [rows] = await connection.query(
+      'SELECT id FROM update_questions WHERE standard_key = ? ORDER BY id ASC',
+      [item.standardKey],
+    );
+    const values = [
+      item.question,
+      item.type,
+      item.options ? JSON.stringify(item.options) : null,
+      item.isRequired ? 1 : 0,
+      item.placeholder || null,
+      item.allowPhotos ? 1 : 0,
+      item.maxPhotos || 4,
+      0,
+      item.sortOrder,
+      1,
+      item.standardKey,
+    ];
+    if (rows[0]) {
+      await connection.query(
+        `UPDATE update_questions
+         SET question = ?, type = ?, options = ?, is_required = ?, placeholder = ?,
+             allow_photos = ?, max_photos = ?, allow_pdf = ?, sort_order = ?, is_active = ?, standard_key = ?
+         WHERE id = ?`,
+        [...values, rows[0].id],
+      );
+    } else {
+      await connection.query(
+        `INSERT INTO update_questions
+          (question, type, options, is_required, placeholder, allow_photos, max_photos, allow_pdf, sort_order, is_active, standard_key)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        values,
+      );
+    }
+  }
+}
 
 // weekly_updates/weekly_update_photos already existed (created by clientDashboard.js)
 // with a fixed weight/training/nutrition-score schema and zero real submissions. This
@@ -127,6 +125,11 @@ export async function ensureWeeklyUpdateSchema(connection) {
   } catch (error) {
     if (error.code !== 'ER_DUP_FIELDNAME') throw error;
   }
+  try {
+    await connection.query('ALTER TABLE update_questions ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE');
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
 
   await connection.query(`
     CREATE TABLE IF NOT EXISTS weekly_updates (
@@ -142,6 +145,11 @@ export async function ensureWeeklyUpdateSchema(connection) {
 
   try {
     await connection.query('ALTER TABLE weekly_updates ADD COLUMN is_timely BOOLEAN NOT NULL DEFAULT TRUE AFTER week_start');
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
+  try {
+    await connection.query('ALTER TABLE weekly_updates ADD COLUMN weekly_score TINYINT NULL AFTER is_timely');
   } catch (error) {
     if (error.code !== 'ER_DUP_FIELDNAME') throw error;
   }
@@ -209,38 +217,7 @@ export async function ensureWeeklyUpdateSchema(connection) {
     if (error.code !== 'ER_DUP_FIELDNAME') throw error;
   }
 
-  const [rows] = await connection.query('SELECT COUNT(*) AS total FROM update_questions');
-  if (Number(rows[0]?.total || 0) === 0) {
-    await connection.query(
-      `INSERT INTO update_questions
-        (question, type, options, is_required, placeholder, allow_photos, max_photos, allow_pdf, sort_order, is_active)
-       VALUES ?`,
-      [seedUpdateQuestions.map((q) => [
-        q.question,
-        q.type,
-        q.options ? JSON.stringify(q.options) : null,
-        q.isRequired ? 1 : 0,
-        q.placeholder,
-        q.allowPhotos ? 1 : 0,
-        q.maxPhotos,
-        q.allowPdf ? 1 : 0,
-        q.sortOrder,
-        1,
-      ])]
-    );
-  }
-
-  // Weight is the single standard numeric value used by progress charts and summaries.
-  const [weightQuestionRows] = await connection.query(
-    `SELECT id FROM update_questions
-     WHERE type = 'number' AND LOWER(question) LIKE ?
-     ORDER BY sort_order ASC, id ASC LIMIT 1`,
-    ['%βάρος%']
-  );
-  if (weightQuestionRows[0]) {
-    await connection.query('UPDATE update_questions SET standard_key = NULL WHERE standard_key = ?', ['weight_kg']);
-    await connection.query('UPDATE update_questions SET standard_key = ? WHERE id = ?', ['weight_kg', weightQuestionRows[0].id]);
-  }
+  await ensureStandardUpdateQuestions(connection);
 }
 
 const storage = multer.diskStorage({
@@ -287,6 +264,26 @@ function normalizeQuestion(row) {
     isActive: Boolean(row.is_active),
     standardKey: row.standard_key || null,
   };
+}
+
+export function calculateWeeklyScore(answers, questions) {
+  const byId = new Map((questions || []).map((question) => [Number(question.id), question]));
+  const ratings = {};
+  for (const entry of answers || []) {
+    const question = byId.get(Number(entry.question_id ?? entry.questionId));
+    const rating = Number(entry.answer);
+    if (!question || !Number.isInteger(rating) || rating < 1 || rating > 5) continue;
+    if (['nutrition_consistency', 'training_consistency', 'sleep_quality', 'recovery_quality'].includes(question.standard_key)) {
+      ratings[question.standard_key] = rating;
+    }
+  }
+  if (Object.keys(ratings).length !== 4) return null;
+  return Math.max(0, Math.min(100,
+    40 - (5 - ratings.nutrition_consistency) * 10
+    + 20 - (5 - ratings.training_consistency) * 5
+    + 20 - (5 - ratings.sleep_quality) * 5
+    + 20 - (5 - ratings.recovery_quality) * 5,
+  ));
 }
 
 function athensDateParts(date = new Date()) {
@@ -350,10 +347,10 @@ function extractUpdateStats(answers, questions) {
     if (!question || !entry.answer) continue;
     if (question.standard_key === 'weight_kg' && weight === null) {
       weight = entry.answer;
-    } else if (question.type === 'rating') {
-      const text = question.question || '';
-      if (text.includes('προπον')) trainingScore = entry.answer;
-      else if (text.includes('διατροφ')) nutritionScore = entry.answer;
+    } else if (question.standard_key === 'training_consistency') {
+      trainingScore = entry.answer;
+    } else if (question.standard_key === 'nutrition_consistency') {
+      nutritionScore = entry.answer;
     }
   }
   return { weight, trainingScore, nutritionScore };
@@ -367,7 +364,7 @@ router.get('/questions', async (req, res) => {
   try {
     const connection = await pool.getConnection();
     await ensureWeeklyUpdateSchema(connection);
-    const [rows] = await connection.query('SELECT * FROM update_questions WHERE is_active = 1 ORDER BY sort_order ASC, id ASC');
+    const [rows] = await connection.query('SELECT * FROM update_questions WHERE is_active = 1 AND is_deleted = 0 ORDER BY sort_order ASC, id ASC');
     connection.release();
     res.json(rows.map(normalizeQuestion));
   } catch (error) {
@@ -381,7 +378,7 @@ router.get('/questions/manage', authorizeRole(['coach', 'admin']), async (req, r
   try {
     const connection = await pool.getConnection();
     await ensureWeeklyUpdateSchema(connection);
-    const [rows] = await connection.query('SELECT * FROM update_questions ORDER BY sort_order ASC, id ASC');
+    const [rows] = await connection.query('SELECT * FROM update_questions WHERE is_deleted = 0 ORDER BY sort_order ASC, id ASC');
     connection.release();
     res.json(rows.map(normalizeQuestion));
   } catch (error) {
@@ -468,6 +465,12 @@ router.put('/questions/:id', authorizeRole(['coach', 'admin']), [
     const connection = await pool.getConnection();
     await ensureWeeklyUpdateSchema(connection);
 
+    const [existingRows] = await connection.query('SELECT standard_key FROM update_questions WHERE id = ? LIMIT 1', [req.params.id]);
+    if (existingRows[0]?.standard_key) {
+      connection.release();
+      return res.status(403).json({ message: 'Οι σταθερές ερωτήσεις του εβδομαδιαίου update δεν αλλάζουν.' });
+    }
+
     const standardKey = req.body.standardKey || null;
     if (standardKey) {
       await connection.query('UPDATE update_questions SET standard_key = NULL WHERE standard_key = ? AND id != ?', [standardKey, req.params.id]);
@@ -507,8 +510,14 @@ router.delete('/questions/:id', authorizeRole(['coach', 'admin']), async (req, r
   try {
     const connection = await pool.getConnection();
     await ensureWeeklyUpdateSchema(connection);
-    await connection.query('DELETE FROM update_questions WHERE id = ?', [req.params.id]);
+    const [existingRows] = await connection.query('SELECT standard_key FROM update_questions WHERE id = ? LIMIT 1', [req.params.id]);
+    if (existingRows[0]?.standard_key) {
+      connection.release();
+      return res.status(403).json({ message: 'Οι σταθερές ερωτήσεις του εβδομαδιαίου update δεν διαγράφονται.' });
+    }
+    const [result] = await connection.query('UPDATE update_questions SET is_active = 0, is_deleted = 1 WHERE id = ?', [req.params.id]);
     connection.release();
+    if (!result.affectedRows) return res.status(404).json({ message: 'Question not found' });
     res.json({ message: 'Question deleted' });
   } catch (error) {
     console.error(error);
@@ -629,9 +638,10 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
 
     await connection.beginTransaction();
 
+    const weeklyScore = calculateWeeklyScore(answers, activeQuestions);
     const [result] = await connection.query(
-      'INSERT INTO weekly_updates (client_id, week_start, is_timely) VALUES (?, ?, ?)',
-      [req.user.id, weekStart, timing.isTimely ? 1 : 0]
+      'INSERT INTO weekly_updates (client_id, week_start, is_timely, weekly_score) VALUES (?, ?, ?, ?)',
+      [req.user.id, weekStart, timing.isTimely ? 1 : 0, weeklyScore]
     );
     const updateId = result.insertId;
 
@@ -802,7 +812,7 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
 
     const [[{ total }]] = await connection.query(`SELECT COUNT(*) AS total FROM weekly_updates w ${whereClause}`, values);
     const [rows] = await connection.query(
-      `SELECT w.id, w.client_id, w.submitted_at, DATE_FORMAT(w.week_start, '%Y-%m-%d') AS week_start, w.is_read,
+      `SELECT w.id, w.client_id, w.submitted_at, DATE_FORMAT(w.week_start, '%Y-%m-%d') AS week_start, w.is_read, w.weekly_score,
               u.full_name AS client_name, u.email AS client_email, u.profile_photo AS client_photo
        FROM weekly_updates w
        JOIN users u ON u.id = w.client_id
@@ -834,7 +844,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
     await ensureWeeklyUpdateSchema(connection);
 
     const [rows] = await connection.query(
-      `SELECT w.id, w.client_id, w.submitted_at, DATE_FORMAT(w.week_start, '%Y-%m-%d') AS week_start, w.is_read,
+      `SELECT w.id, w.client_id, w.submitted_at, DATE_FORMAT(w.week_start, '%Y-%m-%d') AS week_start, w.is_read, w.weekly_score,
               u.full_name AS client_name, u.email AS client_email, u.profile_photo AS client_photo
        FROM weekly_updates w
        JOIN users u ON u.id = w.client_id

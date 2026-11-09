@@ -96,7 +96,6 @@ const updateDayOptions = [
   { value: 4, label: "Πέμπτη" },
   { value: 5, label: "Παρασκευή" },
   { value: 6, label: "Σάββατο" },
-  { value: 0, label: "Κυριακή" },
 ];
 
 function slugify(value: string): string {

@@ -5,6 +5,7 @@ import Link from "next/link"
 import {
   Activity,
   ArrowRight,
+  Camera,
   CalendarDays,
   CheckCircle2,
   Clock3,
@@ -39,6 +40,7 @@ import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { DiscordConnectionCard } from "@/components/shared/discord-connection-card"
 import { api } from "@/lib/api/client"
@@ -56,6 +58,7 @@ type Question = {
   allowPhotos?: boolean
   allowPdf?: boolean
   maxPhotos?: number
+  standardKey?: string | null
 }
 
 type UpdateFile = {
@@ -120,6 +123,25 @@ type PaymentData = { subscription: { planName?: string | null; price?: number | 
 
 type PointsData = { totalPoints: number; usedPoints: number; availablePoints: number }
 type PointsSettings = { euro_per_points: number; min_points_redeem: number; is_active: boolean | number }
+
+function calculateWeeklyScore(questions: Question[], answers: Record<number, string | string[]>) {
+  const ratings = new Map(questions.map((question) => [question.standardKey, Number(answers[question.id])]))
+  const nutrition = ratings.get("nutrition_consistency")
+  const training = ratings.get("training_consistency")
+  const sleep = ratings.get("sleep_quality")
+  const recovery = ratings.get("recovery_quality")
+  if (![nutrition, training, sleep, recovery].every((rating) => Number.isInteger(rating) && Number(rating) >= 1 && Number(rating) <= 5)) return null
+  const [nutritionRating, trainingRating, sleepRating, recoveryRating] = [nutrition, training, sleep, recovery] as number[]
+  return 40 - (5 - nutritionRating) * 10 + 20 - (5 - trainingRating) * 5 + 20 - (5 - sleepRating) * 5 + 20 - (5 - recoveryRating) * 5
+}
+
+function weeklyScoreMessage(score: number | null) {
+  if (score === null) return "Συμπλήρωσε τις τέσσερις βαθμολογίες για να εμφανιστεί το σκορ σου."
+  if (score >= 85) return "Πολύ καλή εβδομάδα — συνέχισε με την ίδια συνέπεια."
+  if (score >= 65) return "Καλή βάση. Δες ποιο σημείο μπορεί να γίνει λίγο πιο σταθερό την επόμενη εβδομάδα."
+  if (score >= 45) return "Υπήρξαν δυσκολίες· οι απαντήσεις σου θα βοηθήσουν τον coach να προσαρμόσει το πλάνο."
+  return "Μια απαιτητική εβδομάδα δεν ακυρώνει την πρόοδό σου. Απάντησε ειλικρινά για να βρούμε την καλύτερη επόμενη κίνηση."
+}
 
 const dateFormat = new Intl.DateTimeFormat("el-GR", { day: "numeric", month: "short", year: "numeric" })
 const defaultTrainingDayNames = new Set(["Κυριακή", "Δευτέρα", "Τρίτη", "Τετάρτη", "Πέμπτη", "Παρασκευή", "Σάββατο"])
@@ -566,10 +588,12 @@ function ClientDashboardContent() {
   const [paymentData, setPaymentData] = useState<PaymentData | null>(null)
   const [answers, setAnswers] = useState<Record<number, string | string[]>>({})
   const [files, setFiles] = useState<UpdateFile[]>([])
+  const [activeUpdatePhotoAngle, setActiveUpdatePhotoAngle] = useState<UpdateFile["angle"]>("front")
   const [activeTab, setActiveTab] = useState("overview")
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [submittedScore, setSubmittedScore] = useState<number | null>(null)
   const [error, setError] = useState("")
   const [showBirthdayCelebration, setShowBirthdayCelebration] = useState(false)
 
@@ -652,55 +676,47 @@ function ClientDashboardContent() {
     const value = answers[question.id] ?? (question.type === "multi_select" ? [] : "")
     const setValue = (next: string | string[]) => setAnswers((current) => ({ ...current, [question.id]: next }))
     const required = question.isRequired ? <span className="text-destructive"> *</span> : null
+    const questionCardClass = "rounded-[18px] border border-border bg-card p-4 shadow-none sm:p-5"
 
     if (question.allowPhotos || question.allowPdf || question.type === "photos" || question.type === "pdf") {
       const supportsPhotos = question.allowPhotos || question.type === "photos"
       const supportsPdf = question.allowPdf || question.type === "pdf"
       const questionFiles = files.filter((entry) => entry.questionId === question.id)
 
-      return <div key={question.id} className="space-y-3">
+      return <div key={question.id} className={`${questionCardClass} space-y-3`}>
         <div className="space-y-1">
           <Label className="text-base font-semibold">{question.question}{required}</Label>
           {supportsPhotos && <p className="text-xs text-muted-foreground">Πρόσθεσε μία φωτογραφία για κάθε όψη, ώστε ο coach να βλέπει καθαρά την πρόοδό σου.</p>}
+          {supportsPhotos && question.placeholder && <p className="text-xs leading-5 text-muted-foreground">{question.placeholder}</p>}
         </div>
-        {supportsPhotos && <div className="grid grid-cols-3 gap-2 sm:gap-3">
-          {updatePhotoAngles.map((photoAngle) => {
-            const selected = questionFiles.find((entry) => entry.angle === photoAngle.key)
-            return <div key={photoAngle.key} className="space-y-1.5">
-              <label className={`flex h-28 cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed p-2 text-center transition-colors ${selected ? "border-accent bg-[color:var(--sp-lime-soft)]" : "border-border bg-muted/20 hover:bg-muted/40"}`}>
-                <Input
-                  className="hidden"
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onClick={(event) => { event.currentTarget.value = "" }}
-                  onChange={(event) => setProgressPhoto(question.id, photoAngle.key, event.target.files?.[0])}
-                />
-                <span className={`grid h-8 w-8 place-items-center rounded-full ${selected ? "bg-accent text-accent-foreground" : "bg-background text-muted-foreground"}`}><ImagePlus className="h-4 w-4" /></span>
-                <span className="text-xs font-extrabold">{photoAngle.label}</span>
-                <span className="max-w-full truncate text-[10px] text-muted-foreground">{selected ? selected.file.name : "Πρόσθεσε"}</span>
-              </label>
-              {selected && <button type="button" onClick={() => setProgressPhoto(question.id, photoAngle.key)} className="w-full text-[10px] font-semibold text-muted-foreground hover:text-foreground">Αφαίρεση</button>}
-            </div>
-          })}
-        </div>}
+        {supportsPhotos && (() => {
+          const activeAngle = updatePhotoAngles.find((item) => item.key === activeUpdatePhotoAngle) ?? updatePhotoAngles[0]
+          const selected = questionFiles.find((entry) => entry.angle === activeAngle.key)
+          return <Tabs value={activeAngle.key} onValueChange={(value) => setActiveUpdatePhotoAngle(value as UpdateFile["angle"])} className="space-y-3">
+            <TabsList className="grid h-11 w-full grid-cols-3 rounded-[12px] bg-muted p-1"><TabsTrigger value="front" className="rounded-[9px] text-xs font-extrabold">Μπροστά</TabsTrigger><TabsTrigger value="side" className="rounded-[9px] text-xs font-extrabold">Πλάι</TabsTrigger><TabsTrigger value="back" className="rounded-[9px] text-xs font-extrabold">Πίσω</TabsTrigger></TabsList>
+            <label className={`flex h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-[14px] border border-dashed p-3 text-center transition-colors ${selected ? "border-accent bg-[color:var(--sp-lime-soft)]" : "border-border bg-muted/20 hover:bg-muted/40"}`}><Input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onClick={(event) => { event.currentTarget.value = "" }} onChange={(event) => setProgressPhoto(question.id, activeAngle.key, event.target.files?.[0])} /><span className={`grid h-10 w-10 place-items-center rounded-full ${selected ? "bg-accent text-accent-foreground" : "bg-background text-muted-foreground"}`}><ImagePlus className="h-5 w-5" /></span><span className="text-sm font-extrabold">Φωτογραφία · {activeAngle.label}</span><span className="max-w-full truncate text-xs text-muted-foreground">{selected ? selected.file.name : "Πάτησε για επιλογή φωτογραφίας"}</span></label>
+            <label className="flex h-11 cursor-pointer items-center justify-center gap-2 rounded-full bg-foreground px-5 text-[13px] font-extrabold text-background sm:hidden"><Camera className="h-4 w-4" />Βγάλε φωτογραφία<Input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onClick={(event) => { event.currentTarget.value = "" }} onChange={(event) => setProgressPhoto(question.id, activeAngle.key, event.target.files?.[0])} /></label>
+            {selected && <button type="button" onClick={() => setProgressPhoto(question.id, activeAngle.key)} className="w-full text-xs font-extrabold text-muted-foreground underline underline-offset-4 hover:text-foreground">Αφαίρεση φωτογραφίας</button>}
+          </Tabs>
+        })()}
         {supportsPdf && <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-border bg-muted/20 p-3 text-sm transition-colors hover:bg-muted/40"><span className="grid h-8 w-8 place-items-center rounded-md bg-background"><Paperclip className="h-4 w-4" /></span><span className="min-w-0 flex-1"><span className="block font-medium">Πρόσθεσε PDF</span><span className="block text-xs text-muted-foreground">Έως 1 αρχείο, 5MB</span></span><Input className="hidden" type="file" accept="application/pdf" onClick={(event) => { event.currentTarget.value = "" }} onChange={(event) => addUpdateFiles(question.id, Array.from(event.target.files ?? []))} /></label>}
       </div>
     }
 
     if (question.type === "rating") {
-      return <div key={question.id} className="space-y-3"><Label className="text-base font-semibold">{question.question}{required}</Label><div className="rounded-lg border border-border bg-muted/30 p-4"><StarRating value={Number(value) || 0} onChange={(rating) => setValue(String(rating))} /></div></div>
+      return <div key={question.id} className={`${questionCardClass} space-y-3`}><div><Label className="text-base font-semibold">{question.question}{required}</Label>{question.placeholder && <p className="mt-1 text-xs leading-5 text-muted-foreground">{question.placeholder}</p>}</div><div className="rounded-[14px] border border-border bg-muted/30 p-4"><StarRating value={Number(value) || 0} onChange={(rating) => setValue(String(rating))} /></div></div>
     }
     if (question.type === "textarea") {
-      return <div key={question.id} className="space-y-2"><Label className="text-base font-semibold">{question.question}{required}</Label><Textarea value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} className="min-h-28 resize-y" /></div>
+      return <div key={question.id} className={`${questionCardClass} space-y-2`}><Label className="text-base font-semibold">{question.question}{required}</Label><Textarea value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} className="min-h-28 resize-y" />{question.standardKey === "training_details" && <ul className="space-y-1.5 border-t border-border pt-3 text-xs leading-5 text-muted-foreground"><li>• Πόσες προπονήσεις είχες στο πρόγραμμα και πόσες ολοκλήρωσες;</li><li>• Αν έχασες κάποια, γιατί;</li><li>• Υπήρξε πρόοδος σε κιλά, επαναλήψεις ή τεχνική; Σε ποιες ασκήσεις;</li><li>• Σε δυσκόλεψε κάτι ή εμφανίστηκε πόνος;</li></ul>}</div>
     }
     if (question.type === "select" || question.type === "single_select") {
-      return <fieldset key={question.id} className="space-y-3"><legend className="text-base font-semibold">{question.question}{required}</legend><div className="flex flex-wrap gap-2">{(question.options ?? []).map((option) => <button type="button" key={option} onClick={() => setValue(option)} className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${value === option ? "border-primary bg-primary/10 text-foreground" : "bg-background hover:bg-muted"}`}>{option}</button>)}</div></fieldset>
+      return <fieldset key={question.id} className={`${questionCardClass} space-y-3`}><legend className="text-base font-semibold">{question.question}{required}</legend><div className="flex flex-wrap gap-2">{(question.options ?? []).map((option) => <button type="button" key={option} onClick={() => setValue(option)} className={`rounded-full border px-4 py-2.5 text-sm font-extrabold transition-colors ${value === option ? "border-accent bg-accent text-accent-foreground" : "bg-background hover:bg-muted"}`}>{option}</button>)}</div></fieldset>
     }
     if (question.type === "multi_select") {
       const selected = Array.isArray(value) ? value : []
-      return <fieldset key={question.id} className="space-y-3"><legend className="text-base font-semibold">{question.question}{required}</legend><div className="flex flex-wrap gap-2">{(question.options ?? []).map((option) => <button type="button" key={option} onClick={() => setValue(selected.includes(option) ? selected.filter((item) => item !== option) : [...selected, option])} className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${selected.includes(option) ? "border-primary bg-primary/10 text-foreground" : "bg-background hover:bg-muted"}`}>{option}</button>)}</div></fieldset>
+      return <fieldset key={question.id} className={`${questionCardClass} space-y-3`}><legend className="text-base font-semibold">{question.question}{required}</legend><div className="flex flex-wrap gap-2">{(question.options ?? []).map((option) => <button type="button" key={option} onClick={() => setValue(selected.includes(option) ? selected.filter((item) => item !== option) : [...selected, option])} className={`rounded-full border px-4 py-2.5 text-sm font-extrabold transition-colors ${selected.includes(option) ? "border-accent bg-accent text-accent-foreground" : "bg-background hover:bg-muted"}`}>{option}</button>)}</div></fieldset>
     }
-    return <div key={question.id} className="space-y-3"><div className="space-y-2"><Label className="text-base font-semibold">{question.question}{required}</Label><Input type={question.type === "number" ? "number" : question.type === "url" ? "url" : "text"} autoComplete={question.type === "url" ? "off" : undefined} value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} className="h-11" /></div></div>
+    return <div key={question.id} className={`${questionCardClass} space-y-3`}><div className="space-y-2"><Label className="text-base font-semibold">{question.question}{required}</Label><Input type={question.type === "number" ? "number" : question.type === "url" ? "url" : "text"} autoComplete={question.type === "url" ? "off" : undefined} value={String(value)} placeholder={question.placeholder ?? ""} onChange={(event) => setValue(event.target.value)} className="h-11" /></div></div>
   }
 
   const submitUpdate = async (event: FormEvent) => {
@@ -710,12 +726,14 @@ function ClientDashboardContent() {
     if (unansweredRequired) { setError("Συμπλήρωσε όλα τα υποχρεωτικά πεδία."); return }
     setSubmitting(true)
     try {
+      const scoreAtSubmission = calculateWeeklyScore(questions, answers)
       const formData = new FormData()
       formData.append("answers", JSON.stringify(Object.entries(answers).map(([questionId, answer]) => ({ questionId: Number(questionId), answer }))))
       files.forEach(({ file }) => formData.append("files", file))
       formData.append("fileQuestionIds", JSON.stringify(files.map(({ questionId }) => questionId)))
       formData.append("fileAngles", JSON.stringify(files.map(({ angle }) => angle ?? "other")))
       await api.upload("/client/updates/submit", formData)
+      setSubmittedScore(scoreAtSubmission)
       setSubmitted(true)
       setAnswers({})
       setFiles([])
@@ -732,11 +750,12 @@ function ClientDashboardContent() {
 
   const subscriptionActive = dashboard?.client.subscriptionStatus === "active"
   const upcomingDate = formatDate(dashboard?.nextUpdateDate)
+  const weeklyScore = calculateWeeklyScore(questions, answers)
 
   return (
     <ClientShell user={user} logout={logout} paymentApproved={subscriptionActive} subscriptionStatus={dashboard?.client.subscriptionStatus} daysRemaining={dashboard?.client.daysRemaining} active="dashboard">
       {showBirthdayCelebration && <BirthdayCelebration firstName={dashboard?.client.firstName || ""} onClose={() => setShowBirthdayCelebration(false)} />}
-      <main className="mx-auto w-full max-w-none space-y-5 p-4 sm:p-6 lg:px-10 lg:py-8">
+      <main className="mx-auto max-w-[var(--container-7xl)] space-y-5 p-4 sm:p-6 lg:p-8">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div><h1 className="text-2xl font-extrabold tracking-[-0.5px] sm:text-[28px]">Γεια σου, {dashboard?.client.firstName || ""}</h1><p className="mt-1 text-sm text-muted-foreground">Η προσωπική σου προπόνηση, διατροφή και πρόοδος σε ένα μέρος.</p></div>
           <span className="inline-flex h-[34px] w-fit items-center gap-2 rounded-full border border-border bg-card px-3.5 text-[13px] font-bold"><i className="h-2 w-2 rounded-full bg-accent shadow-[0_0_0_3px_rgb(176_249_12_/_25%)]" />{dashboard?.streak || 0} εβδομάδες συνέπεια</span>
@@ -746,7 +765,7 @@ function ClientDashboardContent() {
           <div className={activeTab === "overview" ? "hidden" : "w-full overflow-x-auto"}><TabsList className="h-auto"><TabsTrigger value="overview">Αρχική</TabsTrigger><TabsTrigger value="update">Update</TabsTrigger></TabsList></div>
 
           <TabsContent value="overview" className="space-y-6">
-            <ClientHomeOverviewNext dashboard={dashboard} trainingPlan={trainingPlan} nutritionPlan={nutritionPlan} workoutHistory={workoutHistory} activeWorkout={activeWorkout} onOpenUpdate={() => setActiveTab("update")} />
+            <ClientHomeOverviewNext dashboard={dashboard} trainingPlan={trainingPlan} nutritionPlan={nutritionPlan} workoutHistory={workoutHistory} activeWorkout={activeWorkout} onOpenUpdate={() => window.location.assign("/update")} />
             <div className="hidden">
             {dashboard?.todayIsUpdateDay && !dashboard.alreadySubmittedThisWeek && <Alert><CalendarDays className="h-4 w-4" /><AlertTitle>Σήμερα είναι ημέρα update</AlertTitle><AlertDescription className="flex flex-wrap items-center gap-3">Συμπλήρωσε το εβδομαδιαίο σου update για να ενημερωθεί ο coach σου.<Button size="sm" onClick={() => setActiveTab("update")}>Συμπλήρωση update</Button></AlertDescription></Alert>}
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -772,11 +791,21 @@ function ClientDashboardContent() {
 
           <TabsContent value="payments"><div className="grid gap-6 lg:grid-cols-3"><PlanCard title="Συνδρομή" icon={<CalendarDays className="h-5 w-5 text-primary" />}><Badge>{paymentData?.subscription?.status === "active" ? "Ενεργή" : "-"}</Badge><p className="mt-3 font-medium">{paymentData?.subscription?.planName ?? "Δεν υπάρχει ενεργή συνδρομή"}</p><p className="text-sm text-muted-foreground">{paymentData?.subscription?.daysRemaining != null ? `${paymentData.subscription.daysRemaining} ημέρες απομένουν` : ""}</p></PlanCard><PlanCard title="Πληρωμές" icon={<FileText className="h-5 w-5 text-primary" />}><p className="text-3xl font-bold">{paymentData?.payments.length ?? 0}</p><p className="text-sm text-muted-foreground">καταγεγραμμένες πληρωμές</p></PlanCard><PlanCard title="Επόμενη λήξη" icon={<CalendarDays className="h-5 w-5 text-primary" />}><p className="text-lg font-semibold">{formatDate(paymentData?.subscription?.endDate)}</p></PlanCard></div><PlanCard title="Ιστορικό πληρωμών" icon={<FileText className="h-5 w-5 text-primary" />}>{paymentData?.payments.length ? <div className="space-y-3">{paymentData.payments.map((payment) => <div key={payment.id} className="flex items-center justify-between border-b pb-3 last:border-0"><div><p className="font-medium">€{Number(payment.amount).toFixed(2)}</p><p className="text-xs text-muted-foreground">{formatDate(payment.paidAt)} · {paymentMethod[payment.method] ?? payment.method}</p></div><Badge variant={payment.status === "confirmed" ? "default" : "secondary"}>{payment.status === "confirmed" ? "Εγκρίθηκε" : "Εκκρεμεί"}</Badge></div>)}</div> : <p className="text-sm text-muted-foreground">Δεν υπάρχουν πληρωμές ακόμα.</p>}</PlanCard></TabsContent>
 
-          <TabsContent value="update">
+          <TabsContent value="update" className="space-y-6 [&>div.mb-5>div:last-child]:hidden">
+            <header className="flex flex-col gap-4 rounded-[20px] border border-border bg-card p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6"><div><p className="text-[11px] font-extrabold tracking-[1px] text-muted-foreground">ΕΒΔΟΜΑΔΙΑΙΑ ΠΡΟΟΔΟΣ</p><h2 className="mt-1 text-[24px] font-extrabold tracking-[-.5px] sm:text-[28px]">Εβδομαδιαίο Update</h2><p className="mt-1 text-sm text-muted-foreground">Κατέγραψε την εβδομάδα σου, ώστε ο coach να προσαρμόσει σωστά το πλάνο σου.</p></div><div className="w-fit rounded-[14px] bg-muted px-4 py-3 sm:text-right"><p className="text-[11px] font-bold uppercase tracking-[.8px] text-muted-foreground">Επόμενο update</p><p className="mt-1 text-sm font-extrabold">{upcomingDate}</p></div></header>
+            {!submitted && !dashboard?.alreadySubmittedThisWeek && (dashboard?.canSubmitUpdate ?? dashboard?.todayIsUpdateDay) && <div className="mb-5 rounded-[18px] border border-border bg-muted/35 p-4 sm:p-5"><p className="text-sm leading-6 text-muted-foreground">Συμπλήρωσε τη φόρμα για τις τελευταίες επτά ημέρες και ανέβασε τις φωτογραφίες σου εδώ, ώστε να αξιολογήσουμε την πρόοδό σου.</p><p className="mt-2 text-sm leading-6 text-muted-foreground">Απάντησε ειλικρινά. Οι απαντήσεις μάς βοηθούν να καταλάβουμε τι λειτούργησε, τι σε δυσκόλεψε και τι χρειάζεται αλλαγή.</p><div className="mt-4 rounded-[14px] border border-border bg-card p-4"><div className="flex items-center justify-between gap-3"><p className="text-sm font-extrabold">Το σκορ της εβδομάδας σου</p><b className="text-xl font-extrabold italic">{weeklyScore ?? "—"}/100</b></div><p className="mt-2 text-sm text-muted-foreground">{weeklyScoreMessage(weeklyScore)}</p><p className="mt-2 text-xs leading-5 text-muted-foreground">Το σκορ βοηθά την αξιολόγηση. Η τελική καθοδήγηση λαμβάνει υπόψη τις απαντήσεις σου, την πρόοδο και τις συνθήκες της εβδομάδας.</p></div></div>}
             {submitted ? <Card><CardContent className="flex min-h-72 flex-col items-center justify-center text-center"><CheckCircle2 className="h-14 w-14 text-green-600" /><h2 className="mt-4 text-xl font-semibold">Το update υποβλήθηκε!</h2><p className="mt-2 text-sm text-muted-foreground">Ο coach σου ενημερώθηκε.</p></CardContent></Card> : dashboard?.alreadySubmittedThisWeek ? <Card><CardContent className="flex min-h-72 flex-col items-center justify-center text-center"><CheckCircle2 className="h-14 w-14 text-green-600" /><h2 className="mt-4 text-xl font-semibold">Έχεις ήδη υποβάλει το update σου</h2><p className="mt-2 text-sm text-muted-foreground">Το επόμενο update είναι στις {upcomingDate}.</p></CardContent></Card> : !((dashboard?.canSubmitUpdate ?? dashboard?.todayIsUpdateDay)) ? <Card><CardContent className="flex min-h-72 flex-col items-center justify-center text-center"><CalendarDays className="h-14 w-14 text-primary" /><h2 className="mt-4 text-xl font-semibold">Το επόμενο update είναι στις {upcomingDate}</h2><p className="mt-2 text-sm text-muted-foreground">Επιστρέψε εκείνη την ημέρα για να συμπληρώσεις το εβδομαδιαίο σου update.</p><p className="mt-5 text-xs text-muted-foreground">Έχεις υποβάλει {dashboard?.updatesCount ?? 0} updates συνολικά.</p></CardContent></Card> : <Card><CardHeader><CardTitle>Εβδομαδιαίο Update</CardTitle><CardDescription>{dashboard?.lateUpdateSubmission ? "Το update θα σταλεί στον coach, αλλά είναι εκπρόθεσμο: δεν δίνει πόντους και δεν μετρά στη συνέπεια." : "Συμπλήρωσε την εβδομαδιαία σου αναφορά. Τα στοιχεία θα σταλούν απευθείας στον coach σου."}</CardDescription></CardHeader><CardContent><form className="space-y-6" onSubmit={submitUpdate}>{questions.map(renderQuestion)}<div className="border-t pt-5"><Button type="submit" size="lg" disabled={submitting}><Send className="mr-2 h-4 w-4" />{submitting ? "Υποβολή..." : "Υποβολή Update"}</Button></div></form></CardContent></Card>}
           </TabsContent>
         </Tabs>
       </main>
+      <Dialog open={submitted} onOpenChange={setSubmitted}>
+        <DialogContent className="max-w-[460px] gap-5 rounded-[26px] p-7 text-center sm:p-[30px]">
+          <span className="mx-auto grid h-[72px] w-[72px] place-items-center rounded-full bg-accent text-accent-foreground shadow-[0_0_0_10px_rgba(176,249,12,.25)]"><CheckCircle2 className="h-[34px] w-[34px]" strokeWidth={3} /></span>
+          <div><DialogTitle className="text-[26px] font-extrabold italic tracking-[-.6px]">Έτοιμο!</DialogTitle><p className="mt-2 text-sm leading-6 text-muted-foreground">Το εβδομαδιαίο update στάλθηκε στον coach σου.</p></div>
+          <div className="rounded-[16px] border border-border bg-muted p-4 text-left"><div className="flex items-center justify-between gap-3"><p className="text-sm font-extrabold">Το σκορ της εβδομάδας σου</p><b className="text-[24px] font-extrabold italic">{submittedScore ?? "—"}/100</b></div><p className="mt-2 text-sm leading-6 text-muted-foreground">{weeklyScoreMessage(submittedScore)}</p><p className="mt-2 text-xs leading-5 text-muted-foreground">Το σκορ βοηθά την αξιολόγηση. Η τελική καθοδήγηση λαμβάνει υπόψη τις απαντήσεις σου, την πρόοδο και τις συνθήκες της εβδομάδας.</p></div>
+          <Button variant="lime" className="h-[52px] w-full rounded-full text-[15px] font-extrabold" onClick={() => setSubmitted(false)}>Πίσω στο dashboard</Button>
+        </DialogContent>
+      </Dialog>
     </ClientShell>
   )
 }

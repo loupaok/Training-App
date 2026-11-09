@@ -225,6 +225,8 @@ interface ClientRecord {
   is_active?: number | boolean;
   deleted_at?: string | null;
   deleted_by?: number | string | null;
+  progress_photo_social_consent?: "yes" | "no" | null;
+  progress_photo_social_consent_at?: string | null;
   user_status?: string;
   status?: string;
   onboarding?: Onboarding;
@@ -1173,7 +1175,6 @@ const updateDayOptions = [
   { value: 4, label: "Πέμπτη" },
   { value: 5, label: "Παρασκευή" },
   { value: 6, label: "Σάββατο" },
-  { value: 0, label: "Κυριακή" },
 ];
 
 const OVERVIEW_LAYOUT_STORAGE_KEY = "coach-client-overview-layout-v1";
@@ -1633,6 +1634,16 @@ function OverviewTab({
     ),
     files: (
       <InfoCard title="Φωτογραφίες & αρχεία εγγραφής">
+        <div className="mb-4 rounded-xl border border-border bg-muted/50 p-3 text-sm">
+          <p className="font-extrabold">Χρήση φωτογραφιών σε social media</p>
+          <p className="mt-1 text-muted-foreground">
+            {client.progress_photo_social_consent === "yes"
+              ? "Ναι · με θολωμένο πρόσωπο, χωρίς όνομα ή tag και μόνο μετά από ξεχωριστή έγκριση για κάθε δημοσίευση."
+              : client.progress_photo_social_consent === "no"
+                ? "Όχι · δεν επιθυμεί χρήση φωτογραφιών προόδου στα social media."
+                : "Δεν έχει δηλωθεί ακόμη."}
+          </p>
+        </div>
         {client.intakeFiles?.length ? (
           <div className="space-y-4">
             <IntakePhotoGallery files={client.intakeFiles.filter((file) => file.file_type === "photo")} />

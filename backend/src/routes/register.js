@@ -68,6 +68,16 @@ function numericRegistrationAnswer(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function isAtLeast18(dateOfBirth) {
+  const value = String(dateOfBirth || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const birthDate = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(birthDate.getTime())) return false;
+  const eighteenthBirthday = new Date(birthDate);
+  eighteenthBirthday.setFullYear(birthDate.getFullYear() + 18);
+  return eighteenthBirthday <= new Date();
+}
+
 async function ensureClientIntakeFilesSchema(connection) {
   await connection.query(`
     CREATE TABLE IF NOT EXISTS client_intake_files (
@@ -81,6 +91,46 @@ async function ensureClientIntakeFilesSchema(connection) {
       INDEX idx_client_id (client_id)
     )
   `);
+}
+
+async function ensureSocialLinksSchema(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS social_links (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      platform VARCHAR(64) NOT NULL,
+      url VARCHAR(500) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY uniq_social_link_platform (user_id, platform),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+}
+
+async function ensureProgressPhotoConsentSchema(connection) {
+  for (const statement of [
+    "ALTER TABLE clients ADD COLUMN progress_photo_social_consent ENUM('yes', 'no') NULL",
+    'ALTER TABLE clients ADD COLUMN progress_photo_social_consent_at DATETIME NULL',
+  ]) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+    }
+  }
+}
+
+function parseSocialLinks(value) {
+  const allowedPlatforms = new Set(['Instagram', 'TikTok', 'Facebook', 'YouTube', 'Άλλο']);
+  try {
+    const links = typeof value === 'string' ? JSON.parse(value) : value;
+    if (!Array.isArray(links)) return [];
+    return links
+      .map((link) => ({ platform: String(link?.platform || '').trim().slice(0, 64), url: String(link?.url || '').trim().slice(0, 500) }))
+      .filter((link) => allowedPlatforms.has(link.platform) && /^https?:\/\/[^\s]+$/i.test(link.url));
+  } catch {
+    return [];
+  }
 }
 
 // The subscription created at registration must not read as "active" to the
@@ -384,7 +434,7 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
   body('email').isEmail(),
   body('phone').notEmpty(),
   body('password').isLength({ min: 6 }),
-  body('dateOfBirth').optional({ nullable: true, checkFalsy: true }).isString(),
+  body('dateOfBirth').isISO8601().withMessage('Valid date of birth is required'),
   body('gender').optional({ nullable: true, checkFalsy: true }).isIn(['male', 'female', 'other']),
   body('heightCm').optional({ nullable: true, checkFalsy: true }).isNumeric(),
   body('weightKg').optional({ nullable: true, checkFalsy: true }).isNumeric(),
@@ -395,6 +445,7 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
   body('duration_months').optional({ nullable: true, checkFalsy: true }).isInt({ min: 1, max: 24 }),
   body('payment_method').isIn(['bank', 'stripe', 'paypal', 'cash']),
   body('privacyConsent').equals('true').withMessage('Privacy policy acceptance is required'),
+  body('progressPhotoSocialConsent').isIn(['yes', 'no']).withMessage('Choose whether progress photos may be used on social media'),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -437,7 +488,13 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     package_id: packageId,
     duration_months: durationMonths,
     payment_method: paymentMethod,
+    socialLinks,
+    progressPhotoSocialConsent,
   } = req.body;
+
+  if (!isAtLeast18(dateOfBirth)) {
+    return res.status(400).json({ message: 'Πρέπει να είσαι τουλάχιστον 18 χρονών για να κάνεις εγγραφή.' });
+  }
 
   // The wizard sends plain JSON when Step 3 (photos/PDF) was skipped, and
   // multipart/form-data — with `answers` as a JSON string alongside the
@@ -461,6 +518,8 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     await ensurePackagesSchema(connection);
     await ensureNotificationsSchema(connection);
     await ensureClientIntakeFilesSchema(connection);
+    await ensureSocialLinksSchema(connection);
+    await ensureProgressPhotoConsentSchema(connection);
     await ensureRegistrationProgressSchema(connection);
     await ensureSubscriptionPendingStatus(connection);
     await ensureRegistrationPaymentMethods(connection);
@@ -551,13 +610,23 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
     );
 
     await connection.query(
-      `INSERT INTO clients (user_id, date_of_birth, gender, phone, height_cm, weight_kg, target_weight_kg, fitness_goal)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO clients (user_id, date_of_birth, gender, phone, height_cm, weight_kg, target_weight_kg, fitness_goal, progress_photo_social_consent, progress_photo_social_consent_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
        ON DUPLICATE KEY UPDATE
          date_of_birth = VALUES(date_of_birth), gender = VALUES(gender), phone = VALUES(phone),
-         height_cm = VALUES(height_cm), weight_kg = VALUES(weight_kg), target_weight_kg = VALUES(target_weight_kg), fitness_goal = VALUES(fitness_goal)`,
-      [userId, dateOfBirth || null, gender || null, phone, heightCm, weightKg, targetWeightKg, fitnessGoal]
+         height_cm = VALUES(height_cm), weight_kg = VALUES(weight_kg), target_weight_kg = VALUES(target_weight_kg), fitness_goal = VALUES(fitness_goal),
+         progress_photo_social_consent = VALUES(progress_photo_social_consent), progress_photo_social_consent_at = NOW()`,
+      [userId, dateOfBirth || null, gender || null, phone, heightCm, weightKg, targetWeightKg, fitnessGoal, progressPhotoSocialConsent]
     );
+
+    for (const link of parseSocialLinks(socialLinks)) {
+      await connection.query(
+        `INSERT INTO social_links (user_id, platform, url)
+         VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE url = VALUES(url)`,
+        [userId, link.platform, link.url]
+      );
+    }
 
     await connection.query('DELETE FROM questionnaire_answers WHERE client_id = ?', [userId]);
     for (const entry of answers || []) {

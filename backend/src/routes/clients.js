@@ -725,7 +725,9 @@ async function ensureClientDetailColumns(connection) {
     'ALTER TABLE clients ADD COLUMN discord_id VARCHAR(50) NULL',
     'ALTER TABLE clients ADD COLUMN target_weight_kg DECIMAL(6,2) NULL',
     'ALTER TABLE clients ADD COLUMN is_demo TINYINT(1) NOT NULL DEFAULT 0',
-    'ALTER TABLE clients ADD COLUMN demo_updates_enabled TINYINT(1) NOT NULL DEFAULT 0'
+    'ALTER TABLE clients ADD COLUMN demo_updates_enabled TINYINT(1) NOT NULL DEFAULT 0',
+    "ALTER TABLE clients ADD COLUMN progress_photo_social_consent ENUM('yes', 'no') NULL",
+    'ALTER TABLE clients ADD COLUMN progress_photo_social_consent_at DATETIME NULL',
   ]) {
     try {
       await connection.query(statement);
@@ -3052,6 +3054,7 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
               u.status AS user_status, u.created_at, u.last_seen_at,
               u.discord_id AS discord_oauth_id, u.discord_username AS discord_oauth_username,
               DATE_FORMAT(c.date_of_birth, '%Y-%m-%d') AS date_of_birth, c.gender, c.phone, c.height_cm, c.weight_kg, c.target_weight_kg, c.is_demo, c.demo_updates_enabled,
+              c.progress_photo_social_consent, c.progress_photo_social_consent_at,
               c.fitness_goal, c.medical_notes, c.coach_notes, c.discord_id,
               c.emergency_contact_name, c.emergency_contact_phone, c.deleted_at, c.deleted_by,
               cc.status AS coaching_status, cc.coach_id

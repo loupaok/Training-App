@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Check, ShieldCheck } from "lucide-react";
 import { ProtectedRoute } from "@/components/auth/protected-route";
@@ -70,13 +70,6 @@ interface OnboardingFiles {
   bloodTestsPdf: File | null;
 }
 
-interface OnboardingSocials {
-  instagram: string;
-  tiktok: string;
-  facebook: string;
-  youtube: string;
-}
-
 type UpdateForm = (name: keyof OnboardingForm, value: string) => void;
 type UpdateFlag = (name: keyof OnboardingFlags, value: YesNoFlag) => void;
 type UpdateFile = (name: keyof OnboardingFiles, file: File | null) => void;
@@ -97,7 +90,6 @@ const updateDays = [
   { value: "4", label: "Πέμπτη" },
   { value: "5", label: "Παρασκευή" },
   { value: "6", label: "Σάββατο" },
-  { value: "0", label: "Κυριακή" },
 ];
 
 function splitName(fullName = ""): { firstName: string; lastName: string } {
@@ -152,7 +144,6 @@ function ClientOnboardingContent() {
     surgery: "no",
     otherInfo: "no",
   });
-  const [socials, setSocials] = useState<OnboardingSocials>({ instagram: "", tiktok: "", facebook: "", youtube: "" });
   const [files, setFiles] = useState<OnboardingFiles>({
     frontPhoto: null,
     sidePhoto: null,
@@ -220,10 +211,6 @@ function ClientOnboardingContent() {
     ]
       .filter(Boolean)
       .join("\n\n");
-    const socialLinks = Object.entries(socials)
-      .filter(([, url]) => url.trim())
-      .map(([platform, url]) => ({ platform, url: url.trim() }));
-
     const data = new FormData();
     Object.entries({
       fullName,
@@ -244,7 +231,6 @@ function ClientOnboardingContent() {
       currentTrainingPlan: form.currentTrainingPlan,
       currentNutritionPlan: form.currentNutritionPlan,
       previousPlanHistory: form.previousPlanHistory,
-      socialLinks: JSON.stringify(socialLinks),
     }).forEach(([key, value]) => data.append(key, value || ""));
     Object.entries(files).forEach(([key, file]) => {
       if (file) data.append(key, file);
@@ -301,11 +287,9 @@ function ClientOnboardingContent() {
                 form={form}
                 flags={flags}
                 files={files}
-                socials={socials}
                 updateForm={updateForm}
                 updateFlag={updateFlag}
                 updateFile={updateFile}
-                setSocials={setSocials}
               />
             )}
 
@@ -391,20 +375,16 @@ function QuestionsStep({
   form,
   flags,
   files,
-  socials,
   updateForm,
   updateFlag,
   updateFile,
-  setSocials,
 }: {
   form: OnboardingForm;
   flags: OnboardingFlags;
   files: OnboardingFiles;
-  socials: OnboardingSocials;
   updateForm: UpdateForm;
   updateFlag: UpdateFlag;
   updateFile: UpdateFile;
-  setSocials: Dispatch<SetStateAction<OnboardingSocials>>;
 }) {
   return (
     <>
@@ -611,19 +591,6 @@ function QuestionsStep({
         </div>
       </Section>
 
-      <Section title="Social Media Links">
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {(["instagram", "tiktok", "facebook", "youtube"] as const).map((platform) => (
-            <FormInput
-              key={platform}
-              label={platform[0].toUpperCase() + platform.slice(1)}
-              value={socials[platform]}
-              onChange={(value) => setSocials((current) => ({ ...current, [platform]: value }))}
-              placeholder="https://..."
-            />
-          ))}
-        </div>
-      </Section>
     </>
   );
 }

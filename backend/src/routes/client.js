@@ -4,7 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
-import { ensureWeeklyUpdateSchema, getWeeklyUpdateTiming, getWeekStart } from './weekly-updates.js';
+import { calculateWeeklyScore, ensureWeeklyUpdateSchema, getWeeklyUpdateTiming, getWeekStart } from './weekly-updates.js';
 import { awardWeeklyUpdatePoints } from './points.js';
 import { notifyCoaches, ensureSupplementsSchema } from './clients.js';
 import { registerWeeklyUpdatePhotos } from './media.js';
@@ -680,7 +680,7 @@ router.post('/updates/submit', upload.array('files', 5), async (req, res) => {
     const weekStart = currentWeekStart();
     const [existing] = await connection.query('SELECT id FROM weekly_updates WHERE client_id = ? AND week_start = ?', [req.user.id, weekStart]);
     if (!demoUpdatesEnabled && existing.length) return res.status(400).json({ message: 'You have already submitted an update this week.' });
-    const [questions] = await connection.query('SELECT id, type, is_required FROM update_questions WHERE is_active = 1');
+    const [questions] = await connection.query('SELECT id, type, is_required, standard_key FROM update_questions WHERE is_active = 1');
     const answered = new Set(answers.filter((answer) => String(answer?.answer ?? '').trim()).map((answer) => Number(answer.questionId)));
     const uploadedForQuestion = new Set(fileQuestionIds.map(Number));
     if (questions.some((question) => question.is_required && question.type !== 'photos' && question.type !== 'pdf' && !answered.has(question.id))) return res.status(400).json({ message: 'Complete all required questions.' });
@@ -694,7 +694,8 @@ router.post('/updates/submit', upload.array('files', 5), async (req, res) => {
       return res.status(400).json({ message: 'One of the uploaded photos is invalid.' });
     }
     await connection.beginTransaction();
-    const [result] = await connection.query('INSERT INTO weekly_updates (client_id, week_start, is_timely, is_read) VALUES (?, ?, ?, 0)', [req.user.id, weekStart, updateTiming.isTimely ? 1 : 0]);
+    const weeklyScore = calculateWeeklyScore(answers, questions);
+    const [result] = await connection.query('INSERT INTO weekly_updates (client_id, week_start, is_timely, weekly_score, is_read) VALUES (?, ?, ?, ?, 0)', [req.user.id, weekStart, updateTiming.isTimely ? 1 : 0, weeklyScore]);
     for (const answer of answers) {
       if (!answer || answer.questionId === undefined) continue;
       const value = typeof answer.answer === 'object' ? JSON.stringify(answer.answer) : String(answer.answer ?? '');

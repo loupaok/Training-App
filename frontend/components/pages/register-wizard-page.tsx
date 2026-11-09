@@ -20,7 +20,6 @@ import {
   Flame,
   HeartPulse,
   ImagePlus,
-  Info,
   Link2,
   Mars,
   MessageCircle,
@@ -43,7 +42,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Calendar } from "@/components/ui/calendar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -153,6 +151,11 @@ interface BodyGoalForm {
   goal: string;
 }
 
+type SocialPlatform = "Instagram" | "TikTok" | "Facebook" | "YouTube" | "Άλλο";
+type SocialLinks = Record<SocialPlatform, string>;
+const socialPlatforms: SocialPlatform[] = ["Instagram", "TikTok", "Facebook", "YouTube", "Άλλο"];
+const emptySocialLinks = (): SocialLinks => ({ Instagram: "", TikTok: "", Facebook: "", YouTube: "", Άλλο: "" });
+
 type RegisterResponse = {
   success: boolean;
   clientId: number;
@@ -173,6 +176,8 @@ type RegistrationProgress = {
     selectedPlanId?: number | string | null;
     selectedDurationMonths?: number;
     paymentMethod?: RegistrationPaymentMethod;
+    socialLinks?: Partial<SocialLinks>;
+    progressPhotoSocialConsent?: "yes" | "no";
   };
   files: { id: number; file_url: string; file_type: "photo" | "pdf"; original_name: string }[];
 };
@@ -190,7 +195,7 @@ const steps = [
 const stepContent = [
   { title: "Βασικά στοιχεία", subtitle: "Ας γνωριστούμε! Συμπλήρωσε τα βασικά σου στοιχεία για να δημιουργήσουμε το πρόγραμμα που σου ταιριάζει." },
   { title: "Σώμα & στόχος", subtitle: "Τα στοιχεία αυτά βοηθούν τον coach να σχεδιάσει το σωστό σημείο εκκίνησης." },
-  { title: "Ερωτηματολόγιο Coach", subtitle: "Απάντησε στις ερωτήσεις του coach για ένα πλάνο προσαρμοσμένο σε εσένα." },
+  { title: "Ερωτηματολόγιο Coach", subtitle: "Απάντησε σύντομα και ειλικρινά, ώστε να σχεδιάσουμε ένα πλάνο που ταιριάζει στις ανάγκες και την καθημερινότητά σου." },
   { title: "Φωτογραφίες & αρχεία", subtitle: "Προαιρετικά στοιχεία που βοηθούν στην παρακολούθηση της προόδου σου." },
   { title: "Επίλεξε πλάνο", subtitle: "Διάλεξε το πλάνο που ταιριάζει καλύτερα στους στόχους σου." },
   { title: "Πληρωμή", subtitle: "Επίλεξε τον τρόπο πληρωμής για να ολοκληρωθεί η αίτησή σου." },
@@ -229,6 +234,12 @@ function isValidUrl(value: string): boolean {
   }
 }
 
+// Τα social links είναι στα σταθερά στοιχεία του πρώτου βήματος εγγραφής.
+// Παλιές ερωτήσεις του coach με αυτό το πεδίο δεν πρέπει να εμφανίζονται ξανά.
+function isLegacySocialLinksQuestion(question: QuestionnaireQuestion): boolean {
+  return question.question.trim().toLocaleLowerCase("el-GR").includes("social media");
+}
+
 function formatBirthDate(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 8);
   if (digits.length <= 2) return digits;
@@ -248,6 +259,15 @@ function birthDateToIso(value: string): string | undefined {
 function birthDateToDate(value: string): Date | undefined {
   const iso = birthDateToIso(value);
   return iso ? new Date(`${iso}T12:00:00`) : undefined;
+}
+
+function isAtLeast18(value: string): boolean {
+  const birthDate = birthDateToDate(value);
+  if (!birthDate) return false;
+  const today = new Date();
+  const eighteenthBirthday = new Date(birthDate);
+  eighteenthBirthday.setFullYear(birthDate.getFullYear() + 18);
+  return eighteenthBirthday <= today;
 }
 
 function dateToBirthDate(value: Date): string {
@@ -292,6 +312,7 @@ function RegisterWizardContent() {
   });
   const [confirmPassword, setConfirmPassword] = useState("");
   const [bodyGoal, setBodyGoal] = useState<BodyGoalForm>({ height: "", currentWeight: "", targetWeight: "", goal: "" });
+  const [socialLinks, setSocialLinks] = useState<SocialLinks>(emptySocialLinks);
   const [emailStatus, setEmailStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
 
   const [questions, setQuestions] = useState<QuestionnaireQuestion[]>([]);
@@ -307,6 +328,7 @@ function RegisterWizardContent() {
 
   const [intakePhotos, setIntakePhotos] = useState<IntakePhoto[]>([]);
   const [intakePdf, setIntakePdf] = useState<File | null>(null);
+  const [progressPhotoSocialConsent, setProgressPhotoSocialConsent] = useState<"" | "yes" | "no">("");
   const [filesError, setFilesError] = useState("");
 
   const [stepError, setStepError] = useState("");
@@ -322,7 +344,11 @@ function RegisterWizardContent() {
   useEffect(() => {
     api
       .get<QuestionnaireQuestion[]>("/questionnaire/questions")
-      .then((rows) => setQuestions(rows.sort((a, b) => a.sortOrder - b.sortOrder)))
+      .then((rows) => setQuestions(
+        rows
+          .filter((question) => !isLegacySocialLinksQuestion(question))
+          .sort((a, b) => a.sortOrder - b.sortOrder),
+      ))
       .catch(() => {});
 
     api
@@ -410,6 +436,8 @@ function RegisterWizardContent() {
         if (data.account) setAccount((current) => ({ ...current, ...data.account, password: "" }));
         if (data.bodyGoal) setBodyGoal(data.bodyGoal);
         if (data.answers) setAnswers(data.answers);
+        if (data.socialLinks) setSocialLinks((current) => ({ ...current, ...data.socialLinks }));
+        if (data.progressPhotoSocialConsent === "yes" || data.progressPhotoSocialConsent === "no") setProgressPhotoSocialConsent(data.progressPhotoSocialConsent);
         if (data.selectedPlanId !== undefined) setSelectedPlanId(data.selectedPlanId);
         if (data.selectedDurationMonths) setSelectedDurationMonths(Number(data.selectedDurationMonths));
         if (data.paymentMethod) setPaymentMethod(data.paymentMethod);
@@ -431,6 +459,8 @@ function RegisterWizardContent() {
         if (draft.account) setAccount((current) => ({ ...current, ...draft.account }));
         if (draft.bodyGoal) setBodyGoal(draft.bodyGoal);
         if (draft.answers) setAnswers(draft.answers);
+        if (draft.socialLinks) setSocialLinks((current) => ({ ...current, ...draft.socialLinks }));
+        if (draft.progressPhotoSocialConsent === "yes" || draft.progressPhotoSocialConsent === "no") setProgressPhotoSocialConsent(draft.progressPhotoSocialConsent);
         if (draft.selectedPlanId !== undefined) setSelectedPlanId(draft.selectedPlanId);
         if (draft.selectedDurationMonths) setSelectedDurationMonths(Number(draft.selectedDurationMonths));
         if (draft.paymentMethod) setPaymentMethod(draft.paymentMethod);
@@ -449,6 +479,7 @@ function RegisterWizardContent() {
     if (name === "email") setEmailStatus(/^\S+@\S+\.\S+$/.test(value) ? "checking" : "idle");
     setAccount((current) => ({ ...current, [name]: value }));
   };
+  const updateSocialLink = (platform: SocialPlatform, value: string) => setSocialLinks((current) => ({ ...current, [platform]: value }));
   const updateBodyGoal = (name: keyof BodyGoalForm, value: string) => setBodyGoal((current) => ({ ...current, [name]: value }));
   const updateAnswer = (id: number, value: AnswerValue) => setAnswers((current) => ({ ...current, [id]: value }));
 
@@ -500,9 +531,11 @@ function RegisterWizardContent() {
         return "Συμπλήρωσε όλα τα υποχρεωτικά πεδία (ο κωδικός θέλει τουλάχιστον 6 χαρακτήρες).";
       }
       if (!birthDateToIso(account.dateOfBirth)) return "Συμπλήρωσε έγκυρη ημερομηνία γέννησης στη μορφή dd/mm/yyyy.";
+      if (!isAtLeast18(account.dateOfBirth)) return "Πρέπει να είσαι τουλάχιστον 18 χρονών για να κάνεις εγγραφή.";
       if (!account.gender) return "Επίλεξε φύλο για να συνεχίσεις.";
       if (account.password !== confirmPassword) return "Η επιβεβαίωση κωδικού δεν ταιριάζει.";
       if (emailStatus === "taken") return "Αυτό το email χρησιμοποιείται ήδη.";
+      if (Object.values(socialLinks).some((url) => url.trim() && !isValidUrl(url.trim()))) return "Έλεγξε ότι κάθε link social media ξεκινά με https://.";
       return "";
     }
     if (stepIndex === 1) {
@@ -525,6 +558,10 @@ function RegisterWizardContent() {
       if (invalidUrl) return "Έλεγξε ότι ο σύνδεσμος που έδωσες είναι έγκυρο URL (π.χ. https://...).";
       return "";
     }
+    if (stepIndex === 3) {
+      if (!progressPhotoSocialConsent) return "Επίλεξε Ναι ή Όχι για τη χρήση φωτογραφιών προόδου στα social media.";
+      return "";
+    }
     if (stepIndex === 4) {
       if (!selectedPlanId) return "Επέλεξε ένα πλάνο συνδρομής.";
       return "";
@@ -538,14 +575,17 @@ function RegisterWizardContent() {
       issues.push({ step: 0, message: "Συμπλήρωσε όλα τα υποχρεωτικά προσωπικά στοιχεία και έναν κωδικό με τουλάχιστον 6 χαρακτήρες." });
     }
     if (!birthDateToIso(account.dateOfBirth)) issues.push({ step: 0, message: "Συμπλήρωσε έγκυρη ημερομηνία γέννησης." });
+    else if (!isAtLeast18(account.dateOfBirth)) issues.push({ step: 0, message: "Πρέπει να είσαι τουλάχιστον 18 χρονών για να κάνεις εγγραφή." });
     if (!account.gender) issues.push({ step: 0, message: "Επίλεξε φύλο." });
     if (account.password !== confirmPassword) issues.push({ step: 0, message: "Η επιβεβαίωση κωδικού δεν ταιριάζει." });
+    if (Object.values(socialLinks).some((url) => url.trim() && !isValidUrl(url.trim()))) issues.push({ step: 0, message: "Έλεγξε ότι κάθε link social media ξεκινά με https://." });
     if (!bodyGoal.height || !bodyGoal.currentWeight || !bodyGoal.goal) {
       issues.push({ step: 1, message: "Συμπλήρωσε ύψος, τρέχον βάρος και στόχο." });
     }
     if (questions.some((question) => question.isRequired && isAnswerEmpty(fixedAnswerForQuestion(question) ?? answers[question.id]))) {
       issues.push({ step: 2, message: "Συμπλήρωσε όλες τις υποχρεωτικές ερωτήσεις του ερωτηματολογίου." });
     }
+    if (!progressPhotoSocialConsent) issues.push({ step: 3, message: "Επίλεξε Ναι ή Όχι για τη χρήση φωτογραφιών προόδου στα social media." });
     if (!selectedPlanId) issues.push({ step: 4, message: "Επίλεξε ένα πλάνο συνδρομής." });
     if (!legalAccepted) issues.push({ step: 6, message: "Αποδέξου τους Όρους Χρήσης και την Πολιτική Απορρήτου." });
     return issues;
@@ -566,6 +606,8 @@ function RegisterWizardContent() {
     return {
       account: savedAccount,
       bodyGoal,
+      socialLinks,
+      progressPhotoSocialConsent,
       answers,
       selectedPlanId,
       selectedDurationMonths,
@@ -579,7 +621,7 @@ function RegisterWizardContent() {
     if (!draftRestored || stepIndex >= steps.length || justCompletedRegistration.current) return;
     window.sessionStorage.setItem("register-wizard-draft", JSON.stringify({ ...getProgressData(), stepIndex }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draftRestored, account, bodyGoal, answers, selectedPlanId, selectedDurationMonths, paymentMethod, stepIndex]);
+  }, [draftRestored, account, bodyGoal, socialLinks, progressPhotoSocialConsent, answers, selectedPlanId, selectedDurationMonths, paymentMethod, stepIndex]);
 
   const goNext = () => {
     setConfirmationIssues([]);
@@ -630,6 +672,7 @@ function RegisterWizardContent() {
     formData.append("heightCm", bodyGoal.height);
     formData.append("weightKg", bodyGoal.currentWeight);
     formData.append("fitnessGoal", bodyGoal.goal);
+    formData.append("socialLinks", JSON.stringify(socialPlatforms.flatMap((platform) => socialLinks[platform].trim() ? [{ platform, url: socialLinks[platform].trim() }] : [])));
     if (bodyGoal.targetWeight) formData.append("targetWeightKg", bodyGoal.targetWeight);
     if (selectedPlan?.packageId && selectedPlan.durationMonths) {
       formData.append("package_id", String(selectedPlan.packageId));
@@ -639,6 +682,7 @@ function RegisterWizardContent() {
     }
     formData.append("payment_method", paymentMethod);
     formData.append("privacyConsent", "true");
+    formData.append("progressPhotoSocialConsent", progressPhotoSocialConsent);
     formData.append("answers", JSON.stringify(answersPayload));
     intakePhotos.forEach(({ file }) => formData.append("photos", file));
     if (intakePdf) formData.append("pdf", intakePdf);
@@ -717,7 +761,7 @@ function RegisterWizardContent() {
 
             <form onSubmit={submit} className={`${stepIndex >= 4 ? "" : "rounded-[20px] border border-border bg-card p-5 shadow-none sm:p-8"} [&_input:focus-visible]:border-ring [&_textarea:focus-visible]:border-ring`}>
             {stepIndex === 0 && (
-              <AccountStep account={account} updateAccount={updateAccount} emailStatus={emailStatus} confirmPassword={confirmPassword} onConfirmPasswordChange={setConfirmPassword} />
+              <AccountStep account={account} updateAccount={updateAccount} socialLinks={socialLinks} onSocialLinkChange={updateSocialLink} emailStatus={emailStatus} confirmPassword={confirmPassword} onConfirmPasswordChange={setConfirmPassword} />
             )}
             {stepIndex === 1 && (
               <BodyGoalStep bodyGoal={bodyGoal} updateBodyGoal={updateBodyGoal} />
@@ -729,10 +773,12 @@ function RegisterWizardContent() {
               <FilesStep
                 photos={intakePhotos}
                 pdf={intakePdf}
+                progressPhotoSocialConsent={progressPhotoSocialConsent}
                 error={filesError}
                 onAddPhotos={addIntakePhotos}
                 onRemovePhoto={removeIntakePhoto}
                 onSetPdf={setIntakePdfFile}
+                onProgressPhotoSocialConsentChange={setProgressPhotoSocialConsent}
               />
             )}
             {stepIndex === 4 && (
@@ -1000,16 +1046,22 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function AccountStep({
   account,
   updateAccount,
+  socialLinks,
+  onSocialLinkChange,
   emailStatus,
   confirmPassword,
   onConfirmPasswordChange,
 }: {
   account: AccountForm;
   updateAccount: (name: keyof AccountForm, value: string) => void;
+  socialLinks: SocialLinks;
+  onSocialLinkChange: (platform: SocialPlatform, value: string) => void;
   emailStatus: "idle" | "checking" | "available" | "taken";
   confirmPassword: string;
   onConfirmPasswordChange: (value: string) => void;
 }) {
+  const birthDateEntered = Boolean(birthDateToIso(account.dateOfBirth));
+  const isUnder18 = birthDateEntered && !isAtLeast18(account.dateOfBirth);
   return (
     <Section title="Τα Στοιχεία σου">
       <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2">
@@ -1114,6 +1166,7 @@ function AccountStep({
               </PopoverContent>
             </Popover>
           </div>
+          {isUnder18 && <p className="text-[12px] font-semibold text-destructive">Πρέπει να είσαι τουλάχιστον 18 χρονών για να κάνεις εγγραφή.</p>}
         </label>
         <div className="block space-y-2">
           <Label className="text-sm font-bold text-slate-700 dark:text-slate-200">Φύλο <span className="text-red-600">*</span></Label>
@@ -1135,6 +1188,12 @@ function AccountStep({
               );
             })}
           </div>
+        </div>
+      </div>
+      <div className="mt-7 border-t border-border pt-6">
+        <div className="mb-4"><h3 className="text-[15px] font-extrabold">Social media</h3><p className="mt-1 text-[12px] text-muted-foreground">Ποιο από αυτά τα Social Media έχεις;</p></div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {socialPlatforms.map((platform) => <label key={platform} className="block space-y-1.5"><span className="text-[12px] font-bold text-foreground">{platform}</span><Input type="url" inputMode="url" autoComplete="url" value={socialLinks[platform]} onChange={(event) => onSocialLinkChange(platform, event.target.value)} placeholder="https://..." className="h-11" /></label>)}
         </div>
       </div>
     </Section>
@@ -1417,17 +1476,21 @@ function QuestionField({
 function FilesStep({
   photos,
   pdf,
+  progressPhotoSocialConsent,
   error,
   onAddPhotos,
   onRemovePhoto,
   onSetPdf,
+  onProgressPhotoSocialConsentChange,
 }: {
   photos: IntakePhoto[];
   pdf: File | null;
+  progressPhotoSocialConsent: "" | "yes" | "no";
   error: string;
   onAddPhotos: (files: FileList | File[], angle: ProgressPhotoAngle) => void;
   onRemovePhoto: (index: number) => void;
   onSetPdf: (file: File | null) => void;
+  onProgressPhotoSocialConsentChange: (value: "yes" | "no") => void;
 }) {
   const [dragActive, setDragActive] = useState(false);
   const [selectedAngle, setSelectedAngle] = useState<ProgressPhotoAngle>("front");
@@ -1440,14 +1503,7 @@ function FilesStep({
 
   return (
     <Section title="Αρχικές Φωτογραφίες & Αρχεία">
-      <p className="mb-6 text-sm text-muted-foreground">Βοηθά τον coach να παρακολουθεί την πρόοδό σου</p>
-
-      <Alert className="mb-6 border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/40">
-        <Info className="h-4 w-4 text-blue-700 dark:text-blue-300" />
-        <AlertDescription className="text-blue-800 dark:text-blue-200">
-          Αυτό το βήμα είναι προαιρετικό. Μπορείς να προσθέσεις φωτογραφίες αργότερα.
-        </AlertDescription>
-      </Alert>
+      <p className="mb-6 max-w-2xl text-sm leading-6 text-muted-foreground">Στείλε φωτογραφίες χωρίς φίλτρα και με ρούχα στα οποία αισθάνεσαι άνετα. Αν δεν αισθάνεσαι άνετα να στείλεις φωτογραφίες, ενημέρωσέ με ώστε να συμφωνήσουμε έναν άλλο τρόπο παρακολούθησης της προόδου σου.</p>
 
       {error && (
         <div className="mb-6 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm font-semibold text-destructive">
@@ -1488,6 +1544,15 @@ function FilesStep({
 
         {selectedPhoto && <div className="mt-3"><PhotoThumb file={selectedPhoto.file} label={angles.find((angle) => angle.value === selectedAngle)?.label || ""} onRemove={() => onRemovePhoto(photos.findIndex((photo) => photo.angle === selectedAngle))} /></div>}
         {photos.length > 0 && <div className="mt-4 grid grid-cols-3 gap-2">{angles.map((angle) => { const photo = photos.find((item) => item.angle === angle.value); return <button key={angle.value} type="button" onClick={() => setSelectedAngle(angle.value)} className={`h-10 rounded-[12px] border text-xs font-extrabold ${selectedAngle === angle.value ? "border-foreground bg-card ring-2 ring-accent" : "border-border bg-muted text-muted-foreground"}`}>{photo ? `✓ ${angle.label}` : angle.label}</button> })}</div>}
+      </div>
+
+      <div className="mb-8 rounded-[16px] border border-border bg-muted/35 p-4 sm:p-5">
+        <p className="text-[14px] font-extrabold text-foreground">Θα δεχόσουν να δημοσιευθούν φωτογραφίες της προόδου σου στα social media του SP TEAM, με θολωμένο πρόσωπο και χωρίς όνομα ή tag;</p>
+        <RadioGroup value={progressPhotoSocialConsent} onValueChange={(value) => value && onProgressPhotoSocialConsentChange(value as "yes" | "no")} className="mt-4 grid gap-2 sm:grid-cols-2">
+          <label className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-extrabold transition-colors ${progressPhotoSocialConsent === "yes" ? "border-accent bg-[var(--sp-lime-soft)]" : "border-border bg-card"}`}><RadioGroupItem value="yes" />Ναι</label>
+          <label className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 text-sm font-extrabold transition-colors ${progressPhotoSocialConsent === "no" ? "border-foreground bg-card" : "border-border bg-card"}`}><RadioGroupItem value="no" />Όχι</label>
+        </RadioGroup>
+        <p className="mt-3 text-[12px] leading-5 text-muted-foreground">Η συγκατάθεση είναι προαιρετική και δεν επηρεάζει τη συνεργασία. Πριν από οποιαδήποτε δημοσίευση, θα σου ζητείται έγκριση για τις συγκεκριμένες φωτογραφίες.</p>
       </div>
 
       <div>
