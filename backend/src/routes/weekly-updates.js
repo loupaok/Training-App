@@ -15,32 +15,52 @@ import { awardWeeklyUpdatePoints } from './points.js';
 const router = express.Router();
 
 const UPDATE_QUESTION_TYPES = ['single_select', 'multi_select', 'text', 'number', 'textarea', 'url', 'rating', 'photos', 'pdf'];
+const UPDATE_SECTIONS = [
+  { key: 'nutrition_training', label: 'Διατροφή & προπόνηση', sortOrder: 1 },
+  { key: 'weight', label: 'Βάρος & δραστηριότητα', sortOrder: 2 },
+  { key: 'sleep_recovery', label: 'Ύπνος & αποκατάσταση', sortOrder: 3 },
+  { key: 'health_week', label: 'Υγεία & επόμενη εβδομάδα', sortOrder: 4 },
+  { key: 'photos', label: 'Φωτογραφίες', sortOrder: 5 },
+];
 // A "standard field" is a question the app relies on for a specific meaning
 // (e.g. reading the client's weekly weight) — at most one question can hold
 // a given key, so consumers can look it up reliably instead of guessing by
 // question type or matching text.
-const UPDATE_QUESTION_STANDARD_KEYS = ['nutrition_consistency', 'nutrition_changes', 'nutrition_details', 'training_details', 'training_tags', 'training_consistency', 'sleep_hours', 'sleep_quality', 'recovery_quality', 'recovery_details', 'weight_kg', 'activity_details', 'health_change', 'health_details', 'next_week_tags', 'next_week_needs', 'other_notes', 'progress_photos'];
+const UPDATE_QUESTION_STANDARD_KEYS = ['nutrition_consistency', 'nutrition_changes', 'nutrition_details', 'training_details', 'training_tags', 'training_consistency', 'sleep_hours', 'sleep_quality', 'sleep_details', 'recovery_quality', 'recovery_details', 'weight_kg', 'weight_measured_on', 'average_weekly_weight', 'steps_per_day', 'cardio_completed', 'cardio_planned', 'health_change', 'health_details', 'next_week_tags', 'next_week_needs', 'other_notes', 'progress_photos'];
 
 const standardUpdateQuestions = [
-  { standardKey: 'nutrition_consistency', question: '1. Πόσο συνεπής ήσουν στη διατροφή σου;', type: 'rating', isRequired: true, placeholder: '5: πλήρης εφαρμογή · 4: σχεδόν πλήρης · 3: περίπου τις μισές ημέρες · 2: λίγες ημέρες · 1: ουσιαστικά καθόλου', sortOrder: 1 },
+  { standardKey: 'nutrition_consistency', section: 'nutrition_training', question: '1. Πόσο συνεπής ήσουν στη διατροφή σου;', type: 'rating', isRequired: true, placeholder: '5: πλήρης εφαρμογή · 4: σχεδόν πλήρης · 3: περίπου τις μισές ημέρες · 2: λίγες ημέρες · 1: ουσιαστικά καθόλου', sortOrder: 1 },
   { standardKey: 'nutrition_changes', question: 'Τι άλλαξε από το πλάνο;', type: 'multi_select', options: ['Έφαγα έξω', 'Παρέλειψα γεύμα', 'Τσιμπολόγημα', 'Αλκοόλ', 'Άλλαξα ποσότητες'], isRequired: false, placeholder: null, sortOrder: 2 },
   { standardKey: 'nutrition_details', question: 'Λεπτομέρειες διατροφής', type: 'textarea', isRequired: false, placeholder: 'Ποιο γεύμα, πόσες φορές και για ποιον λόγο;', sortOrder: 3 },
-  { standardKey: 'training_consistency', question: 'Πόσο συνεπής ήσουν στο πρόγραμμα;', type: 'rating', isRequired: true, placeholder: 'Η αύξηση δύναμης δεν είναι απαραίτητη για να επιλέξεις 5.', sortOrder: 4 },
+  { standardKey: 'training_consistency', question: 'Πόσο συνεπής ήσουν στο πρόγραμμα;', type: 'rating', isRequired: true, placeholder: null, helpText: 'Η αύξηση δύναμης δεν είναι απαραίτητη για να επιλέξεις 5.', sortOrder: 4 },
   { standardKey: 'training_tags', question: 'Κάτι για την προπόνηση;', type: 'multi_select', options: ['Πόνος / ενόχληση', 'Δυσκολία σε άσκηση', 'Έλειψα (υποχρεώσεις)', 'Ένιωσα δυνατός'], isRequired: false, placeholder: null, sortOrder: 5 },
   { standardKey: 'training_details', question: 'Σημειώσεις προπόνησης', type: 'textarea', isRequired: false, placeholder: 'Γράψε τι σε δυσκόλεψε ή σε ποια άσκηση είδες πρόοδο.', sortOrder: 6 },
   { standardKey: 'sleep_hours', question: '3. Μέσες ώρες ύπνου', type: 'single_select', options: ['<5', '5–6', '6–7', '7–8', '8+'], isRequired: true, placeholder: null, sortOrder: 7 },
   { standardKey: 'sleep_quality', question: 'Ποιότητα ύπνου', type: 'rating', isRequired: true, placeholder: null, sortOrder: 8 },
-  { standardKey: 'recovery_quality', question: '4. Πώς ήταν η αποκατάστασή σου;', type: 'rating', isRequired: true, placeholder: null, sortOrder: 9 },
-  { standardKey: 'recovery_details', question: 'Σημειώσεις ύπνου & αποκατάστασης', type: 'textarea', isRequired: false, placeholder: 'Κόπωση, πιάσιμο, ύπνος, στρες, εργασία ή κάτι άλλο;', sortOrder: 10 },
-  { standardKey: 'weight_kg', question: '5. Τελευταίο πρωινό βάρος (kg)', type: 'number', isRequired: true, placeholder: 'π.χ. 82,5', sortOrder: 9 },
-  { standardKey: 'activity_details', question: 'Βάρος και δραστηριότητα: επιπλέον στοιχεία', type: 'textarea', isRequired: false, placeholder: 'Ημερομηνία μέτρησης, μέσο εβδομαδιαίο βάρος, βήματα/ημέρα και αερόβια.', sortOrder: 11 },
-  { standardKey: 'health_change', question: 'Υπήρξε αλλαγή στην υγεία σου;', type: 'single_select', options: ['Όχι', 'Ναι'], isRequired: true, placeholder: null, sortOrder: 12 },
-  { standardKey: 'health_details', question: 'Διευκρίνισε την αλλαγή στην υγεία', type: 'textarea', isRequired: false, placeholder: 'Τραυματισμός, ασθένεια, επίμονος πόνος, φάρμακα ή οδηγία γιατρού.', sortOrder: 13 },
-  { standardKey: 'next_week_tags', question: 'Τι χρειάζεσαι για την επόμενη εβδομάδα;', type: 'multi_select', options: ['Ταξίδι', 'Βάρδιες', 'Εκδήλωση', 'Λιγότερος χρόνος', 'Τίποτα'], isRequired: false, placeholder: null, sortOrder: 14 },
-  { standardKey: 'next_week_needs', question: 'Λεπτομέρειες επόμενης εβδομάδας', type: 'textarea', isRequired: false, placeholder: 'Υπάρχει κάτι που χρειάζεται να λάβουμε υπόψη;', sortOrder: 15 },
-  { standardKey: 'other_notes', question: 'Κάτι άλλο για τον coach;', type: 'textarea', isRequired: false, placeholder: 'Γράψε ελεύθερα…', sortOrder: 16 },
-  { standardKey: 'progress_photos', question: 'Φωτογραφίες & υποβολή', type: 'photos', isRequired: false, placeholder: 'Μπροστά, πλάι και πίσω, με ίδιο φωτισμό, απόσταση και στάση όπως στις προηγούμενες φωτογραφίες, χωρίς φίλτρα.', allowPhotos: true, maxPhotos: 3, sortOrder: 17 },
+  { standardKey: 'sleep_details', question: 'Κακός ύπνος ή κάτι που τον επηρέασε;', type: 'textarea', isRequired: false, placeholder: 'Πόσες νύχτες και τι τον επηρέασε;', sortOrder: 9 },
+  { standardKey: 'recovery_quality', question: '4. Πώς ήταν η αποκατάστασή σου;', type: 'rating', isRequired: true, placeholder: null, sortOrder: 10 },
+  { standardKey: 'recovery_details', question: 'Ένιωθες έτοιμος για την επόμενη προπόνηση;', type: 'textarea', isRequired: false, placeholder: 'Κόπωση, πιάσιμο, ύπνος, στρες, εργασία ή κάτι άλλο;', sortOrder: 11 },
+  { standardKey: 'weight_kg', question: '5. Τελευταίο πρωινό βάρος (kg)', type: 'number', isRequired: true, placeholder: 'π.χ. 82,5', sortOrder: 12 },
+  { standardKey: 'weight_measured_on', question: 'Ημερομηνία μέτρησης', type: 'text', isRequired: true, placeholder: 'π.χ. 10 Νοεμβρίου', sortOrder: 13 },
+  { standardKey: 'average_weekly_weight', question: 'Μέσο εβδομαδιαίο βάρος', type: 'number', isRequired: false, placeholder: 'π.χ. 82,1', sortOrder: 14 },
+  { standardKey: 'steps_per_day', question: 'Μέσος αριθμός βημάτων ανά ημέρα', type: 'number', isRequired: false, placeholder: 'π.χ. 8.500', sortOrder: 15 },
+  { standardKey: 'cardio_planned', question: 'Προγραμματισμένα αερόβια', type: 'number', isRequired: false, placeholder: 'π.χ. 3', sortOrder: 16 },
+  { standardKey: 'cardio_completed', question: 'Αερόβια που ολοκλήρωσες', type: 'number', isRequired: false, placeholder: 'π.χ. 2', sortOrder: 17 },
+  { standardKey: 'health_change', question: 'Υπήρξε αλλαγή στην υγεία σου;', type: 'single_select', options: ['Όχι', 'Ναι'], isRequired: true, placeholder: null, sortOrder: 18 },
+  { standardKey: 'health_details', question: 'Διευκρίνισε την αλλαγή στην υγεία', type: 'textarea', isRequired: false, placeholder: 'Τραυματισμός, ασθένεια, επίμονος πόνος, φάρμακα ή οδηγία γιατρού.', sortOrder: 19 },
+  { standardKey: 'next_week_tags', question: 'Τι χρειάζεσαι για την επόμενη εβδομάδα;', type: 'multi_select', options: ['Ταξίδι', 'Βάρδιες', 'Εκδήλωση', 'Λιγότερος χρόνος', 'Τίποτα'], isRequired: false, placeholder: null, sortOrder: 20 },
+  { standardKey: 'next_week_needs', question: 'Λεπτομέρειες επόμενης εβδομάδας', type: 'textarea', isRequired: false, placeholder: 'Ποια ήταν η μεγαλύτερη δυσκολία σου ή τι χρειάζεται να λάβουμε υπόψη;', sortOrder: 21 },
+  { standardKey: 'other_notes', question: 'Κάτι άλλο για τον coach;', type: 'textarea', isRequired: false, placeholder: 'Γράψε ελεύθερα…', sortOrder: 22 },
+  { standardKey: 'progress_photos', question: 'Φωτογραφίες & υποβολή', type: 'photos', isRequired: false, placeholder: 'Μπροστά, πλάι και πίσω, με ίδιο φωτισμό, απόσταση και στάση όπως στις προηγούμενες φωτογραφίες, χωρίς φίλτρα.', allowPhotos: true, maxPhotos: 3, sortOrder: 23 },
 ];
+
+function sectionForStandardKey(standardKey) {
+  if (['weight_kg', 'weight_measured_on', 'average_weekly_weight', 'steps_per_day', 'cardio_planned', 'cardio_completed'].includes(standardKey)) return 'weight';
+  if (['nutrition_consistency', 'nutrition_changes', 'nutrition_details', 'training_consistency', 'training_tags', 'training_details'].includes(standardKey)) return 'nutrition_training';
+  if (['sleep_hours', 'sleep_quality', 'sleep_details', 'recovery_quality', 'recovery_details'].includes(standardKey)) return 'sleep_recovery';
+  if (['progress_photos'].includes(standardKey)) return 'photos';
+  return 'health_week';
+}
 
 const legacyUpdateQuestions = ['Πώς ήταν η εβδομάδα σου;', 'Τρέχον βάρος (kg);', 'Πώς πήγαν οι προπονήσεις;', 'Πώς ήταν η διατροφή σου;', 'Φωτογραφίες προόδου', 'Σημειώσεις / Ερωτήσεις προς τον coach'];
 
@@ -50,6 +70,26 @@ async function ensureStandardUpdateQuestions(connection) {
     'UPDATE update_questions SET is_active = 0 WHERE standard_key IS NULL AND question IN (?)',
     [legacyUpdateQuestions],
   );
+  // A retired standard field must not remain visible beside the current form.
+  await connection.query(
+    'UPDATE update_questions SET is_active = 0 WHERE standard_key IS NOT NULL AND standard_key NOT IN (?)',
+    [UPDATE_QUESTION_STANDARD_KEYS],
+  );
+  // Keep one canonical row for each standard field. Older development versions
+  // could create a second identical row; it must not render twice for clients.
+  const [duplicateStandardKeys] = await connection.query(
+    `SELECT standard_key FROM update_questions
+     WHERE standard_key IS NOT NULL AND is_deleted = 0
+     GROUP BY standard_key HAVING COUNT(*) > 1`,
+  );
+  for (const duplicate of duplicateStandardKeys) {
+    const [rows] = await connection.query(
+      'SELECT id FROM update_questions WHERE standard_key = ? AND is_deleted = 0 ORDER BY id ASC',
+      [duplicate.standard_key],
+    );
+    const retiredIds = rows.slice(1).map((row) => row.id);
+    if (retiredIds.length) await connection.query('UPDATE update_questions SET is_active = 0, is_deleted = 1 WHERE id IN (?)', [retiredIds]);
+  }
 
   for (const item of standardUpdateQuestions) {
     const [rows] = await connection.query(
@@ -62,26 +102,28 @@ async function ensureStandardUpdateQuestions(connection) {
       item.options ? JSON.stringify(item.options) : null,
       item.isRequired ? 1 : 0,
       item.placeholder || null,
+      item.helpText || null,
       item.allowPhotos ? 1 : 0,
       item.maxPhotos || 4,
       0,
       item.sortOrder,
       1,
       item.standardKey,
+      item.section || sectionForStandardKey(item.standardKey),
     ];
     if (rows[0]) {
       await connection.query(
         `UPDATE update_questions
-         SET question = ?, type = ?, options = ?, is_required = ?, placeholder = ?,
-             allow_photos = ?, max_photos = ?, allow_pdf = ?, sort_order = ?, is_active = ?, standard_key = ?
+         SET question = ?, type = ?, options = ?, is_required = ?, placeholder = ?, help_text = ?,
+             allow_photos = ?, max_photos = ?, allow_pdf = ?, sort_order = ?, is_active = ?, standard_key = ?, section = ?
          WHERE id = ?`,
         [...values, rows[0].id],
       );
     } else {
       await connection.query(
         `INSERT INTO update_questions
-          (question, type, options, is_required, placeholder, allow_photos, max_photos, allow_pdf, sort_order, is_active, standard_key)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (question, type, options, is_required, placeholder, help_text, allow_photos, max_photos, allow_pdf, sort_order, is_active, standard_key, section)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         values,
       );
     }
@@ -111,6 +153,7 @@ export async function ensureWeeklyUpdateSchema(connection) {
       options JSON NULL,
       is_required BOOLEAN DEFAULT TRUE,
       placeholder VARCHAR(255) NULL,
+      help_text TEXT NULL,
       allow_photos BOOLEAN DEFAULT FALSE,
       max_photos INT DEFAULT 4,
       allow_pdf BOOLEAN DEFAULT FALSE,
@@ -119,6 +162,56 @@ export async function ensureWeeklyUpdateSchema(connection) {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS weekly_update_sections (
+      section_key VARCHAR(40) PRIMARY KEY,
+      label VARCHAR(120) NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0
+    )
+  `);
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS weekly_update_settings (
+      id TINYINT PRIMARY KEY,
+      deadline_time TIME NOT NULL DEFAULT '23:59:00',
+      reminder VARCHAR(40) NOT NULL DEFAULT 'same_day_10',
+      photos_required BOOLEAN NOT NULL DEFAULT FALSE,
+      show_score_to_client BOOLEAN NOT NULL DEFAULT TRUE,
+      autosave BOOLEAN NOT NULL DEFAULT TRUE,
+      score_note TEXT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS weekly_update_score_tiers (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      min_score TINYINT NOT NULL,
+      max_score TINYINT NOT NULL,
+      title VARCHAR(120) NOT NULL,
+      message TEXT NOT NULL,
+      sort_order INT NOT NULL DEFAULT 0
+    )
+  `);
+  await connection.query(
+    `INSERT IGNORE INTO weekly_update_settings (id, deadline_time, reminder, photos_required, show_score_to_client, autosave, score_note)
+     VALUES (1, '23:59:00', 'same_day_10', FALSE, TRUE, TRUE, ?)` ,
+    ['Το σκορ βοηθά την αξιολόγηση. Η τελική καθοδήγηση λαμβάνει υπόψη τις απαντήσεις σου, την πρόοδο και τις συνθήκες της εβδομάδας.'],
+  );
+  const [[scoreTierCount]] = await connection.query('SELECT COUNT(*) AS total FROM weekly_update_score_tiers');
+  if (!Number(scoreTierCount.total)) {
+    await connection.query(
+      `INSERT INTO weekly_update_score_tiers (min_score, max_score, title, message, sort_order) VALUES
+       (80, 100, 'Πολύ καλή εβδομάδα', 'Συνέχισε έτσι. Ο coach θα αξιολογήσει τις λεπτομέρειες του update σου.', 1),
+       (60, 79, 'Καλή βάση', 'Υπάρχουν σημεία να δουλέψουμε. Ο coach θα σου δώσει συγκεκριμένη κατεύθυνση.', 2),
+       (40, 59, 'Εβδομάδα με δυσκολίες', 'Συμβαίνει. Θα δούμε μαζί τι σε δυσκόλεψε και πώς το προσαρμόζουμε.', 3),
+       (0, 39, 'Δύσκολη εβδομάδα', 'Μην αγχώνεσαι. Γράψε στον coach σου τι χρειάζεσαι για την επόμενη εβδομάδα.', 4)`,
+    );
+  }
+  for (const section of UPDATE_SECTIONS) {
+    await connection.query(
+      'INSERT IGNORE INTO weekly_update_sections (section_key, label, sort_order) VALUES (?, ?, ?)',
+      [section.key, section.label, section.sortOrder],
+    );
+  }
 
   try {
     await connection.query('ALTER TABLE update_questions ADD COLUMN standard_key VARCHAR(30) NULL');
@@ -127,6 +220,16 @@ export async function ensureWeeklyUpdateSchema(connection) {
   }
   try {
     await connection.query('ALTER TABLE update_questions ADD COLUMN is_deleted BOOLEAN NOT NULL DEFAULT FALSE');
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
+  try {
+    await connection.query("ALTER TABLE update_questions ADD COLUMN section VARCHAR(40) NOT NULL DEFAULT 'health_week'");
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
+  try {
+    await connection.query('ALTER TABLE update_questions ADD COLUMN help_text TEXT NULL AFTER placeholder');
   } catch (error) {
     if (error.code !== 'ER_DUP_FIELDNAME') throw error;
   }
@@ -257,12 +360,14 @@ function normalizeQuestion(row) {
     options,
     isRequired: Boolean(row.is_required),
     placeholder: row.placeholder || '',
+    helpText: row.help_text || '',
     allowPhotos: Boolean(row.allow_photos),
     maxPhotos: row.max_photos,
     allowPdf: Boolean(row.allow_pdf),
     sortOrder: row.sort_order,
     isActive: Boolean(row.is_active),
     standardKey: row.standard_key || null,
+    section: row.section || sectionForStandardKey(row.standard_key),
   };
 }
 
@@ -360,6 +465,116 @@ function extractUpdateStats(answers, questions) {
 // Client endpoints
 // ---------------------------------------------------------------------------
 
+router.get('/sections', async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureWeeklyUpdateSchema(connection);
+    const [rows] = await connection.query('SELECT section_key AS `key`, label, sort_order AS sortOrder FROM weekly_update_sections ORDER BY sort_order ASC, section_key ASC');
+    connection.release();
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/sections/manage', authorizeRole(['coach', 'admin']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureWeeklyUpdateSchema(connection);
+    const [rows] = await connection.query('SELECT section_key AS `key`, label, sort_order AS sortOrder FROM weekly_update_sections ORDER BY sort_order ASC, section_key ASC');
+    connection.release();
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.put('/sections', authorizeRole(['coach', 'admin']), [
+  body('sections').isArray({ min: 5, max: 5 }),
+  body('sections.*.key').isIn(UPDATE_SECTIONS.map((section) => section.key)),
+  body('sections.*.label').trim().isLength({ min: 1, max: 120 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  const suppliedKeys = req.body.sections.map((section) => section.key);
+  if (new Set(suppliedKeys).size !== UPDATE_SECTIONS.length || UPDATE_SECTIONS.some((section) => !suppliedKeys.includes(section.key))) {
+    return res.status(400).json({ message: 'Invalid section list' });
+  }
+  try {
+    const connection = await pool.getConnection();
+    await ensureWeeklyUpdateSchema(connection);
+    for (let index = 0; index < req.body.sections.length; index += 1) {
+      const section = req.body.sections[index];
+      await connection.query('UPDATE weekly_update_sections SET label = ?, sort_order = ? WHERE section_key = ?', [section.label.trim(), index + 1, section.key]);
+    }
+    const [rows] = await connection.query('SELECT section_key AS `key`, label, sort_order AS sortOrder FROM weekly_update_sections ORDER BY sort_order ASC, section_key ASC');
+    connection.release();
+    res.json(rows);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.get('/builder-settings', authorizeRole(['coach', 'admin']), async (req, res) => {
+  try {
+    const connection = await pool.getConnection();
+    await ensureWeeklyUpdateSchema(connection);
+    const [[settings]] = await connection.query(`SELECT deadline_time AS deadlineTime, reminder, photos_required AS photosRequired,
+      show_score_to_client AS showScoreToClient, autosave, score_note AS scoreNote FROM weekly_update_settings WHERE id = 1`);
+    const [tiers] = await connection.query('SELECT id, min_score AS minScore, max_score AS maxScore, title, message, sort_order AS sortOrder FROM weekly_update_score_tiers ORDER BY sort_order ASC, min_score DESC');
+    connection.release();
+    res.json({ settings: { ...settings, deadlineTime: String(settings.deadlineTime || '23:59').slice(0, 5), photosRequired: Boolean(settings.photosRequired), showScoreToClient: Boolean(settings.showScoreToClient), autosave: Boolean(settings.autosave) }, tiers });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.put('/builder-settings', authorizeRole(['coach', 'admin']), [
+  body('settings.deadlineTime').matches(/^([01]\d|2[0-3]):[0-5]\d$/),
+  body('settings.reminder').isString().isLength({ min: 1, max: 40 }),
+  body('settings.photosRequired').isBoolean(),
+  body('settings.showScoreToClient').isBoolean(),
+  body('settings.autosave').isBoolean(),
+  body('settings.scoreNote').optional({ nullable: true }).isLength({ max: 3000 }),
+  body('tiers').isArray({ min: 1, max: 10 }),
+  body('tiers.*.minScore').isInt({ min: 0, max: 100 }),
+  body('tiers.*.maxScore').isInt({ min: 0, max: 100 }),
+  body('tiers.*.title').trim().isLength({ min: 1, max: 120 }),
+  body('tiers.*.message').trim().isLength({ min: 1, max: 3000 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  const tiers = req.body.tiers.map((tier) => ({ ...tier, minScore: Number(tier.minScore), maxScore: Number(tier.maxScore) }));
+  const validRanges = tiers.every((tier) => tier.minScore <= tier.maxScore)
+    && [...tiers].sort((a, b) => a.minScore - b.minScore).every((tier, index, rows) => index === 0 ? tier.minScore === 0 : tier.minScore === rows[index - 1].maxScore + 1)
+    && Math.max(...tiers.map((tier) => tier.maxScore)) === 100;
+  if (!validRanges) return res.status(400).json({ message: 'Τα εύρη score πρέπει να καλύπτουν συνεχόμενα το 0–100.' });
+  try {
+    const connection = await pool.getConnection();
+    await ensureWeeklyUpdateSchema(connection);
+    await connection.beginTransaction();
+    const settings = req.body.settings;
+    await connection.query(`UPDATE weekly_update_settings SET deadline_time = ?, reminder = ?, photos_required = ?, show_score_to_client = ?, autosave = ?, score_note = ? WHERE id = 1`,
+      [settings.deadlineTime, settings.reminder, settings.photosRequired ? 1 : 0, settings.showScoreToClient ? 1 : 0, settings.autosave ? 1 : 0, settings.scoreNote || null]);
+    await connection.query('DELETE FROM weekly_update_score_tiers');
+    for (let index = 0; index < tiers.length; index += 1) {
+      const tier = tiers[index];
+      await connection.query('INSERT INTO weekly_update_score_tiers (min_score, max_score, title, message, sort_order) VALUES (?, ?, ?, ?, ?)',
+        [tier.minScore, tier.maxScore, tier.title.trim(), tier.message.trim(), index]);
+    }
+    await connection.commit();
+    connection.release();
+    res.json({ message: 'Οι ρυθμίσεις του update αποθηκεύτηκαν.' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.get('/questions', async (req, res) => {
   try {
     const connection = await pool.getConnection();
@@ -412,6 +627,7 @@ router.post('/questions', authorizeRole(['coach', 'admin']), [
   body('question').notEmpty(),
   body('type').isIn(UPDATE_QUESTION_TYPES),
   body('standardKey').optional({ nullable: true }).isIn(UPDATE_QUESTION_STANDARD_KEYS),
+  body('section').optional().isIn(['weight', 'nutrition_training', 'sleep_recovery', 'health_week', 'photos']),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -427,20 +643,22 @@ router.post('/questions', authorizeRole(['coach', 'admin']), [
 
     const [result] = await connection.query(
       `INSERT INTO update_questions
-        (question, type, options, is_required, placeholder, allow_photos, max_photos, allow_pdf, sort_order, is_active, standard_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (question, type, options, is_required, placeholder, help_text, allow_photos, max_photos, allow_pdf, sort_order, is_active, standard_key, section)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         req.body.question,
         req.body.type,
         req.body.options ? JSON.stringify(req.body.options) : null,
         req.body.isRequired === false ? 0 : 1,
         req.body.placeholder || null,
+        req.body.helpText || null,
         req.body.allowPhotos === true ? 1 : 0,
         req.body.maxPhotos || 4,
         req.body.allowPdf === true ? 1 : 0,
         req.body.sortOrder || 0,
         req.body.isActive === false ? 0 : 1,
         standardKey,
+        req.body.section || 'health_week',
       ]
     );
 
@@ -457,6 +675,7 @@ router.put('/questions/:id', authorizeRole(['coach', 'admin']), [
   body('question').notEmpty(),
   body('type').isIn(UPDATE_QUESTION_TYPES),
   body('standardKey').optional({ nullable: true }).isIn(UPDATE_QUESTION_STANDARD_KEYS),
+  body('section').optional().isIn(['weight', 'nutrition_training', 'sleep_recovery', 'health_week', 'photos']),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -478,7 +697,7 @@ router.put('/questions/:id', authorizeRole(['coach', 'admin']), [
 
     await connection.query(
       `UPDATE update_questions
-       SET question = ?, type = ?, options = ?, is_required = ?, placeholder = ?, allow_photos = ?, max_photos = ?, allow_pdf = ?, sort_order = ?, is_active = ?, standard_key = ?
+       SET question = ?, type = ?, options = ?, is_required = ?, placeholder = ?, help_text = ?, allow_photos = ?, max_photos = ?, allow_pdf = ?, sort_order = ?, is_active = ?, standard_key = ?, section = ?
        WHERE id = ?`,
       [
         req.body.question,
@@ -486,12 +705,14 @@ router.put('/questions/:id', authorizeRole(['coach', 'admin']), [
         req.body.options ? JSON.stringify(req.body.options) : null,
         req.body.isRequired === false ? 0 : 1,
         req.body.placeholder || null,
+        req.body.helpText || null,
         req.body.allowPhotos === true ? 1 : 0,
         req.body.maxPhotos || 4,
         req.body.allowPdf === true ? 1 : 0,
         req.body.sortOrder || 0,
         req.body.isActive === false ? 0 : 1,
         standardKey,
+        req.body.section || 'health_week',
         req.params.id,
       ]
     );
