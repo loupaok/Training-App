@@ -42,7 +42,8 @@ const pageGroups: Array<{ title: string; pages: AppPage[] }> = [
       { href: "/pricing-plans", label: "Τιμές", icon: BarChart3, access: "public" },
       { href: "/register", label: "Εγγραφή Πελάτη", icon: FilePlus2, access: "public" },
       { href: "/coach/pricing", label: "Διαχείριση Τιμών", icon: BarChart3, access: "coach" },
-      { href: "/coach/questionnaire", label: "Ερωτηματολόγιο", icon: ClipboardList, access: "coach" },
+      { href: "/coach/questionnaire", label: "Ερωτηματολόγιο Εγγραφής", icon: ClipboardList, access: "coach" },
+      { href: "/coach/update-questionnaire", label: "Ερωτηματολόγιο Update", icon: ClipboardList, access: "coach" },
     ],
   },
   {

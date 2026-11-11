@@ -78,7 +78,8 @@ export const coachNavSections: CoachNavSection[] = [
     children: [
       { key: "discord", label: "Discord", path: "/coach/discord", icon: MessageCircle },
       { key: "pricing-plans", label: "Πλάνα & Τιμές", path: "/coach/pricing", icon: Tag },
-      { key: "questionnaire", label: "Ερωτηματολόγιο", path: "/coach/questionnaire", icon: HelpCircle },
+      { key: "questionnaire", label: "Ερωτηματολόγιο Εγγραφής", path: "/coach/questionnaire", icon: HelpCircle },
+      { key: "update-questionnaire", label: "Ερωτηματολόγιο Update", path: "/coach/update-questionnaire", icon: ClipboardList },
       { key: "branding", label: "Branding", path: "/coach/branding", icon: Palette },
       { key: "automations", label: "Emails & Αυτοματισμοί", path: "/coach/automations", icon: Clock },
       { key: "menu", label: "Μενού", path: "/coach/menu", icon: Menu },

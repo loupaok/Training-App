@@ -1,6 +1,6 @@
 "use client"
 
-import { FormEvent, useEffect, useMemo, useState } from "react"
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { ArrowLeft, ArrowRight, Camera, Check, CheckCircle2, ClipboardList, Cloud, HeartPulse, ImagePlus, Moon, RefreshCw, Send, Scale, UtensilsCrossed } from "lucide-react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
@@ -13,6 +13,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { useAuth } from "@/lib/auth/auth-context"
 import { api } from "@/lib/api/client"
+import { computeScore, isVisible, validateStep } from "@/lib/update-form/logic"
+import type { Answers, FormDefinition, Question as FormQuestion } from "@/lib/update-form/types"
 
 type Question = { id: number; question: string; type: string; isRequired: boolean; options?: string[]; placeholder?: string | null; helpText?: string | null; allowPhotos?: boolean; standardKey?: string | null; section?: string | null }
 type UpdateHistory = { id: number; submittedAt: string; weight?: number | null }
@@ -139,6 +141,7 @@ function ClientWeeklyUpdateContent() {
     const value = answers[question.id] ?? (question.type === "multi_select" ? [] : "")
     const hasError = fieldErrors[question.id]
     const common = <>{hasError && <p className="mt-2 text-xs font-bold text-destructive">{hasError}</p>}</>
+    const help = question.helpText ? <p className="text-xs leading-5 text-muted-foreground">{question.helpText}</p> : null
     if (question.allowPhotos || question.type === "photos") return <div key={question.id} className="space-y-4"><p className="text-sm leading-6 text-muted-foreground">Ίδιο φως, απόσταση και στάση με τις προηγούμενες · χωρίς φίλτρα.</p><div className="grid grid-cols-3 gap-2 sm:gap-3">{photoAngles.map((angle) => { const selected = files.find((file) => file.questionId === question.id && file.angle === angle.key); return <div key={angle.key} className="space-y-2 text-center"><label className={`relative flex h-32 cursor-pointer flex-col items-center justify-center gap-2 overflow-hidden rounded-[14px] border border-dashed ${selected ? "border-accent bg-[color:var(--sp-lime-soft)]" : "border-border bg-muted/20"}`}><Input className="hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic" onChange={(event) => chooseFiles(question.id, angle.key, event.target.files?.[0])} /><ImagePlus className="h-7 w-7 text-muted-foreground" />{selected && <span className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-accent text-accent-foreground"><Check className="h-3.5 w-3.5" /></span>}</label><p className="text-xs font-extrabold">{angle.label}</p><label className="flex h-8 cursor-pointer items-center justify-center gap-1 rounded-full bg-foreground text-[10px] font-extrabold text-background sm:hidden"><Camera className="h-3 w-3" />Κάμερα<Input className="hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic" capture="environment" onChange={(event) => chooseFiles(question.id, angle.key, event.target.files?.[0])} /></label></div> })}</div>{common}</div>
     if (question.type === "rating") { const labels = question.standardKey === "nutrition_consistency" ? ["Καθόλου", "Λίγες μέρες", "Μισές μέρες", "Σχεδόν πλήρως", "Πλήρως"] : question.standardKey === "training_consistency" ? ["Δεν το εφάρμοσα", "Λίγο", "Περίπου μισό", "Σχεδόν όλο", "Ολόκληρο"] : undefined; return <div key={question.id} className="space-y-3"><Label className="text-[15px] font-extrabold">{question.question} {isRequiredNow(question) && <span className="text-destructive">*</span>}</Label>{question.helpText && <p className="text-xs leading-5 text-muted-foreground">{question.helpText}</p>}<RatingButtons value={String(value)} onChange={(next) => setAnswer(question.id, next)} labels={labels} />{common}</div> }
     if (question.type === "multi_select") { const selected = Array.isArray(value) ? value : []; const options = question.options || []; const isNutritionChanges = question.standardKey === "nutrition_changes"; return <div key={question.id} className={`space-y-3 ${isNutritionChanges ? "rounded-[16px] border border-border bg-muted/30 p-4" : ""}`}><Label className="text-[15px] font-extrabold">{question.question} {isRequiredNow(question) && <span className="text-destructive">*</span>}</Label>{question.helpText && <p className="text-xs leading-5 text-muted-foreground">{question.helpText}</p>}{isNutritionChanges && <p className="text-xs text-muted-foreground">Εμφανίζεται επειδή επέλεξες κάτω από 5 · οι συμφωνημένες αλλαγές δεν μετράνε.</p>}<div className="flex flex-wrap gap-2">{options.map((option) => <button key={option} type="button" onClick={() => setAnswer(question.id, selected.includes(option) ? selected.filter((item) => item !== option) : [...selected, option])} className={`rounded-full border px-3 py-2 text-xs font-extrabold ${selected.includes(option) ? "border-[#0b0b0b] bg-foreground text-background" : "border-border bg-card hover:bg-muted"}`}>{option}</button>)}</div>{common}</div> }
@@ -162,4 +165,71 @@ function ClientWeeklyUpdateContent() {
   </ClientShell>
 }
 
-export default function ClientWeeklyUpdatePage() { return <ProtectedRoute allow="client-dashboard"><ClientWeeklyUpdateContent /></ProtectedRoute> }
+type FormResponse = { formId: number; form: FormDefinition; draft: { updateId: number; answers: Answers; autoSnapshot: Record<string, unknown> } | null; submitted: { score: number | null; tierTitle: string | null; onTime: boolean } | null }
+type SubmitResponse = { score: number | null; tier: { title: string; message: string } | null; showScoreToClient: boolean; scoreNote: string; pointsAwarded: boolean }
+
+function DynamicQuestion({ question, value, onChange, error, onFile }: { question: FormQuestion; value: unknown; onChange: (value: unknown) => void; error?: string; onFile: (slot: string, file?: File) => void }) {
+  const required = question.required ? <span className="text-destructive"> *</span> : null
+  const fieldError = error && <p className="mt-2 text-xs font-bold text-destructive">{error}</p>
+  const heading = <><Label className="text-[15px] font-extrabold">{question.label}{required}</Label>{question.help && <p className="text-xs leading-5 text-muted-foreground">{question.help}</p>}</>
+  if (question.type === "scale") {
+    const labels = question.scaleLabels ?? ["1", "2", "3", "4", "5"]
+    return <div data-question-id={question.id} className="space-y-3">{heading}<div className="grid grid-cols-5 gap-2">{[1, 2, 3, 4, 5].map((item) => <button key={item} type="button" onClick={() => onChange(item)} className={`min-h-[76px] rounded-[14px] border p-1 text-center ${Number(value) === item ? "border-[#0b0b0b] bg-accent text-accent-foreground" : "border-border bg-card hover:bg-muted"}`}><b className="block text-lg font-extrabold italic">{question.display === "stars" ? "★" : item}</b><span className="mt-1 block text-[9px] font-bold leading-3">{labels[item - 1]}</span></button>)}</div>{fieldError}</div>
+  }
+  if (question.type === "yes_no") return <div data-question-id={question.id} className="space-y-3">{heading}<div className="flex gap-2"><Button type="button" variant={value === true ? "lime" : "outline"} onClick={() => onChange(true)}>Ναι</Button><Button type="button" variant={value === false ? "lime" : "outline"} onClick={() => onChange(false)}>Όχι</Button></div>{fieldError}</div>
+  if (question.type === "chips") {
+    const current = (value && typeof value === "object" ? value : {}) as { chips?: string[]; text?: string }
+    const selected = current.chips ?? []
+    const select = (option: string) => onChange({ ...current, chips: question.multi ? (selected.includes(option) ? selected.filter((item) => item !== option) : [...selected, option]) : [option] })
+    return <div data-question-id={question.id} className="space-y-3">{heading}<div className="flex flex-wrap gap-2">{(question.options ?? []).map((option) => <button key={option} type="button" onClick={() => select(option)} className={`rounded-full border px-3 py-2 text-xs font-extrabold ${selected.includes(option) ? "border-[#0b0b0b] bg-foreground text-background" : "border-border bg-card"}`}>{option}</button>)}</div>{question.withText && <Textarea value={current.text ?? ""} onChange={(event) => onChange({ ...current, text: event.target.value })} placeholder="Πρόσθεσε λεπτομέρειες…" className="min-h-20 rounded-[14px]" />}{fieldError}</div>
+  }
+  if (question.type === "photos") return <div data-question-id={question.id} className="space-y-3">{heading}<p className="text-xs leading-5 text-muted-foreground">Σύγκρινε με την προηγούμενη εβδομάδα: ίδιο φως, απόσταση και στάση, χωρίς φίλτρα.</p><div className="grid grid-cols-3 gap-3">{(question.photoSlots ?? ["Μπροστά", "Πλάι", "Πίσω"]).map((slot) => <label key={slot} className="grid min-h-28 cursor-pointer place-items-center gap-2 rounded-[14px] border-2 border-dashed border-border bg-muted/30 p-3 text-center text-xs font-extrabold"><ImagePlus className="h-5 w-5" />{slot}<Input className="hidden" type="file" accept="image/jpeg,image/png,image/webp,image/heic" capture="environment" onChange={(event) => onFile(slot, event.target.files?.[0])} /></label>)}</div>{fieldError}</div>
+  if (question.type === "auto") return <div data-question-id={question.id} className="rounded-[14px] bg-[var(--sp-lime-soft)] p-4 text-sm"><b>{question.label}</b><p className="mt-1 text-muted-foreground">Υπολογίζεται αυτόματα από την εφαρμογή.</p></div>
+  const textValue = String(value ?? "")
+  const isLong = question.type === "text"
+  return <div data-question-id={question.id} className="space-y-2">{heading}{isLong ? <Textarea value={textValue} onChange={(event) => onChange(event.target.value)} placeholder={question.placeholder} className="min-h-28 rounded-[14px]" /> : <div className="relative"><Input type="number" inputMode="decimal" value={textValue} onChange={(event) => onChange(event.target.value)} placeholder={question.placeholder} className="h-12 rounded-[14px] pr-14" />{question.unit && <span className="absolute right-4 top-3 text-sm font-bold text-muted-foreground">{question.unit}</span>}</div>}{fieldError}</div>
+}
+
+function DynamicWeeklyUpdateContent() {
+  const { user, logout } = useAuth()
+  const [data, setData] = useState<FormResponse | null>(null)
+  const [answers, setAnswers] = useState<Answers>({})
+  const [files, setFiles] = useState<Array<{ questionId: string; slot: string; file: File }>>([])
+  const [step, setStep] = useState(0)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [savedAt, setSavedAt] = useState<Date | null>(null)
+  const [result, setResult] = useState<SubmitResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [sending, setSending] = useState(false)
+  const autosaveReady = useRef(false)
+
+  useEffect(() => { api.get<FormResponse>("/updates/form").then((response) => { setData(response); setAnswers(response.draft?.answers ?? {}); setStep(Number(response.draft?.autoSnapshot?.stepIndex ?? 0)); }).finally(() => setLoading(false)) }, [])
+  useEffect(() => {
+    if (!data || data.submitted || !autosaveReady.current) { autosaveReady.current = true; return }
+    const timer = window.setTimeout(() => api.put("/updates/draft", { answers, autoSnapshot: { stepIndex: step } }).then(() => setSavedAt(new Date())).catch(() => undefined), 800)
+    return () => window.clearTimeout(timer)
+  }, [answers, step, data])
+  if (loading || !data) return <ClientShell user={user} logout={logout} paymentApproved={false}><main className="p-8 text-muted-foreground">Φόρτωση update…</main></ClientShell>
+  const steps = data.form.steps
+  const isReview = step === steps.length
+  const current = steps[Math.min(step, steps.length - 1)]
+  const visible = (question: FormQuestion) => isVisible(question, answers)
+  const next = () => {
+    const nextErrors = validateStep(current, answers, data.form.settings.photosRequired)
+    setErrors(nextErrors)
+    const first = Object.keys(nextErrors)[0]
+    if (first) { document.querySelector(`[data-question-id="${first}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" }); return }
+    setStep((value) => value + 1)
+  }
+  const uploadFile = (questionId: string, slot: string, file?: File) => { if (!file) return; setFiles((items) => [...items.filter((item) => !(item.questionId === questionId && item.slot === slot)), { questionId, slot, file }]); setAnswers((currentAnswers) => ({ ...currentAnswers, [questionId]: { ...(currentAnswers[questionId] as object || {}), [slot]: true } })) }
+  const submit = async () => { const allErrors = Object.assign({}, ...steps.map((item) => validateStep(item, answers, data.form.settings.photosRequired))); if (Object.keys(allErrors).length) { setErrors(allErrors); setStep(steps.findIndex((item) => Object.keys(validateStep(item, answers, data.form.settings.photosRequired)).length)); return } setSending(true); try { const body = new FormData(); body.append("answers", JSON.stringify(answers)); files.forEach((item) => body.append("files", item.file)); const response = await api.upload<SubmitResponse>("/updates/submit-form", body); setResult(response) } finally { setSending(false) } }
+  const localScore = computeScore(data.form, answers)
+  const awardedPoints = result?.pointsAwarded ? 100 : 0
+  if (result || data.submitted) {
+    const score = result?.score ?? data.submitted?.score ?? null; const tier = result?.tier ?? (score === null ? null : data.form.scoreTiers.find((item) => score >= item.min && score <= item.max) ?? null)
+    return <ClientShell user={user} logout={logout} paymentApproved><main className="mx-auto max-w-[720px] p-4 sm:p-8">{(result?.showScoreToClient ?? true) && score !== null ? <Card className="overflow-hidden rounded-[24px]"><CardContent className="p-6 text-center sm:p-10"><div className="mx-auto grid h-40 w-40 place-items-center rounded-full border-[12px] border-accent bg-card"><b className="text-4xl font-extrabold italic">{score}<small className="text-base">/100</small></b></div><h1 className="mt-6 text-3xl font-extrabold">{tier?.title}</h1><p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-muted-foreground">{tier?.message}</p><div className="mt-7 space-y-3 text-left">{data.form.steps.flatMap((item) => item.questions).filter((item) => item.type === "scale" && item.scored && visible(item)).map((item) => <div key={item.id}><div className="flex justify-between text-sm font-bold"><span>{item.shortLabel}</span><span>{String(answers[item.id] ?? "–")}/5</span></div><div className="mt-1 h-2 rounded-full bg-muted"><span className="block h-full rounded-full bg-accent" style={{ width: `${Number(answers[item.id] ?? 0) * 20}%` }} /></div></div>)}</div><p className="mt-7 text-xs leading-5 text-muted-foreground">{result?.scoreNote ?? data.form.scoreNote}</p>{awardedPoints > 0 && <p className="mt-4 font-extrabold text-accent-foreground">+{awardedPoints} πόντοι προστέθηκαν</p>}<Button asChild variant="lime" className="mt-7 h-12 rounded-full"><Link href="/client/dashboard">Πίσω στην αρχική</Link></Button></CardContent></Card> : <Card className="rounded-[24px]"><CardContent className="p-10 text-center"><CheckCircle2 className="mx-auto h-16 w-16 text-accent" /><h1 className="mt-5 text-3xl font-extrabold">Το update στάλθηκε</h1><p className="mt-3 text-muted-foreground">Ο coach σου ενημερώθηκε και θα αξιολογήσει την πρόοδό σου.</p><Button asChild variant="lime" className="mt-7"><Link href="/client/dashboard">Πίσω στην αρχική</Link></Button></CardContent></Card>}</main></ClientShell>
+  }
+  return <ClientShell user={user} logout={logout} paymentApproved><main className="mx-auto max-w-[var(--container-7xl)] space-y-5 p-4 pb-24 sm:p-6 lg:p-8"><header className="flex flex-wrap items-end justify-between gap-3"><div><Link href="/client/dashboard" className="text-xs font-extrabold text-muted-foreground">‹ Αρχική</Link><h1 className="mt-1 text-[28px] font-extrabold">Εβδομαδιαίο update</h1><p className="text-sm text-muted-foreground">Συμπλήρωσέ το σε λίγα λεπτά.{savedAt && " · Πρόχειρο αποθηκεύτηκε"}</p></div><span className="rounded-full bg-accent px-3 py-2 text-xs font-extrabold text-accent-foreground">+100 πόντοι αν σταλεί στην ώρα</span></header><div className="flex gap-1">{steps.map((item, index) => <span key={item.id} className={`h-1.5 flex-1 rounded-full ${index <= step ? "bg-accent" : "bg-muted"}`} />)}</div><Card className="rounded-[20px]"><CardContent className="p-5 sm:p-7">{isReview ? <div className="space-y-5"><h2 className="text-2xl font-extrabold">Ανασκόπηση</h2>{steps.map((item, index) => <div key={item.id} className="rounded-[14px] border border-border p-4"><div className="flex justify-between"><b>{item.title}</b><Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => setStep(index)}>Αλλαγή</Button></div><p className="mt-2 text-sm text-muted-foreground">{item.questions.filter(visible).map((question) => `${question.shortLabel}: ${typeof answers[question.id] === "object" ? "Συμπληρώθηκε" : answers[question.id] || "—"}`).join(" · ")}</p></div>)}<Button type="button" variant="lime" className="h-12 w-full rounded-full" disabled={sending} onClick={submit}>{sending ? "Υποβολή…" : `Υποβολή update · +${awardedPoints || 100} πόντοι`}</Button></div> : <div className="space-y-6"><div><p className="text-xs font-extrabold tracking-[1px] text-muted-foreground">ΒΗΜΑ {step + 1} ΑΠΟ {steps.length}</p><h2 className="mt-1 text-2xl font-extrabold">{current.title}</h2></div>{current.questions.filter(visible).map((question) => <DynamicQuestion key={question.id} question={question} value={answers[question.id]} error={errors[question.id]} onChange={(value) => setAnswers((currentAnswers) => ({ ...currentAnswers, [question.id]: value }))} onFile={(slot, file) => uploadFile(question.id, slot, file)} />)}<div className="flex justify-between border-t border-border pt-5">{step > 0 ? <Button type="button" variant="outline" onClick={() => setStep(step - 1)}>Πίσω</Button> : <span />}<Button type="button" className="bg-foreground text-background" onClick={next}>Επόμενο <ArrowRight className="ml-2 h-4 w-4" /></Button></div></div>}</CardContent></Card></main></ClientShell>
+}
+
+export default function ClientWeeklyUpdatePage() { return <ProtectedRoute allow="client-dashboard"><DynamicWeeklyUpdateContent /></ProtectedRoute> }

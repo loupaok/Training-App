@@ -11,8 +11,202 @@ import { updateNotificationEmail } from '../lib/email-templates.js';
 import { registerWeeklyUpdatePhotos } from './media.js';
 import { optimizeUploadedImages } from '../utils/image-optimization.js';
 import { awardWeeklyUpdatePoints } from './points.js';
+import { defaultUpdateForm } from '../lib/update-form/default-form.js';
+import { computeScore, validateStep } from '../lib/update-form/logic.js';
 
 const router = express.Router();
+
+async function addColumnIfMissing(connection, table, column, definition) {
+  const [[existing]] = await connection.query(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+    [table, column],
+  );
+  if (!existing) await connection.query(`ALTER TABLE \`${table}\` ADD COLUMN ${definition}`);
+}
+
+function parseLegacyAnswer(value) {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value !== 'string') return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+
+const legacyAnswerKeys = {
+  nutrition_consistency: 'diet_score',
+  nutrition_changes: 'diet_changes',
+  training_consistency: 'training_score',
+  training_tags: 'training_notes',
+  sleep_quality: 'sleep_quality',
+  recovery_quality: 'recovery',
+  weight_kg: 'weight_kg',
+  health_change: 'health_changed',
+  health_details: 'health_details',
+  next_week_tags: 'next_week',
+  other_notes: 'coach_note',
+};
+
+function answersFromLegacyEntries(entries, questions) {
+  const questionsById = new Map(questions.map((question) => [Number(question.id), question]));
+  const result = {};
+  for (const entry of entries) {
+    const question = questionsById.get(Number(entry?.question_id));
+    const key = legacyAnswerKeys[question?.standard_key];
+    if (!key) continue;
+    let value = entry.answer;
+    if (key === 'health_changed' && typeof value === 'string') value = value.trim().toLowerCase() === 'ναι';
+    if ((key === 'diet_changes' || key === 'training_notes' || key === 'next_week') && Array.isArray(value)) value = { chips: value, text: '' };
+    result[key] = value;
+  }
+  return result;
+}
+
+async function ensurePublishedUpdateForm(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS update_forms (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      version INT NOT NULL,
+      status ENUM('draft', 'published') NOT NULL,
+      definition JSON NOT NULL,
+      published_at TIMESTAMP NULL DEFAULT NULL,
+      published_by INT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      draft_guard TINYINT GENERATED ALWAYS AS (IF(status = 'draft', 1, NULL)) STORED,
+      UNIQUE KEY unique_update_form_version (version),
+      UNIQUE KEY unique_update_form_draft (draft_guard)
+    )
+  `);
+
+  const [[published]] = await connection.query(
+    "SELECT id FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1",
+  );
+  if (published) return published.id;
+
+  const [result] = await connection.query(
+    "INSERT INTO update_forms (version, status, definition, published_at) VALUES (1, 'published', ?, NOW())",
+    [JSON.stringify(defaultUpdateForm)],
+  );
+  return result.insertId;
+}
+
+function parseFormDefinition(value) {
+  if (!value) return null;
+  try { return typeof value === 'string' ? JSON.parse(value) : value; } catch { return null; }
+}
+
+function validateFormDefinition(definition, { publish = false } = {}) {
+  const errors = {};
+  if (!definition || typeof definition !== 'object') return { form: 'Μη έγκυρη φόρμα.' };
+  if (!Array.isArray(definition.steps) || !definition.steps.length) errors.steps = 'Χρειάζεται τουλάχιστον ένα βήμα.';
+  const ids = new Set();
+  for (const [stepIndex, step] of (definition.steps || []).entries()) {
+    if (!step?.id || !String(step.id).trim()) errors[`steps.${stepIndex}.id`] = 'Το id του βήματος είναι υποχρεωτικό.';
+    if (publish && !String(step?.title || '').trim()) errors[`steps.${stepIndex}.title`] = 'Το όνομα του βήματος είναι υποχρεωτικό.';
+    if (!Array.isArray(step?.questions)) errors[`steps.${stepIndex}.questions`] = 'Οι ερωτήσεις δεν είναι έγκυρες.';
+    for (const [questionIndex, question] of (step?.questions || []).entries()) {
+      const key = `steps.${stepIndex}.questions.${questionIndex}`;
+      if (!question?.id || ids.has(question.id)) errors[`${key}.id`] = 'Κάθε ερώτηση χρειάζεται μοναδικό id.';
+      ids.add(question?.id);
+      if (publish && !String(question?.label || '').trim()) errors[`${key}.label`] = 'Η ερώτηση χρειάζεται κείμενο.';
+      if (!['scale', 'text', 'number', 'yes_no', 'chips', 'auto', 'photos'].includes(question?.type)) errors[`${key}.type`] = 'Μη έγκυρος τύπος ερώτησης.';
+    }
+  }
+  for (const step of definition.steps || []) for (const question of step.questions || []) {
+    if (question?.showIf && !ids.has(question.showIf.questionId)) errors[`question.${question.id}.showIf`] = 'Η συνθήκη αναφέρεται σε ανύπαρκτη ερώτηση.';
+  }
+  if (publish) {
+    const tiers = [...(definition.scoreTiers || [])].sort((a, b) => Number(a.min) - Number(b.min));
+    if (!tiers.length || Number(tiers[0]?.min) !== 0 || Number(tiers.at(-1)?.max) !== 100) errors.scoreTiers = 'Τα ranges του σκορ πρέπει να καλύπτουν 0–100.';
+    if (tiers.some((tier, index) => !String(tier.title || '').trim() || !String(tier.message || '').trim() || Number(tier.min) > Number(tier.max) || (index && Number(tier.min) !== Number(tiers[index - 1].max) + 1))) errors.scoreTiers = 'Τα ranges του σκορ έχουν κενά ή επικαλύψεις.';
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(definition.settings?.deadlineTime || ''))) errors.deadlineTime = 'Βάλε έγκυρη ώρα προθεσμίας.';
+    if (!Array.isArray(definition.settings?.allowedDays) || definition.settings.allowedDays.some((day) => !Number.isInteger(day) || day < 1 || day > 6)) errors.allowedDays = 'Επίλεξε ημέρες Δευτέρα έως Σάββατο.';
+  }
+  return errors;
+}
+
+async function getOrCreateUpdateDraft(connection) {
+  const [drafts] = await connection.query("SELECT * FROM update_forms WHERE status = 'draft' LIMIT 1");
+  if (drafts[0]) return drafts[0];
+  const [publishedRows] = await connection.query("SELECT * FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1");
+  const source = publishedRows[0] || { version: 0, definition: defaultUpdateForm };
+  const [created] = await connection.query(
+    "INSERT INTO update_forms (version, status, definition) VALUES (?, 'draft', ?)",
+    [Number(source.version || 0) + 1, JSON.stringify(parseFormDefinition(source.definition) || defaultUpdateForm)],
+  );
+  const [rows] = await connection.query('SELECT * FROM update_forms WHERE id = ?', [created.insertId]);
+  return rows[0];
+}
+
+async function migrateLegacyWeeklyUpdates(connection, formId) {
+  const [updates] = await connection.query('SELECT id, weekly_score, is_timely FROM weekly_updates WHERE form_id IS NULL');
+  if (!updates.length) return;
+
+  const [legacyAnswers] = await connection.query(`
+    SELECT answer.update_id, answer.answer, question.standard_key, question.question
+    FROM weekly_update_answers answer
+    JOIN update_questions question ON question.id = answer.question_id
+    WHERE answer.update_id IN (?)`,
+    [updates.map((update) => update.id)],
+  );
+  const answersByUpdate = new Map();
+  for (const row of legacyAnswers) {
+    const key = legacyAnswerKeys[row.standard_key];
+    if (!key) continue;
+    const answers = answersByUpdate.get(row.update_id) || {};
+    answers[key] = parseLegacyAnswer(row.answer);
+    answersByUpdate.set(row.update_id, answers);
+  }
+
+  for (const update of updates) {
+    const answers = answersByUpdate.get(update.id) || {};
+    const calculated = computeScore(defaultUpdateForm, answers);
+    const score = Number.isFinite(Number(update.weekly_score)) ? Number(update.weekly_score) : calculated.score;
+    const tier = score === null ? null : defaultUpdateForm.scoreTiers.find((item) => score >= item.min && score <= item.max)?.title || null;
+    await connection.query(
+      `UPDATE weekly_updates
+       SET form_id = ?, answers = ?, auto_snapshot = ?, status = 'submitted',
+           score = ?, score_tier_title = ?, on_time = COALESCE(is_timely, TRUE)
+       WHERE id = ?`,
+      [formId, JSON.stringify(answers), JSON.stringify({ migratedFromLegacy: true }), score, tier, update.id],
+    );
+  }
+}
+
+async function archiveDuplicateWeeklyUpdates(connection) {
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS weekly_update_duplicate_archive (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      original_update_id INT NOT NULL,
+      client_id INT NOT NULL,
+      week_start DATE NOT NULL,
+      payload JSON NOT NULL,
+      answers JSON NULL,
+      files JSON NULL,
+      archived_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY unique_archived_weekly_update (original_update_id)
+    )
+  `);
+  const [duplicates] = await connection.query(`
+    SELECT client_id, week_start FROM weekly_updates
+    GROUP BY client_id, week_start HAVING COUNT(*) > 1
+  `);
+  for (const duplicate of duplicates) {
+    const [rows] = await connection.query(
+      'SELECT * FROM weekly_updates WHERE client_id = ? AND week_start = ? ORDER BY submitted_at DESC, id DESC',
+      [duplicate.client_id, duplicate.week_start],
+    );
+    for (const row of rows.slice(1)) {
+      const [answers] = await connection.query('SELECT question_id, answer FROM weekly_update_answers WHERE update_id = ?', [row.id]);
+      const [files] = await connection.query('SELECT question_id, file_url, file_type, original_name, angle, created_at FROM weekly_update_files WHERE update_id = ?', [row.id]);
+      await connection.query(
+        `INSERT IGNORE INTO weekly_update_duplicate_archive
+          (original_update_id, client_id, week_start, payload, answers, files)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [row.id, row.client_id, row.week_start, JSON.stringify(row), JSON.stringify(answers), JSON.stringify(files)],
+      );
+      await connection.query('DELETE FROM weekly_updates WHERE id = ?', [row.id]);
+    }
+  }
+}
 
 const UPDATE_QUESTION_TYPES = ['single_select', 'multi_select', 'text', 'number', 'textarea', 'url', 'rating', 'photos', 'pdf'];
 const UPDATE_SECTIONS = [
@@ -257,14 +451,6 @@ export async function ensureWeeklyUpdateSchema(connection) {
     if (error.code !== 'ER_DUP_FIELDNAME') throw error;
   }
 
-  // The application enforces one update per week for normal clients. Removing the
-  // legacy database constraint lets demo accounts submit multiple test updates.
-  try {
-    await connection.query('ALTER TABLE weekly_updates DROP INDEX unique_client_week');
-  } catch (error) {
-    if (error.code !== 'ER_CANT_DROP_FIELD_OR_KEY') throw error;
-  }
-
   const [[isReadColumn]] = await connection.query(
     `SELECT COLUMN_NAME FROM information_schema.COLUMNS
      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'weekly_updates' AND COLUMN_NAME = 'is_read'`
@@ -321,6 +507,48 @@ export async function ensureWeeklyUpdateSchema(connection) {
   }
 
   await ensureStandardUpdateQuestions(connection);
+
+  // Remove the accidental development-only question and its old answers before
+  // preserving the new form definition. It has no stable identifier to migrate.
+  await connection.query(`
+    DELETE answer FROM weekly_update_answers answer
+    JOIN update_questions question ON question.id = answer.question_id
+    WHERE LOWER(TRIM(question.question)) = 'asasdas'
+  `);
+  await connection.query("DELETE FROM update_questions WHERE LOWER(TRIM(question)) = 'asasdas'");
+
+  const publishedFormId = await ensurePublishedUpdateForm(connection);
+  await addColumnIfMissing(connection, 'weekly_updates', 'form_id', 'form_id INT NULL AFTER client_id');
+  await addColumnIfMissing(connection, 'weekly_updates', 'answers', 'answers JSON NULL AFTER form_id');
+  await addColumnIfMissing(connection, 'weekly_updates', 'auto_snapshot', 'auto_snapshot JSON NULL AFTER answers');
+  await addColumnIfMissing(connection, 'weekly_updates', 'status', "status ENUM('draft', 'submitted') NOT NULL DEFAULT 'submitted' AFTER auto_snapshot");
+  await addColumnIfMissing(connection, 'weekly_updates', 'score', 'score INT NULL AFTER status');
+  await addColumnIfMissing(connection, 'weekly_updates', 'score_tier_title', 'score_tier_title VARCHAR(120) NULL AFTER score');
+  await addColumnIfMissing(connection, 'weekly_updates', 'on_time', 'on_time BOOLEAN NOT NULL DEFAULT TRUE AFTER score_tier_title');
+  await connection.query('ALTER TABLE weekly_updates MODIFY submitted_at TIMESTAMP NULL DEFAULT NULL');
+
+  const [[formForeignKey]] = await connection.query(`
+    SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'weekly_updates'
+      AND COLUMN_NAME = 'form_id' AND REFERENCED_TABLE_NAME = 'update_forms'
+    LIMIT 1
+  `);
+  if (!formForeignKey) {
+    await connection.query('ALTER TABLE weekly_updates ADD CONSTRAINT fk_weekly_updates_form FOREIGN KEY (form_id) REFERENCES update_forms(id)');
+  }
+
+  await migrateLegacyWeeklyUpdates(connection, publishedFormId);
+  await archiveDuplicateWeeklyUpdates(connection);
+
+  const [[uniqueClientWeek]] = await connection.query(`
+    SELECT INDEX_NAME FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'weekly_updates'
+      AND INDEX_NAME = 'unique_client_week'
+    LIMIT 1
+  `);
+  if (!uniqueClientWeek) {
+    await connection.query('ALTER TABLE weekly_updates ADD UNIQUE INDEX unique_client_week (client_id, week_start)');
+  }
 }
 
 const storage = multer.diskStorage({
@@ -786,6 +1014,188 @@ router.get('/can-submit/:clientId', async (req, res) => {
   }
 });
 
+router.get('/builder/draft', authorizeRole(['coach', 'admin']), async (req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await ensurePublishedUpdateForm(connection);
+    const draft = await getOrCreateUpdateDraft(connection);
+    res.json({ id: draft.id, version: draft.version, definition: parseFormDefinition(draft.definition) || defaultUpdateForm });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Δεν φορτώθηκε το πρόχειρο του update.' });
+  } finally { connection?.release(); }
+});
+
+router.put('/builder/draft', authorizeRole(['coach', 'admin']), async (req, res) => {
+  let connection;
+  try {
+    const definition = req.body?.definition;
+    const errors = validateFormDefinition(definition);
+    if (Object.keys(errors).length) return res.status(400).json({ message: 'Μη έγκυρο πρόχειρο.', errors });
+    connection = await pool.getConnection();
+    await ensurePublishedUpdateForm(connection);
+    const draft = await getOrCreateUpdateDraft(connection);
+    await connection.query('UPDATE update_forms SET definition = ? WHERE id = ?', [JSON.stringify(definition), draft.id]);
+    res.json({ id: draft.id, version: draft.version, definition });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Δεν αποθηκεύτηκε το πρόχειρο.' });
+  } finally { connection?.release(); }
+});
+
+router.post('/builder/publish', authorizeRole(['coach', 'admin']), async (req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await ensurePublishedUpdateForm(connection);
+    const draft = await getOrCreateUpdateDraft(connection);
+    const definition = parseFormDefinition(draft.definition) || defaultUpdateForm;
+    const errors = validateFormDefinition(definition, { publish: true });
+    if (Object.keys(errors).length) {
+      return res.status(400).json({
+        message: 'Διόρθωσε πριν τη δημοσίευση: ' + Object.values(errors).join(' '),
+        errors,
+      });
+    }
+    await connection.query("UPDATE update_forms SET status = 'published', published_at = NOW(), published_by = ? WHERE id = ?", [req.user.id, draft.id]);
+    res.json({ id: draft.id, version: draft.version, definition, publishedAt: new Date().toISOString() });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Δεν δημοσιεύτηκε το ερωτηματολόγιο.' });
+  } finally { connection?.release(); }
+});
+
+router.get('/form', authorizeRole(['client']), async (req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await ensureWeeklyUpdateSchema(connection);
+    const weekStart = getWeekStart();
+    const [[update]] = await connection.query(
+      `SELECT weekly.id, weekly.status, weekly.answers, weekly.auto_snapshot AS autoSnapshot,
+              weekly.score, weekly.score_tier_title AS scoreTierTitle, weekly.on_time AS onTime,
+              form.id AS formId, form.definition
+       FROM weekly_updates weekly
+       JOIN update_forms form ON form.id = weekly.form_id
+       WHERE weekly.client_id = ? AND weekly.week_start = ? LIMIT 1`,
+      [req.user.id, weekStart],
+    );
+    let formRow = update;
+    if (!formRow) {
+      const [publishedRows] = await connection.query(
+        "SELECT id AS formId, definition FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1",
+      );
+      formRow = publishedRows[0];
+    }
+    const form = typeof formRow?.definition === 'string' ? JSON.parse(formRow.definition) : formRow?.definition;
+    connection.release();
+    if (!formRow || !form) return res.status(404).json({ message: 'Δεν υπάρχει δημοσιευμένη φόρμα update.' });
+    res.json({
+      formId: formRow.formId,
+      form,
+      draft: update?.status === 'draft' ? {
+        updateId: update.id,
+        answers: typeof update.answers === 'string' ? JSON.parse(update.answers || '{}') : (update.answers || {}),
+        autoSnapshot: typeof update.autoSnapshot === 'string' ? JSON.parse(update.autoSnapshot || '{}') : (update.autoSnapshot || {}),
+      } : null,
+      submitted: update?.status === 'submitted' ? {
+        score: update.score,
+        tierTitle: update.scoreTierTitle,
+        onTime: Boolean(update.onTime),
+      } : null,
+    });
+  } catch (error) {
+    connection?.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.put('/draft', authorizeRole(['client']), async (req, res) => {
+  let connection;
+  try {
+    const answers = req.body?.answers;
+    if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return res.status(400).json({ message: 'Μη έγκυρο πρόχειρο update.' });
+    connection = await pool.getConnection();
+    await ensureWeeklyUpdateSchema(connection);
+    const weekStart = getWeekStart();
+    const [[existing]] = await connection.query('SELECT id, status FROM weekly_updates WHERE client_id = ? AND week_start = ? LIMIT 1', [req.user.id, weekStart]);
+    if (existing?.status === 'submitted') {
+      connection.release();
+      return res.status(409).json({ message: 'Το update αυτής της εβδομάδας έχει ήδη υποβληθεί.' });
+    }
+    const [[published]] = await connection.query("SELECT id FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1");
+    if (!published) throw new Error('Δεν υπάρχει δημοσιευμένη φόρμα update.');
+    const snapshot = req.body?.autoSnapshot && typeof req.body.autoSnapshot === 'object' ? req.body.autoSnapshot : {};
+    let updateId = existing?.id;
+    if (updateId) {
+      await connection.query('UPDATE weekly_updates SET answers = ?, auto_snapshot = ?, form_id = ?, status = \'draft\', submitted_at = NULL WHERE id = ?', [JSON.stringify(answers), JSON.stringify(snapshot), published.id, updateId]);
+    } else {
+      const [result] = await connection.query(
+        "INSERT INTO weekly_updates (client_id, form_id, week_start, answers, auto_snapshot, status, submitted_at) VALUES (?, ?, ?, ?, ?, 'draft', NULL)",
+        [req.user.id, published.id, weekStart, JSON.stringify(answers), JSON.stringify(snapshot)],
+      );
+      updateId = result.insertId;
+    }
+    connection.release();
+    res.json({ updateId, savedAt: new Date().toISOString() });
+  } catch (error) {
+    connection?.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+router.post('/submit-form', authorizeRole(['client']), upload.array('files', 12), async (req, res) => {
+  let connection;
+  try {
+    const answers = JSON.parse(req.body?.answers || '{}');
+    if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return res.status(400).json({ message: 'Μη έγκυρες απαντήσεις.' });
+    connection = await pool.getConnection();
+    await ensureWeeklyUpdateSchema(connection);
+    const weekStart = getWeekStart();
+    const [[update]] = await connection.query(
+      `SELECT weekly.id, weekly.status, weekly.form_id AS formId, form.definition
+       FROM weekly_updates weekly JOIN update_forms form ON form.id = weekly.form_id
+       WHERE weekly.client_id = ? AND weekly.week_start = ? LIMIT 1`,
+      [req.user.id, weekStart],
+    );
+    if (update?.status === 'submitted') return res.status(409).json({ message: 'Το update αυτής της εβδομάδας έχει ήδη υποβληθεί.' });
+    let formRow = update;
+    if (!formRow) {
+      const [rows] = await connection.query("SELECT id AS formId, definition FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1");
+      formRow = rows[0];
+    }
+    if (!formRow) throw new Error('Δεν υπάρχει δημοσιευμένη φόρμα update.');
+    const form = typeof formRow.definition === 'string' ? JSON.parse(formRow.definition) : formRow.definition;
+    const errors = Object.assign({}, ...form.steps.map((step) => validateStep(step, answers, form.settings?.photosRequired)));
+    if (Object.keys(errors).length) return res.status(400).json({ message: 'Λείπουν υποχρεωτικές απαντήσεις.', errors });
+    try { await optimizeUploadedImages((req.files || []).filter((file) => file.mimetype !== 'application/pdf')); } catch { return res.status(400).json({ message: 'Μία φωτογραφία δεν είναι έγκυρη.' }); }
+    const [scheduleRows] = await connection.query('SELECT * FROM update_schedule WHERE client_id = ? ORDER BY updated_at DESC LIMIT 1', [req.user.id]);
+    const timing = getWeeklyUpdateTiming(scheduleRows[0] || null);
+    const result = computeScore(form, answers);
+    let updateId = update?.id;
+    await connection.beginTransaction();
+    if (updateId) {
+      await connection.query(`UPDATE weekly_updates SET answers = ?, status = 'submitted', score = ?, weekly_score = ?, score_tier_title = ?, on_time = ?, is_timely = ?, submitted_at = NOW() WHERE id = ?`, [JSON.stringify(answers), result.score, result.score, result.tier?.title || null, timing.isTimely ? 1 : 0, timing.isTimely ? 1 : 0, updateId]);
+    } else {
+      const [created] = await connection.query(`INSERT INTO weekly_updates (client_id, form_id, week_start, answers, auto_snapshot, status, score, weekly_score, score_tier_title, on_time, is_timely, submitted_at) VALUES (?, ?, ?, ?, '{}', 'submitted', ?, ?, ?, ?, ?, NOW())`, [req.user.id, formRow.formId, weekStart, JSON.stringify(answers), result.score, result.score, result.tier?.title || null, timing.isTimely ? 1 : 0, timing.isTimely ? 1 : 0]);
+      updateId = created.insertId;
+    }
+    if (req.files?.length) await connection.query('INSERT INTO weekly_update_files (update_id, file_url, file_type, original_name, angle) VALUES ?', [req.files.map((file) => [updateId, file.path.replace(/\\/g, '/'), file.mimetype === 'application/pdf' ? 'pdf' : 'photo', file.originalname, 'other'])]);
+    await connection.commit();
+    await awardWeeklyUpdatePoints(connection, { clientId: req.user.id, updateId, weekStart, timely: timing.isTimely });
+    connection.release();
+    res.status(201).json({ updateId, score: result.score, tier: result.tier, showScoreToClient: form.settings?.showScoreToClient !== false, scoreNote: form.scoreNote, pointsAwarded: timing.isTimely });
+  } catch (error) {
+    try { await connection?.rollback(); } catch {}
+    connection?.release();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 router.post('/submit', authorizeRole(['client']), upload.array('files', 12), async (req, res) => {
   const connection = await pool.getConnection();
 
@@ -840,6 +1250,13 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
     }
 
     const [activeQuestions] = await connection.query('SELECT * FROM update_questions WHERE is_active = 1');
+    const [[activeForm]] = await connection.query(
+      "SELECT id, definition FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1",
+    );
+    const formDefinition = typeof activeForm?.definition === 'string'
+      ? JSON.parse(activeForm.definition)
+      : (activeForm?.definition || defaultUpdateForm);
+    const answerDocument = answersFromLegacyEntries(answers, activeQuestions);
     const requiredIds = activeQuestions.filter((q) => q.is_required).map((q) => q.id);
     const answeredIds = new Set(
       answers.filter((a) => a && String(a.answer ?? '').trim() !== '').map((a) => Number(a.question_id))
@@ -848,6 +1265,11 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
     if (missing.length) {
       connection.release();
       return res.status(400).json({ message: 'Λείπουν υποχρεωτικές απαντήσεις.', missingQuestionIds: missing });
+    }
+    const formErrors = Object.assign({}, ...formDefinition.steps.map((step) => validateStep(step, answerDocument, formDefinition.settings?.photosRequired)));
+    if (Object.keys(formErrors).length) {
+      connection.release();
+      return res.status(400).json({ message: 'Λείπουν υποχρεωτικές απαντήσεις.', errors: formErrors });
     }
 
     try {
@@ -859,10 +1281,13 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
 
     await connection.beginTransaction();
 
-    const weeklyScore = calculateWeeklyScore(answers, activeQuestions);
+    const calculatedScore = computeScore(formDefinition, answerDocument);
+    const weeklyScore = calculatedScore.score ?? calculateWeeklyScore(answers, activeQuestions);
     const [result] = await connection.query(
-      'INSERT INTO weekly_updates (client_id, week_start, is_timely, weekly_score) VALUES (?, ?, ?, ?)',
-      [req.user.id, weekStart, timing.isTimely ? 1 : 0, weeklyScore]
+      `INSERT INTO weekly_updates
+        (client_id, form_id, week_start, is_timely, weekly_score, answers, auto_snapshot, status, score, score_tier_title, on_time, submitted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?, NOW())`,
+      [req.user.id, activeForm?.id || null, weekStart, timing.isTimely ? 1 : 0, weeklyScore, JSON.stringify(answerDocument), JSON.stringify({}), weeklyScore, calculatedScore.tier?.title || null, timing.isTimely ? 1 : 0]
     );
     const updateId = result.insertId;
 

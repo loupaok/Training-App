@@ -1,1 +1,1 @@
-export { default } from "@/components/pages/client-weekly-update-page";
+export { default } from "@/components/pages/client-weekly-update-wizard";

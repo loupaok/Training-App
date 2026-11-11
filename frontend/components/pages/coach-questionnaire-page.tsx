@@ -42,6 +42,7 @@ import {
 import { useAuth } from "@/lib/auth/auth-context";
 import { api } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+import { CoachUpdateFormBuilder } from "@/components/pages/coach-update-form-builder";
 
 type QuestionType =
   | "single_select"
@@ -185,7 +186,7 @@ function needsPlaceholder(type: QuestionType): boolean {
   return type === "text" || type === "number" || type === "textarea";
 }
 
-function CoachQuestionnaireContent() {
+function CoachQuestionnaireContent({ mode }: { mode: "registration" | "update" }) {
   const { user, logout } = useAuth();
 
   if (!["coach", "admin"].includes(user?.role || "")) {
@@ -197,13 +198,8 @@ function CoachQuestionnaireContent() {
   }
 
   return (
-    <CoachShell title="Ερωτηματολόγιο" user={user} logout={logout}>
-      <Tabs defaultValue="registration">
-        <TabsList className="mb-6">
-          <TabsTrigger value="registration">Ερωτηματολόγιο Εγγραφής</TabsTrigger>
-          <TabsTrigger value="update">Ερωτηματολόγιο Update</TabsTrigger>
-        </TabsList>
-        <TabsContent value="registration">
+    <CoachShell title={mode === "registration" ? "Ερωτηματολόγιο Εγγραφής" : "Ερωτηματολόγιο Update"} user={user} logout={logout}>
+      {mode === "registration" ? (
           <QuestionSetEditor
             title="Ερωτηματολόγιο Εγγραφής"
             subtitle="Οι ερωτήσεις που απαντούν οι νέοι πελάτες κατά την εγγραφή τους."
@@ -211,8 +207,10 @@ function CoachQuestionnaireContent() {
             endpoints={registrationEndpoints}
             standardKeyOptions={registrationStandardKeyOptions}
           />
-        </TabsContent>
-        <TabsContent value="update">
+      ) : (
+          <CoachUpdateFormBuilder />
+          /* legacy builder retained below while registration editor is migrated */
+          /*
           <Tabs defaultValue="questions" className="space-y-5">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div><h1 className="text-[26px] font-extrabold tracking-[-.5px]">Εβδομαδιαίο update · ερωτηματολόγιο</h1><p className="mt-1 text-sm text-muted-foreground">Ό,τι αλλάζεις εδώ το βλέπει ο πελάτης στο επόμενο update του.</p></div>
@@ -236,9 +234,8 @@ function CoachQuestionnaireContent() {
             </TabsContent>
             <TabsContent value="score" className="mt-0"><UpdateScoreSettings mode="score" /></TabsContent>
             <TabsContent value="settings" className="mt-0"><UpdateScoreSettings mode="settings" /></TabsContent>
-          </Tabs>
-        </TabsContent>
-      </Tabs>
+          </Tabs>*/
+      )}
     </CoachShell>
   );
 }
@@ -515,17 +512,6 @@ function QuestionSetEditor({
         </div>
       </div>
 
-      {message && (
-        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200">
-          {message}
-        </div>
-      )}
-      {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
-          {error}
-        </div>
-      )}
-
       {configuredSections.length > 0 && (
         <Tabs value={activeSection} onValueChange={(value) => value && setActiveSection(value as Question["section"])} className="mb-5">
           <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-[14px] bg-muted p-1.5">
@@ -538,9 +524,20 @@ function QuestionSetEditor({
         </Tabs>
       )}
 
-      <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="grid gap-6 xl:grid-cols-[340px_1fr]">
-          <aside className="rounded-lg border border-slate-200 p-4 dark:border-slate-800">
+      {message && (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200">
+          {message}
+        </div>
+      )}
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-200">
+          {error}
+        </div>
+      )}
+
+      <section className="rounded-[20px] border border-border bg-card p-3 shadow-none sm:p-4">
+        <div className="grid gap-4 xl:grid-cols-[236px_minmax(0,1fr)]">
+          <aside className="rounded-[18px] border border-border bg-card p-3 xl:sticky xl:top-5 xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto">
             <h3 className="font-bold">{configuredSections.length ? configuredSections.find((section) => section.value === activeSection)?.label : "Ερωτήσεις"}</h3>
             <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Σύρε για αλλαγή σειράς μέσα σε αυτό το βήμα</p>
             <div className="mt-5">
@@ -564,9 +561,16 @@ function QuestionSetEditor({
             </div>
           </aside>
 
-          <div className="rounded-lg border border-slate-200 p-5 dark:border-slate-800">
-            <div className="mb-5 flex items-center justify-between">
-              <h3 className="text-lg font-bold">{form.id ? "Επεξεργασία Ερώτησης" : "Νέα Ερώτηση"}</h3>
+          <div className="min-w-0 overflow-hidden rounded-[18px] border-2 border-foreground bg-card shadow-[0_0_0_4px_rgba(176,249,12,.25)]">
+            <div className="mb-0 flex items-center justify-between border-b border-border bg-muted/40 px-4 py-4 sm:px-5">
+              <div>
+                <p className="text-[10px] font-extrabold tracking-[.12em] text-muted-foreground">
+                  ΒΗΜΑ {Math.max(1, configuredSections.findIndex((section) => section.value === form.section) + 1)}
+                </p>
+                <h3 className="mt-1 text-lg font-extrabold">
+                  {configuredSections.find((section) => section.value === form.section)?.label || (form.id ? "Επεξεργασία Ερώτησης" : "Νέα Ερώτηση")}
+                </h3>
+              </div>
               <AlertDialog>
                 <AlertDialogTrigger
                   render={
@@ -596,9 +600,9 @@ function QuestionSetEditor({
               </AlertDialog>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div className="space-y-4">
-                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+            <div className="grid gap-5 p-4 sm:p-5">
+              <div className="grid gap-4 md:grid-cols-2">
+                <Label className="flex flex-col items-start gap-2 text-sm font-bold text-slate-700 dark:text-slate-200 md:col-span-2">
                   Κείμενο Ερώτησης
                   <Textarea value={form.question} onChange={(event) => update("question", event.target.value)} disabled={isLockedStandardQuestion} className="min-h-20" />
                 </Label>
@@ -754,21 +758,27 @@ function QuestionSetEditor({
                 </Label>
               </div>
 
-              <div>
-                <h4 className="mb-4 font-bold">Προεπισκόπηση</h4>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-800">
-                  <QuestionPreview question={form} />
-                </div>
-              </div>
             </div>
 
-            <div className="mt-6 flex justify-end">
+            <div className="flex justify-end border-t border-border px-4 py-4 sm:px-5">
               <Button onClick={saveQuestion} disabled={saving || !form.question.trim() || isLockedStandardQuestion} className="h-11 px-6 font-bold disabled:bg-slate-400">
                 {saving ? "Αποθήκευση..." : "Αποθήκευση Ερώτησης"}
               </Button>
             </div>
           </div>
         </div>
+      </section>
+
+      <section className="mt-4 hidden grid gap-4 xl:grid-cols-[236px_minmax(0,1fr)_290px]">
+        <div className="hidden xl:block" />
+        <div className="hidden xl:block" />
+        <aside className="rounded-[20px] border border-border bg-card p-4 xl:sticky xl:top-5 xl:self-start">
+          <div className="flex items-center justify-between"><h3 className="text-sm font-extrabold">Όπως το βλέπει ο πελάτης</h3><Badge variant="outline" className="text-[10px] font-extrabold">LIVE</Badge></div>
+          <div className="mt-3 overflow-hidden rounded-[22px] border-[6px] border-foreground bg-muted">
+            <div className="bg-foreground px-3 py-2.5 text-[10px] font-bold text-background"><div className="flex justify-between"><span>‹ Αρχική</span><span>Βήμα <b className="text-accent">{Math.max(1, configuredSections.findIndex((section) => section.value === form.section) + 1)}</b> / {configuredSections.length || 5}</span></div><div className="mt-2 flex gap-1">{configuredSections.map((section, index) => <span key={section.value} className={cn("h-1 flex-1 rounded-full", index <= configuredSections.findIndex((item) => item.value === form.section) ? "bg-accent" : "bg-white/15")} />)}</div></div>
+            <div className="space-y-3 p-3"><p className="text-xs font-extrabold">{configuredSections.find((section) => section.value === form.section)?.label || "Ερώτηση"}</p><div className="rounded-[12px] border-2 border-accent bg-card p-2.5"><p className="text-[11px] font-extrabold">{form.question || "Το κείμενο της ερώτησης"}{form.isRequired && <span className="text-destructive"> *</span>}</p>{form.helpText && <p className="mt-1 text-[9px] leading-4 text-muted-foreground">{form.helpText}</p>}<div className="mt-2"><QuestionPreview question={form} /></div></div><Button type="button" className="h-8 w-full rounded-full bg-foreground text-[10px] font-extrabold text-background">Επόμενο →</Button></div>
+          </div>
+        </aside>
       </section>
 
       <QuestionnairePreviewDialog open={previewOpen} onOpenChange={setPreviewOpen} questions={questions} />
@@ -1024,7 +1034,15 @@ function QuestionPreview({ question }: { question: Question }) {
 export default function CoachQuestionnairePage() {
   return (
     <ProtectedRoute>
-      <CoachQuestionnaireContent />
+      <CoachQuestionnaireContent mode="registration" />
+    </ProtectedRoute>
+  );
+}
+
+export function CoachUpdateQuestionnairePage() {
+  return (
+    <ProtectedRoute>
+      <CoachQuestionnaireContent mode="update" />
     </ProtectedRoute>
   );
 }
