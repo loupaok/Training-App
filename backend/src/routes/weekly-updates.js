@@ -10,9 +10,9 @@ import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { updateNotificationEmail } from '../lib/email-templates.js';
 import { registerWeeklyUpdatePhotos } from './media.js';
 import { optimizeUploadedImages } from '../utils/image-optimization.js';
-import { awardWeeklyUpdatePoints } from './points.js';
+import { awardWeeklyUpdatePoints, ensurePointsSchema } from './points.js';
 import { defaultUpdateForm } from '../lib/update-form/default-form.js';
-import { computeScore, validateStep } from '../lib/update-form/logic.js';
+import { computeScore, isVisible, validateStep } from '../lib/update-form/logic.js';
 
 const router = express.Router();
 
@@ -1059,6 +1059,9 @@ router.post('/builder/publish', authorizeRole(['coach', 'admin']), async (req, r
       });
     }
     await connection.query("UPDATE update_forms SET status = 'published', published_at = NOW(), published_by = ? WHERE id = ?", [req.user.id, draft.id]);
+    // A client may already have opened this week's update. Keep its answers,
+    // but point that unfinished draft at the newly saved form immediately.
+    await connection.query("UPDATE weekly_updates SET form_id = ? WHERE status = 'draft'", [draft.id]);
     res.json({ id: draft.id, version: draft.version, definition, publishedAt: new Date().toISOString() });
   } catch (error) {
     console.error(error);
@@ -1089,11 +1092,14 @@ router.get('/form', authorizeRole(['client']), async (req, res) => {
       formRow = publishedRows[0];
     }
     const form = typeof formRow?.definition === 'string' ? JSON.parse(formRow.definition) : formRow?.definition;
+    await ensurePointsSchema(connection);
+    const [[pointsSettings]] = await connection.query('SELECT weekly_update_points, is_active FROM points_settings WHERE id = 1');
+    const timelyPoints = pointsSettings?.is_active ? Number(pointsSettings.weekly_update_points || 0) : 0;
     connection.release();
     if (!formRow || !form) return res.status(404).json({ message: 'Δεν υπάρχει δημοσιευμένη φόρμα update.' });
     res.json({
       formId: formRow.formId,
-      form,
+      form: { ...form, settings: { ...(form.settings || {}), weeklyUpdatePoints: timelyPoints } },
       draft: update?.status === 'draft' ? {
         updateId: update.id,
         answers: typeof update.answers === 'string' ? JSON.parse(update.answers || '{}') : (update.answers || {}),
@@ -1104,6 +1110,7 @@ router.get('/form', authorizeRole(['client']), async (req, res) => {
         tierTitle: update.scoreTierTitle,
         onTime: Boolean(update.onTime),
       } : null,
+      timelyPoints,
     });
   } catch (error) {
     connection?.release();
@@ -1291,17 +1298,6 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
     );
     const updateId = result.insertId;
 
-    for (const entry of answers) {
-      if (!entry || entry.question_id === undefined) continue;
-      const value = Array.isArray(entry.answer) || (entry.answer && typeof entry.answer === 'object')
-        ? JSON.stringify(entry.answer)
-        : (entry.answer ?? '');
-      await connection.query(
-        'INSERT INTO weekly_update_answers (update_id, question_id, answer) VALUES (?, ?, ?)',
-        [updateId, entry.question_id, String(value)]
-      );
-    }
-
     if (req.files?.length) {
       await connection.query(
         'INSERT INTO weekly_update_files (update_id, question_id, file_url, file_type, original_name, angle) VALUES ?',
@@ -1380,23 +1376,32 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
 async function attachAnswersAndFiles(connection, updates) {
   if (!updates.length) return updates;
   const ids = updates.map((u) => u.id);
-  const [answerRows] = await connection.query(
-    `SELECT wa.update_id, wa.question_id, wa.answer, q.question, q.type, q.standard_key
-     FROM weekly_update_answers wa
-     JOIN update_questions q ON q.id = wa.question_id
-     WHERE wa.update_id IN (?)`,
-    [ids]
-  );
   const [fileRows] = await connection.query(
     'SELECT update_id, question_id, file_url, file_type, original_name, angle FROM weekly_update_files WHERE update_id IN (?)',
     [ids]
   );
 
-  return updates.map((update) => ({
-    ...update,
-    answers: answerRows.filter((row) => row.update_id === update.id),
-    files: fileRows.filter((row) => row.update_id === update.id),
-  }));
+  const formIds = [...new Set(updates.map((update) => update.form_id).filter(Boolean))];
+  const [forms] = formIds.length
+    ? await connection.query('SELECT id, definition FROM update_forms WHERE id IN (?)', [formIds])
+    : [[]];
+  const formsById = new Map(forms.map((form) => [form.id, parseFormDefinition(form.definition)]));
+
+  return updates.map((update) => {
+    const form = formsById.get(update.form_id);
+    const document = parseFormDefinition(update.answers) || {};
+    const versionedAnswers = form
+      ? form.steps.flatMap((step) => step.questions
+        .filter((question) => question.showToCoach && isVisible(question, document) && document[question.id] !== undefined)
+        .map((question) => ({ question_id: question.id, question: question.label, short_label: question.shortLabel, type: question.type, answer: document[question.id], step: step.title, standard_key: question.id })))
+      : [];
+    return {
+      ...update,
+      answers: versionedAnswers,
+      autoSnapshot: parseFormDefinition(update.auto_snapshot) || {},
+      files: fileRows.filter((row) => row.update_id === update.id),
+    };
+  });
 }
 
 router.get('/stats', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
@@ -1454,11 +1459,15 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
     if (req.query.unreadOnly === 'true') {
       filters.push('w.is_read = 0');
     }
+    if (req.query.scoreBelow === '60') {
+      filters.push('COALESCE(w.score, w.weekly_score) < 60');
+    }
     const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
 
     const [[{ total }]] = await connection.query(`SELECT COUNT(*) AS total FROM weekly_updates w ${whereClause}`, values);
     const [rows] = await connection.query(
-      `SELECT w.id, w.client_id, w.submitted_at, DATE_FORMAT(w.week_start, '%Y-%m-%d') AS week_start, w.is_read, w.weekly_score,
+      `SELECT w.id, w.client_id, w.form_id, w.answers, w.auto_snapshot, w.submitted_at, DATE_FORMAT(w.week_start, '%Y-%m-%d') AS week_start, w.is_read, w.weekly_score,
+              COALESCE(w.score, w.weekly_score) AS score, w.score_tier_title,
               u.full_name AS client_name, u.email AS client_email, u.profile_photo AS client_photo
        FROM weekly_updates w
        JOIN users u ON u.id = w.client_id
@@ -1490,7 +1499,8 @@ router.get('/:id', authorizeRole(['coach', 'admin', 'moderator']), async (req, r
     await ensureWeeklyUpdateSchema(connection);
 
     const [rows] = await connection.query(
-      `SELECT w.id, w.client_id, w.submitted_at, DATE_FORMAT(w.week_start, '%Y-%m-%d') AS week_start, w.is_read, w.weekly_score,
+      `SELECT w.id, w.client_id, w.form_id, w.answers, w.auto_snapshot, w.submitted_at, DATE_FORMAT(w.week_start, '%Y-%m-%d') AS week_start, w.is_read, w.weekly_score,
+              COALESCE(w.score, w.weekly_score) AS score, w.score_tier_title,
               u.full_name AS client_name, u.email AS client_email, u.profile_photo AS client_photo
        FROM weekly_updates w
        JOIN users u ON u.id = w.client_id

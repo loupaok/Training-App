@@ -2673,6 +2673,77 @@ router.get('/:id/weekly-updates', authorizeRole(['coach', 'admin', 'moderator'])
     const { ensureWeeklyUpdateSchema } = await import('./weekly-updates.js');
     await ensureWeeklyUpdateSchema(connection);
 
+    // New updates keep the answers with the exact form version that was used
+    // on submission. Materialise them here so the client profile never needs
+    // to guess labels from the current questionnaire.
+    const [versionedRows] = await connection.query(
+      `SELECT wu.id, wu.submitted_at, wu.week_start, wu.is_read, wu.answers, wu.auto_snapshot,
+              wu.form_id, COALESCE(wu.score, wu.weekly_score) AS score, wu.score_tier_title,
+              form.definition AS form_definition
+       FROM weekly_updates wu
+       LEFT JOIN update_forms form ON form.id = wu.form_id
+       WHERE wu.client_id = ? AND wu.status = 'submitted'
+       ORDER BY wu.submitted_at DESC`,
+      [clientId]
+    );
+    {
+      const parseJson = (value, fallback) => {
+        if (!value) return fallback;
+        if (typeof value === 'object') return value;
+        try { return JSON.parse(value); } catch { return fallback; }
+      };
+      const toNumber = (value) => {
+        const number = Number(String(value ?? '').replace(',', '.'));
+        return Number.isFinite(number) ? number : null;
+      };
+      const updates = versionedRows.map((row) => {
+        const document = parseJson(row.answers, {});
+        const definition = parseJson(row.form_definition, null);
+        const answers = definition?.steps?.flatMap((step) => (step.questions || [])
+          .filter((question) => question.showToCoach !== false && document[question.id] !== undefined && document[question.id] !== null && document[question.id] !== '')
+          .map((question) => ({
+            questionId: question.id,
+            question: question.label,
+            shortLabel: question.shortLabel || null,
+            step: step.title,
+            type: question.type,
+            answer: document[question.id],
+            standardKey: question.id,
+          }))) || [];
+        const answerFor = (key) => answers.find((answer) => answer.standardKey === key)?.answer;
+        return {
+          id: row.id,
+          submittedAt: row.submitted_at,
+          weekStart: row.week_start,
+          isRead: Boolean(row.is_read),
+          score: toNumber(row.score),
+          scoreTierTitle: row.score_tier_title || null,
+          autoSnapshot: parseJson(row.auto_snapshot, {}),
+          answers,
+          weight: toNumber(answerFor('weight_kg')),
+          trainingRating: toNumber(answerFor('training_score')),
+          nutritionRating: toNumber(answerFor('diet_score')),
+          generalRating: toNumber(answerFor('general_score')),
+          notes: typeof answers.find((answer) => answer.type === 'textarea')?.answer === 'string'
+            ? answers.find((answer) => answer.type === 'textarea').answer : null,
+          photos: [],
+        };
+      });
+      const [fileRows] = await connection.query(
+        `SELECT update_id, file_url FROM weekly_update_files
+         WHERE update_id IN (?) AND file_type = 'photo' ORDER BY created_at DESC`,
+        [updates.map((update) => update.id)]
+      );
+      const photosByUpdateId = new Map();
+      for (const file of fileRows) {
+        const photos = photosByUpdateId.get(file.update_id) || [];
+        photos.push(file.file_url);
+        photosByUpdateId.set(file.update_id, photos);
+      }
+      for (const update of updates) update.photos = photosByUpdateId.get(update.id) || [];
+      return res.json(updates);
+    }
+
     const [answerRows] = await connection.query(
       `SELECT wu.id, wu.submitted_at, wu.week_start, wu.is_read,
               wua.answer, wuq.question, wuq.type, wuq.sort_order, wuq.standard_key

@@ -164,6 +164,16 @@ const registrationStandardKeyOptions: StandardKeyOption[] = [];
 
 const updateStandardKeyOptions: StandardKeyOption[] = [
   { value: "weight_kg", label: "Κιλά (Βάρος)" },
+  { value: "diet_score", label: "Βαθμολογία διατροφής" },
+  { value: "diet_changes", label: "Αποκλίσεις διατροφής" },
+  { value: "training_score", label: "Βαθμολογία προπόνησης" },
+  { value: "training_notes", label: "Σημειώσεις προπόνησης" },
+  { value: "sleep_quality", label: "Ποιότητα ύπνου" },
+  { value: "recovery", label: "Αποκατάσταση" },
+  { value: "health_changed", label: "Αλλαγή υγείας" },
+  { value: "health_details", label: "Λεπτομέρειες υγείας" },
+  { value: "next_week", label: "Ανάγκες επόμενης εβδομάδας" },
+  { value: "coach_note", label: "Σημείωση προς τον coach" },
 ];
 
 const updateSectionOptions: { value: Question["section"]; label: string }[] = [
@@ -353,6 +363,7 @@ function QuestionSetEditor({
   const selectedQuestion = useMemo(() => questions.find((item) => item.id === selectedId) || null, [questions, selectedId]);
   const visibleQuestions = useMemo(() => configuredSections.length ? questions.filter((item) => item.section === activeSection) : questions, [questions, configuredSections, activeSection]);
   const isLockedStandardQuestion = Boolean(form.standardKey);
+  const standardKeyLabel = standardKeyOptions.find((option) => option.value === form.standardKey)?.label || (form.standardKey ? "Επιλεγμένο standard πεδίο" : "Κανένα");
   const activeCount = questions.filter((item) => item.isActive).length;
   const dragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -633,7 +644,7 @@ function QuestionSetEditor({
                       onValueChange={(value) => value && update("section", value as Question["section"])}
                     >
                       <SelectTrigger className="h-12 w-full">
-                        <SelectValue />
+                          <span data-slot="select-value" className="flex flex-1 text-left">{standardKeyLabel}</span>
                       </SelectTrigger>
                       <SelectContent>
                         {configuredSections.map((option) => (

@@ -26,6 +26,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -140,6 +141,10 @@ interface ProgressWeeklyUpdate {
   generalRating: number | null;
   notes: string | null;
   photos: string[];
+  score?: number | null;
+  scoreTierTitle?: string | null;
+  autoSnapshot?: Record<string, unknown>;
+  answers?: Array<{ questionId: string | number; question: string; shortLabel?: string | null; step: string; type: string; answer: unknown; standardKey?: string | null }>;
 }
 
 interface ProgressWorkout {
@@ -1616,6 +1621,7 @@ function OverviewTab({
           </SelectContent>
         </Select>
         {client.updateSchedule?.next_due_date && <p className="text-xs text-muted-foreground">Επόμενο update: {shortDate(client.updateSchedule.next_due_date)}</p>}
+        <LatestClientUpdate clientId={clientId} />
       </InfoCard>
     ),
     social: (
@@ -2022,6 +2028,25 @@ function DemoModeControl({ clientId, enabled, hasActiveSubscription, disabled, o
       </AlertDialog>
     </Card>
   );
+}
+
+function LatestClientUpdate({ clientId }: { clientId: string }) {
+  const [latest, setLatest] = useState<{ id: number; submitted_at: string; score?: number | null; score_tier_title?: string | null; answers: Array<{ question: string; answer: unknown; type: string }>; files: Array<{ file_url: string; file_type: string }> } | null>(null);
+  useEffect(() => {
+    let active = true;
+    api.get<{ updates: Array<{ id: number; submitted_at: string; score?: number | null; score_tier_title?: string | null; answers: Array<{ question: string; answer: unknown; type: string }>; files: Array<{ file_url: string; file_type: string }> }> }>(`/updates?clientId=${clientId}&limit=1`).then((response) => {
+      if (active) setLatest(response.updates[0] || null);
+    }).catch(() => { if (active) setLatest(null); });
+    return () => { active = false; };
+  }, [clientId]);
+  if (!latest) return <p className="mt-4 border-t pt-4 text-sm text-muted-foreground">Δεν υπάρχει υποβλημένο update ακόμη.</p>;
+  const workoutSnapshot = latest.answers.filter((answer) => /προπόνη|workout/i.test(answer.question)).slice(0, 2);
+  const photos = latest.files.filter((file) => file.file_type === "photo");
+  return <div className="mt-4 space-y-3 border-t pt-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-sm font-extrabold">Τελευταίο update</p><p className="text-xs text-muted-foreground">{formatDateTime(latest.submitted_at)}</p></div><div className="flex gap-2">{latest.score !== null && latest.score !== undefined && <Badge className="rounded-full bg-foreground text-accent">{latest.score}/100</Badge>}{latest.score_tier_title && <Badge variant="outline" className="rounded-full">{latest.score_tier_title}</Badge>}</div></div>
+    <div className="space-y-2 rounded-xl bg-muted/50 p-3">{latest.answers.slice(0, 3).map((answer) => <div key={answer.question} className="text-xs"><p className="font-bold text-muted-foreground">{answer.question}</p><p className="mt-0.5 line-clamp-2">{formatWeeklyAnswer(answer.answer)}</p></div>)}{workoutSnapshot.length > 0 && <p className="border-t pt-2 text-xs text-muted-foreground">Προπόνηση: {workoutSnapshot.map((answer) => formatWeeklyAnswer(answer.answer)).join(" · ")}</p>}</div>
+    {photos.length > 0 && <div className="flex gap-1">{photos.slice(0, 3).map((file) => <a key={file.file_url} href={resolveMediaUrl(file.file_url)} target="_blank" rel="noreferrer" className="h-11 w-11 overflow-hidden rounded-lg border"><img src={resolveMediaUrl(file.file_url)} alt="Φωτογραφία update" className="h-full w-full object-cover" /></a>)}</div>}
+    <div className="flex flex-wrap gap-2"><Button nativeButton={false} render={<Link href={`/coach/updates?id=${latest.id}`} />} variant="outline" size="sm">Άνοιγμα</Button><Button nativeButton={false} render={<Link href={`/coach/messages?clientId=${clientId}`} />} variant="outline" size="sm">Απάντηση</Button></div>
+  </div>;
 }
 
 function OverviewColumn({
@@ -2732,6 +2757,7 @@ function ProgressTab({ client }: { client: ClientRecord }) {
   const [isLoading, setIsLoading] = useState(true);
   const [workoutsLoading, setWorkoutsLoading] = useState(true);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [selectedWeeklyUpdate, setSelectedWeeklyUpdate] = useState<ProgressWeeklyUpdate | null>(null);
 
   useEffect(() => {
     if (!client.id) return;
@@ -2786,6 +2812,10 @@ function ProgressTab({ client }: { client: ClientRecord }) {
   const currentWeight = weightEntries.length ? weightEntries[0].weight : registrationWeight;
   const initialWeight = registrationWeight ?? (weightEntries.length ? weightEntries[weightEntries.length - 1].weight : null);
   const weightChange = currentWeight !== null && initialWeight !== null ? currentWeight - initialWeight : null;
+  const scoreChartData = [...weeklyUpdates]
+    .filter((update) => update.score !== null && update.score !== undefined)
+    .reverse()
+    .map((update) => ({ date: formatDate(update.submittedAt), Score: update.score as number }));
 
   return (
     <div className="space-y-6">
@@ -2805,6 +2835,11 @@ function ProgressTab({ client }: { client: ClientRecord }) {
         ) : (
           <EmptyRow text="Δεν υπάρχουν αρκετά δεδομένα για γράφημα ακόμα." />
         )}
+      </Card>
+
+      <Card className="p-5">
+        <div className="mb-4 flex items-center justify-between gap-3"><h3 className="text-lg font-bold">Εξέλιξη σκορ</h3><span className="text-xs text-muted-foreground">/100</span></div>
+        {scoreChartData.length ? <AreaChart className="h-40" data={scoreChartData} index="date" categories={["Score"]} colors={["lime"]} showLegend={false} showAnimation /> : <EmptyRow text="Δεν υπάρχει ακόμη σκορ από εβδομαδιαία updates." />}
       </Card>
 
       <Card className="p-5">
@@ -2847,17 +2882,19 @@ function ProgressTab({ client }: { client: ClientRecord }) {
               <TableHead className="px-5 py-4">Βάρος</TableHead>
               <TableHead className="px-5 py-4">Προπόνηση</TableHead>
               <TableHead className="px-5 py-4">Διατροφή</TableHead>
+              <TableHead className="px-5 py-4">Σκορ</TableHead>
               <TableHead className="px-5 py-4">Σημειώσεις</TableHead>
               <TableHead className="px-5 py-4">Φωτογραφίες</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody className="divide-y divide-slate-100 dark:divide-slate-800">
             {weeklyUpdates.map((update) => (
-              <TableRow key={update.id}>
+              <TableRow key={update.id} className="cursor-pointer transition-colors hover:bg-muted/50" onClick={() => setSelectedWeeklyUpdate(update)}>
                 <TableCell className="px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{formatDateTime(update.submittedAt)}</TableCell>
                 <TableCell className="px-5 py-4 font-bold text-slate-950 dark:text-slate-50">{update.weight !== null ? `${update.weight} kg` : "-"}</TableCell>
                 <TableCell className="px-5 py-4"><RatingStars value={update.trainingRating} /></TableCell>
                 <TableCell className="px-5 py-4"><RatingStars value={update.nutritionRating} /></TableCell>
+                <TableCell className="px-5 py-4">{update.score !== null && update.score !== undefined ? <span className="inline-flex rounded-full bg-foreground px-2.5 py-1 text-xs font-extrabold text-accent">{update.score}/100</span> : "-"}</TableCell>
                 <TableCell className="max-w-xs px-5 py-4 font-semibold text-slate-500 dark:text-slate-400">{update.notes || "-"}</TableCell>
                 <TableCell className="px-5 py-4">
                   <div className="flex gap-1">
@@ -2874,7 +2911,7 @@ function ProgressTab({ client }: { client: ClientRecord }) {
             ))}
             {!weeklyUpdates.length && (
               <TableRow>
-                <TableCell colSpan={6} className="px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
+                <TableCell colSpan={7} className="px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
                   {isLoading ? "Φόρτωση εβδομαδιαίων updates..." : "Δεν υπάρχουν εβδομαδιαία updates ακόμα."}
                 </TableCell>
               </TableRow>
@@ -2932,8 +2969,38 @@ function ProgressTab({ client }: { client: ClientRecord }) {
           )}
         </DialogContent>
       </Dialog>
+      <WeeklyUpdateSheet update={selectedWeeklyUpdate} onOpenChange={(open) => !open && setSelectedWeeklyUpdate(null)} />
     </div>
   );
+}
+
+function formatWeeklyAnswer(answer: unknown) {
+  if (answer === null || answer === undefined || answer === "") return "—";
+  if (Array.isArray(answer)) return answer.join(", ");
+  if (typeof answer === "object") {
+    const value = answer as { chips?: string[]; text?: string; value?: unknown };
+    return [value.chips?.join(", "), value.text, value.value === undefined ? "" : String(value.value)].filter(Boolean).join(" · ") || "Συμπληρώθηκε";
+  }
+  return String(answer);
+}
+
+function WeeklyUpdateSheet({ update, onOpenChange }: { update: ProgressWeeklyUpdate | null; onOpenChange: (open: boolean) => void }) {
+  const grouped = (update?.answers || []).reduce<{ [key: string]: NonNullable<ProgressWeeklyUpdate["answers"]> }>((groups, answer) => {
+    const key = answer.step || "Update";
+    (groups[key] ||= []).push(answer);
+    return groups;
+  }, {});
+  const snapshotEntries = Object.entries(update?.autoSnapshot || {}).filter(([, value]) => value !== null && value !== undefined && value !== "");
+  return <Sheet open={Boolean(update)} onOpenChange={onOpenChange}>
+    <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+      {update && <><SheetHeader className="pr-10"><SheetTitle>Update · {formatDateTime(update.submittedAt)}</SheetTitle></SheetHeader><div className="space-y-6 p-4">
+        <div className="flex flex-wrap items-center gap-2">{update.score !== null && update.score !== undefined && <Badge className="rounded-full bg-foreground text-accent">{update.score}/100</Badge>}{update.scoreTierTitle && <Badge variant="outline" className="rounded-full">{update.scoreTierTitle}</Badge>}</div>
+        {Object.entries(grouped).map(([step, answers]) => <section key={step} className="space-y-3"><h3 className="text-sm font-extrabold">{step}</h3><div className="divide-y rounded-[14px] border bg-card">{answers.map((answer) => <div key={String(answer.questionId)} className="p-3"><p className="text-xs font-bold text-muted-foreground">{answer.shortLabel || answer.question}</p><p className="mt-1 whitespace-pre-wrap text-sm leading-6">{formatWeeklyAnswer(answer.answer)}</p></div>)}</div></section>)}
+        {snapshotEntries.length > 0 && <section className="space-y-3"><h3 className="text-sm font-extrabold">Στιγμιότυπο προόδου</h3><div className="grid gap-2 sm:grid-cols-2">{snapshotEntries.map(([key, value]) => <div key={key} className="rounded-xl bg-muted p-3"><p className="text-xs font-bold text-muted-foreground">{key}</p><p className="mt-1 text-sm font-bold">{formatWeeklyAnswer(value)}</p></div>)}</div></section>}
+        {update.photos.length > 0 && <section><h3 className="mb-3 text-sm font-extrabold">Φωτογραφίες</h3><div className="grid grid-cols-3 gap-2">{update.photos.map((photo) => <a key={photo} href={resolveMediaUrl(photo)} target="_blank" rel="noreferrer" className="overflow-hidden rounded-xl border"><img src={resolveMediaUrl(photo)} alt="Φωτογραφία update" className="aspect-square w-full object-cover" /></a>)}</div></section>}
+      </div></>}
+    </SheetContent>
+  </Sheet>;
 }
 
 function WeightStatCard({
