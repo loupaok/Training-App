@@ -20,6 +20,7 @@ import { ensureDiscordSchema } from './discord.js';
 import { addRole, getActiveRoleId, removeRole } from '../lib/discord.js';
 import { optimizeUploadedImage, optimizeUploadedImages } from '../utils/image-optimization.js';
 import { ensurePaymentSettingsSchema, ensurePackagesSchema, getPackageQuote, getPaymentSettings } from './pricingPlans.js';
+import { registerClientIntakePhotos, registerWeeklyUpdatePhotos } from './media.js';
 
 const router = express.Router();
 const activeMessageTypers = new Map();
@@ -2672,6 +2673,8 @@ router.get('/:id/weekly-updates', authorizeRole(['coach', 'admin', 'moderator'])
 
     const { ensureWeeklyUpdateSchema } = await import('./weekly-updates.js');
     await ensureWeeklyUpdateSchema(connection);
+    await registerWeeklyUpdatePhotos(connection, clientId);
+    await registerClientIntakePhotos(connection, clientId);
 
     // New updates keep the answers with the exact form version that was used
     // on submission. Materialise them here so the client profile never needs
@@ -2727,20 +2730,53 @@ router.get('/:id/weekly-updates', authorizeRole(['coach', 'admin', 'moderator'])
           notes: typeof answers.find((answer) => answer.type === 'textarea')?.answer === 'string'
             ? answers.find((answer) => answer.type === 'textarea').answer : null,
           photos: [],
+          photoDetails: [],
         };
       });
       const [fileRows] = await connection.query(
-        `SELECT update_id, file_url FROM weekly_update_files
+        `SELECT update_id, file_url, angle FROM weekly_update_files
          WHERE update_id IN (?) AND file_type = 'photo' ORDER BY created_at DESC`,
         [updates.map((update) => update.id)]
       );
       const photosByUpdateId = new Map();
       for (const file of fileRows) {
         const photos = photosByUpdateId.get(file.update_id) || [];
-        photos.push(file.file_url);
+        photos.push({ url: file.file_url, angle: file.angle || 'other' });
         photosByUpdateId.set(file.update_id, photos);
       }
-      for (const update of updates) update.photos = photosByUpdateId.get(update.id) || [];
+      for (const update of updates) {
+        update.photoDetails = photosByUpdateId.get(update.id) || [];
+        update.photos = update.photoDetails.map((photo) => photo.url);
+      }
+      try {
+        await connection.query("ALTER TABLE client_intake_files ADD COLUMN angle ENUM('front', 'side', 'back', 'other') NOT NULL DEFAULT 'other' AFTER original_name");
+      } catch (error) {
+        if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+      }
+      const [intakePhotos] = await connection.query(
+        `SELECT file_url, angle, created_at FROM client_intake_files
+         WHERE client_id = ? AND file_type = 'photo' ORDER BY created_at ASC, id ASC`,
+        [clientId],
+      );
+      if (intakePhotos.length) {
+        updates.push({
+          id: `intake-${clientId}`,
+          submittedAt: intakePhotos[0].created_at,
+          weekStart: null,
+          isRead: true,
+          score: null,
+          scoreTierTitle: null,
+          autoSnapshot: {},
+          answers: [],
+          weight: null,
+          trainingRating: null,
+          nutritionRating: null,
+          generalRating: null,
+          notes: null,
+          photos: intakePhotos.map((photo) => photo.file_url),
+          photoDetails: intakePhotos.map((photo) => ({ url: photo.file_url, angle: photo.angle || 'other' })),
+        });
+      }
       return res.json(updates);
     }
 

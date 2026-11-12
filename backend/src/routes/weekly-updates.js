@@ -15,6 +15,10 @@ import { defaultUpdateForm } from '../lib/update-form/default-form.js';
 import { computeScore, isVisible, validateStep } from '../lib/update-form/logic.js';
 
 const router = express.Router();
+// Bump this only when the shipped default questionnaire changes. Existing
+// published forms stay immutable, while new client drafts move to the latest
+// definition so the client and the builder always share one FormDefinition.
+const DEFAULT_UPDATE_FORM_REVISION = 3;
 
 async function addColumnIfMissing(connection, table, column, definition) {
   const [[existing]] = await connection.query(
@@ -76,15 +80,54 @@ async function ensurePublishedUpdateForm(connection) {
     )
   `);
 
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS update_form_metadata (
+      meta_key VARCHAR(80) PRIMARY KEY,
+      meta_value VARCHAR(255) NOT NULL
+    )
+  `);
+
   const [[published]] = await connection.query(
-    "SELECT id FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1",
+    "SELECT id, version FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1",
   );
-  if (published) return published.id;
+  const [[revisionRow]] = await connection.query(
+    "SELECT meta_value FROM update_form_metadata WHERE meta_key = 'default_update_form_revision'",
+  );
+  const storedRevision = Number(revisionRow?.meta_value || 0);
+
+  if (published && storedRevision >= DEFAULT_UPDATE_FORM_REVISION) return published.id;
+
+  const [[versionRow]] = await connection.query('SELECT COALESCE(MAX(version), 0) AS maxVersion FROM update_forms');
+  const nextVersion = Number(versionRow?.maxVersion || 0) + 1;
 
   const [result] = await connection.query(
-    "INSERT INTO update_forms (version, status, definition, published_at) VALUES (1, 'published', ?, NOW())",
-    [JSON.stringify(defaultUpdateForm)],
+    "INSERT INTO update_forms (version, status, definition, published_at) VALUES (?, 'published', ?, NOW())",
+    [nextVersion, JSON.stringify(defaultUpdateForm)],
   );
+  await connection.query(
+    `INSERT INTO update_form_metadata (meta_key, meta_value)
+     VALUES ('default_update_form_revision', ?)
+     ON DUPLICATE KEY UPDATE meta_value = VALUES(meta_value)`,
+    [String(DEFAULT_UPDATE_FORM_REVISION)],
+  );
+
+  // A stale builder draft would otherwise mask the revised published form.
+  // Reset it once as part of this explicit shipped-form migration.
+  await connection.query(
+    "UPDATE update_forms SET definition = ?, version = ? WHERE status = 'draft'",
+    [JSON.stringify(defaultUpdateForm), nextVersion + 1],
+  );
+
+  // Unsubmitted forms remain editable and can safely receive the revised
+  // definition. Submitted updates keep their original immutable form version.
+  const [[weeklyStatusColumn]] = await connection.query(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'weekly_updates' AND COLUMN_NAME = 'status'
+    LIMIT 1
+  `);
+  if (weeklyStatusColumn) {
+    await connection.query("UPDATE weekly_updates SET form_id = ? WHERE status = 'draft'", [result.insertId]);
+  }
   return result.insertId;
 }
 
@@ -1084,17 +1127,45 @@ router.get('/form', authorizeRole(['client']), async (req, res) => {
        WHERE weekly.client_id = ? AND weekly.week_start = ? LIMIT 1`,
       [req.user.id, weekStart],
     );
-    let formRow = update;
-    if (!formRow) {
-      const [publishedRows] = await connection.query(
-        "SELECT id AS formId, definition FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1",
-      );
-      formRow = publishedRows[0];
+    // Submitted updates must retain the exact form version they were answered
+    // with. A draft, however, must always render the latest published version
+    // after the coach presses “Αποθήκευση”, otherwise the client stays on a
+    // stale JSON definition until a new weekly update is created.
+    const [publishedRows] = await connection.query(
+      "SELECT id AS formId, definition FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1",
+    );
+    const activeFormRow = publishedRows[0];
+    let formRow = update?.status === 'submitted' ? update : activeFormRow;
+    if (update?.status === 'draft' && activeFormRow && Number(update.formId) !== Number(activeFormRow.formId)) {
+      await connection.query('UPDATE weekly_updates SET form_id = ? WHERE id = ?', [activeFormRow.formId, update.id]);
     }
     const form = typeof formRow?.definition === 'string' ? JSON.parse(formRow.definition) : formRow?.definition;
     await ensurePointsSchema(connection);
     const [[pointsSettings]] = await connection.query('SELECT weekly_update_points, is_active FROM points_settings WHERE id = 1');
     const timelyPoints = pointsSettings?.is_active ? Number(pointsSettings.weekly_update_points || 0) : 0;
+    // Summary data for the sidebar: current answers stay in the draft, while
+    // the comparison and consistency run come only from submitted updates.
+    const [[previousUpdate]] = await connection.query(
+      `SELECT answers FROM weekly_updates
+       WHERE client_id = ? AND status = 'submitted' AND week_start < ?
+       ORDER BY week_start DESC, id DESC LIMIT 1`,
+      [req.user.id, weekStart],
+    );
+    const [timelyUpdates] = await connection.query(
+      `SELECT DATE_FORMAT(week_start, '%Y-%m-%d') AS weekStart
+       FROM weekly_updates
+       WHERE client_id = ? AND status = 'submitted' AND on_time = 1 AND week_start < ?
+       ORDER BY week_start DESC, id DESC LIMIT 52`,
+      [req.user.id, weekStart],
+    );
+    let timelyStreak = 0;
+    const expectedWeek = new Date(`${weekStart}T12:00:00.000Z`);
+    expectedWeek.setUTCDate(expectedWeek.getUTCDate() - 7);
+    for (const timelyUpdate of timelyUpdates) {
+      if (String(timelyUpdate.weekStart) !== expectedWeek.toISOString().slice(0, 10)) break;
+      timelyStreak += 1;
+      expectedWeek.setUTCDate(expectedWeek.getUTCDate() - 7);
+    }
     connection.release();
     if (!formRow || !form) return res.status(404).json({ message: 'Δεν υπάρχει δημοσιευμένη φόρμα update.' });
     res.json({
@@ -1109,8 +1180,18 @@ router.get('/form', authorizeRole(['client']), async (req, res) => {
         score: update.score,
         tierTitle: update.scoreTierTitle,
         onTime: Boolean(update.onTime),
+        answers: typeof update.answers === 'string' ? JSON.parse(update.answers || '{}') : (update.answers || {}),
+        showScoreToClient: form.settings?.showScoreToClient !== false,
+        scoreNote: form.scoreNote || '',
+        tier: update.score !== null && update.score !== undefined
+          ? (form.scoreTiers || []).find((item) => Number(update.score) >= Number(item.min) && Number(update.score) <= Number(item.max)) || null
+          : null,
       } : null,
       timelyPoints,
+      previousAnswers: previousUpdate
+        ? (typeof previousUpdate.answers === 'string' ? JSON.parse(previousUpdate.answers || '{}') : (previousUpdate.answers || {}))
+        : {},
+      timelyStreak,
     });
   } catch (error) {
     connection?.release();
@@ -1158,6 +1239,8 @@ router.post('/submit-form', authorizeRole(['client']), upload.array('files', 12)
   let connection;
   try {
     const answers = JSON.parse(req.body?.answers || '{}');
+    let fileSlots = [];
+    try { fileSlots = JSON.parse(req.body?.fileSlots || '[]'); } catch { fileSlots = []; }
     if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return res.status(400).json({ message: 'Μη έγκυρες απαντήσεις.' });
     connection = await pool.getConnection();
     await ensureWeeklyUpdateSchema(connection);
@@ -1190,11 +1273,41 @@ router.post('/submit-form', authorizeRole(['client']), upload.array('files', 12)
       const [created] = await connection.query(`INSERT INTO weekly_updates (client_id, form_id, week_start, answers, auto_snapshot, status, score, weekly_score, score_tier_title, on_time, is_timely, submitted_at) VALUES (?, ?, ?, ?, '{}', 'submitted', ?, ?, ?, ?, ?, NOW())`, [req.user.id, formRow.formId, weekStart, JSON.stringify(answers), result.score, result.score, result.tier?.title || null, timing.isTimely ? 1 : 0, timing.isTimely ? 1 : 0]);
       updateId = created.insertId;
     }
-    if (req.files?.length) await connection.query('INSERT INTO weekly_update_files (update_id, file_url, file_type, original_name, angle) VALUES ?', [req.files.map((file) => [updateId, file.path.replace(/\\/g, '/'), file.mimetype === 'application/pdf' ? 'pdf' : 'photo', file.originalname, 'other'])]);
+    if (req.files?.length) await connection.query(
+      'INSERT INTO weekly_update_files (update_id, file_url, file_type, original_name, angle) VALUES ?',
+      [req.files.map((file, index) => {
+        const slot = String(fileSlots[index] || '').toLocaleLowerCase('el-GR');
+        const angle = slot.includes('μπροστ') ? 'front' : slot.includes('πλ') ? 'side' : slot.includes('πισ') ? 'back' : 'other';
+        return [updateId, file.path.replace(/\\/g, '/'), file.mimetype === 'application/pdf' ? 'pdf' : 'photo', file.originalname, angle];
+      })],
+    );
     await connection.commit();
-    await awardWeeklyUpdatePoints(connection, { clientId: req.user.id, updateId, weekStart, timely: timing.isTimely });
+    try {
+      await registerWeeklyUpdatePhotos(connection, req.user.id);
+    } catch (mediaError) {
+      // The update is valid even if the non-critical Media Library mirror
+      // cannot be refreshed. A later Media visit backfills it safely.
+      console.error('Weekly update media-library sync failed:', mediaError);
+    }
+    const pointsResult = await awardWeeklyUpdatePoints(connection, { clientId: req.user.id, updateId, weekStart, timely: timing.isTimely });
+    // Keep the coach workflow connected to the versioned update: the
+    // notification opens this exact submission rather than the generic list.
+    try {
+      const [[client]] = await connection.query('SELECT full_name, email FROM users WHERE id = ? LIMIT 1', [req.user.id]);
+      const clientName = client?.full_name || client?.email || 'Πελάτης';
+      await notifyCoaches(connection, {
+        clientId: req.user.id,
+        type: 'new_update',
+        title: 'Νέο εβδομαδιαίο update',
+        body: `${clientName} υπέβαλε το εβδομαδιαίο update του.`,
+        linkUrl: `/coach/updates/${updateId}`,
+      });
+    } catch (notificationError) {
+      // A notification problem must never undo a submitted update.
+      console.error('Coach update notification failed:', notificationError);
+    }
     connection.release();
-    res.status(201).json({ updateId, score: result.score, tier: result.tier, showScoreToClient: form.settings?.showScoreToClient !== false, scoreNote: form.scoreNote, pointsAwarded: timing.isTimely });
+    res.status(201).json({ updateId, score: result.score, tier: result.tier, showScoreToClient: form.settings?.showScoreToClient !== false, scoreNote: form.scoreNote, pointsAwarded: Boolean(pointsResult?.awarded), pointsEarned: Number(pointsResult?.points || 0), weeklyStreak: Number(pointsResult?.streak || 0), nextStreakBonusIn: pointsResult?.nextBonusIn ?? null, nextStreakBonusPoints: Number(pointsResult?.nextStreakBonusPoints || 0), streakBonusAwarded: Boolean(pointsResult?.bonusAwarded) });
   } catch (error) {
     try { await connection?.rollback(); } catch {}
     connection?.release();

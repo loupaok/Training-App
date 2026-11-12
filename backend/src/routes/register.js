@@ -15,6 +15,7 @@ import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { registrationEmail } from '../lib/email-templates.js';
 import { logClientActivity } from '../lib/client-activity-log.js';
 import { optimizeImageBufferToFile, optimizeUploadedImages } from '../utils/image-optimization.js';
+import { registerClientIntakePhotos } from './media.js';
 
 // Registration-time intake photos/PDF. The user doesn't exist yet when the
 // upload arrives, so files are buffered in memory and only written to
@@ -86,11 +87,17 @@ async function ensureClientIntakeFilesSchema(connection) {
       file_url VARCHAR(255) NOT NULL,
       file_type ENUM('photo', 'pdf') NOT NULL,
       original_name VARCHAR(255),
+      angle ENUM('front', 'side', 'back', 'other') NOT NULL DEFAULT 'other',
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
       INDEX idx_client_id (client_id)
     )
   `);
+  try {
+    await connection.query("ALTER TABLE client_intake_files ADD COLUMN angle ENUM('front', 'side', 'back', 'other') NOT NULL DEFAULT 'other' AFTER original_name");
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
 }
 
 async function ensureSocialLinksSchema(connection) {
@@ -374,20 +381,26 @@ router.post('/register/progress/files', authenticateToken, authorizeRole(['clien
     } catch {
       return res.status(400).json({ message: 'One of the uploaded photos is invalid.' });
     }
-    const uploaded = [...(req.files?.photos || []), ...(req.files?.pdf || [])];
+    const uploadedPhotos = req.files?.photos || [];
+    const uploadedPdfs = req.files?.pdf || [];
+    const uploaded = [...uploadedPhotos, ...uploadedPdfs];
     if (!uploaded.length) return res.json({ files: [] });
+    let photoAngles = [];
+    try { photoAngles = JSON.parse(req.body?.photoAngles || '[]'); } catch { photoAngles = []; }
     await connection.query('DELETE FROM client_intake_files WHERE client_id = ?', [req.user.id]);
-    const rows = uploaded.map((file) => [
-      req.user.id,
-      file.path.replace(/\\/g, '/'),
-      file.fieldname === 'pdf' ? 'pdf' : 'photo',
-      file.originalname,
-    ]);
+    const rows = [
+      ...uploadedPhotos.map((file, index) => [
+        req.user.id, file.path.replace(/\\/g, '/'), 'photo', file.originalname,
+        ['front', 'side', 'back'].includes(photoAngles[index]) ? photoAngles[index] : 'other',
+      ]),
+      ...uploadedPdfs.map((file) => [req.user.id, file.path.replace(/\\/g, '/'), 'pdf', file.originalname, 'other']),
+    ];
     await connection.query(
-      'INSERT INTO client_intake_files (client_id, file_url, file_type, original_name) VALUES ?',
+      'INSERT INTO client_intake_files (client_id, file_url, file_type, original_name, angle) VALUES ?',
       [rows]
     );
-    res.json({ files: rows.map((row) => ({ fileUrl: row[1], fileType: row[2], originalName: row[3] })) });
+    await registerClientIntakePhotos(connection, req.user.id);
+    res.json({ files: rows.map((row) => ({ fileUrl: row[1], fileType: row[2], originalName: row[3], angle: row[4] })) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Unable to save registration files' });
@@ -758,29 +771,37 @@ router.post('/register', upload.fields([{ name: 'photos', maxCount: 4 }, { name:
 
     const uploadedPhotos = req.files?.photos || [];
     const uploadedPdf = req.files?.pdf || [];
+    let photoAngles = [];
+    try { photoAngles = JSON.parse(req.body?.photoAngles || '[]'); } catch { photoAngles = []; }
     if (uploadedPhotos.length || uploadedPdf.length) {
       const dir = path.join('uploads', 'media', 'progress', String(userId));
       fs.mkdirSync(dir, { recursive: true });
       const fileRows = [];
-      for (const file of [...uploadedPhotos, ...uploadedPdf]) {
+      for (const [index, file] of uploadedPhotos.entries()) {
         const filename = `${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname)}`;
-        const optimizedPhotoPath = file.fieldname === 'photos'
-          ? await optimizeImageBufferToFile(file, dir, filename)
-          : null;
+        const optimizedPhotoPath = await optimizeImageBufferToFile(file, dir, filename);
         const savedPath = optimizedPhotoPath || path.join(dir, filename);
         if (!optimizedPhotoPath) fs.writeFileSync(savedPath, file.buffer);
         fileRows.push([
           userId,
           savedPath.replace(/\\/g, '/'),
-          file.fieldname === 'pdf' ? 'pdf' : 'photo',
+          'photo',
           file.originalname,
+          ['front', 'side', 'back'].includes(photoAngles[index]) ? photoAngles[index] : 'other',
         ]);
+      }
+      for (const file of uploadedPdf) {
+        const filename = `${Date.now()}-${Math.round(Math.random() * 1e6)}${path.extname(file.originalname)}`;
+        const savedPath = path.join(dir, filename);
+        fs.writeFileSync(savedPath, file.buffer);
+        fileRows.push([userId, savedPath.replace(/\\/g, '/'), 'pdf', file.originalname, 'other']);
       }
       try {
         await connection.query(
-          'INSERT INTO client_intake_files (client_id, file_url, file_type, original_name) VALUES ?',
+          'INSERT INTO client_intake_files (client_id, file_url, file_type, original_name, angle) VALUES ?',
           [fileRows]
         );
+        await registerClientIntakePhotos(connection, userId);
       } catch (fileError) {
         console.error('Failed to record intake files (files were saved to disk):', fileError);
       }

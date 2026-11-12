@@ -685,6 +685,7 @@ function RegisterWizardContent() {
     formData.append("progressPhotoSocialConsent", progressPhotoSocialConsent);
     formData.append("answers", JSON.stringify(answersPayload));
     intakePhotos.forEach(({ file }) => formData.append("photos", file));
+    formData.append("photoAngles", JSON.stringify(intakePhotos.map(({ angle }) => angle)));
     if (intakePdf) formData.append("pdf", intakePdf);
 
     try {

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, GripVertical, Plus, Save, X, Link2, Star, Settings2, Trophy, Trash2 } from "lucide-react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, ChevronDown, GripVertical, Plus, Save, X, Link2, Star, Settings2, Trophy, Trash2 } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -458,9 +458,27 @@ function QuestionSetEditor({
     }
   };
 
-  const newQuestion = () => {
-    setSelectedId(null);
-    setForm({ ...emptyQuestion, section: activeSection, sortOrder: questions.length });
+  const newQuestion = async () => {
+    setSaving(true);
+    setError("");
+    setMessage("");
+    const draft: Question = {
+      ...emptyQuestion,
+      question: "Νέα ερώτηση",
+      section: activeSection,
+      sortOrder: questions.filter((item) => item.section === activeSection).length,
+    };
+    try {
+      const created = await api.post<Question>(endpoints.create, buildPayload(draft));
+      setQuestions((current) => [...current, created]);
+      setForm(created);
+      setSelectedId(created.id);
+      setMessage("Προστέθηκε νέα ερώτηση. Συμπλήρωσέ την και αποθήκευσε τις αλλαγές σου.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Δεν προστέθηκε η νέα ερώτηση.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const toggleActive = async (targetQuestion: Question, nextActive: boolean) => {
@@ -546,41 +564,49 @@ function QuestionSetEditor({
         </div>
       )}
 
-      <section className="rounded-[20px] border border-border bg-card p-3 shadow-none sm:p-4">
-        <div className="grid gap-4 xl:grid-cols-[236px_minmax(0,1fr)]">
-          <aside className="rounded-[18px] border border-border bg-card p-3 xl:sticky xl:top-5 xl:max-h-[calc(100vh-7rem)] xl:overflow-y-auto">
-            <h3 className="font-bold">{configuredSections.length ? configuredSections.find((section) => section.value === activeSection)?.label : "Ερωτήσεις"}</h3>
-            <p className="mt-2 text-sm font-semibold text-slate-500 dark:text-slate-400">Σύρε για αλλαγή σειράς μέσα σε αυτό το βήμα</p>
-            <div className="mt-5">
+      <section className="space-y-4">
+        <div className="rounded-[20px] border border-border bg-card p-3 shadow-none sm:p-4">
+          <div className="flex flex-wrap items-end justify-between gap-3 px-1 pb-3 sm:px-2">
+            <div><h3 className="font-extrabold">{configuredSections.length ? configuredSections.find((section) => section.value === activeSection)?.label : "Ερωτήσεις"}</h3><p className="mt-1 text-xs font-semibold text-muted-foreground">Πάτησε μία ερώτηση για επεξεργασία · σύρε από το handle για αλλαγή σειράς.</p></div>
+            {selectedQuestion && <span className="rounded-full bg-[var(--sp-lime-soft)] px-3 py-1.5 text-xs font-extrabold text-foreground">Επεξεργασία ανοιχτή</span>}
+          </div>
+          <div>
               <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                 <SortableContext items={visibleQuestions.map((item) => String(item.id))} strategy={verticalListSortingStrategy}>
                   <div className="space-y-2">
                     {visibleQuestions.map((item) => (
-                      <SortableQuestionRow
-                        key={item.id}
-                        questionItem={item}
-                        typeOptions={typeOptions}
-                        selected={selectedId === item.id}
-                        onSelect={() => { setSelectedId(item.id); setActiveSection(item.section); }}
-                        onToggleActive={(next) => toggleActive(item, next)}
-                      />
+                      <Fragment key={item.id}>
+                        <SortableQuestionRow
+                          questionItem={item}
+                          typeOptions={typeOptions}
+                          selected={selectedId === item.id}
+                          onSelect={() => {
+                            if (selectedId === item.id) {
+                              setSelectedId(null);
+                              return;
+                            }
+                            setSelectedId(item.id);
+                            setActiveSection(item.section);
+                          }}
+                          onToggleActive={(next) => toggleActive(item, next)}
+                        />
+                        {selectedId === item.id && <InlineQuestionEditor form={form} typeOptions={typeOptions} configuredSections={configuredSections} standardKeyOptions={standardKeyOptions} saving={saving} onUpdate={update} onSave={saveQuestion} onDelete={deleteQuestion} />}
+                      </Fragment>
                     ))}
                   </div>
                 </SortableContext>
               </DndContext>
-              {!visibleQuestions.length && <p className="mt-4 text-sm font-semibold text-slate-400">Δεν υπάρχουν ερωτήσεις σε αυτό το βήμα ακόμα.</p>}
-            </div>
-          </aside>
+              {!visibleQuestions.length && <p className="mt-4 px-2 text-sm font-semibold text-slate-400">Δεν υπάρχουν ερωτήσεις σε αυτό το βήμα ακόμα.</p>}
+          </div>
+        </div>
 
-          <div className="min-w-0 overflow-hidden rounded-[18px] border-2 border-foreground bg-card shadow-[0_0_0_4px_rgba(176,249,12,.25)]">
+          {false && selectedQuestion && <div className="min-w-0 overflow-hidden rounded-[18px] border-2 border-foreground bg-card shadow-[0_0_0_4px_rgba(176,249,12,.25)]">
             <div className="mb-0 flex items-center justify-between border-b border-border bg-muted/40 px-4 py-4 sm:px-5">
               <div>
                 <p className="text-[10px] font-extrabold tracking-[.12em] text-muted-foreground">
                   ΒΗΜΑ {Math.max(1, configuredSections.findIndex((section) => section.value === form.section) + 1)}
                 </p>
-                <h3 className="mt-1 text-lg font-extrabold">
-                  {configuredSections.find((section) => section.value === form.section)?.label || (form.id ? "Επεξεργασία Ερώτησης" : "Νέα Ερώτηση")}
-                </h3>
+                <h3 className="mt-1 text-lg font-extrabold">{form.question || (form.id ? "Επεξεργασία Ερώτησης" : "Νέα Ερώτηση")}</h3>
               </div>
               <AlertDialog>
                 <AlertDialogTrigger
@@ -776,8 +802,7 @@ function QuestionSetEditor({
                 {saving ? "Αποθήκευση..." : "Αποθήκευση Ερώτησης"}
               </Button>
             </div>
-          </div>
-        </div>
+          </div>}
       </section>
 
       <section className="mt-4 hidden grid gap-4 xl:grid-cols-[236px_minmax(0,1fr)_290px]">
@@ -962,30 +987,180 @@ function SortableQuestionRow({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn(
-        "flex items-center gap-2 rounded-lg border px-3 py-2.5",
-        selected ? "border-red-500 bg-red-50 dark:border-red-500 dark:bg-red-500/10" : "border-slate-200 dark:border-slate-800",
-        isDragging && "z-10 opacity-60",
+        "flex min-h-[66px] items-center gap-2.5 rounded-[14px] border p-2 transition-all",
+        selected ? "border-foreground bg-muted shadow-[0_0_0_3px_rgba(176,249,12,.28)]" : "border-border bg-card hover:border-foreground/40 hover:bg-muted/40",
+        isDragging && "z-10 opacity-60 shadow-lg",
       )}
     >
       <button
         type="button"
         {...attributes}
         {...listeners}
-        className="shrink-0 cursor-grab touch-none text-slate-400 hover:text-slate-600 active:cursor-grabbing dark:text-slate-500"
+        className="grid h-10 w-8 shrink-0 cursor-grab touch-none place-items-center rounded-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:cursor-grabbing"
         aria-label="Αλλαγή σειράς"
+        title="Σύρε για αλλαγή σειράς"
       >
-        <GripVertical className="h-4 w-4" />
+        <GripVertical className="h-5 w-5" />
       </button>
-      <button type="button" onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-        <span className={cn("h-2 w-2 shrink-0 rounded-full", questionItem.isActive ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600")} />
-        <span className="min-w-0 flex-1 truncate text-sm font-bold text-slate-800 dark:text-slate-100">
-          {questionItem.question || "(χωρίς κείμενο)"}
+      <button type="button" onClick={onSelect} className="flex min-w-0 flex-1 items-center gap-2 text-left" aria-pressed={selected}>
+        <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", questionItem.isActive ? "bg-emerald-500" : "bg-muted-foreground/40")} />
+        <span className="min-w-0 flex-1">
+          <span className="block line-clamp-2 text-[13px] font-extrabold leading-5 text-foreground">
+            {questionItem.question || "(χωρίς κείμενο)"}
+          </span>
+          <span className="mt-0.5 block text-[11px] font-semibold text-muted-foreground">
+            {typeLabel(questionItem.type, typeOptions)}
+          </span>
         </span>
       </button>
-      <Badge variant="outline" className="h-auto shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold">
+      <Badge variant="outline" className="hidden h-auto shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold 2xl:inline-flex">
         {typeLabel(questionItem.type, typeOptions)}
       </Badge>
-      <Switch checked={questionItem.isActive} onCheckedChange={(checked) => onToggleActive(checked === true)} className="shrink-0" />
+      <Switch checked={questionItem.isActive} onCheckedChange={(checked) => onToggleActive(checked === true)} className="mr-0.5 shrink-0" />
+      <ChevronDown className={cn("mr-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform", selected && "rotate-180 text-foreground")} />
+    </div>
+  );
+}
+
+function InlineQuestionEditor({
+  form,
+  typeOptions,
+  configuredSections,
+  standardKeyOptions,
+  saving,
+  onUpdate,
+  onSave,
+  onDelete,
+}: {
+  form: Question;
+  typeOptions: TypeOption[];
+  configuredSections: { value: Question["section"]; label: string }[];
+  standardKeyOptions: StandardKeyOption[];
+  saving: boolean;
+  onUpdate: <K extends keyof Question>(key: K, value: Question[K]) => void;
+  onSave: () => void;
+  onDelete: () => void;
+}) {
+  const isLocked = Boolean(form.standardKey);
+  const updateOption = (index: number, value: string) =>
+    onUpdate("options", form.options.map((option, itemIndex) => (itemIndex === index ? value : option)));
+  const removeOption = (index: number) => onUpdate("options", form.options.filter((_, itemIndex) => itemIndex !== index));
+  const addOption = () => onUpdate("options", [...form.options, `Επιλογή ${form.options.length + 1}`]);
+
+  return (
+    <div className="mx-1 -mt-2 overflow-hidden rounded-b-[16px] border border-t-0 border-border bg-muted/25 sm:mx-4">
+      <div className="grid gap-4 p-4 pt-6 sm:grid-cols-2 sm:p-5 sm:pt-7">
+        <Label className="flex flex-col items-start gap-2 text-sm font-bold sm:col-span-2">
+          Κείμενο ερώτησης
+          <Textarea
+            value={form.question}
+            onChange={(event) => onUpdate("question", event.target.value)}
+            disabled={isLocked}
+            className="min-h-20 bg-card"
+          />
+        </Label>
+
+        <Label className="flex flex-col items-start gap-2 text-sm font-bold">
+          Τύπος ερώτησης
+          <Select items={typeOptions} value={form.type} disabled={isLocked} onValueChange={(value) => value && onUpdate("type", value as QuestionType)}>
+            <SelectTrigger className="h-11 w-full bg-card"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {typeOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </Label>
+
+        {configuredSections.length > 0 && (
+          <Label className="flex flex-col items-start gap-2 text-sm font-bold">
+            Ενότητα εμφάνισης
+            <Select
+              items={configuredSections}
+              value={form.section || configuredSections[0]?.value}
+              disabled={isLocked}
+              onValueChange={(value) => value && onUpdate("section", value as Question["section"])}
+            >
+              <SelectTrigger className="h-11 w-full bg-card"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {configuredSections.map((section) => <SelectItem key={section.value} value={section.value}>{section.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </Label>
+        )}
+
+        {standardKeyOptions.length > 0 && (
+          <Label className="flex flex-col items-start gap-2 text-sm font-bold sm:col-span-2">
+            Standard πεδίο
+            <Select
+              items={[{ value: "none", label: "Κανένα" }, ...standardKeyOptions]}
+              value={form.standardKey || "none"}
+              onValueChange={(value) => onUpdate("standardKey", value && value !== "none" ? value : null)}
+            >
+              <SelectTrigger className="h-11 w-full bg-card"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Κανένα</SelectItem>
+                {standardKeyOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <span className="text-xs font-medium text-muted-foreground">Χρησιμοποιείται από το σύστημα για τη συγκεκριμένη τιμή.</span>
+          </Label>
+        )}
+
+        {needsOptions(form.type) && (
+          <div className="space-y-2 sm:col-span-2">
+            <p className="text-sm font-bold">Επιλογές</p>
+            {form.options.map((option, index) => (
+              <div key={`${form.id}-${index}`} className="flex gap-2">
+                <Input value={option} disabled={isLocked} onChange={(event) => updateOption(index, event.target.value)} className="h-10 bg-card" />
+                <Button type="button" variant="ghost" size="icon" disabled={isLocked || (form.type !== "url" && form.options.length <= 1)} onClick={() => removeOption(index)} className="h-10 w-10 shrink-0 text-muted-foreground hover:text-destructive">
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+            <Button type="button" variant="outline" disabled={isLocked} onClick={addOption} className="h-9 rounded-full px-4 text-xs font-extrabold">+ Προσθήκη επιλογής</Button>
+          </div>
+        )}
+
+        {needsPlaceholder(form.type) && (
+          <Label className="flex flex-col items-start gap-2 text-sm font-bold">
+            Placeholder
+            <Input value={form.placeholder} disabled={isLocked} onChange={(event) => onUpdate("placeholder", event.target.value)} className="h-11 bg-card" />
+          </Label>
+        )}
+
+        <Label className="flex flex-col items-start gap-2 text-sm font-bold sm:col-span-2">
+          Σημείωση κάτω από την ερώτηση <span className="font-medium text-muted-foreground">(προαιρετικό)</span>
+          <Textarea value={form.helpText} disabled={isLocked} onChange={(event) => onUpdate("helpText", event.target.value)} className="min-h-20 bg-card" />
+        </Label>
+
+        <div className="space-y-3 rounded-[14px] border border-border bg-card p-3 sm:col-span-2">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-sm font-bold">Υποχρεωτική ερώτηση</span>
+            <Switch checked={form.isRequired} disabled={isLocked} onCheckedChange={(checked) => onUpdate("isRequired", checked === true)} />
+          </div>
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-sm font-bold">Επιτρέπει φωτογραφίες</span>
+            <Switch checked={form.allowPhotos} disabled={isLocked} onCheckedChange={(checked) => onUpdate("allowPhotos", checked === true)} />
+          </div>
+          {form.allowPhotos && <div className="flex items-center justify-between gap-4 pl-1"><span className="text-xs font-semibold text-muted-foreground">Μέγιστες φωτογραφίες</span><Input type="number" min={1} max={4} value={form.maxPhotos} disabled={isLocked} onChange={(event) => onUpdate("maxPhotos", Math.min(4, Math.max(1, Number(event.target.value) || 1)))} className="h-9 w-20 bg-muted text-center" /></div>}
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-sm font-bold">Επιτρέπει PDF</span>
+            <Switch checked={form.allowPdf} disabled={isLocked} onCheckedChange={(checked) => onUpdate("allowPdf", checked === true)} />
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-card px-4 py-3 sm:px-5">
+        <AlertDialog>
+          <AlertDialogTrigger render={<Button type="button" variant="outline" disabled={!form.id || saving || isLocked} className="h-10 border-destructive/30 px-4 font-bold text-destructive hover:bg-destructive/10">Διαγραφή</Button>} />
+          <AlertDialogContent>
+            <AlertDialogHeader><AlertDialogTitle>Διαγραφή ερώτησης;</AlertDialogTitle><AlertDialogDescription>Η ερώτηση θα αφαιρεθεί από τη φόρμα. Οι ήδη υποβλημένες απαντήσεις διατηρούνται στο ιστορικό.</AlertDialogDescription></AlertDialogHeader>
+            <AlertDialogFooter><AlertDialogCancel>Άκυρο</AlertDialogCancel><AlertDialogAction onClick={onDelete} className="bg-destructive text-white hover:bg-destructive/90">Διαγραφή</AlertDialogAction></AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        <Button type="button" onClick={onSave} disabled={saving || !form.question.trim() || isLocked} className="h-10 px-5 font-extrabold">
+          <Save className="mr-1.5 h-4 w-4" />{saving ? "Αποθήκευση..." : "Αποθήκευση ερώτησης"}
+        </Button>
+      </div>
     </div>
   );
 }

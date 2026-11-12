@@ -141,6 +141,7 @@ interface ProgressWeeklyUpdate {
   generalRating: number | null;
   notes: string | null;
   photos: string[];
+  photoDetails?: Array<{ url: string; angle: "front" | "side" | "back" | "other" }>;
   score?: number | null;
   scoreTierTitle?: string | null;
   autoSnapshot?: Record<string, unknown>;
@@ -2753,6 +2754,7 @@ const workoutFeelingMeta: Record<string, { emoji: string; label: string }> = {
 
 function ProgressTab({ client }: { client: ClientRecord }) {
   const [weeklyUpdates, setWeeklyUpdates] = useState<ProgressWeeklyUpdate[]>([]);
+  const [photoAngle, setPhotoAngle] = useState<"front" | "side" | "back">("front");
   const [workouts, setWorkouts] = useState<ProgressWorkout[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [workoutsLoading, setWorkoutsLoading] = useState(true);
@@ -2807,7 +2809,14 @@ function ProgressTab({ client }: { client: ClientRecord }) {
     ? [{ date: "Εγγραφή", Βάρος: registrationWeight }, ...weeklyWeightChartData]
     : weeklyWeightChartData;
 
-  const recentPhotos = weeklyUpdates.flatMap((update) => update.photos).slice(0, 3);
+  const photoLabels = { front: "Μπροστά", side: "Πλάι", back: "Πίσω" };
+  const progressPhotos = weeklyUpdates.flatMap((update) => {
+    const details = update.photoDetails?.length
+      ? update.photoDetails
+      : update.photos.map((url) => ({ url, angle: "other" as const }));
+    return details.filter((photo) => photo.angle === photoAngle || (photoAngle === "front" && photo.angle === "other"));
+  });
+  const recentPhotos = progressPhotos.slice(0, 3).map((photo) => photo.url);
   const weightEntries = weeklyUpdates.filter((update) => update.weight !== null);
   const currentWeight = weightEntries.length ? weightEntries[0].weight : registrationWeight;
   const initialWeight = registrationWeight ?? (weightEntries.length ? weightEntries[weightEntries.length - 1].weight : null);
@@ -2843,7 +2852,7 @@ function ProgressTab({ client }: { client: ClientRecord }) {
       </Card>
 
       <Card className="p-5">
-        <h3 className="mb-4 text-lg font-bold">Πρόσφατες φωτογραφίες προόδου</h3>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h3 className="text-lg font-bold">Φωτογραφίες προόδου</h3><div className="flex gap-1 rounded-[10px] bg-muted p-1">{(["front", "side", "back"] as const).map((angle) => <button key={angle} type="button" onClick={() => setPhotoAngle(angle)} className={`h-8 rounded-[8px] px-2.5 text-[12px] font-extrabold ${photoAngle === angle ? "bg-foreground text-background" : "text-muted-foreground hover:bg-card hover:text-foreground"}`}>{photoLabels[angle]}</button>)}</div></div>
         {recentPhotos.length ? (
           <div className="flex flex-wrap gap-2">
             {recentPhotos.map((photo) => (

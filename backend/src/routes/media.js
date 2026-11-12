@@ -103,7 +103,7 @@ async function registerWeeklyUpdatePhotos(connection, clientId) {
   await ensureMediaCategories(connection);
 
   const [photos] = await connection.query(
-    `SELECT wuf.file_url, wuf.original_name, wu.submitted_at, u.full_name, u.email
+    `SELECT wuf.id, wuf.update_id, wuf.angle, wuf.file_url, wuf.original_name, wu.submitted_at, u.full_name, u.email
      FROM weekly_update_files wuf
      INNER JOIN weekly_updates wu ON wu.id = wuf.update_id
      INNER JOIN users u ON u.id = wu.client_id
@@ -112,6 +112,25 @@ async function registerWeeklyUpdatePhotos(connection, clientId) {
     [clientId]
   );
   if (!photos.length) return 0;
+
+  // Updates created before angle support stored every image as "other".
+  // A complete legacy set is ordered as front / side / back by upload order.
+  const legacySets = new Map();
+  for (const photo of photos) {
+    const batchKey = `${photo.update_id}:${new Date(photo.created_at || photo.submitted_at).toISOString()}`;
+    const set = legacySets.get(batchKey) || [];
+    set.push(photo);
+    legacySets.set(batchKey, set);
+  }
+  for (const set of legacySets.values()) {
+    if (set.length > 3 || set.some((photo) => ['front', 'side', 'back'].includes(photo.angle))) continue;
+    const ordered = [...set].sort((a, b) => Number(a.id) - Number(b.id));
+    for (const [index, photo] of ordered.entries()) {
+      const angle = ['front', 'side', 'back'][index] || 'other';
+      await connection.query('UPDATE weekly_update_files SET angle = ? WHERE id = ?', [angle, photo.id]);
+      photo.angle = angle;
+    }
+  }
 
   let [[updatesFolder]] = await connection.query(
     'SELECT id FROM media_folders WHERE parent_id IS NULL AND LOWER(name) = LOWER(?) LIMIT 1',
@@ -151,6 +170,80 @@ async function registerWeeklyUpdatePhotos(connection, clientId) {
     );
   }
 
+  return photos.length;
+}
+
+async function registerClientIntakePhotos(connection, clientId) {
+  await ensureMediaCategories(connection);
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS client_intake_files (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      client_id INT NOT NULL,
+      file_url VARCHAR(255) NOT NULL,
+      file_type ENUM('photo', 'pdf') NOT NULL,
+      original_name VARCHAR(255),
+      angle ENUM('front', 'side', 'back', 'other') NOT NULL DEFAULT 'other',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX idx_client_id (client_id)
+    )
+  `);
+  try {
+    await connection.query("ALTER TABLE client_intake_files ADD COLUMN angle ENUM('front', 'side', 'back', 'other') NOT NULL DEFAULT 'other' AFTER original_name");
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
+  const [photos] = await connection.query(
+    `SELECT intake.id, intake.angle, intake.file_url, intake.original_name, intake.created_at, u.full_name, u.email
+     FROM client_intake_files intake
+     INNER JOIN users u ON u.id = intake.client_id
+     WHERE intake.client_id = ? AND intake.file_type = 'photo'
+     ORDER BY intake.created_at ASC, intake.id ASC`,
+    [clientId],
+  );
+  if (!photos.length) return 0;
+
+  // Registration photos were historically saved without their selected angle.
+  // Only infer a conventional set of up to three unlabelled images.
+  const intakeSet = photos.slice(0, 3);
+  if (intakeSet.length === 3 && intakeSet.every((photo) => !['front', 'side', 'back'].includes(photo.angle))) {
+    for (const [index, photo] of intakeSet.entries()) {
+      const angle = ['front', 'side', 'back'][index] || 'other';
+      await connection.query('UPDATE client_intake_files SET angle = ? WHERE id = ?', [angle, photo.id]);
+      photo.angle = angle;
+    }
+  }
+
+  let [[rootFolder]] = await connection.query(
+    'SELECT id FROM media_folders WHERE parent_id IS NULL AND LOWER(name) = LOWER(?) LIMIT 1',
+    ['Updates'],
+  );
+  if (!rootFolder) {
+    const [created] = await connection.query('INSERT INTO media_folders (name, parent_id) VALUES (?, NULL)', ['Updates']);
+    rootFolder = { id: created.insertId };
+  }
+
+  const clientName = String(photos[0].full_name || photos[0].email || `Client ${clientId}`).trim().slice(0, 220);
+  let [[clientFolder]] = await connection.query(
+    'SELECT id FROM media_folders WHERE parent_id = ? AND name = ? LIMIT 1',
+    [rootFolder.id, clientName],
+  );
+  if (!clientFolder) {
+    const [created] = await connection.query('INSERT INTO media_folders (name, parent_id) VALUES (?, ?)', [clientName, rootFolder.id]);
+    clientFolder = { id: created.insertId };
+  }
+
+  for (const photo of photos) {
+    const url = String(photo.file_url || '').startsWith('/') ? photo.file_url : `/${photo.file_url}`;
+    if (!url || url === '/') continue;
+    const filename = photo.original_name || path.basename(url);
+    const title = `${clientName} - Αρχικές φωτογραφίες - ${filename}`.slice(0, 255);
+    await connection.query(
+      `INSERT INTO media_assets (title, asset_type, url, source, folder_id)
+       SELECT ?, 'photo', ?, 'registration_progress', ?
+       WHERE NOT EXISTS (SELECT 1 FROM media_assets WHERE source = 'registration_progress' AND url = ?)`,
+      [title, url, clientFolder.id, url],
+    );
+  }
   return photos.length;
 }
 
@@ -212,7 +305,7 @@ async function registerPaymentProofs(connection) {
   return proofs.length;
 }
 
-export { ensureMediaCategories, registerWeeklyUpdatePhotos };
+export { ensureMediaCategories, registerWeeklyUpdatePhotos, registerClientIntakePhotos };
 
 router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
@@ -226,6 +319,20 @@ router.get('/', authorizeRole(['coach', 'admin', 'moderator']), async (req, res)
     connection = await pool.getConnection();
     await ensureMediaTable(connection);
     await registerPaymentProofs(connection);
+    // Backfill progress photos uploaded before the Media mirror existed.
+    // registerWeeklyUpdatePhotos is idempotent (source + URL are unique), so
+    // this also keeps the library in sync without duplicating assets.
+    const [updateClients] = await connection.query(
+      `SELECT DISTINCT wu.client_id
+       FROM weekly_updates wu
+       INNER JOIN weekly_update_files wuf ON wuf.update_id = wu.id
+       WHERE wuf.file_type = 'photo'`,
+    );
+    for (const row of updateClients) await registerWeeklyUpdatePhotos(connection, row.client_id);
+    const [intakeClients] = await connection.query(
+      `SELECT DISTINCT client_id FROM client_intake_files WHERE file_type = 'photo'`,
+    );
+    for (const row of intakeClients) await registerClientIntakePhotos(connection, row.client_id);
 
     const params = [];
     const filters = [];
@@ -534,6 +641,10 @@ router.delete('/:kind/:id', authorizeRole(['coach', 'admin']), async (req, res) 
     if (asset?.source === 'weekly_update') {
       const withoutLeadingSlash = asset.url.replace(/^\//, '');
       await connection.query('DELETE FROM weekly_update_files WHERE file_url IN (?, ?)', [asset.url, withoutLeadingSlash]);
+    }
+    if (asset?.source === 'registration_progress') {
+      const withoutLeadingSlash = asset.url.replace(/^\//, '');
+      await connection.query('DELETE FROM client_intake_files WHERE file_url IN (?, ?)', [asset.url, withoutLeadingSlash]);
     }
     connection.release();
 

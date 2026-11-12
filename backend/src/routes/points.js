@@ -228,10 +228,10 @@ export async function awardPoints(connection, { clientId, planId, paymentId, poi
 export async function awardWeeklyUpdatePoints(connection, { clientId, updateId, weekStart, timely = false }) {
   try {
     // Late updates remain visible to the coach, but never earn points or add to a streak.
-    if (!timely) return;
+    if (!timely) return { awarded: false, points: 0, streak: 0, nextBonusIn: null, nextStreakBonusPoints: 0 };
     await ensurePointsSchema(connection);
     const [[settings]] = await connection.query('SELECT * FROM points_settings WHERE id = 1');
-    if (!settings?.is_active) return;
+    if (!settings?.is_active) return { awarded: false, points: 0, streak: 0, nextBonusIn: null, nextStreakBonusPoints: 0 };
     const [updates] = await connection.query(
       'SELECT id, week_start FROM weekly_updates WHERE client_id = ? AND is_timely = 1 ORDER BY week_start DESC, id DESC LIMIT 4',
       [clientId],
@@ -245,14 +245,34 @@ export async function awardWeeklyUpdatePoints(connection, { clientId, updateId, 
       expected.setDate(expected.getDate() - 7);
     }
     const fourthInStreak = streak > 0 && streak % 4 === 0;
-    await awardRulePoints(connection, {
+    const basePoints = Math.max(0, Number(settings.weekly_update_points) || 0);
+    const bonusPoints = fourthInStreak ? Math.max(0, Number(settings.weekly_streak_bonus_points) || 0) : 0;
+    const baseAwarded = await awardRulePoints(connection, {
       clientId,
-      points: fourthInStreak ? settings.weekly_streak_bonus_points : settings.weekly_update_points,
+      points: basePoints,
       referenceType: 'weekly_update', referenceId: updateId,
-      description: fourthInStreak ? 'Bonus 4 συνεχόμενων έγκαιρων εβδομαδιαίων updates' : 'Έγκαιρο και ολοκληρωμένο εβδομαδιαίο update',
-      title: fourthInStreak ? 'Bonus συνέπειας!' : 'Το update σου ολοκληρώθηκε!',
+      description: 'Έγκαιρο και ολοκληρωμένο εβδομαδιαίο update',
+      title: 'Το update σου ολοκληρώθηκε!',
     });
-  } catch (error) { console.error('Weekly update points award failed:', error); }
+    const bonusAwarded = bonusPoints > 0 && await awardRulePoints(connection, {
+      clientId,
+      points: bonusPoints,
+      referenceType: 'weekly_update_streak', referenceId: updateId,
+      description: 'Bonus 4 συνεχόμενων έγκαιρων εβδομαδιαίων updates',
+      title: 'Bonus συνέπειας!',
+    });
+    return {
+      awarded: Boolean(baseAwarded || bonusAwarded),
+      points: (baseAwarded ? basePoints : 0) + (bonusAwarded ? bonusPoints : 0),
+      streak,
+      nextBonusIn: fourthInStreak ? 4 : Math.max(0, 4 - (streak % 4)),
+      nextStreakBonusPoints: Math.max(0, Number(settings.weekly_streak_bonus_points) || 0),
+      bonusAwarded: Boolean(bonusAwarded),
+    };
+  } catch (error) {
+    console.error('Weekly update points award failed:', error);
+    return { awarded: false, points: 0, streak: 0, nextBonusIn: null, nextStreakBonusPoints: 0 };
+  }
 }
 
 export async function awardBirthdayPoints(connection, { clientId, year }) {

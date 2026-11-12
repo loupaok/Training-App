@@ -27,6 +27,7 @@ type WeeklyUpdate = {
   generalRating?: number | null
   notes?: string | null
   photos?: string[]
+  photoDetails?: Array<{ url: string; angle: "front" | "side" | "back" | "other" }>
 }
 
 type ProgressResponse = {
@@ -35,6 +36,7 @@ type ProgressResponse = {
   fitnessGoal?: string | null
   weights: Array<{ submittedAt: string; weight: number }>
   photos: string[]
+  initialPhotos?: Array<{ url: string; angle: "front" | "side" | "back" | "other"; submittedAt?: string | null; weight?: number | null }>
   updates: WeeklyUpdate[]
 }
 
@@ -132,7 +134,7 @@ function ProgressOverview({ weights, targetWeight, personalBests, monthlyVolume,
   return <div className="space-y-5"><div className="grid gap-5 xl:grid-cols-[minmax(0,1.6fr)_minmax(19rem,1fr)]"><Card className="rounded-[20px] border-border shadow-none"><CardHeader className="flex-row items-start justify-between gap-4 space-y-0 p-5 pb-0"><div><CardTitle className="text-[18px] font-extrabold">Η πορεία του βάρους σου</CardTitle><CardDescription className="mt-1 text-[12px]">Κάθε καταγραφή σε φέρνει πιο κοντά στον στόχο.</CardDescription></div><Badge className="rounded-full bg-foreground px-3 py-1 text-[10px] font-extrabold text-background">{weights.length} καταγραφές</Badge></CardHeader><CardContent className="p-5"><ProgressWeightChart points={weights} targetWeight={targetWeight} /></CardContent></Card><Card className="rounded-[20px] border-border shadow-none"><CardHeader className="p-5 pb-2"><CardTitle className="flex items-center gap-2 text-[18px] font-extrabold"><Trophy className="h-[18px] w-[18px] text-accent" />Προσωπικά ρεκόρ</CardTitle><CardDescription className="mt-1 text-[12px]">Τα καλύτερα κιλά σου ανά άσκηση.</CardDescription></CardHeader><CardContent className="space-y-2 p-5 pt-2">{personalBests.length ? personalBests.map(([exercise, weight], index) => <div key={exercise} className="flex items-center gap-3 rounded-[13px] border border-border px-3 py-3"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-foreground text-[11px] font-extrabold text-background">{index + 1}</span><span className="min-w-0 flex-1 truncate text-[13px] font-bold">{exercise}</span><span className="shrink-0 text-[13px] font-extrabold italic">{weight.toLocaleString("el-GR")} kg</span></div>) : <EmptyChart text="Τα ρεκόρ θα εμφανιστούν μετά την πρώτη ολοκληρωμένη προπόνηση." />}</CardContent></Card></div><div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(19rem,1fr)]"><Card className="rounded-[20px] border-border shadow-none"><CardHeader className="p-5 pb-0"><CardTitle className="text-[16px] font-extrabold">Όγκος προπόνησης</CardTitle><CardDescription className="mt-1 text-[12px]">Συνολικά κιλά ανά μήνα.</CardDescription></CardHeader><CardContent className="p-5"><VolumeBars data={monthlyVolume} /></CardContent></Card><Card className="rounded-[20px] border-border shadow-none"><CardHeader className="p-5 pb-3"><CardTitle className="text-[16px] font-extrabold">Συνέπεια 12 εβδομάδων</CardTitle><CardDescription className="mt-1 text-[12px]">Οι ολοκληρωμένες προπονήσεις σου.</CardDescription></CardHeader><CardContent className="p-5 pt-0"><ConsistencyGrid workouts={workouts} /></CardContent></Card><Card className="rounded-[20px] border-border shadow-none"><CardHeader className="p-5 pb-3"><CardTitle className="text-[16px] font-extrabold">Η αλλαγή σου</CardTitle><CardDescription className="mt-1 text-[12px]">Σύγκρινε τις φωτογραφίες προόδου.</CardDescription></CardHeader><CardContent className="p-5 pt-0"><ProgressPhotoComparison updates={updates} photos={photos} onSelect={onSelectPhoto} /></CardContent></Card></div></div>
 }
 
-function ProgressReferenceOverview({ weights, targetWeight, personalBests, monthlyVolume, workouts, updates, photos, onSelectPhoto }: { weights: WeightPoint[]; targetWeight: number | null; personalBests: Array<[string, number]>; monthlyVolume: Array<{ month: string; volume: number }>; workouts: Workout[]; updates: WeeklyUpdate[]; photos: string[]; onSelectPhoto: (photo: string) => void }) {
+function ProgressReferenceOverview({ weights, targetWeight, personalBests, monthlyVolume, workouts, updates, photos, initialPhotos, onSelectPhoto }: { weights: WeightPoint[]; targetWeight: number | null; personalBests: Array<[string, number]>; monthlyVolume: Array<{ month: string; volume: number }>; workouts: Workout[]; updates: WeeklyUpdate[]; photos: string[]; initialPhotos?: ProgressResponse["initialPhotos"]; onSelectPhoto: (photo: string) => void }) {
   const totalWorkouts = workouts.length
   const weeklyAverage = totalWorkouts ? (totalWorkouts / 12).toLocaleString("el-GR", { maximumFractionDigits: 1 }) : "0"
   return <div className="space-y-5">
@@ -145,7 +147,7 @@ function ProgressReferenceOverview({ weights, targetWeight, personalBests, month
       <Card className="rounded-[20px] border-border shadow-none"><CardHeader className="flex-row items-baseline justify-between space-y-0 p-[20px] px-[22px] pb-0"><CardTitle className="text-[18px] font-extrabold">Μηνιαίος όγκος</CardTitle><CardDescription className="text-[12px]">κιλά × επαναλήψεις</CardDescription></CardHeader><CardContent className="p-[20px] px-[22px] pt-0"><VolumeBars data={monthlyVolume} /></CardContent></Card>
       <Card className="rounded-[20px] border-border shadow-none"><CardHeader className="flex-row items-baseline justify-between space-y-0 p-[20px] px-[22px] pb-3"><CardTitle className="text-[18px] font-extrabold">Συνέπεια προπονήσεων</CardTitle><CardDescription className="text-[12px]">12 εβδομάδες</CardDescription></CardHeader><CardContent className="p-[20px] px-[22px] pt-0"><ConsistencyGrid workouts={workouts} /><div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-muted-foreground"><span><b className="text-foreground">{totalWorkouts}</b> προπονήσεις</span><span><b className="text-foreground">{weeklyAverage}</b> / εβδομάδα</span></div></CardContent></Card>
     </div>
-    <Card className="rounded-[20px] border-border shadow-none"><CardHeader className="flex-row items-center justify-between gap-3 space-y-0 p-[20px] px-[22px] pb-3"><div><CardTitle className="text-[18px] font-extrabold">Φωτογραφίες προόδου</CardTitle><CardDescription className="mt-1 text-[12px]">Σύγκρινε την αρχή με το τώρα.</CardDescription></div><span className="rounded-[8px] bg-foreground px-2.5 py-2 text-[12px] font-extrabold text-background">Μπροστά</span></CardHeader><CardContent className="p-[20px] px-[22px] pt-0"><ProgressPhotoComparison updates={updates} photos={photos} onSelect={onSelectPhoto} /><div className="mt-3 flex items-center justify-between gap-3 text-[12px] text-muted-foreground"><span>Σύγκρινε οποιαδήποτε δύο updates</span><span className="hidden rounded-full border-[1.5px] border-foreground px-3 py-2 font-extrabold text-foreground sm:inline-flex">Όλες οι φωτογραφίες</span></div></CardContent></Card>
+    <PhotosCard updates={updates} initialPhotos={initialPhotos} onSelect={onSelectPhoto} />
   </div>
 }
 
@@ -249,7 +251,7 @@ function ClientProgressContent() {
             <TabsList className="h-auto w-max min-w-full justify-start gap-0.5 rounded-[14px] border border-border bg-card p-1 sm:min-w-0 [&>button]:h-[38px] [&>button]:shrink-0 [&>button]:rounded-[10px] [&>button]:px-[18px] [&>button]:text-[13px] [&>button]:font-bold [&>button]:text-[#555555] [&>button[data-state=active]]:bg-accent [&>button[data-state=active]]:text-accent-foreground [&>button[data-state=active]]:shadow-none"><TabsTrigger value="overview">Επισκόπηση</TabsTrigger><TabsTrigger value="weight">Βάρος & μετρήσεις</TabsTrigger><TabsTrigger value="workouts">Προπονήσεις</TabsTrigger><TabsTrigger value="records">Ρεκόρ</TabsTrigger><TabsTrigger value="checkins">Check-ins</TabsTrigger><TabsTrigger value="photos">Φωτογραφίες</TabsTrigger></TabsList>
           </div>
           <TabsContent value="overview" className="space-y-6">
-            <ProgressReferenceOverview weights={weights} targetWeight={targetWeight} personalBests={personalBests} monthlyVolume={monthlyVolume} workouts={workouts} updates={recentUpdates} photos={data?.photos || []} onSelectPhoto={setPhoto} />
+            <ProgressReferenceOverview weights={weights} targetWeight={targetWeight} personalBests={personalBests} monthlyVolume={monthlyVolume} workouts={workouts} updates={recentUpdates} photos={data?.photos || []} initialPhotos={data?.initialPhotos} onSelectPhoto={setPhoto} />
             <div className="hidden">
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.85fr)]">
               <Card><CardHeader><CardTitle className="text-lg">Βάρος</CardTitle></CardHeader><CardContent>{weights.length > 1 ? <AreaChart className="h-72" data={weights} index="date" categories={["weight"]} colors={["blue"]} valueFormatter={(value) => `${value} kg`} /> : <EmptyChart text="Χρειάζονται τουλάχιστον δύο check-ins με βάρος για το γράφημα." />}</CardContent></Card>
@@ -257,7 +259,7 @@ function ClientProgressContent() {
             </div>
             <div className="grid gap-6 lg:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.85fr)]">
               <Card><CardHeader><CardTitle className="text-lg">Μηνιαίος όγκος προπόνησης</CardTitle></CardHeader><CardContent>{workouts.length ? <BarChart className="h-64" data={monthlyVolume} index="month" categories={["volume"]} colors={["emerald"]} valueFormatter={(value) => `${value.toLocaleString("el-GR")} kg`} /> : <EmptyChart text="Δεν υπάρχουν ολοκληρωμένες προπονήσεις ακόμα." />}</CardContent></Card>
-              <PhotosCard photos={data?.photos || []} onSelect={setPhoto} />
+              <PhotosCard updates={recentUpdates} initialPhotos={data?.initialPhotos} onSelect={setPhoto} />
             </div>
             </div>
           </TabsContent>
@@ -265,18 +267,37 @@ function ClientProgressContent() {
           <TabsContent value="workouts"><WorkoutList workouts={workouts} /></TabsContent>
           <TabsContent value="records"><Card><CardHeader><CardTitle className="text-lg">Προσωπικά ρεκόρ</CardTitle></CardHeader><CardContent className="space-y-3">{personalBests.length ? personalBests.map(([exercise, weight], index) => <div key={exercise} className="flex items-center justify-between gap-3 rounded-[14px] bg-muted/60 px-4 py-3"><span className="flex min-w-0 items-center gap-3"><span className="grid h-8 w-8 place-items-center rounded-full bg-[var(--sp-emphasis)] text-xs font-extrabold text-accent">{index + 1}</span><span className="truncate font-bold">{exercise}</span></span><Badge className="bg-[var(--sp-emphasis)] text-accent">{weight.toLocaleString("el-GR")} kg</Badge></div>) : <EmptyChart text="Τα προσωπικά ρεκόρ θα εμφανιστούν μετά την πρώτη σου προπόνηση." />}</CardContent></Card></TabsContent>
           <TabsContent value="checkins"><CheckinList updates={recentUpdates} onSelectPhoto={setPhoto} /></TabsContent>
-          <TabsContent value="photos"><PhotosCard photos={data?.photos || []} onSelect={setPhoto} /></TabsContent>
+          <TabsContent value="photos"><PhotosCard updates={recentUpdates} initialPhotos={data?.initialPhotos} onSelect={setPhoto} /></TabsContent>
         </Tabs>
       </>}
     </main>
-    <Dialog open={Boolean(photo)} onOpenChange={(open) => !open && setPhoto(null)}><DialogContent className="max-w-3xl p-2"><img src={photo ? resolveMediaUrl(photo) : ""} alt="Φωτογραφία προόδου" className="max-h-[80vh] w-full rounded-md object-contain" /></DialogContent></Dialog>
+    <Dialog open={Boolean(photo)} onOpenChange={(open) => !open && setPhoto(null)}><DialogContent className="max-w-3xl p-2">{photo && <img src={resolveMediaUrl(photo)} alt="Φωτογραφία προόδου" className="max-h-[80vh] w-full rounded-md object-contain" />}</DialogContent></Dialog>
   </ClientShell>
 }
 
 function EmptyChart({ text }: { text: string }) { return <div className="grid h-64 place-items-center text-center text-sm text-muted-foreground">{text}</div> }
 
-function PhotosCard({ photos, onSelect }: { photos: string[]; onSelect: (photo: string) => void }) {
-  return <Card><CardHeader><CardTitle className="text-lg">Φωτογραφίες προόδου</CardTitle></CardHeader><CardContent>{photos.length ? <div className="grid grid-cols-2 gap-3">{photos.slice(0, 4).map((item, index) => <button key={`${item}-${index}`} type="button" onClick={() => onSelect(item)} className="group relative aspect-square overflow-hidden rounded-lg bg-muted"><img src={resolveMediaUrl(item)} alt="Φωτογραφία προόδου" className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" /></button>)}</div> : <div className="grid h-48 place-items-center text-center text-sm text-muted-foreground"><span><Camera className="mx-auto mb-2 h-5 w-5" />Δεν υπάρχουν φωτογραφίες ακόμα.</span></div>}</CardContent></Card>
+function PhotosCard({ updates, initialPhotos = [], onSelect }: { updates: WeeklyUpdate[]; initialPhotos?: ProgressResponse["initialPhotos"]; onSelect: (photo: string) => void }) {
+  const [angle, setAngle] = useState<"front" | "side" | "back">("front")
+  const labels = { front: "Μπροστά", side: "Πλάι", back: "Πίσω" }
+  const snapshots = [
+    ...initialPhotos.map((photo) => ({ ...photo, submittedAt: photo.submittedAt || "", weight: photo.weight ?? null })),
+    ...updates.flatMap((update) => {
+    const details = update.photoDetails?.length
+      ? update.photoDetails
+      : (update.photos || []).map((url) => ({ url, angle: "other" as const }))
+    const matching = details.filter((photo) => photo.angle === angle)
+    // Older updates did not record an angle. Keep them visible under the
+    // first tab instead of making historic progress photos disappear.
+    const fallback = angle === "front" ? details.filter((photo) => photo.angle === "other") : []
+      return [...matching, ...fallback].map((photo) => ({ ...photo, submittedAt: update.submittedAt, weight: update.weight }))
+    }),
+  ].filter((photo) => photo.angle === angle || (angle === "front" && photo.angle === "other"))
+    .sort((a, b) => new Date(b.submittedAt || 0).getTime() - new Date(a.submittedAt || 0).getTime())
+  const before = snapshots.length > 1 ? snapshots.at(-1) : undefined
+  const current = snapshots[0]
+  const caption = (item: typeof current) => item ? `${formatDate(item.submittedAt)}${item.weight !== null && item.weight !== undefined ? ` · ${item.weight.toLocaleString("el-GR", { maximumFractionDigits: 1 })} kg` : ""}` : "Δεν υπάρχει φωτογραφία"
+  return <Card className="overflow-hidden rounded-[20px] border-border shadow-none"><CardHeader className="flex-row items-center justify-between gap-3 p-5 pb-0"><CardTitle className="text-[18px] font-extrabold">Φωτογραφίες προόδου</CardTitle><div className="flex gap-2">{(["front", "side", "back"] as const).map((item) => <button key={item} type="button" onClick={() => setAngle(item)} className={`h-8 rounded-[8px] px-2.5 text-[12px] font-extrabold transition-colors ${angle === item ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:bg-card hover:text-foreground"}`}>{labels[item]}</button>)}</div></CardHeader><CardContent className="p-5">{current ? <><div className="grid gap-3 sm:grid-cols-2">{[{ item: before, label: "Πριν" }, { item: current, label: "Τώρα" }].map(({ item, label }, index) => <button key={`${label}-${item?.url || index}`} type="button" disabled={!item} onClick={() => item && onSelect(item.url)} className="group relative h-[230px] overflow-hidden rounded-[14px] bg-[#1a1a1a] text-left disabled:cursor-default">{item ? <><img src={resolveMediaUrl(item.url)} alt={`Φωτογραφία προόδου · ${label}`} loading="lazy" className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105" /><span className="absolute bottom-2.5 left-2.5 text-[11px] font-bold text-white drop-shadow">{caption(item)}</span></> : <span className="grid h-full place-items-center text-center text-sm text-muted-foreground">Δεν υπάρχει προηγούμενη φωτογραφία.</span>}</button>)}</div><p className="mt-4 text-[12px] text-muted-foreground">Σύγκρινε την παλαιότερη με την πιο πρόσφατη φωτογραφία για την επιλεγμένη γωνία.</p></> : <div className="grid h-48 place-items-center text-center text-sm text-muted-foreground"><span><Camera className="mx-auto mb-2 h-5 w-5" />Δεν υπάρχουν φωτογραφίες για αυτή τη γωνία ακόμα.</span></div>}</CardContent></Card>
 }
 
 function WorkoutList({ workouts }: { workouts: Workout[] }) {

@@ -597,6 +597,13 @@ function ClientDashboardContent() {
   const [error, setError] = useState("")
   const [showBirthdayCelebration, setShowBirthdayCelebration] = useState(false)
 
+  // The former dashboard tab used a separate legacy questionnaire. Keep one
+  // source of truth: all client update entry points open the JSON-driven
+  // wizard at /update.
+  useEffect(() => {
+    if (activeTab === "update") window.location.assign("/update")
+  }, [activeTab])
+
   const loadDashboard = async () => {
     setLoading(true)
     try {

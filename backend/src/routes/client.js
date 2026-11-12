@@ -7,7 +7,7 @@ import { authorizeRole } from '../middleware/auth.js';
 import { calculateWeeklyScore, ensureWeeklyUpdateSchema, getWeeklyUpdateTiming, getWeekStart } from './weekly-updates.js';
 import { awardWeeklyUpdatePoints } from './points.js';
 import { notifyCoaches, ensureSupplementsSchema } from './clients.js';
-import { registerWeeklyUpdatePhotos } from './media.js';
+import { registerClientIntakePhotos, registerWeeklyUpdatePhotos } from './media.js';
 import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { updateNotificationEmail } from '../lib/email-templates.js';
 import { ensureCycleSchema } from './cycles.js';
@@ -127,7 +127,7 @@ async function ensureProgressGoalSchema(connection) {
 function summarizeUpdate(update) {
   const result = {
     id: update.id, submittedAt: update.submitted_at, weekStart: update.week_start, isRead: Boolean(update.is_read),
-    weight: null, trainingRating: null, nutritionRating: null, generalRating: null, notes: null, photos: [], files: [],
+    weight: null, trainingRating: null, nutritionRating: null, generalRating: null, notes: null, photos: [], photoDetails: [], files: [],
   };
   for (const answer of update.answers || []) {
     if (!answer.answer) continue;
@@ -139,13 +139,41 @@ function summarizeUpdate(update) {
     else if (answer.type === 'rating' && text.includes('\u03b5\u03b2\u03b4\u03bf\u03bc\u03b1\u03b4') && Number.isFinite(number)) result.generalRating = number;
     else if (answer.type === 'textarea' && !result.notes) result.notes = answer.answer;
   }
+  // New weekly updates keep the answers in the versioned FormDefinition JSON.
+  // Read it as well, so the client Progress page is always fed by the same
+  // update that the client and coach see in the new wizard.
+  let answerDocument = update.answer_document;
+  let formDefinition = update.form_definition;
+  try { if (typeof answerDocument === 'string') answerDocument = JSON.parse(answerDocument || '{}'); } catch { answerDocument = {}; }
+  try { if (typeof formDefinition === 'string') formDefinition = JSON.parse(formDefinition || '{}'); } catch { formDefinition = {}; }
+  const versionedQuestions = (formDefinition?.steps || []).flatMap((step) => step.questions || []);
+  for (const question of versionedQuestions) {
+    const value = answerDocument?.[question.id];
+    if (value === undefined || value === null || value === '') continue;
+    const numeric = Number(String(value).replace(',', '.'));
+    if ((question.id === 'weight_kg' || question.standardKey === 'weight_kg') && Number.isFinite(numeric)) result.weight = numeric;
+    else if ((question.id === 'training_score' || /προπονήσ/i.test(question.shortLabel || question.label || '')) && question.type === 'scale' && Number.isFinite(numeric)) result.trainingRating = numeric;
+    else if ((question.id === 'diet_score' || /διατροφ/i.test(question.shortLabel || question.label || '')) && question.type === 'scale' && Number.isFinite(numeric)) result.nutritionRating = numeric;
+    else if (question.type === 'text' && !result.notes) result.notes = String(value);
+  }
   result.files = update.files || [];
-  result.photos = result.files.filter((file) => file.file_type === 'photo').map((file) => file.file_url);
+  result.photoDetails = result.files
+    .filter((file) => file.file_type === 'photo')
+    .map((file) => ({ url: file.file_url, angle: file.angle || 'other' }));
+  result.photos = result.photoDetails.map((photo) => photo.url);
   return result;
 }
 
 async function getUpdates(connection, clientId, limit = 12) {
-  const [updates] = await connection.query('SELECT id, submitted_at, week_start, is_timely, is_read FROM weekly_updates WHERE client_id = ? ORDER BY submitted_at DESC LIMIT ?', [clientId, limit]);
+  const [updates] = await connection.query(
+    `SELECT weekly.id, weekly.submitted_at, weekly.week_start, weekly.is_timely, weekly.is_read,
+            weekly.answers AS answer_document, form.definition AS form_definition
+     FROM weekly_updates weekly
+     LEFT JOIN update_forms form ON form.id = weekly.form_id
+     WHERE weekly.client_id = ? AND weekly.status = 'submitted'
+     ORDER BY weekly.submitted_at DESC LIMIT ?`,
+    [clientId, limit],
+  );
   if (!updates.length) return [];
   const ids = updates.map((update) => update.id);
   const [answers] = await connection.query(`SELECT wa.update_id, wa.answer, q.question, q.type, q.standard_key FROM weekly_update_answers wa JOIN update_questions q ON q.id = wa.question_id WHERE wa.update_id IN (?) ORDER BY q.sort_order`, [ids]);
@@ -595,7 +623,9 @@ router.get('/progress', async (req, res) => {
   try {
     await ensureWeeklyUpdateSchema(connection);
     await ensureProgressGoalSchema(connection);
+    await registerWeeklyUpdatePhotos(connection, req.user.id);
     const updates = await getUpdates(connection, req.user.id, 52);
+    await registerClientIntakePhotos(connection, req.user.id);
     const [[client]] = await connection.query(
       `SELECT c.weight_kg, c.target_weight_kg, c.fitness_goal, u.created_at
        FROM users u
@@ -629,13 +659,27 @@ router.get('/progress', async (req, res) => {
     const weights = startingWeight !== null && Number.isFinite(startingWeight)
       ? [{ submittedAt: client.created_at, weight: startingWeight }, ...updateWeights]
       : updateWeights;
+    const [initialPhotoRows] = await connection.query(
+      `SELECT file_url, angle, created_at
+       FROM client_intake_files
+       WHERE client_id = ? AND file_type = 'photo'
+       ORDER BY created_at ASC, id ASC`,
+      [req.user.id],
+    );
+    const initialPhotos = initialPhotoRows.map((photo) => ({
+      url: photo.file_url,
+      angle: ['front', 'side', 'back'].includes(photo.angle) ? photo.angle : 'other',
+      submittedAt: photo.created_at || client?.created_at || null,
+      weight: startingWeight !== null && Number.isFinite(startingWeight) ? startingWeight : null,
+    }));
 
     res.json({
       startingWeight: startingWeight !== null && Number.isFinite(startingWeight) ? startingWeight : null,
       targetWeight: targetWeight !== null && Number.isFinite(targetWeight) ? targetWeight : null,
       fitnessGoal: client?.fitness_goal || null,
       weights,
-      photos: updates.flatMap((update) => update.photos).slice(0, 24),
+      photos: [...initialPhotos.map((photo) => photo.url), ...updates.flatMap((update) => update.photos)].slice(0, 24),
+      initialPhotos,
       updates,
     });
   }
