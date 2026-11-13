@@ -5,7 +5,32 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "cn"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-const Select = SelectPrimitive.Root
+type SelectOption = { value: string | number; label?: React.ReactNode }
+type SelectRootProps = Omit<React.ComponentProps<typeof SelectPrimitive.Root>, "items" | "value" | "onValueChange"> & {
+  items?: SelectOption[]
+  value?: string | number | null
+  onValueChange?: (value: string, eventDetails: unknown) => void
+}
+
+const SelectLabelContext = React.createContext<React.ReactNode>(undefined)
+
+function Select({
+  items,
+  value,
+  children,
+  ...props
+}: SelectRootProps) {
+  const selectedLabel = React.useMemo(() => {
+    if (!items || value === undefined || value === null || Array.isArray(value)) return undefined
+    return items.find((item) => String(item.value) === String(value))?.label
+  }, [items, value])
+
+  return (
+    <SelectLabelContext.Provider value={selectedLabel}>
+      <SelectPrimitive.Root items={items as never} value={value as never} {...(props as any)}>{children}</SelectPrimitive.Root>
+    </SelectLabelContext.Provider>
+  )
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
@@ -18,12 +43,15 @@ function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
 }
 
 function SelectValue({ className, ...props }: SelectPrimitive.Value.Props) {
+  const selectedLabel = React.useContext(SelectLabelContext)
   return (
     <SelectPrimitive.Value
       data-slot="select-value"
       className={cn("flex flex-1 text-left", className)}
       {...props}
-    />
+    >
+      {selectedLabel ?? props.children}
+    </SelectPrimitive.Value>
   )
 }
 

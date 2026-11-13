@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Clock, Gift, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, Plus, X, FileText, Target, type LucideIcon } from "lucide-react";
+import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Clock, Gift, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, Plus, X, FileText, Target, MoreHorizontal, Coins, CreditCard, Activity, Lock, type LucideIcon } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -44,9 +44,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { AreaChart, SparkLineChart, ProgressBar } from "@tremor/react";
+import { AreaChart, ProgressBar } from "@tremor/react";
 import {
   Table,
   TableHeader,
@@ -320,15 +321,10 @@ function isValidHttpUrl(value: string): boolean {
 
 const tabs = [
   { id: "overview", label: "Επισκόπηση" },
+  { id: "plans", label: "Πλάνα" },
+  { id: "payments", label: "Πληρωμές & Πόντοι" },
   { id: "progress", label: "Πρόοδος" },
-  { id: "training", label: "Πρόγραμμα Προπόνησης" },
-  { id: "nutrition", label: "Πρόγραμμα Διατροφής" },
-  { id: "cycle", label: "Cycle Protocol" },
-  { id: "supplements", label: "Συμπληρώματα" },
-  { id: "payments", label: "Πληρωμές" },
-  { id: "points", label: "Πόντοι" },
   { id: "messages", label: "Μηνύματα" },
-  { id: "activity", label: "Ιστορικό" },
 ];
 
 function formatDate(value?: string | null): string {
@@ -452,6 +448,9 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState("overview");
+  const [activePlan, setActivePlan] = useState<"all" | "training" | "nutrition" | "supplements" | "cycle">("all");
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [paymentDialogRequest, setPaymentDialogRequest] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [exercises, setExercises] = useState<LibraryExercise[]>([]);
@@ -499,8 +498,36 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
   }, [clientId]);
 
   useEffect(() => {
-    if (searchParams.get("tab") === "messages") setActiveTab("messages");
+    const requestedTab = searchParams.get("tab");
+    const requestedPlan = searchParams.get("plan");
+    const legacyPlan = requestedTab === "training" || requestedTab === "nutrition" || requestedTab === "supplements" || requestedTab === "cycle" ? requestedTab : null;
+    if (legacyPlan) {
+      setActiveTab("plans");
+      setActivePlan(legacyPlan);
+      return;
+    }
+    if (requestedTab && tabs.some((tab) => tab.id === requestedTab)) setActiveTab(requestedTab);
+    if (requestedPlan === "training" || requestedPlan === "nutrition" || requestedPlan === "supplements" || requestedPlan === "cycle") setActivePlan(requestedPlan);
+    else if (requestedTab === "plans") setActivePlan("all");
   }, [searchParams]);
+
+  const selectTab = (nextTab: string) => {
+    setActiveTab(nextTab);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", nextTab);
+    if (nextTab !== "plans") params.delete("plan");
+    startTransition(() => router.replace(`/clients/${clientId}?${params.toString()}`));
+  };
+
+  const selectPlan = (nextPlan: "all" | "training" | "nutrition" | "supplements" | "cycle") => {
+    setActiveTab("plans");
+    setActivePlan(nextPlan);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "plans");
+    if (nextPlan === "all") params.delete("plan");
+    else params.set("plan", nextPlan);
+    startTransition(() => router.replace(`/clients/${clientId}?${params.toString()}`));
+  };
 
   useEffect(() => {
     const notificationId = Number(searchParams.get("birthdayNotification"));
@@ -549,15 +576,17 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
   };
 
   useEffect(() => {
-    if (activeTab === "training") loadTrainingResources();
-    if (activeTab === "nutrition" || activeTab === "cycle") loadNutritionResources();
+    if (activeTab === "plans" && activePlan === "training") loadTrainingResources();
+    if (activeTab === "plans" && (activePlan === "nutrition" || activePlan === "cycle")) loadNutritionResources();
     // Loading is intentionally tab-driven to keep the client profile interactive.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, clientId, trainingResourcesLoaded, nutritionResourcesLoaded]);
+  }, [activeTab, activePlan, clientId, trainingResourcesLoaded, nutritionResourcesLoaded]);
 
   const onboarding = client?.onboarding || {};
   const displayName = client?.full_name || client?.email || "Πελάτης";
   const currentStatus = useMemo(() => statusMeta(client), [client]);
+  const pendingPaymentsCount = client?.payments?.filter((payment) => ["pending", "pending_payment"].includes(payment.status || "")).length || 0;
+  const activePlansCount = Number(trainingPlan.days.length > 0) + Number(nutritionPlan.meals.length > 0);
 
   const createNewTrainingPlan = async () => {
     const blank = defaultTrainingPlan();
@@ -755,6 +784,8 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
             currentStatus={currentStatus}
             onboarding={onboarding}
             onSetActive={setClientActive}
+            onPayment={() => { selectTab("payments"); setPaymentDialogRequest((current) => current + 1); }}
+            onPoints={() => selectTab("payments")}
             togglingActive={togglingActive}
             canManageStatus={user?.role === "coach" || user?.role === "admin"}
             canDelete={user?.role === "admin"}
@@ -772,26 +803,35 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
             </Alert>
           )}
 
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <Card className="overflow-hidden rounded-xl border-border bg-card shadow-sm">
-              <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-none bg-muted/70 p-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <Tabs value={activeTab} onValueChange={selectTab}>
+            <Card className="-mt-6 overflow-hidden rounded-b-[20px] rounded-t-none border-0 bg-card shadow-none">
+              <div className="flex min-w-max items-center gap-1 overflow-x-auto bg-card px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <TabsList className="h-auto w-auto justify-start gap-1 rounded-none border-0 bg-transparent p-0">
                 {tabs.map((tab) => (
                   <TabsTrigger
                     key={tab.id}
                     value={tab.id}
-                    className="h-10 shrink-0 rounded-md px-4 text-sm font-semibold text-muted-foreground transition-colors data-active:bg-primary data-active:text-primary-foreground data-active:shadow-sm hover:bg-primary/10 hover:text-primary sm:px-5"
+                    className="h-10 shrink-0 rounded-full px-4 text-sm font-extrabold text-[#555] transition-colors data-active:bg-foreground data-active:text-background hover:bg-muted hover:text-foreground"
                   >
                     {tab.label}
-                    {tab.id === "messages" && unreadMessages > 0 && <Badge className="ml-2 rounded-full px-1.5 text-[10px]">{unreadMessages}</Badge>}
+                    {tab.id === "plans" && activePlansCount > 0 && <Badge className="ml-1 h-[18px] min-w-[18px] rounded-full bg-muted px-1.5 text-[10px] text-[#555]">{activePlansCount}</Badge>}
+                    {tab.id === "payments" && pendingPaymentsCount > 0 && <span className="ml-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-accent px-1.5 text-[10px] font-extrabold text-accent-foreground">{pendingPaymentsCount}</span>}
+                    {tab.id === "messages" && unreadMessages > 0 && <span className="ml-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-accent px-1.5 text-[10px] font-extrabold text-accent-foreground">{unreadMessages}</span>}
                   </TabsTrigger>
                 ))}
               </TabsList>
+              <Button type="button" variant="ghost" onClick={() => setActivityOpen(true)} className="ml-auto h-[38px] shrink-0 rounded-full px-3.5 text-[13px] font-extrabold hover:bg-muted">
+                <Activity className="mr-1.5 h-4 w-4" />Δραστηριότητα
+              </Button>
+              </div>
             </Card>
 
             {activeTab === "overview" && <TabsContent value="overview" className="mt-6">
               <OverviewTab
                 client={client}
                 clientId={clientId}
+                trainingPlan={trainingPlan}
+                nutritionPlan={nutritionPlan}
                 onboarding={onboarding}
                 onUpdated={loadClientDetail}
                 currentStatus={currentStatus}
@@ -801,6 +841,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 onResetPassword={resetClientPassword}
                 resettingPassword={resettingPassword}
                 canResetPassword={user?.role === "admin"}
+                onOpenActivity={() => setActivityOpen(true)}
               />
             </TabsContent>}
 
@@ -808,7 +849,25 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
               <ProgressTab client={client} />
             </TabsContent>}
 
-            {activeTab === "training" && <TabsContent value="training" className="mt-6 space-y-4">
+            {activeTab === "plans" && <TabsContent value="plans" className="mt-6 space-y-5">
+              <div className="flex flex-wrap items-center gap-2 rounded-[16px] border border-border bg-card p-2">
+                <Button type="button" variant={activePlan === "all" ? "default" : "ghost"} onClick={() => selectPlan("all")} className={cn("h-10 rounded-full px-4 text-xs font-extrabold", activePlan === "all" && "bg-foreground text-background hover:bg-foreground/90")}>Όλα τα πλάνα</Button>
+                {([
+                  ["training", "Προπόνηση"],
+                  ["nutrition", "Διατροφή"],
+                  ["supplements", "Συμπληρώματα"],
+                  ["cycle", "Cycle Protocol"],
+                ] as const).map(([value, label]) => <Button key={value} type="button" variant={activePlan === value ? "default" : "ghost"} onClick={() => selectPlan(value)} className={cn("h-10 rounded-full px-4 text-xs font-extrabold", activePlan === value && "bg-foreground text-background hover:bg-foreground/90")}>{label}</Button>)}
+              </div>
+
+              {activePlan === "all" && <div className="grid gap-4 md:grid-cols-2">
+                <PlanSummaryCard title="Πρόγραμμα προπόνησης" subtitle={trainingPlan.days.length ? `${trainingPlan.days.length} ημέρες · ${trainingPlan.days.reduce((sum, day) => sum + day.exercises.length, 0)} ασκήσεις` : "Δεν έχει οριστεί πρόγραμμα"} status={trainingPlan.templateTitle ? `Πρότυπο: ${trainingPlan.templateTitle}` : "Προσαρμοσμένο"} onEdit={() => selectPlan("training")} />
+                <PlanSummaryCard title="Διατροφή" subtitle={nutritionPlan.meals.length ? `${nutritionPlan.dailyCalories || "—"} kcal · ${nutritionPlan.meals.length} γεύματα` : "Δεν έχει οριστεί πλάνο διατροφής"} status={nutritionPlan.templateTitle ? `Πρότυπο: ${nutritionPlan.templateTitle}` : "Προσαρμοσμένο"} onEdit={() => selectPlan("nutrition")} />
+                <PlanSummaryCard title="Συμπληρώματα" subtitle="Προϊόντα, δοσολογία και σύνδεσμοι eshop" status="Πλάνο πελάτη" onEdit={() => selectPlan("supplements")} />
+                <PlanSummaryCard title="Cycle Protocol" subtitle="Σκευάσματα, συχνότητα και εβδομάδες κύκλου" status="Προαιρετικό" onEdit={() => selectPlan("cycle")} />
+              </div>}
+
+              {activePlan === "training" && <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <Badge variant="outline" className="h-auto gap-2 px-3 py-1.5 text-sm font-bold">
                   <Sparkles className="h-3.5 w-3.5" />
@@ -831,9 +890,9 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 saving={savingTraining}
                 history={trainingHistory}
               />
-            </TabsContent>}
+              </div>}
 
-            {activeTab === "nutrition" && <TabsContent value="nutrition" className="mt-6 space-y-4">
+              {activePlan === "nutrition" && <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <Badge variant="outline" className="h-auto gap-2 px-3 py-1.5 text-sm font-bold">
                   <Sparkles className="h-3.5 w-3.5" />
@@ -856,17 +915,22 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 saving={savingNutrition}
                 history={nutritionHistory}
               />
-            </TabsContent>}
+              </div>}
 
-            {activeTab === "cycle" && <TabsContent value="cycle" className="mt-6">
+              {activePlan === "cycle" && <div>
               {nutritionResourcesLoading ? <Card className="p-6"><p className="text-sm text-muted-foreground">Φόρτωση προγράμματος διατροφής...</p></Card> : nutritionPlan.id ? <CycleProtocolPanel planId={Number(nutritionPlan.id)} clientId={clientId} /> : <Card className="p-6"><p className="text-sm text-muted-foreground">Δημιούργησε πρώτα ένα πρόγραμμα διατροφής για να ορίσεις Cycle Protocol.</p></Card>}
-            </TabsContent>}
+              </div>}
 
-            {activeTab === "supplements" && <TabsContent value="supplements" className="mt-6">
+              {activePlan === "supplements" && <div>
               <SupplementsPanel clientId={clientId} />
+              </div>}
             </TabsContent>}
 
             {activeTab === "payments" && <TabsContent value="payments" className="mt-6">
+              <div className="mb-5 flex flex-wrap gap-2 rounded-[16px] border border-border bg-card p-2">
+                <span className="flex h-10 items-center rounded-full bg-foreground px-4 text-xs font-extrabold text-background"><CreditCard className="mr-1.5 h-4 w-4" />Πληρωμές</span>
+                <span className="flex h-10 items-center rounded-full px-4 text-xs font-extrabold"><Coins className="mr-1.5 h-4 w-4" />Πόντοι</span>
+              </div>
               <PaymentsTab
                 client={client}
                 clientId={clientId}
@@ -875,21 +939,22 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 approvingPayment={approvingPayment}
                 rejectingPaymentId={rejectingPaymentId}
                 onUpdated={loadClientDetail}
+                openRequest={paymentDialogRequest}
               />
-            </TabsContent>}
-
-            {activeTab === "points" && <TabsContent value="points" className="mt-6">
-              <PointsTab clientId={clientId} />
+              <div className="mt-6"><PointsTab clientId={clientId} /></div>
             </TabsContent>}
 
             {activeTab === "messages" && <TabsContent value="messages" className="mt-6">
               <MessagesTab clientId={clientId} onRead={() => setUnreadMessages(0)} />
             </TabsContent>}
 
-            {activeTab === "activity" && <TabsContent value="activity" className="mt-6">
-              <ActivityLogTab clientId={clientId} active={activeTab === "activity"} />
-            </TabsContent>}
           </Tabs>
+          <Sheet open={activityOpen} onOpenChange={setActivityOpen}>
+            <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
+              <SheetHeader><SheetTitle>Δραστηριότητα</SheetTitle></SheetHeader>
+              <ActivityLogTab clientId={clientId} active={activityOpen} />
+            </SheetContent>
+          </Sheet>
         </div>
       )}
       </div>
@@ -901,12 +966,320 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
 // Header + overview
 // ---------------------------------------------------------------------------
 
+function PlanSummaryCard({ title, subtitle, status, onEdit }: { title: string; subtitle: string; status: string; onEdit: () => void }) {
+  return <Card className="rounded-[20px] border-border bg-card shadow-none">
+    <CardContent className="p-5">
+      <div className="flex items-start justify-between gap-3"><div><h3 className="text-[16px] font-extrabold">{title}</h3><p className="mt-1 text-xs text-muted-foreground">{status}</p></div><Badge variant="outline" className="rounded-full text-[10px] font-extrabold">ΠΛΑΝΟ</Badge></div>
+      <p className="mt-5 min-h-10 text-sm font-semibold leading-5 text-foreground">{subtitle}</p>
+      <div className="mt-5 flex items-center justify-between border-t border-border pt-4"><span className="text-xs font-semibold text-muted-foreground">Πάτα για αλλαγές</span><Button type="button" variant="outline" onClick={onEdit} className="h-10 rounded-full px-4 text-xs font-extrabold">Επεξεργασία</Button></div>
+    </CardContent>
+  </Card>;
+}
+
+function OverviewDashboard({
+  client,
+  clientId,
+  trainingPlan,
+  nutritionPlan,
+  onApprovePayment,
+  approvingPayment,
+  onOpenActivity,
+}: {
+  client: ClientRecord;
+  clientId: string;
+  trainingPlan: TrainingPlanState;
+  nutritionPlan: NutritionPlanState;
+  onApprovePayment: (paymentId: number | string) => void;
+  approvingPayment: boolean;
+  onOpenActivity: () => void;
+}) {
+  const pendingPayment = (client.payments || []).find((payment) => ["pending", "pending_payment"].includes(String(payment.status || "").toLowerCase()));
+  const latestUpdate = client.weeklyUpdates?.[0];
+  const lastUpdateDays = latestUpdate?.submitted_at ? Math.floor((Date.now() - new Date(latestUpdate.submitted_at).getTime()) / 86400000) : null;
+  const dueAt = client.updateSchedule?.next_due_date ? new Date(`${String(client.updateSchedule.next_due_date).slice(0, 10)}T23:59:59`).getTime() : NaN;
+  const reminderKey = client.updateSchedule?.next_due_date ? String(client.updateSchedule.next_due_date).slice(0, 10) : `update-${latestUpdate?.submitted_at || "first"}`;
+  const overdueDays = Number.isFinite(dueAt) ? Math.floor((Date.now() - dueAt) / 86400000) : lastUpdateDays;
+  const hasLateUpdate = Number.isFinite(dueAt) ? overdueDays !== null && overdueDays >= 1 : lastUpdateDays === null || lastUpdateDays > 7;
+  const [reminderSent, setReminderSent] = useState(false);
+  const [sendingReminder, setSendingReminder] = useState(false);
+  const subscription = client.subscription;
+  const latestPayment = client.payments?.[0];
+  const upcomingSubscriptions = client.upcomingSubscriptions || (client.upcomingSubscription ? [client.upcomingSubscription] : []);
+  const subscriptionStatus = subscriptionStatusMeta(subscription?.status, subscription?.end_date);
+  const start = subscription?.start_date ? new Date(subscription.start_date).getTime() : NaN;
+  const end = subscription?.end_date ? new Date(subscription.end_date).getTime() : NaN;
+  const subscriptionProgress = Number.isFinite(start) && Number.isFinite(end) && end > start
+    ? Math.min(100, Math.max(0, ((Date.now() - start) / (end - start)) * 100))
+    : 0;
+  const weightHistory = [...(client.progressUpdates || [])].filter((update) => Number.isFinite(Number(update.weight_kg))).reverse();
+  const currentWeight = Number(client.weight_kg ?? weightHistory.at(-1)?.weight_kg);
+  const startingWeight = Number(weightHistory[0]?.weight_kg ?? client.weight_kg);
+  const weightChange = Number.isFinite(currentWeight) && Number.isFinite(startingWeight) ? currentWeight - startingWeight : null;
+  const latestProgress = client.progressUpdates?.[0];
+  const latestPhotos = latestProgress?.photos?.length || 0;
+  const [workouts, setWorkouts] = useState<ProgressWorkout[]>([]);
+  const [workoutsLoaded, setWorkoutsLoaded] = useState(false);
+  const [activities, setActivities] = useState<ClientActivityLogEntry[]>([]);
+  const [privateNotes, setPrivateNotes] = useState(client.coach_notes || "");
+  const [notesSaving, setNotesSaving] = useState(false);
+  const privateNotesReady = useRef(false);
+  const trainingExerciseCount = trainingPlan.days.reduce((total, day) => total + day.exercises.length, 0);
+  const planRows = [
+    {
+      label: "Πρόγραμμα προπόνησης",
+      key: "training",
+      text: trainingPlan.days.length ? `${trainingPlan.days.length} ημέρες · ${trainingExerciseCount} ασκήσεις` : "Δεν έχει οριστεί ακόμα",
+      icon: Activity,
+      iconClassName: "bg-muted text-foreground",
+    },
+    {
+      label: "Διατροφή",
+      key: "nutrition",
+      text: nutritionPlan.meals.length ? `${nutritionPlan.dailyCalories || "—"} kcal · ${nutritionPlan.meals.length} γεύματα` : "Δεν έχει οριστεί ακόμα",
+      icon: Target,
+      iconClassName: "bg-[#fff4dc] text-[#8a5a00]",
+    },
+    {
+      label: "Συμπληρώματα",
+      key: "supplements",
+      text: "Προϊόντα και οδηγίες",
+      icon: Sparkles,
+      iconClassName: "bg-muted text-foreground",
+    },
+    {
+      label: "Cycle protocol",
+      key: "cycle",
+      text: "Προαιρετικό protocol",
+      icon: Activity,
+      iconClassName: "bg-muted text-foreground",
+    },
+  ] as const;
+
+  useEffect(() => {
+    let active = true;
+    api.get<Array<{ body?: string }>>(`/clients/${clientId}/messages`)
+      .then((messages) => { if (active) setReminderSent(messages.some((message) => message.body?.startsWith(`Υπενθύμιση update (${reminderKey}):`))); })
+      .catch(() => { if (active) setReminderSent(false); });
+    return () => { active = false; };
+  }, [clientId]);
+
+  useEffect(() => {
+    setPrivateNotes(client.coach_notes || "");
+    privateNotesReady.current = false;
+  }, [client.id, client.coach_notes]);
+
+  useEffect(() => {
+    if (!privateNotesReady.current) {
+      privateNotesReady.current = true;
+      return;
+    }
+
+    setNotesSaving(true);
+    const timeout = window.setTimeout(() => {
+      api.put(`/clients/${clientId}/details`, { coachNotes: privateNotes })
+        .catch(() => undefined)
+        .finally(() => setNotesSaving(false));
+    }, 700);
+
+    return () => window.clearTimeout(timeout);
+  }, [clientId, privateNotes]);
+
+  useEffect(() => {
+    let active = true;
+    api.get<ProgressWorkout[]>(`/clients/${clientId}/workouts`)
+      .then((rows) => { if (active) setWorkouts(rows); })
+      .catch(() => { if (active) setWorkouts([]); })
+      .finally(() => { if (active) setWorkoutsLoaded(true); });
+    return () => { active = false; };
+  }, [clientId]);
+
+  useEffect(() => {
+    let active = true;
+    api.get<ClientActivityLogEntry[]>(`/clients/${clientId}/log?limit=4&offset=0`)
+      .then((rows) => { if (active) setActivities(rows.slice(0, 4)); })
+      .catch(() => { if (active) setActivities([]); });
+    return () => { active = false; };
+  }, [clientId]);
+
+  const sendUpdateReminder = async () => {
+    const days = Math.max(1, overdueDays || 1);
+    setSendingReminder(true);
+    try {
+      await api.post(`/clients/${clientId}/messages`, { message: `Υπενθύμιση update (${reminderKey}): Δεν έχεις κάνει το εβδομαδιαίο update σου εδώ και ${days} ${days === 1 ? "ημέρα" : "ημέρες"}. Συμπλήρωσέ το μόλις μπορείς.` });
+      setReminderSent(true);
+    } finally {
+      setSendingReminder(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="space-y-5">
+        <Card className="overflow-hidden rounded-[20px] border-border bg-card shadow-none">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-2.5"><span className="grid h-8 w-8 place-items-center rounded-[10px] bg-foreground text-accent"><AlertTriangle className="h-[15px] w-[15px]" /></span><span className="min-w-0 flex-1 text-[15px] font-extrabold">Χρειάζεται ενέργεια</span><span className="text-xs text-muted-foreground">{Number(Boolean(pendingPayment)) + Number(hasLateUpdate)} εκκρεμότητες</span></div>
+            <div className="mt-2 -mb-2">
+              {pendingPayment && <div className="flex flex-wrap items-center gap-3 border-t border-border py-3.5"><span className="grid h-[38px] w-[38px] place-items-center rounded-[11px] bg-[#fff4dc] text-[#8a5a00]"><CreditCard className="h-[17px] w-[17px]" /></span><span className="min-w-0 flex-1"><b className="block text-sm">{paymentMethodLabel(pendingPayment.method)} {money(pendingPayment.amount, pendingPayment.currency || "EUR")}</b><small className="block text-xs text-muted-foreground">Περιμένει επιβεβαίωση από {formatDate(pendingPayment.created_at)}</small></span>{pendingPayment.proof_url && <Button asChild type="button" variant="ghost" className="h-[34px] rounded-full px-3 text-xs font-extrabold"><a href={resolveMediaUrl(pendingPayment.proof_url)} target="_blank" rel="noreferrer">Αποδεικτικό</a></Button>}<Button type="button" variant="lime" className="h-[34px] rounded-full px-3 text-xs font-extrabold" disabled={approvingPayment} onClick={() => onApprovePayment(pendingPayment.id)}>{approvingPayment ? "Έγκριση..." : "Παρελήφθη"}</Button></div>}
+              {hasLateUpdate && <div className="flex flex-wrap items-center gap-3 border-t border-border py-3.5"><span className="grid h-[38px] w-[38px] place-items-center rounded-[11px] bg-[#fdecec] text-[#b42318]"><Clock className="h-[17px] w-[17px]" /></span><span className="min-w-0 flex-1"><b className="block text-sm">Το weekly update {overdueDays === null ? "δεν έχει σταλεί" : `αργεί ${Math.max(1, overdueDays)} ημέρες`}</b><small className="block text-xs text-muted-foreground">Ημέρα update: {client.updateSchedule?.day_of_week !== undefined ? updateDayOptions.find((day) => day.value === Number(client.updateSchedule?.day_of_week))?.label : "Δεν ορίστηκε"}</small></span>{reminderSent ? <span className="text-xs font-extrabold text-emerald-700">Υπενθύμιση στάλθηκε</span> : <Button type="button" variant="outline" disabled={sendingReminder} onClick={() => void sendUpdateReminder()} className="h-[34px] rounded-full px-3 text-xs font-extrabold">{sendingReminder ? "Αποστολή..." : "Υπενθύμιση"}</Button>}<Button nativeButton={false} render={<Link href={`/clients/${clientId}?tab=messages`} />} variant="outline" className="h-[34px] rounded-full px-3 text-xs font-extrabold">Μήνυμα</Button></div>}
+              {!pendingPayment && !hasLateUpdate && <p className="border-t border-border py-3 text-sm text-muted-foreground">Δεν υπάρχουν εκκρεμότητες για αυτόν τον πελάτη.</p>}
+            </div>
+          </CardContent>
+        </Card>
+
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Card className="rounded-[20px] border-border bg-card shadow-none">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-2.5"><span className="grid h-8 w-8 place-items-center rounded-[10px] bg-foreground text-accent"><Target className="h-[15px] w-[15px]" /></span><span className="min-w-0 flex-1"><b className="block text-[15px]">Βάρος</b><small className="block text-xs text-muted-foreground">Στόχος: {client.fitness_goal || "Δεν ορίστηκε"}</small></span><Link href={`/clients/${clientId}?tab=progress`} className="text-xs font-extrabold">Πρόοδος <ChevronRight className="inline h-3.5 w-3.5" /></Link></div>
+              <div className="mt-5 flex flex-wrap gap-x-6 gap-y-3"><WeightMetric label="ΑΡΧΗ" value={Number.isFinite(startingWeight) ? `${startingWeight} kg` : "—"} /><WeightMetric label="ΤΩΡΑ" value={Number.isFinite(currentWeight) ? `${currentWeight} kg` : "—"} /><WeightMetric label="ΑΛΛΑΓΗ" value={weightChange === null ? "—" : `${weightChange > 0 ? "+" : ""}${weightChange.toFixed(1)} kg`} accent={weightChange !== null && weightChange < 0} /><WeightMetric label="ΣΤΟΧΟΣ" value={client.target_weight_kg ? `${client.target_weight_kg} kg` : "—"} muted={!client.target_weight_kg} /></div>
+              <WeightSparkline values={weightHistory.map((update) => Number(update.weight_kg)).filter(Number.isFinite)} />
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-[20px] border-border bg-card shadow-none">
+            <CardContent className="p-5">
+              <div className="flex items-center gap-2.5"><span className="grid h-8 w-8 place-items-center rounded-[10px] bg-foreground text-accent"><Clock className="h-[15px] w-[15px]" /></span><span className="min-w-0 flex-1"><b className="block text-[15px]">Τελευταίο update</b><small className="block text-xs text-muted-foreground">{latestUpdate?.submitted_at ? formatDateTime(latestUpdate.submitted_at) : "Δεν έχει σταλεί ακόμα"}</small></span><Link href={`/clients/${clientId}?tab=progress`} className="text-xs font-extrabold">Όλα <ChevronRight className="inline h-3.5 w-3.5" /></Link></div>
+              <div className="mt-4 grid grid-cols-2 gap-2.5"><UpdateMetric label="Βάρος" value={latestUpdate?.weight_kg ? `${latestUpdate.weight_kg} kg` : "—"} /><UpdateMetric label="Φωτογραφίες" value={latestPhotos ? `${latestPhotos}` : "καμία"} muted={!latestPhotos} /><UpdateMetric label="Προπόνηση" value={latestUpdate?.training_score ? `${latestUpdate.training_score}/5` : "—"} /><UpdateMetric label="Διατροφή" value={latestUpdate?.nutrition_score ? `${latestUpdate.nutrition_score}/5` : "—"} /></div>
+              <div className="mt-3 rounded-[14px] border border-border px-3.5 py-3 text-[13px]"><b className="block text-[11px] tracking-[.7px] text-muted-foreground">ΣΗΜΕΙΩΣΗ ΠΕΛΑΤΗ</b><span className="mt-1 block line-clamp-2">{latestUpdate?.notes || "Δεν υπάρχει σημείωση."}</span></div>
+              <div className="mt-3 flex gap-2"><Button nativeButton={false} render={<Link href={`/coach/updates?id=${latestUpdate?.id || ""}`} />} disabled={!latestUpdate?.id} className="h-[34px] rounded-full bg-foreground px-3.5 text-xs font-extrabold text-background hover:bg-foreground/90">Άνοιγμα</Button><Button nativeButton={false} render={<Link href={`/clients/${clientId}?tab=messages`} />} variant="outline" className="h-[34px] rounded-full px-3.5 text-xs font-extrabold">Απάντηση</Button></div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-[20px] border-border bg-card shadow-none lg:col-span-2">
+            <CardContent className="p-5">
+              <WorkoutOverview workouts={workouts} loaded={workoutsLoaded} clientId={clientId} />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <aside className="space-y-5 xl:sticky xl:top-5 xl:self-start">
+        <Card className="min-w-0 rounded-[20px] border-border bg-card shadow-none">
+          <CardContent className="flex flex-col gap-[14px] p-5">
+            <div className="flex items-center gap-2.5">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-foreground text-accent"><CalendarDays className="h-[15px] w-[15px]" /></span>
+              <span className="min-w-0 flex-1 text-[15px] font-extrabold">Συνδρομή</span>
+              <Badge className={cn("h-6 shrink-0 rounded-full px-2.5 text-[11px] font-extrabold", subscription?.status ? subscriptionStatus.className : "bg-muted text-muted-foreground")}>{subscription?.status ? subscriptionStatus.label : "Χωρίς πλάνο"}</Badge>
+            </div>
+
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="min-w-0 truncate text-[20px] font-extrabold">{subscription?.plan_name || "Δεν έχει οριστεί πλάνο"}</span>
+              {subscription?.price !== undefined && subscription?.price !== null && <span className="shrink-0 text-[18px] font-extrabold italic">{money(subscription.price, subscription.currency || "EUR")}</span>}
+            </div>
+
+            {subscription?.end_date ? <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between gap-3 text-[12px]"><b>{daysRemaining(subscription.end_date)} απομένουν</b><span className="whitespace-nowrap text-muted-foreground">{shortDate(subscription.start_date)} → {shortDate(subscription.end_date)}</span></div>
+              <div className="h-2 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full bg-accent" style={{ width: `${subscriptionProgress}%` }} /></div>
+            </div> : <p className="text-sm text-muted-foreground">Δεν υπάρχει ενεργή συνδρομή.</p>}
+
+            <div className="space-y-2 border-t border-border pt-2.5 text-[13px]">
+              <p className="flex justify-between gap-3"><span className="text-muted-foreground">Τρόπος πληρωμής</span><b className="text-right">{paymentMethodLabel(latestPayment?.method)}</b></p>
+            </div>
+
+            {upcomingSubscriptions.length > 0 && <p className="flex justify-between gap-3 text-[13px]"><span className="text-muted-foreground">Επόμενες (πληρωμένες)</span><b className="max-w-[58%] truncate text-right">{upcomingSubscriptions.length} · {upcomingSubscriptions[0]?.plan_name || "Πλάνο"}</b></p>}
+
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-[20px] border-border bg-card shadow-none">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-2.5">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-foreground text-accent"><Pencil className="h-[15px] w-[15px]" /></span>
+              <span className="min-w-0 flex-1"><b className="block text-[15px]">Πλάνα</b><small className="block text-xs text-muted-foreground">Πάτα για επεξεργασία</small></span>
+              <Link href={`/clients/${clientId}?tab=plans`} className="shrink-0 text-xs font-extrabold">Όλα <ChevronRight className="inline h-3.5 w-3.5" /></Link>
+            </div>
+            <div className="mt-3">
+              {planRows.map((plan) => {
+                const Icon = plan.icon;
+                return <Link key={plan.key} href={`/clients/${clientId}?tab=plans&plan=${plan.key}`} className="flex items-center gap-3 border-t border-border py-3 transition-colors hover:bg-muted/30">
+                  <span className={cn("grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[10px]", plan.iconClassName)}><Icon className="h-4 w-4" /></span>
+                  <span className="min-w-0 flex-1"><b className="block text-[13px] leading-5">{plan.label}</b><small className="block truncate text-[11px] text-muted-foreground">{plan.text}</small></span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </Link>;
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="min-w-0 rounded-[20px] border-border bg-card shadow-none">
+          <CardContent className="flex flex-col gap-[14px] p-5">
+            <div className="flex items-center gap-2.5">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-foreground text-accent"><Lock className="h-[15px] w-[15px]" /></span>
+              <span className="min-w-0 flex-1"><b className="block text-[15px]">Ιδιωτικές σημειώσεις</b><small className="block text-xs text-muted-foreground">Ορατές μόνο σε εσένα</small></span>
+            </div>
+            <Textarea
+              value={privateNotes}
+              onChange={(event) => setPrivateNotes(event.target.value)}
+              placeholder="Γράψε μια σημείωση… (αποθηκεύεται αυτόματα)"
+              className="min-h-[74px] resize-y rounded-[14px] border-border px-3.5 py-3 text-[13px] text-foreground placeholder:text-[#a8a8a4]"
+              aria-label="Ιδιωτικές σημειώσεις για τον πελάτη"
+            />
+            {notesSaving && <small className="-mt-2 text-[11px] text-muted-foreground">Αποθήκευση…</small>}
+          </CardContent>
+        </Card>
+
+        <Card className="min-w-0 rounded-[20px] border-border bg-card shadow-none">
+          <CardContent className="flex flex-col gap-[14px] p-5">
+            <div className="flex items-center gap-2.5">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-foreground text-accent"><Activity className="h-[15px] w-[15px]" /></span>
+              <b className="min-w-0 flex-1 text-[15px]">Πρόσφατη δραστηριότητα</b>
+              <Button type="button" variant="ghost" onClick={onOpenActivity} className="h-auto shrink-0 gap-0.5 rounded-none px-0 text-xs font-extrabold hover:bg-transparent">Όλα <ChevronRight className="h-[13px] w-[13px] stroke-[2.4]" /></Button>
+            </div>
+            <div className="-mt-1.5 flex flex-col">
+              {activities.map((entry) => <ActivityPreviewRow key={entry.id} color={activityDotClass(entry)} title={activityLabel(entry)} meta={`${entry.performedByName || "Πελάτης"} · ${formatDate(entry.createdAt)}`} />)}
+              {!activities.length && <p className="py-2 text-sm text-muted-foreground">Δεν υπάρχει πρόσφατη δραστηριότητα.</p>}
+            </div>
+          </CardContent>
+        </Card>
+      </aside>
+    </div>
+  );
+}
+
+function ActivityPreviewRow({ color, title, meta }: { color: string; title: string; meta: string }) {
+  return <div className="flex gap-2.5 py-2"><span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", color)} /><span className="min-w-0"><b className="block text-[13px] leading-5">{title}</b><small className="block text-[11px] text-muted-foreground">{meta}</small></span></div>;
+}
+
+function WeightMetric({ label, value, accent = false, muted = false }: { label: string; value: string; accent?: boolean; muted?: boolean }) {
+  return <span><small className="block text-[11px] font-bold text-muted-foreground">{label}</small><b className={cn("mt-0.5 block text-[18px]", accent && "text-emerald-700", muted && "text-muted-foreground")}>{value}</b></span>;
+}
+
+function UpdateMetric({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
+  return <span className="rounded-[14px] bg-muted p-3"><small className="block text-[11px] font-bold text-muted-foreground">{label}</small><b className={cn("mt-1 block text-[16px]", muted && "text-muted-foreground")}>{value}</b></span>;
+}
+
+function WeightSparkline({ values }: { values: number[] }) {
+  if (values.length < 2) return <div className="mt-5 grid h-[120px] place-items-center border-t border-border text-xs text-muted-foreground">Θα εμφανιστεί γράφημα μόλις υπάρχουν τουλάχιστον 2 μετρήσεις.</div>;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(1, max - min);
+  const points = values.map((value, index) => `${18 + (index * 284) / (values.length - 1)},${112 - ((value - min) / range) * 82}`).join(" ");
+  return <svg viewBox="0 0 320 138" className="mt-4 h-[138px] w-full overflow-visible"><line x1="18" x2="302" y1="112" y2="112" stroke="#f0f0ee" /><line x1="18" x2="302" y1="30" y2="30" stroke="#f0f0ee" /><path d={`M18,120 L${points.replace(/ /g, " L")} L302,120 Z`} fill="#b0f90c" opacity=".18" /><polyline points={points} fill="none" stroke="#0b0b0b" strokeWidth="2.2" strokeLinejoin="round" />{values.map((value, index) => { const [cx, cy] = points.split(" ")[index].split(","); return <circle key={`${value}-${index}`} cx={cx} cy={cy} r={index === values.length - 1 ? 4.5 : 3} fill={index === values.length - 1 ? "#b0f90c" : "#fff"} stroke="#0b0b0b" strokeWidth="1.5" />; })}</svg>;
+}
+
+function WorkoutOverview({ workouts, loaded, clientId }: { workouts: ProgressWorkout[]; loaded: boolean; clientId: string }) {
+  const weekStart = new Date();
+  weekStart.setHours(0, 0, 0, 0);
+  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+  const monthStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), 1).getTime();
+  const thisWeek = workouts.filter((workout) => new Date(workout.completed_at).getTime() >= weekStart.getTime());
+  const thisMonth = workouts.filter((workout) => new Date(workout.completed_at).getTime() >= monthStart);
+  const completedDays = new Set(thisWeek.map((workout) => (new Date(workout.completed_at).getDay() + 6) % 7));
+  const dayLabels = ["Δ", "Τ", "Τ", "Π", "Π", "Σ", "Κ"];
+  return <>
+    <div className="flex items-center gap-2.5"><span className="grid h-8 w-8 place-items-center rounded-[10px] bg-foreground text-accent"><Activity className="h-[15px] w-[15px]" /></span><span className="min-w-0 flex-1"><b className="block text-[15px]">Προπονήσεις</b><small className="block text-xs text-muted-foreground">{loaded ? `${thisWeek.length} αυτή την εβδομάδα · ${thisMonth.length} τον μήνα` : "Φόρτωση προπονήσεων…"}</small></span><Link href={`/clients/${clientId}?tab=progress`} className="text-xs font-extrabold">Όλες <ChevronRight className="inline h-3.5 w-3.5" /></Link></div>
+    <div className="mt-4 flex gap-1.5 py-1">{dayLabels.map((label, index) => <span key={`${label}-${index}`} className="flex flex-1 flex-col items-center gap-1.5"><i className={cn("grid h-[30px] w-[30px] place-items-center rounded-[9px] bg-muted", completedDays.has(index) && "bg-accent text-accent-foreground")}>{completedDays.has(index) && "✓"}</i><small className="text-[10px] font-bold text-muted-foreground">{label}</small></span>)}</div>
+    <div className="mt-3"><div className="grid grid-cols-[64px_minmax(0,1fr)_50px_64px] gap-2.5 pb-1.5 text-[10px] font-extrabold tracking-[.6px] text-muted-foreground"><span>ΗΜ/ΝΙΑ</span><span>ΗΜΕΡΑ</span><span className="text-right">ΔΙΑΡΚ.</span><span className="text-right">ΟΓΚΟΣ</span></div>{workouts.slice(0, 4).map((workout) => <div key={workout.id} className="grid grid-cols-[64px_minmax(0,1fr)_50px_64px] items-center gap-2.5 border-t border-border py-2.5 text-[13px]"><b>{shortDate(workout.completed_at)}</b><span className="truncate">{workout.day_name || "Προπόνηση"}</span><span className="text-right text-muted-foreground">{workout.duration_seconds ? `${Math.round(workout.duration_seconds / 60)}′` : "—"}</span><b className="text-right">{workout.total_volume_kg ? `${workout.total_volume_kg} kg` : "—"}</b></div>)}{loaded && !workouts.length && <p className="border-t border-border py-3 text-sm text-muted-foreground">Δεν έχει ολοκληρωθεί προπόνηση ακόμα.</p>}</div>
+  </>;
+}
+
 function ClientHeader({
   client,
   displayName,
   currentStatus,
   onboarding,
   onSetActive,
+  onPayment,
+  onPoints,
   togglingActive,
   canManageStatus,
   canDelete,
@@ -918,6 +1291,8 @@ function ClientHeader({
   currentStatus: StatusMetaResult;
   onboarding: Onboarding;
   onSetActive: (active: boolean) => void;
+  onPayment: () => void;
+  onPoints: () => void;
   togglingActive: boolean;
   canManageStatus: boolean;
   canDelete: boolean;
@@ -927,80 +1302,82 @@ function ClientHeader({
   const [deactivateOpen, setDeactivateOpen] = useState(false);
   const [activateOpen, setActivateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [availablePoints, setAvailablePoints] = useState<number | null>(null);
+  const [weeklyWorkouts, setWeeklyWorkouts] = useState<number | null>(null);
   const isActive = Boolean(client.is_active);
 
-  const sparklineData = useMemo(
-    () =>
-      [...(client.weeklyUpdates || [])]
-        .filter((update) => update.weight_kg)
-        .slice(0, 8)
-        .reverse()
-        .map((update) => ({ date: formatDate(update.submitted_at), Βάρος: Number(update.weight_kg) })),
-    [client.weeklyUpdates],
-  );
-  const memberDays = daysSince(client.created_at) ?? 0;
   const memberMonths = monthsSince(client.created_at);
+  const memberDays = daysSince(client.created_at) ?? 0;
   const updatesCount = client.weeklyUpdates?.length || 0;
+  const updateDay = updateDayOptions.find((option) => option.value === Number(client.updateSchedule?.day_of_week ?? onboarding.update_day))?.label;
+  const planLabel = client.subscription?.plan_name || onboarding.selected_package;
+
+  useEffect(() => {
+    if (!client.id) return;
+    let active = true;
+    const weekStart = new Date();
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+
+    api.get<ClientPointsData>(`/points/client/${client.id}`)
+      .then((data) => { if (active) setAvailablePoints(Number(data.availablePoints) || 0); })
+      .catch(() => { if (active) setAvailablePoints(null); });
+    api.get<ProgressWorkout[]>(`/clients/${client.id}/workouts`)
+      .then((workouts) => {
+        if (!active) return;
+        setWeeklyWorkouts(workouts.filter((workout) => new Date(workout.completed_at).getTime() >= weekStart.getTime()).length);
+      })
+      .catch(() => { if (active) setWeeklyWorkouts(null); });
+
+    return () => { active = false; };
+  }, [client.id]);
 
   return (
-    <Card className="overflow-hidden rounded-xl border-border bg-card shadow-sm">
-      <div className="p-5 sm:p-6">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)_auto] lg:items-center">
-        <div className="flex items-center gap-4">
+    <Card className="overflow-hidden rounded-b-none rounded-t-[20px] border-border bg-card shadow-none">
+      <div className="p-5 sm:p-[22px]">
+      <div className="flex flex-wrap items-center gap-4">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
           <UserAvatar initials={getInitials(displayName)} photoUrl={client.profile_photo} size="h-16 w-16" />
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-2xl font-bold">{displayName}</h2>
-              <Badge className={`h-auto rounded-md px-2.5 py-1 text-xs font-bold ${currentStatus.className}`}>{currentStatus.label}</Badge>
+              <Badge className={`h-6 rounded-full px-2.5 py-0.5 text-[11px] font-extrabold ${currentStatus.className}`}>● {currentStatus.label}</Badge>
+              {planLabel && <Badge className="h-auto rounded-full bg-foreground px-2.5 py-1 text-xs font-extrabold text-accent">{planLabel}</Badge>}
               {(client.fitness_goal || onboarding.goal) && (
                 <Badge variant="outline" className="h-auto rounded-md px-2.5 py-1 text-xs font-bold">
                   {client.fitness_goal || onboarding.goal}
                 </Badge>
               )}
             </div>
-            <div className="mt-1 truncate text-sm text-muted-foreground">
-              {client.email || "-"} · {client.phone || "-"}
-            </div>
-            <div className="mt-1 text-xs font-medium text-muted-foreground">
-              {memberMonths >= 1 ? `Μέλος από ${memberMonths} μήνες` : "Μέλος από <1 μήνα"}
+            <div className="mt-1 flex flex-wrap gap-x-1.5 gap-y-1 text-[13px] text-muted-foreground">
+              <span>{client.email || "-"}</span><span>·</span><span>{client.phone || "-"}</span><span>·</span>
+              <span>μέλος {memberDays} ημέρες</span>
+              {updateDay && <span>· update κάθε {updateDay}</span>}
+              <span>· Discord: {client.discord_oauth_username || "όχι"}</span>
             </div>
           </div>
         </div>
-
-        <div className="min-w-0 rounded-lg border border-border bg-muted/20 p-3">
-          {sparklineData.length > 1 ? (
-            <SparkLineChart className="h-14 w-full" data={sparklineData} index="date" categories={["Βάρος"]} colors={["blue"]} />
-          ) : (
-            <div className="text-xs font-medium text-muted-foreground">Χωρίς αρκετά δεδομένα για γράφημα.</div>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 lg:w-[21rem]">
-          <StatChip icon={Target} label="Βάρος" value={client.weight_kg ? `${client.weight_kg}kg` : "-"} />
-          <StatChip icon={Clock} label="Μέλος" value={`${memberDays} μέρες`} />
-          <StatChip icon={FileText} label="Updates" value={`${updatesCount}${updatesCount >= 12 ? "+" : ""}`} />
-          <StatChip icon={Link2} label="Discord" value={client.discord_oauth_username || "Μη συνδεδεμένος"} />
-        </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <Button type="button" variant="outline" onClick={onPoints} className="h-10 rounded-full px-4 font-extrabold"><Coins className="mr-1.5 h-4 w-4" />Πόντοι</Button>
+        <Button type="button" onClick={onPayment} className="h-10 rounded-full bg-foreground px-4 font-extrabold text-background hover:bg-foreground/90"><CreditCard className="mr-1.5 h-4 w-4" />Νέα πληρωμή</Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button type="button" variant="outline" size="icon" className="ml-auto h-10 w-10 rounded-full"><MoreHorizontal className="h-5 w-5" /></Button>} />
+          <DropdownMenuContent align="end">
+            {canManageStatus && isActive && <DropdownMenuItem onClick={() => setDeactivateOpen(true)}>Απενεργοποίηση</DropdownMenuItem>}
+            {canManageStatus && !isActive && <DropdownMenuItem onClick={() => setActivateOpen(true)}>Ενεργοποίηση</DropdownMenuItem>}
+            {canDelete && <><DropdownMenuSeparator /><DropdownMenuItem onClick={() => setDeleteOpen(true)} className="text-destructive focus:text-destructive">Διαγραφή πελάτη</DropdownMenuItem></>}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
       </div>
 
-      <div className="mt-5 flex flex-wrap gap-2 border-t border-border pt-4">
-        {canManageStatus && isActive && (
-          <Button type="button" variant="outline" onClick={() => setDeactivateOpen(true)} className="border-destructive text-destructive hover:bg-destructive hover:text-white">
-            Απενεργοποίηση
-          </Button>
-        )}
-        {canManageStatus && !isActive && (
-          <Button type="button" variant="outline" onClick={() => setActivateOpen(true)} className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white">
-            Ενεργοποίηση
-          </Button>
-        )}
-        {canDelete && (
-          <Button type="button" variant="outline" onClick={() => setDeleteOpen(true)} className="border-destructive text-destructive hover:bg-destructive hover:text-white">
-            Διαγραφή
-          </Button>
-        )}
+      <div className="mt-5 grid grid-cols-2 border-t border-border bg-muted/20 pt-0 sm:grid-cols-5">
+        <HeaderKpi icon={Target} label="Βάρος" value={client.weight_kg ? `${client.weight_kg} kg` : "—"} detail={client.target_weight_kg ? `στόχος ${client.target_weight_kg} kg` : "χωρίς στόχο"} />
+        <HeaderKpi icon={CalendarDays} label="Συνδρομή" value={daysRemaining(client.subscription?.end_date)} detail={client.subscription?.end_date ? `λήγει ${formatDate(client.subscription.end_date)}` : "—"} />
+        <HeaderKpi icon={Activity} label="Προπονήσεις" value={weeklyWorkouts === null ? "—" : String(weeklyWorkouts)} detail="αυτή την εβδομάδα" />
+        <HeaderKpi icon={Clock} label="Τελευταίο update" value={formatDate(client.weeklyUpdates?.[0]?.submitted_at)} detail={updatesCount ? `${updatesCount} συνολικά` : "δεν υπάρχει ακόμα"} />
+        <HeaderKpi icon={Coins} label="Πόντοι" value={availablePoints === null ? "—" : new Intl.NumberFormat("el-GR").format(availablePoints)} detail={availablePoints === null ? "φόρτωση…" : `≈ ${(availablePoints / 100).toLocaleString("el-GR", { maximumFractionDigits: 2 })} € διαθέσιμα`} />
       </div>
-
       </div>
 
       <AlertDialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
@@ -1116,18 +1493,11 @@ function ResetPasswordDialog({
   );
 }
 
-function StatChip({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
-  return (
-    <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-muted/35 p-2.5">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background text-foreground">
-        <Icon className="h-3.5 w-3.5" />
-      </span>
-      <span className="min-w-0">
-        <span className="block text-[11px] font-medium text-muted-foreground">{label}</span>
-        <span className="block truncate text-xs font-semibold text-foreground">{value}</span>
-      </span>
-    </div>
-  );
+function HeaderKpi({ icon: Icon, label, value, detail }: { icon: LucideIcon; label: string; value: string; detail: string }) {
+  return <div className="flex min-w-0 items-center gap-3 border-b border-border px-4 py-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-muted"><Icon className="h-4 w-4" /></span>
+    <span className="min-w-0"><small className="block text-[11px] font-bold text-muted-foreground">{label}</small><b className="mt-0.5 block truncate text-[17px] leading-5">{value}</b><small className="mt-0.5 block truncate text-[11px] text-muted-foreground">{detail}</small></span>
+  </div>;
 }
 
 interface ClientDetailsForm {
@@ -1331,6 +1701,8 @@ function euroAmount(value?: number | string | null): string {
 function OverviewTab({
   client,
   clientId,
+  trainingPlan,
+  nutritionPlan,
   onboarding,
   onUpdated,
   currentStatus,
@@ -1340,9 +1712,12 @@ function OverviewTab({
   onResetPassword,
   resettingPassword,
   canResetPassword,
+  onOpenActivity,
 }: {
   client: ClientRecord;
   clientId: string;
+  trainingPlan: TrainingPlanState;
+  nutritionPlan: NutritionPlanState;
   onboarding: Onboarding;
   onUpdated: () => void;
   currentStatus: StatusMetaResult;
@@ -1352,6 +1727,7 @@ function OverviewTab({
   onResetPassword: (newPassword: string) => Promise<void>;
   resettingPassword: boolean;
   canResetPassword: boolean;
+  onOpenActivity: () => void;
 }) {
   const [form, setForm] = useState<ClientDetailsForm>(() => toDetailsForm(client));
   const [saving, setSaving] = useState(false);
@@ -1861,24 +2237,7 @@ function OverviewTab({
         />
       )}
 
-      <DndContext sensors={dragSensors} collisionDetection={closestCenter} onDragEnd={handleSectionDragEnd}>
-        <div className="grid gap-6 lg:grid-cols-5">
-          <OverviewColumn columnId="column-left" ids={leftIds} className="lg:col-span-3">
-            {leftIds.map((id) => (
-              <DraggableSection key={id} id={id}>
-                {sectionsMap[id]}
-              </DraggableSection>
-            ))}
-          </OverviewColumn>
-          <OverviewColumn columnId="column-right" ids={rightIds} className="lg:col-span-2">
-            {rightIds.map((id) => (
-              <DraggableSection key={id} id={id}>
-                {sectionsMap[id]}
-              </DraggableSection>
-            ))}
-          </OverviewColumn>
-        </div>
-      </DndContext>
+      <OverviewDashboard client={client} clientId={clientId} trainingPlan={trainingPlan} nutritionPlan={nutritionPlan} onApprovePayment={onApprovePayment} approvingPayment={approvingPayment} onOpenActivity={onOpenActivity} />
 
     </div>
   );
@@ -2334,6 +2693,7 @@ function PaymentsTab({
   approvingPayment,
   rejectingPaymentId,
   onUpdated,
+  openRequest = 0,
 }: {
   client: ClientRecord;
   clientId: string;
@@ -2342,6 +2702,7 @@ function PaymentsTab({
   approvingPayment: boolean;
   rejectingPaymentId: number | string | null;
   onUpdated: () => void;
+  openRequest?: number;
 }) {
   const [payments, setPayments] = useState<Payment[]>(client.payments || []);
   const [open, setOpen] = useState(false);
@@ -2450,6 +2811,12 @@ function PaymentsTab({
     }
     setOpen(nextOpen);
   };
+
+  useEffect(() => {
+    if (openRequest > 0) openPaymentDialog(true);
+    // The request counter changes only when the header action is pressed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRequest]);
 
   return (
     <TooltipProvider>
