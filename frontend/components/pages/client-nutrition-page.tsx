@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ArrowRightLeft, ChartNoAxesColumnIncreasing, Download, Lightbulb, MoreVertical, ShoppingCart, Utensils, X } from "lucide-react"
+import { ArrowRightLeft, ChartNoAxesColumnIncreasing, ChevronRight, Download, Lightbulb, MoreVertical, ShoppingCart, Utensils, X } from "lucide-react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { ClientShell } from "@/components/shell/client-shell"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -110,6 +110,44 @@ function MacroBar({ totals, macroCalories, compact = false }: { totals: MacroTot
     { label: "Λίπος", short: "Λ", grams: totals.fats, calories: totals.fats * 9, color: "bg-[#c9c9c4] dark:bg-[#6a6a6a]" },
   ]
   return <><div className="flex h-3 gap-[3px] overflow-hidden rounded-full">{values.map((macro) => <span key={macro.label} className={`${macro.color} min-w-[3px]`} style={{ flex: Math.max(macro.calories, 1) }} />)}</div><div className={compact ? "grid grid-cols-3 gap-2" : "space-y-3"}>{values.map((macro) => { const percentage = macroCalories ? Math.round((macro.calories / macroCalories) * 100) : 0; return <div key={macro.label} className={compact ? "min-w-0" : "flex items-center justify-between gap-3"}><p className={`flex items-center gap-2 ${compact ? "text-[11px] font-bold text-muted-foreground" : "text-[13px] font-bold"}`}><span className={`h-2.5 w-2.5 shrink-0 rounded-[3px] ${macro.color}`} />{compact ? macro.short : macro.label}</p><p className={compact ? "mt-1 text-[17px] font-extrabold" : "text-[15px] font-extrabold"}>{numberValue(macro.grams).toLocaleString("el-GR", { maximumFractionDigits: 1 })} g <span className="text-[12px] font-semibold text-muted-foreground">· {percentage}%</span></p></div> })}</div></>
+}
+
+function NutritionTargetsSummary({ plan, totals }: { plan: NonNullable<NutritionPlan>; totals: MacroTotals }) {
+  const goals = {
+    calories: numberValue(plan.daily_calories) || totals.calories,
+    protein: numberValue(plan.protein_g) || totals.protein,
+    carbs: numberValue(plan.carbs_g) || totals.carbs,
+    fats: numberValue(plan.fat_g) || totals.fats,
+  }
+  const items = [
+    { label: "Θερμίδες", value: totals.calories, target: goals.calories, unit: "kcal", color: "bg-foreground", valueClass: "text-[26px]" },
+    { label: "Πρωτεΐνη", value: totals.protein, target: goals.protein, unit: "g", color: "bg-accent", valueClass: "text-[22px]" },
+    { label: "Υδατάνθρακες", value: totals.carbs, target: goals.carbs, unit: "g", color: "bg-foreground", valueClass: "text-[22px]" },
+    { label: "Λίπος", value: totals.fats, target: goals.fats, unit: "g", color: "bg-[#c8c8c4]", valueClass: "text-[22px]" },
+  ]
+
+  return <Card className="overflow-hidden rounded-[20px] border-border bg-card shadow-none">
+    <CardContent className="flex flex-col gap-3 px-1 pb-4 pt-[18px]">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-[18px]">
+        <b className="text-[15px]">Ημέρα · σύνολο vs στόχος</b>
+        <span className="ml-auto inline-flex items-center gap-1 text-[12px] font-extrabold text-foreground">Υπολογισμός στόχων από βάρος & στόχο <ChevronRight className="h-[13px] w-[13px] stroke-[2.4]" /></span>
+      </div>
+      <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+        {items.map((item) => {
+          const target = Math.max(0, item.target)
+          const percentage = target ? Math.min(100, Math.round((item.value / target) * 100)) : 0
+          const remaining = Math.max(0, target - item.value)
+          const format = (value: number) => Math.round(value).toLocaleString("el-GR")
+          return <div key={item.label} className="min-w-0 space-y-2 px-[18px] py-3 first:pt-1 sm:first:py-0 sm:[&:nth-child(2)]:py-0 xl:py-0 xl:[&:nth-child(2)]:py-0">
+            <div className="flex items-baseline justify-between gap-2"><b className="text-[12px] text-[#6a6a6a]">{item.label}</b><span className="inline-flex h-[26px] items-center gap-1 rounded-[8px] border border-border px-2 text-[12px] font-extrabold"><span className="font-semibold text-[#8a8a8a]">στόχος</span>{format(target)}</span></div>
+            <p className={`${item.valueClass} font-extrabold leading-none tracking-[-.5px]`}>{format(item.value)} <span className="text-[13px] font-semibold tracking-normal text-[#8a8a8a]">/ {format(target)} {item.unit}</span></p>
+            <div className="h-2 overflow-hidden rounded-full bg-muted"><span className={`block h-full rounded-full ${item.color}`} style={{ width: `${percentage}%` }} /></div>
+            <small className="block text-[11px] text-[#8a8a8a]">{remaining > 0 ? `υπολείπονται ${format(remaining)} ${item.unit}` : "έφτασες τον στόχο"} · {percentage}%</small>
+          </div>
+        })}
+      </div>
+    </CardContent>
+  </Card>
 }
 
 function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
@@ -349,11 +387,11 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
           <Button onClick={() => setShoppingOpen(true)} className="hidden h-[46px] rounded-full bg-foreground px-5 text-sm font-extrabold text-background hover:bg-foreground/90 sm:inline-flex"><ShoppingCart className="mr-2 h-[17px] w-[17px]" />Λίστα για ψώνια</Button>
         </div>
 
+        <NutritionTargetsSummary plan={plan} totals={totals} />
+
         <section className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-[22px]">
           <div className="min-w-0">
-            <Card className="rounded-[18px] border-border bg-card shadow-none lg:hidden"><CardContent className="space-y-3 p-4"><div className="flex items-baseline justify-between"><p className="text-[11px] font-extrabold tracking-[1px] text-muted-foreground">ΣΥΝΟΛΟ ΗΜΕΡΑΣ</p><p className="text-[26px] font-extrabold italic tracking-[-.6px]">{Math.round(totals.calories).toLocaleString("el-GR")} <span className="text-xs not-italic font-semibold text-muted-foreground">kcal</span></p></div><MacroBar totals={totals} macroCalories={macroCalories} compact /></CardContent></Card>
-
-            <div className="mt-4 flex rounded-[14px] border border-border bg-card p-1 lg:hidden">
+            <div className="flex rounded-[14px] border border-border bg-card p-1 lg:hidden">
               {(["meals", "supplements"] as const).map((section) => <button key={section} type="button" onClick={() => setMobileSection(section)} className={`h-[38px] flex-1 rounded-[11px] text-[12px] font-extrabold ${mobileSection === section ? "bg-foreground text-background" : "text-muted-foreground"}`}>{section === "meals" ? "Γεύματα" : "Συμπληρώματα"}</button>)}
               {hasCycle && <button type="button" onClick={() => setMobileSection("cycle")} className={`h-[38px] flex-1 rounded-[11px] text-[12px] font-extrabold ${mobileSection === "cycle" ? "bg-foreground text-background" : "text-muted-foreground"}`}>Cycle</button>}
             </div>
@@ -384,7 +422,6 @@ function ClientNutritionView({ plan }: { plan: NonNullable<NutritionPlan> }) {
           </div>
 
           <aside className="space-y-4 lg:sticky lg:top-5">
-            <Card className="hidden rounded-[20px] border-border bg-card shadow-none lg:block"><CardContent className="space-y-4 p-[22px]"><div className="flex items-start justify-between"><div><p className="text-xs font-extrabold tracking-[1px] text-muted-foreground">ΣΥΝΟΛΟ ΗΜΕΡΑΣ</p><p className="mt-1 text-[42px] font-extrabold italic leading-none tracking-[-1.2px]">{Math.round(totals.calories).toLocaleString("el-GR")} <span className="text-base not-italic font-bold tracking-normal text-muted-foreground">kcal</span></p></div><span className="rounded-full bg-[var(--sp-lime-soft)] px-2.5 py-1 text-[11px] font-extrabold">{visibleMeals.length} γεύματα</span></div><MacroBar totals={totals} macroCalories={macroCalories} /></CardContent></Card>
             <div className={`${mobileSection === "supplements" ? "block" : "hidden"} lg:block`}><ClientSupplementsCard /></div>
             <div className={`${mobileSection === "cycle" ? "block" : "hidden"} lg:block`}><ClientCycleCard onPresenceChange={setHasCycle} /></div>
           </aside>

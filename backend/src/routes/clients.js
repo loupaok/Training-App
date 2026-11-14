@@ -2733,11 +2733,14 @@ router.get('/:id/weekly-updates', authorizeRole(['coach', 'admin', 'moderator'])
           photoDetails: [],
         };
       });
-      const [fileRows] = await connection.query(
-        `SELECT update_id, file_url, angle FROM weekly_update_files
-         WHERE update_id IN (?) AND file_type = 'photo' ORDER BY created_at DESC`,
-        [updates.map((update) => update.id)]
-      );
+      const updateIds = updates.map((update) => update.id);
+      const fileRows = updateIds.length
+        ? (await connection.query(
+          `SELECT update_id, file_url, angle FROM weekly_update_files
+           WHERE update_id IN (?) AND file_type = 'photo' ORDER BY created_at DESC`,
+          [updateIds]
+        ))[0]
+        : [];
       const photosByUpdateId = new Map();
       for (const file of fileRows) {
         const photos = photosByUpdateId.get(file.update_id) || [];
@@ -3725,7 +3728,7 @@ router.get('/:id/files', authorizeRoleOrPermission(['coach', 'admin'], 'messages
     try {
       const [rows] = await connection.query(
         `SELECT wuf.id, wuf.file_url AS url, wuf.file_type, wuf.original_name, wuf.created_at, wuf.update_id,
-                wu.submitted_at, wu.weight_kg
+                wu.submitted_at
          FROM weekly_update_files wuf
          LEFT JOIN weekly_updates wu ON wu.id = wuf.update_id
          WHERE wu.client_id = ?

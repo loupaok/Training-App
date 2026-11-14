@@ -1118,7 +1118,7 @@ router.get('/form', authorizeRole(['client']), async (req, res) => {
     connection = await pool.getConnection();
     await ensureWeeklyUpdateSchema(connection);
     const weekStart = getWeekStart();
-    const [[update]] = await connection.query(
+    let [[update]] = await connection.query(
       `SELECT weekly.id, weekly.status, weekly.answers, weekly.auto_snapshot AS autoSnapshot,
               weekly.score, weekly.score_tier_title AS scoreTierTitle, weekly.on_time AS onTime,
               form.id AS formId, form.definition
@@ -1135,6 +1135,37 @@ router.get('/form', authorizeRole(['client']), async (req, res) => {
       "SELECT id AS formId, definition FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1",
     );
     const activeFormRow = publishedRows[0];
+    const [[demoClient]] = await connection.query(
+      'SELECT is_demo, demo_updates_enabled FROM clients WHERE user_id = ? LIMIT 1',
+      [req.user.id],
+    );
+    const repeatableDemoUpdate = Boolean(demoClient?.is_demo && demoClient?.demo_updates_enabled);
+
+    // The dedicated demo account is intentionally repeatable: opening the
+    // form again after a submission starts a fresh draft for testing. Real
+    // clients always retain their submitted result for the current week.
+    if (repeatableDemoUpdate && update?.status === 'submitted' && activeFormRow) {
+      await connection.query(
+        `UPDATE weekly_updates
+         SET form_id = ?, answers = '{}', auto_snapshot = '{}', status = 'draft',
+             score = NULL, weekly_score = NULL, score_tier_title = NULL,
+             on_time = 0, is_timely = 0, submitted_at = NULL
+         WHERE id = ?`,
+        [activeFormRow.formId, update.id],
+      );
+      await connection.query('DELETE FROM weekly_update_files WHERE update_id = ?', [update.id]);
+      update = {
+        ...update,
+        status: 'draft',
+        answers: '{}',
+        autoSnapshot: '{}',
+        score: null,
+        scoreTierTitle: null,
+        onTime: 0,
+        formId: activeFormRow.formId,
+        definition: activeFormRow.definition,
+      };
+    }
     let formRow = update?.status === 'submitted' ? update : activeFormRow;
     if (update?.status === 'draft' && activeFormRow && Number(update.formId) !== Number(activeFormRow.formId)) {
       await connection.query('UPDATE weekly_updates SET form_id = ? WHERE id = ?', [activeFormRow.formId, update.id]);
