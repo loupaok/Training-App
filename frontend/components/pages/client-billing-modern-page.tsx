@@ -1331,7 +1331,7 @@ function RenewalForm({
           <CardTitle className="text-[16px] font-extrabold">Πληρωμή ανανέωσης</CardTitle>
           <CardDescription className="mt-1 text-[12px]">Διάλεξε πώς θέλεις να πληρώσεις</CardDescription>
         </div>
-        {selected && <p className="shrink-0 text-sm text-muted-foreground"><span className="font-semibold text-foreground">{selected.name}</span> · <b className="text-[16px] text-foreground">{money(selected.price, selected.currency)}</b></p>}
+        {selected && <p className="shrink-0 text-sm text-muted-foreground"><span className="font-semibold text-foreground">{selected.name}</span> · <b className="text-[16px] text-foreground">{money(selected.price, selected.currency)}</b><span className="ml-2 inline-flex rounded-full bg-[var(--sp-lime-soft)] px-2 py-1 text-[11px] font-extrabold text-foreground">+{Number(selected.pointsReward || 0).toLocaleString("el-GR")} πόντοι</span></p>}
       </CardHeader>
       <CardContent className="space-y-5 p-5 pt-2 sm:p-6 sm:pt-2">
         {selected && intent && <div aria-live="polite" className="flex items-center gap-2 rounded-[12px] bg-[color:var(--sp-lime-soft)] px-3 py-2.5 text-[13px] font-bold text-foreground"><span className="grid h-5 w-5 place-items-center rounded-full bg-accent text-accent-foreground"><Check className="h-3.5 w-3.5" /></span>{intent === "change" ? `Επιλέχθηκε το ${selected.name}. Διάλεξε τρόπο πληρωμής.` : `Ανανέωση του ${selected.name}. Διάλεξε τρόπο πληρωμής.`}</div>}
@@ -1347,6 +1347,7 @@ function RenewalForm({
               <p className="mt-1 text-sm text-muted-foreground">
                 {money(plan.price, plan.currency)} · {plan.period || "Μηνιαίο"}
               </p>
+              <span className="mt-2 inline-flex rounded-full bg-[var(--sp-lime-soft)] px-2.5 py-1 text-[11px] font-extrabold text-foreground">+{Number(plan.pointsReward || 0).toLocaleString("el-GR")} πόντοι</span>
             </button>
           ))}
         </div>}
