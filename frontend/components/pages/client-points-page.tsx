@@ -1,14 +1,13 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { ArrowUpRight, Check, Copy, Gift, History, Lock, Minus, Plus, ShoppingBag, Target, Trophy, X } from "lucide-react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { ArrowUpRight, Check, Clock3, Copy, Gift, History, Lock, Minus, Plus, ShoppingBag, Target, Trophy, X } from "lucide-react"
 import { ProtectedRoute } from "@/components/auth/protected-route"
 import { ClientShell } from "@/components/shell/client-shell"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardTitle } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { api } from "@/lib/api/client"
 import { useAuth } from "@/lib/auth/auth-context"
 import { useBranding } from "@/contexts/BrandingContext"
@@ -29,6 +28,12 @@ type CouponsResponse = { synced: boolean; coupons: CouponData[] }
 
 const dateFormat = new Intl.DateTimeFormat("el-GR", { dateStyle: "short", timeStyle: "short" })
 const formatDateTime = (value: string) => dateFormat.format(new Date(value))
+const couponExpiryLabel = (value: string) => {
+  const expiry = new Date(value)
+  const days = Math.max(0, Math.ceil((expiry.getTime() - Date.now()) / 86_400_000))
+  const date = new Intl.DateTimeFormat("el-GR", { day: "numeric", month: "short" }).format(expiry)
+  return days > 0 ? `Ισχύει ${days} ${days === 1 ? "ημέρα" : "ημέρες"} · έως ${date}` : `Έληξε ${date}`
+}
 
 function ActiveCouponCards({ coupons, euroPerPoints, eshopUrl, eshopButtonText, copiedCode, onCopy }: { coupons: CouponData[]; euroPerPoints: number; eshopUrl: string | null; eshopButtonText: string; copiedCode: string | null; onCopy: (code: string) => void }) {
   const activeCoupons = [...coupons]
@@ -93,7 +98,7 @@ function PointsReferenceLayout({ points, settings, couponOptions, availableEuro,
     Number(settings.referral_points) > 0 && ["Πρότεινε φίλο", `+${settings.referral_points} πόντοι όταν ο φίλος εγγραφεί`, "♥"],
   ].filter(Boolean) as [string, string, string][]
   return <div className="space-y-5">
-    <header><h1 className="text-[28px] font-extrabold tracking-[-.5px]">Πόντοι &amp; Rewards</h1><p className="mt-1 text-[14px] text-muted-foreground">Κέρδισε πόντους με κάθε πληρωμή και εξαργύρωσέ τους σε κουπόνια για το SP Team eshop.</p></header>
+    <header><h1 className="text-[28px] font-extrabold tracking-[-.5px]">Πόντοι &amp; Rewards</h1><p className="mt-1 text-[14px] text-muted-foreground">Κέρδισε πόντους με κάθε πληρωμή και εξαργύρωσέ τους σε κουπόνια στο Developstore.</p></header>
     <div className="grid gap-5 xl:grid-cols-3">
       <div className="space-y-5 xl:col-span-2">
         <Card variant="lime" className="relative overflow-hidden rounded-[22px] border-0 shadow-none"><CardContent className="relative space-y-[22px] p-7 sm:p-[30px]"><span aria-hidden="true" className="absolute inset-y-0 right-[230px] hidden w-[22px] -skew-x-[18deg] bg-foreground lg:block" /><div className="relative"><div><p className="text-[11px] font-extrabold uppercase tracking-[1px] text-accent-foreground">Διαθέσιμοι πόντοι</p><p className="mt-1 text-[64px] font-extrabold italic leading-none tracking-[-2px] text-accent-foreground">{points.availablePoints.toLocaleString("el-GR")}</p><p className="mt-2 text-[15px] font-bold text-accent-foreground">= {availableEuro.toFixed(2)} € σε κουπόνια για το eshop</p></div></div><div className="relative grid gap-3 sm:grid-cols-3"><div className="rounded-[14px] bg-black/[.08] p-[14px] px-4"><p className="text-[12px] font-bold text-accent-foreground">Κερδισμένοι συνολικά</p><p className="mt-1 text-[22px] font-extrabold text-accent-foreground">{points.totalPoints.toLocaleString("el-GR")}</p></div><div className="rounded-[14px] bg-black/[.08] p-[14px] px-4"><p className="text-[12px] font-bold text-accent-foreground">Εξαργυρωμένοι</p><p className="mt-1 text-[22px] font-extrabold text-accent-foreground">{points.usedPoints.toLocaleString("el-GR")}</p></div><div className="rounded-[14px] bg-foreground p-[14px] px-4"><p className="text-[12px] font-bold text-accent">Με την επόμενη πληρωμή</p><p className="mt-1 text-[15px] font-extrabold text-background">Νέοι πόντοι <span className="text-[12px] font-semibold text-neutral-400">· βάσει πλάνου</span></p></div></div></CardContent></Card>
@@ -123,6 +128,7 @@ function ClientPointsContent() {
   const [coupon, setCoupon] = useState<RedeemResult | null>(null)
   const [copiedCode, setCopiedCode] = useState<string | null>(null)
   const [historyFilter, setHistoryFilter] = useState<"all" | "earned" | "redeemed">("all")
+  const redeemDialogScrollPositionRef = useRef(0)
 
   const load = async () => {
     setLoading(true)
@@ -146,6 +152,16 @@ function ClientPointsContent() {
 
   useEffect(() => { void load() }, [])
 
+  useEffect(() => {
+    if (!dialogOpen) return
+    const restoreScrollPosition = () => window.scrollTo({ top: redeemDialogScrollPositionRef.current, behavior: "auto" })
+    const firstFrame = window.requestAnimationFrame(() => {
+      restoreScrollPosition()
+      window.requestAnimationFrame(restoreScrollPosition)
+    })
+    return () => window.cancelAnimationFrame(firstFrame)
+  }, [dialogOpen])
+
   const loadMore = async () => {
     if (!points) return
     setLoadingMore(true)
@@ -163,26 +179,32 @@ function ClientPointsContent() {
   const availableEuro = points ? Math.round((points.availablePoints / euroPerPoints) * 100) / 100 : 0
   const canRedeem = Boolean(points && settings && points.availablePoints >= settings.min_points_redeem)
   const discountPreview = Math.round((redeemAmount / euroPerPoints) * 100) / 100
-  const redeemRange = points && settings ? Math.max(1, points.availablePoints - settings.min_points_redeem) : 1
-  const redeemProgress = points && settings ? Math.min(100, Math.max(0, ((redeemAmount - settings.min_points_redeem) / redeemRange) * 100)) : 0
 
   const openDialog = (amount?: number) => {
     if (!points || !settings) return
+    const selectedAmount = Math.min(points.availablePoints, Math.max(settings.min_points_redeem, amount || 100))
+    const discount = Math.round((selectedAmount / euroPerPoints) * 100) / 100
+    if (!window.confirm(`Θέλεις σίγουρα να εξαργυρώσεις ${selectedAmount.toLocaleString("el-GR")} πόντους για κουπόνι ${discount.toFixed(2)} €;`)) return
+    redeemDialogScrollPositionRef.current = window.scrollY
     setCoupon(null)
     setRedeemError("")
-    setRedeemAmount(Math.min(points.availablePoints, Math.max(settings.min_points_redeem, amount || 100)))
-    setDialogOpen(true)
+    setRedeemAmount(selectedAmount)
+    void submitRedeem(selectedAmount)
   }
 
-  const submitRedeem = async () => {
+  const submitRedeem = async (pointsToRedeem = redeemAmount) => {
     setRedeeming(true)
     setRedeemError("")
     try {
-      const result = await api.post<RedeemResult>("/points/redeem", { pointsToRedeem: redeemAmount })
+      const result = await api.post<RedeemResult>("/points/redeem", { pointsToRedeem })
+      setRedeemAmount(pointsToRedeem)
       setCoupon(result)
+      setDialogOpen(true)
       await load()
     } catch (err) {
-      setRedeemError(err instanceof Error ? err.message : "Δεν ήταν δυνατή η εξαργύρωση.")
+      const message = err instanceof Error ? err.message : "Δεν ήταν δυνατή η εξαργύρωση."
+      setRedeemError(message)
+      window.alert(message)
     } finally {
       setRedeeming(false)
     }
@@ -279,99 +301,11 @@ function ClientPointsContent() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent
-          initialFocus={false}
-          finalFocus={false}
           className={`relative w-[calc(100%-2rem)] max-w-[460px] rounded-[26px] border-0 bg-card p-[30px] shadow-[0_30px_80px_rgba(0,0,0,.3)] ${coupon ? "min-h-[560px]" : ""}`}
         >
           {coupon ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>Το coupon δημιουργήθηκε</DialogTitle>
-                <DialogDescription>Χρησιμοποίησέ το στο επόμενο checkout σου για να λάβεις την έκπτωση.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-3 rounded-[16px] border border-dashed border-border bg-muted/60 p-4 text-center">
-                <p className="text-xs font-medium uppercase text-muted-foreground">Κωδικός Coupon</p>
-                <p className="text-xl font-bold tracking-wide">{coupon.couponCode}</p>
-                <Button variant="outline" size="sm" onClick={() => void copyCoupon()}>
-                  {copiedCode === coupon.couponCode ? (
-                    <>
-                      <Check className="mr-2 h-4 w-4" />
-                      Αντιγράφηκε
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="mr-2 h-4 w-4" />
-                      Αντιγραφή
-                    </>
-                  )}
-                </Button>
-                <div className="flex justify-center gap-6 pt-2 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Αξία</p>
-                    <p className="font-semibold">{coupon.discount}€</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Λήγει</p>
-                    <p className="font-semibold">{formatDateTime(coupon.expiryDate)}</p>
-                  </div>
-                </div>
-                {eshopUrl && (
-                  <a href={eshopUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">
-                    <ShoppingBag className="h-4 w-4" />
-                    Χρησιμοποίησέ το στο κατάστημα
-                  </a>
-                )}
-              </div>
-              <DialogFooter>
-                <Button onClick={() => setDialogOpen(false)}>Κλείσιμο</Button>
-              </DialogFooter>
-            </>
-          ) : points && settings ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>Εξαργύρωση πόντων</DialogTitle>
-                <DialogDescription>Έχεις {points.availablePoints} διαθέσιμους πόντους.</DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
-                <div className="relative flex h-9 items-center">
-                  <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 h-2 overflow-hidden rounded-full bg-muted"><span className="block h-full rounded-full bg-accent" style={{ width: `${redeemProgress}%` }} /></div>
-                  <input
-                    type="range"
-                    min={settings.min_points_redeem}
-                    max={Math.max(points.availablePoints, settings.min_points_redeem)}
-                    step={10}
-                    value={redeemAmount}
-                    aria-valuetext={`${redeemAmount} πόντοι, ${discountPreview.toFixed(2)} ευρώ έκπτωση`}
-                    onChange={(event) => setRedeemAmount(Number(event.target.value))}
-                    className="absolute inset-0 h-9 w-full cursor-grab touch-pan-y appearance-none bg-transparent active:cursor-grabbing focus-visible:outline-none [&::-moz-range-progress]:bg-transparent [&::-moz-range-track]:h-2 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-transparent [&::-moz-range-thumb]:h-6 [&::-moz-range-thumb]:w-6 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-[3px] [&::-moz-range-thumb]:border-background [&::-moz-range-thumb]:bg-accent [&::-moz-range-thumb]:shadow-[0_2px_7px_rgb(11_11_11_/_25%)] [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:-mt-2 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-[3px] [&::-webkit-slider-thumb]:border-background [&::-webkit-slider-thumb]:bg-accent [&::-webkit-slider-thumb]:shadow-[0_2px_7px_rgb(11_11_11_/_25%)]"
-                  />
-                </div>
-                <div className="flex items-center gap-3">
-                  <Input
-                    type="number"
-                    min={settings.min_points_redeem}
-                    max={points.availablePoints}
-                    value={redeemAmount}
-                    onChange={(event) => setRedeemAmount(Math.min(points.availablePoints, Math.max(0, Number(event.target.value) || 0)))}
-                    className="w-28"
-                  />
-                  <p className="text-sm text-muted-foreground">πόντοι</p>
-                </div>
-                <p className="text-lg font-semibold">= {discountPreview.toFixed(2)}€ έκπτωση</p>
-                {redeemError && <p className="text-sm text-destructive">{redeemError}</p>}
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                  Ακύρωση
-                </Button>
-                <Button onClick={submitRedeem} disabled={redeeming || redeemAmount < settings.min_points_redeem || redeemAmount > points.availablePoints}>
-                  {redeeming ? "Δημιουργία..." : "Επιβεβαίωση"}
-                </Button>
-              </DialogFooter>
-            </>
-          ) : null}
-          {coupon ? (
             <div className="absolute inset-0 z-10 flex flex-col items-center gap-4 rounded-[26px] bg-card px-[30px] py-[30px] text-center">
+              <DialogTitle className="sr-only">Το κουπόνι δημιουργήθηκε</DialogTitle>
               <button type="button" aria-label="Κλείσιμο" onClick={() => setDialogOpen(false)} className="absolute right-[18px] top-[18px] grid h-9 w-9 place-items-center rounded-full bg-muted text-foreground transition-colors hover:bg-border">
                 <X className="h-4 w-4" />
               </button>
@@ -385,12 +319,13 @@ function ClientPointsContent() {
               <div className="flex w-full flex-col gap-2 rounded-[16px] border-2 border-dashed border-foreground bg-muted p-[18px]">
                 <p className="text-[11px] font-extrabold uppercase tracking-[1px] text-muted-foreground">Ο κωδικός σου</p>
                 <p className="font-mono text-[22px] font-extrabold tracking-[1px] text-foreground">{coupon.couponCode}</p>
+                <span className="mx-auto inline-flex h-6 items-center gap-1 rounded-full bg-[#fff4dc] px-2.5 text-[11px] font-extrabold text-[#8a5a00]"><Clock3 className="h-3 w-3" />{couponExpiryLabel(coupon.expiryDate)}</span>
                 <Button size="sm" onClick={() => void copyCoupon(coupon.couponCode)} className="mx-auto h-[34px] rounded-full bg-[#0B0B0B] px-[14px] text-[12px] text-white hover:bg-[#262626]">
                   {copiedCode === coupon.couponCode ? <Check className="mr-1.5 h-[13px] w-[13px]" /> : <Copy className="mr-1.5 h-[13px] w-[13px]" />}
                   {copiedCode === coupon.couponCode ? "Αντιγράφηκε" : "Αντιγραφή κωδικού"}
                 </Button>
               </div>
-              <p className="max-w-[360px] text-[13px] leading-[1.5] text-muted-foreground">Βάλε τον κωδικό στο ταμείο του eshop. Θα τον βρεις πάντα και στο «Το κουπόνι σου».</p>
+              <p className="max-w-[360px] text-[13px] leading-[1.5] text-muted-foreground">Βάλε τον κωδικό στο ταμείο του Developstore πριν λήξει. Θα τον βρεις πάντα και στα ενεργά κουπόνιά σου.</p>
               {eshopUrl ? <a href={eshopUrl} target="_blank" rel="noopener noreferrer" className="flex h-[54px] w-full items-center justify-center gap-2 rounded-full bg-accent text-[16px] font-extrabold text-accent-foreground transition-colors hover:bg-accent/85"><ShoppingBag className="h-[18px] w-[18px]" />Αγόρασε στο eshop <ArrowUpRight className="h-4 w-4" /></a> : null}
               <button type="button" onClick={() => setDialogOpen(false)} className="text-[13px] font-extrabold text-foreground hover:underline">Πίσω στους πόντους</button>
             </div>

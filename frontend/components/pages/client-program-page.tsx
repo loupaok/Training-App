@@ -32,6 +32,7 @@ import {
   type WorkoutFeeling,
 } from "@/components/client/workout-summary";
 import { ClientShell } from "@/components/shell/client-shell";
+import { ThemeSelector } from "@/components/shell/theme-toggle";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   AlertDialog,
@@ -1707,6 +1708,15 @@ function ClientProgramContent() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="border-t border-border pt-5">
+              <p className="text-sm font-medium">Θέμα εμφάνισης</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Επίλεξε φωτεινό, σκούρο ή τη ρύθμιση της συσκευής σου.
+              </p>
+              <div className="mt-3">
+                <ThemeSelector />
+              </div>
+            </div>
             <SettingSwitch
               label="Αυτόματη εκκίνηση χρονομέτρου"
               checked={settings.autoRest}
@@ -2166,9 +2176,19 @@ function ProgramList({
                 log.day_number === index + 1,
             );
             return (
-              <article
+              <div
                 key={item.id}
-                className={`relative overflow-hidden rounded-[18px] border p-4 sm:p-[18px] ${isNext ? "border-[#0B0B0B] bg-[#0B0B0B] text-white" : "border-[#E6E6E2] bg-white"}`}
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpenDay(index)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault()
+                    onOpenDay(index)
+                  }
+                }}
+                aria-label={`Άνοιγμα ${getDayTitle(item, index)}`}
+                className={`relative cursor-pointer overflow-hidden rounded-[18px] border p-4 transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-[var(--sp-lime-glow)] sm:p-[18px] ${isNext ? "border-[#0B0B0B] bg-[#0B0B0B] text-white" : "border-[#E6E6E2] bg-white hover:border-[#0B0B0B]"}`}
               >
                 <span
                   className={
@@ -2238,25 +2258,17 @@ function ProgramList({
                     )}
                   </div>
                   {isNext ? (
-                    <Button
-                      onClick={() => onOpenDay(index)}
-                      className="relative h-12 w-full basis-full rounded-full bg-[#B0F90C] text-[15px] font-extrabold text-[#0B0B0B] hover:bg-[#B0F90C]/85 sm:h-[46px] sm:w-auto sm:basis-auto sm:px-[22px]"
-                    >
+                    <span className="relative inline-flex h-12 w-full basis-full items-center justify-center rounded-full bg-[#B0F90C] text-[15px] font-extrabold text-[#0B0B0B] sm:h-[46px] sm:w-auto sm:basis-auto sm:px-[22px]">
                       <Play className="mr-2 h-[13px] w-[13px] fill-current" />
                       Δες προπόνηση
-                    </Button>
+                    </span>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => onOpenDay(index)}
-                      aria-label={`Άνοιγμα ${getDayTitle(item, index)}`}
-                      className="ml-auto shrink-0 text-[#9A9A9A]"
-                    >
+                    <span aria-hidden="true" className="ml-auto shrink-0 text-[#9A9A9A]">
                       <ChevronRight className="h-[18px] w-[18px]" />
-                    </button>
+                    </span>
                   )}
                 </div>
-              </article>
+              </div>
             );
           })}
         </section>
@@ -2277,8 +2289,8 @@ function ProgramList({
           <section className="rounded-[18px] border border-[#E6E6E2] bg-white px-4 pb-2 pt-4 sm:px-[22px] sm:pt-5">
             <div className="flex items-center justify-between">
               <h2 className="text-[16px] font-extrabold">Ιστορικό</h2>
-              <a href="/client-progress" className="text-[12px] font-bold">
-                Όλο →
+              <a href="/client-progress" className="inline-flex items-center gap-0.5 text-[12px] font-extrabold">
+                Όλα <ChevronRight className="h-[13px] w-[13px] stroke-[2.4]" />
               </a>
             </div>
             {history.length ? (
