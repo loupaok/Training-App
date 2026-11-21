@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { Link2, Pencil, Pill, Plus, Save, Trash2, X } from "lucide-react";
+import { Grid2X2, Link2, Pencil, Pill, Plus, Save, Search, Trash2, X } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type DoseUnit = "ml" | "gr" | "mg";
 type Supplement = {
@@ -39,7 +40,12 @@ export function SupplementsPanel({ clientId }: { clientId: string | number }) {
   const [savingNotes, setSavingNotes] = useState(false);
   const [templates, setTemplates] = useState<SupplementTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [selectedTemplateDetail, setSelectedTemplateDetail] = useState<SupplementTemplate | null>(null);
+  const [loadingTemplateDetail, setLoadingTemplateDetail] = useState(false);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [templateQuery, setTemplateQuery] = useState("");
   const [applyingTemplate, setApplyingTemplate] = useState(false);
+  const filteredTemplates = templates.filter((template) => template.title.toLocaleLowerCase("el-GR").includes(templateQuery.trim().toLocaleLowerCase("el-GR")));
 
   const load = async () => {
     setLoading(true);
@@ -61,9 +67,32 @@ export function SupplementsPanel({ clientId }: { clientId: string | number }) {
     api.get<SupplementTemplate[]>("/templates/supplements").then(setTemplates).catch(() => setTemplates([]));
   }, [clientId]);
 
+  useEffect(() => {
+    if (!selectedTemplateId) {
+      setSelectedTemplateDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingTemplateDetail(true);
+    api.get<SupplementTemplate>(`/templates/supplements/${selectedTemplateId}`)
+      .then((template) => {
+        if (!cancelled) {
+          setSelectedTemplateDetail(template);
+          setTemplates((current) => current.map((item) => String(item.id) === selectedTemplateId ? template : item));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSelectedTemplateDetail(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingTemplateDetail(false);
+      });
+    return () => { cancelled = true; };
+  }, [selectedTemplateId]);
+
   const applyTemplate = async () => {
-    let template = templates.find((item) => String(item.id) === selectedTemplateId);
-    if (template) template = await api.get<SupplementTemplate>(`/templates/supplements/${template.id}`);
+    let template = selectedTemplateDetail || templates.find((item) => String(item.id) === selectedTemplateId);
+    if (template && !template.items?.length) template = await api.get<SupplementTemplate>(`/templates/supplements/${template.id}`);
     if (!template?.items?.length) return;
     setApplyingTemplate(true);
     try {
@@ -84,6 +113,9 @@ export function SupplementsPanel({ clientId }: { clientId: string | number }) {
         await api.put(`/clients/${clientId}/supplements/notes`, { generalNotes: nextNotes });
       }
       setSelectedTemplateId("");
+      setSelectedTemplateDetail(null);
+      setTemplateDialogOpen(false);
+      setTemplateQuery("");
     } catch (applyError) {
       setError(applyError instanceof Error ? applyError.message : "Δεν εφαρμόστηκε το πρότυπο.");
     } finally { setApplyingTemplate(false); }
@@ -192,7 +224,7 @@ export function SupplementsPanel({ clientId }: { clientId: string | number }) {
           <p className="rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p>
         )}
 
-        {templates.length > 0 && <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/20 p-3"><Select value={selectedTemplateId || "__none"} onValueChange={(value) => setSelectedTemplateId(!value || value === "__none" ? "" : value)}><SelectTrigger className="min-w-56 flex-1"><SelectValue>{templates.find((template) => String(template.id) === selectedTemplateId)?.title || "Επιλογή προτύπου"}</SelectValue></SelectTrigger><SelectContent><SelectItem value="__none">Επιλογή προτύπου</SelectItem>{templates.map((template) => <SelectItem key={template.id} value={String(template.id)}>{template.title}</SelectItem>)}</SelectContent></Select><Button type="button" disabled={!selectedTemplateId || applyingTemplate} onClick={() => void applyTemplate()}>{applyingTemplate ? "Προσθήκη…" : "Εφαρμογή προτύπου"}</Button></div>}
+        {templates.length > 0 && <><Button type="button" variant="outline" onClick={() => setTemplateDialogOpen(true)} className="h-10 rounded-full px-4 text-[13px] font-extrabold"><Grid2X2 className="mr-1.5 size-4" />Ανάθεση από πρότυπο</Button><Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}><DialogContent className="h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-[1280px] grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden rounded-[26px] border-0 p-0"><DialogHeader className="flex-row items-center gap-3 border-b border-border px-6 py-5 text-left"><span className="grid size-[38px] shrink-0 place-items-center rounded-[11px] bg-[#0b0b0b] text-accent"><Grid2X2 className="size-[17px]" /></span><span className="min-w-0 flex-1"><DialogTitle className="text-[19px] font-extrabold">Ανάθεση συμπληρωμάτων από πρότυπο</DialogTitle><DialogDescription className="mt-1 text-xs">Επίλεξε το πρότυπο που θα προστεθεί στα συμπληρώματα του πελάτη.</DialogDescription></span></DialogHeader><div className="grid min-h-0 overflow-hidden md:grid-cols-[330px_minmax(0,1fr)]"><aside className="space-y-3 overflow-y-auto border-b border-border bg-muted/30 p-[18px] md:border-b-0 md:border-r"><label className="flex h-[38px] items-center gap-2 rounded-xl border border-border bg-card px-3 text-[13px] text-muted-foreground"><Search className="size-4" /><Input value={templateQuery} onChange={(event) => setTemplateQuery(event.target.value)} placeholder="Αναζήτηση προτύπου…" className="h-auto border-0 bg-transparent p-0 text-[13px] shadow-none focus-visible:ring-0" /></label><div className="space-y-2">{filteredTemplates.map((template) => { const selected = selectedTemplateId === String(template.id); return <button key={template.id} type="button" onClick={() => setSelectedTemplateId(String(template.id))} className={`w-full rounded-[14px] border bg-card p-3 text-left ${selected ? "border-2 border-[#0b0b0b]" : "border-border hover:border-foreground/50"}`}><span className="flex items-center justify-between gap-2"><b className="truncate text-sm">{template.title}</b>{selected && <span className="rounded-full bg-accent px-2 py-1 text-[10px] font-extrabold text-accent-foreground">Επιλεγμένο</span>}</span><small className="mt-1 block text-xs text-muted-foreground">Πρότυπο συμπληρωμάτων</small></button>; })}</div></aside><section className="min-w-0 overflow-y-auto p-5 sm:p-[22px]">{(() => { const selected = templates.find((template) => String(template.id) === selectedTemplateId); return selected ? <div className="space-y-3"><h3 className="text-[17px] font-extrabold">{selected.title}</h3><div className="min-h-full space-y-2 rounded-[16px] border border-border p-4">{selected.items?.length ? selected.items.map((item, index) => <div key={`${item.name}-${index}`} className="border-b border-border py-2 last:border-0"><b className="block text-sm">{item.name}</b><small className="text-xs text-muted-foreground">{item.dosage || "Δοσολογία κατά το πρότυπο"}{item.timing ? ` · ${item.timing}` : ""}</small></div>) : <p className="text-sm text-muted-foreground">Η προεπισκόπηση θα φορτωθεί κατά την ανάθεση.</p>}</div></div> : <div className="grid min-h-56 place-items-center rounded-[16px] border border-dashed border-border bg-muted/30 p-6 text-center text-sm text-muted-foreground">Επίλεξε ένα πρότυπο από τη λίστα.</div>; })()}</section></div><DialogFooter className="border-t border-border px-6 py-4 sm:justify-end"><Button type="button" variant="outline" onClick={() => setTemplateDialogOpen(false)} className="h-[42px] rounded-full px-4 text-[13px] font-extrabold">Ακύρωση</Button><Button type="button" variant="lime" disabled={!selectedTemplateId || applyingTemplate} onClick={() => void applyTemplate()} className="h-[42px] rounded-full px-5 text-[14px] font-extrabold">{applyingTemplate ? "Ανάθεση…" : "Ανάθεση & επεξεργασία"}</Button></DialogFooter></DialogContent></Dialog></>}
         {supplements.length > 0 && (
           <div className="space-y-2">
             {supplements.map((supplement) => (

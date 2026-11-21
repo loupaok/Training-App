@@ -64,6 +64,22 @@ function clearAuthCookies(res) {
   res.clearCookie('refreshToken', { path: '/' });
 }
 
+function isNativeClient(req) {
+  return req.get('x-client-platform') === 'native';
+}
+
+function tokenResponseFor(req, accessToken, refreshToken = null) {
+  // Browsers authenticate exclusively with HttpOnly cookies. Bearer tokens are
+  // returned only to the Capacitor app, where they are needed for native API
+  // requests and are stored outside browser localStorage.
+  if (!isNativeClient(req)) return {};
+  return {
+    token: accessToken,
+    accessToken,
+    ...(refreshToken ? { refreshToken } : {}),
+  };
+}
+
 export function generateAccessToken(user) {
   return jwt.sign(
     { id: user.id, email: user.email, role: user.role },
@@ -101,6 +117,7 @@ export async function ensureAuthSchema(connection) {
       for (const statement of [
         'ALTER TABLE users ADD COLUMN first_name VARCHAR(100)',
         'ALTER TABLE users ADD COLUMN last_name VARCHAR(100)',
+        'ALTER TABLE users ADD COLUMN last_seen_at TIMESTAMP NULL',
         "ALTER TABLE users ADD COLUMN status ENUM('pending_payment', 'active', 'expired') DEFAULT 'pending_payment'",
         "ALTER TABLE users ADD COLUMN payment_method ENUM('bank', 'stripe') DEFAULT 'bank'",
         'ALTER TABLE users ADD COLUMN approved_at TIMESTAMP NULL',
@@ -283,9 +300,7 @@ router.post('/register', [
 
     res.status(201).json({
       message: 'User registered successfully',
-      token: accessToken,
-      accessToken,
-      refreshToken,
+      ...tokenResponseFor(req, accessToken, refreshToken),
       role: responseUser.role,
       status: responseUser.status,
       redirectTo: responseUser.redirectTo,
@@ -346,8 +361,7 @@ router.post('/login', [
     const responseUser = buildUserResponse(user, onboardingCompleted);
 
     res.json({
-      accessToken,
-      refreshToken,
+      ...tokenResponseFor(req, accessToken, refreshToken),
       role: responseUser.role,
       status: responseUser.status,
       redirectTo: responseUser.redirectTo,
@@ -540,7 +554,7 @@ async function refreshHandler(req, res) {
     setAuthCookies(res, accessToken);
 
     res.json({
-      accessToken,
+      ...tokenResponseFor(req, accessToken),
       role: user.role,
       status: normalizeStatus(user),
       redirectTo: getRedirectPath({ ...user, status: normalizeStatus(user) })

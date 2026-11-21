@@ -328,3 +328,19 @@
   bottom: -5rem !important;
   height: auto !important;
 }
+
+/* Supplement template assignment shares the centered, large template viewport. */
+@media (min-width: 640px) {
+  [data-slot="dialog-content"].max-w-\[1280px\] {
+    width: calc(100vw - 3rem) !important;
+    max-width: 1400px !important;
+    height: min(88dvh, 900px) !important;
+  }
+}
+/* The resizable library adds an inner overflow:auto wrapper. In the nutrition
+   editor that wrapper would become the sticky containing block, so the food
+   library could never follow the page scroll. Keep scrolling only on the food
+   list itself. */
+.nutrition-editor-panels [data-panel] > div {
+  overflow: visible !important;
+}

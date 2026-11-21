@@ -927,11 +927,13 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
             </TabsContent>}
 
             {activeTab === "payments" && <TabsContent value="payments" className="mt-6">
-              <div className="mb-5 flex flex-wrap gap-2 rounded-[16px] border border-border bg-card p-2">
+              <div className="hidden">
                 <span className="flex h-10 items-center rounded-full bg-foreground px-4 text-xs font-extrabold text-background"><CreditCard className="mr-1.5 h-4 w-4" />Πληρωμές</span>
                 <span className="flex h-10 items-center rounded-full px-4 text-xs font-extrabold"><Coins className="mr-1.5 h-4 w-4" />Πόντοι</span>
               </div>
-              <PaymentsTab
+              <div className="space-y-5">
+                <PaymentSummaryCards client={client} />
+                <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]"><PaymentsTab
                 client={client}
                 clientId={clientId}
                 onApprovePayment={approvePayment}
@@ -941,7 +943,11 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 onUpdated={loadClientDetail}
                 openRequest={paymentDialogRequest}
               />
-              <div className="mt-6"><PointsTab clientId={clientId} /></div>
+                <div className="space-y-5 xl:sticky xl:top-5">
+                  <UpcomingSubscriptionsCard client={client} />
+                  <PointsTab clientId={clientId} />
+                </div></div>
+              </div>
             </TabsContent>}
 
             {activeTab === "messages" && <TabsContent value="messages" className="mt-6">
@@ -2712,7 +2718,10 @@ function PaymentsTab({
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [paymentToDelete, setPaymentToDelete] = useState<Payment | null>(null);
+  const [receiptPayment, setReceiptPayment] = useState<Payment | null>(null);
   const [deletingPayment, setDeletingPayment] = useState(false);
+  const [showAllPayments, setShowAllPayments] = useState(false);
+  const [paymentFilter, setPaymentFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
 
   const loadPayments = async () => {
     const rows = await api.get<Payment[]>(`/clients/${clientId}/payments`);
@@ -2787,12 +2796,18 @@ function PaymentsTab({
     }
   };
 
-  const subscriptionMeta = client.subscription
-    ? subscriptionStatusMeta(client.subscription.status, client.subscription.end_date)
-    : null;
-  const upcomingSubscriptions = client.upcomingSubscriptions?.length
-    ? client.upcomingSubscriptions
-    : client.upcomingSubscription ? [client.upcomingSubscription] : [];
+  const approvedPayments = payments.filter((payment) => ["completed", "confirmed", "paid"].includes(String(payment.status || "").toLowerCase()));
+  const pendingPayments = payments.filter((payment) => ["pending", "pending_payment"].includes(String(payment.status || "").toLowerCase()));
+  const rejectedPayments = payments.filter((payment) => ["failed", "rejected", "refunded"].includes(String(payment.status || "").toLowerCase()));
+  const pendingPayment = pendingPayments[0];
+  const filteredPayments = payments.filter((payment) => {
+    const status = String(payment.status || "").toLowerCase();
+    if (paymentFilter === "pending") return ["pending", "pending_payment"].includes(status);
+    if (paymentFilter === "approved") return ["completed", "confirmed", "paid"].includes(status);
+    if (paymentFilter === "rejected") return ["failed", "rejected", "refunded"].includes(status);
+    return true;
+  });
+  const visiblePayments = showAllPayments ? filteredPayments : filteredPayments.slice(0, 9);
 
   const openPaymentDialog = (nextOpen: boolean) => {
     if (nextOpen) {
@@ -2820,60 +2835,26 @@ function PaymentsTab({
 
   return (
     <TooltipProvider>
-      <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground">Κατάσταση</p>
-            {subscriptionMeta ? <Badge className={`mt-2 h-auto rounded-md px-3 py-1.5 text-sm font-bold ${subscriptionMeta.className}`}>{subscriptionMeta.label}</Badge> : <p className="mt-2 text-lg font-semibold">-</p>}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground">Πλάνο</p>
-            <p className="mt-2 text-lg font-semibold">{client.subscription?.plan_name || "-"}</p>
-            <p className="text-sm text-muted-foreground">{client.subscription?.price !== undefined && client.subscription?.price !== null ? `${euroAmount(client.subscription.price)}/μήνα` : ""}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-5">
-            <p className="text-sm text-muted-foreground">Λήγει σε</p>
-            <p className="mt-2 text-lg font-semibold">{daysRemaining(client.subscription?.end_date)}</p>
-            <p className="text-sm text-muted-foreground">{shortDate(client.subscription?.end_date)}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <SubscriptionManagement clientId={clientId} subscription={client.subscription} onUpdated={onUpdated} />
-
-      {upcomingSubscriptions.length > 0 && (
-        <Card className="border-border">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Επόμενες ενεργές συνδρομές</CardTitle>
-            <p className="text-sm text-muted-foreground">Έχουν πληρωθεί και θα ενεργοποιηθούν με τη σειρά που εμφανίζονται.</p>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {upcomingSubscriptions.map((upcoming, index) => (
-              <div key={upcoming.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3">
-                <div>
-                  <p className="text-sm font-extrabold">{index + 1}. {upcoming.plan_name}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Ξεκινά {shortDate(upcoming.start_date)} · λήγει {shortDate(upcoming.end_date)}</p>
-                </div>
-                <div className="flex items-center gap-3"><p className="text-sm font-bold">{money(upcoming.price, upcoming.currency || "EUR")}</p><Badge variant="secondary">Πληρωμένο</Badge></div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      <Card className="overflow-hidden p-0">
-        <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-800">
-          <div>
-            <CardTitle className="text-xl font-bold">Ιστορικό Πληρωμών</CardTitle>
-            <p className="mt-1 text-sm font-semibold text-slate-500 dark:text-slate-400">Όλες οι πληρωμές του πελάτη και οι χειροκίνητες ενέργειες έγκρισης.</p>
+      <div className="space-y-5">
+      {pendingPayment && (
+        <div className="flex flex-col gap-4 rounded-[20px] bg-accent p-[18px] text-accent-foreground sm:flex-row sm:items-center sm:gap-4 sm:px-[22px]">
+          <span className="grid size-11 shrink-0 place-items-center rounded-[13px] bg-[#0b0b0b] text-accent"><CreditCard className="size-[19px]" /></span>
+          <div className="min-w-0 flex-1"><p className="text-[16px] font-extrabold">{paymentMethodLabel(pendingPayment.method)} {euroAmount(pendingPayment.amount)} · {client.subscription?.plan_name || "Συνδρομή"} — περιμένει επιβεβαίωση</p><p className="mt-0.5 text-[13px]">Επιλέχθηκε από τον πελάτη στις {formatGreekPaymentDate(pendingPayment.created_at)} · με την έγκριση αποδίδονται οι αντίστοιχοι πόντοι</p></div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Button type="button" variant="ghost" onClick={() => onRejectPayment(pendingPayment.id)} disabled={rejectingPaymentId === pendingPayment.id} className="h-[42px] rounded-full px-[14px] text-[13px] font-extrabold text-accent-foreground hover:bg-black/10 hover:text-accent-foreground">{rejectingPaymentId === pendingPayment.id ? "Απόρριψη..." : "Απόρριψη"}</Button>
+            <Button type="button" onClick={() => onApprovePayment(pendingPayment.id)} disabled={approvingPayment} className="h-[42px] rounded-full bg-[#0b0b0b] px-5 text-[14px] font-extrabold text-white hover:bg-[#252525]"><span className="mr-2 text-base">✓</span>{approvingPayment ? "Έγκριση..." : pendingPayment.method === "cash" ? "Παρελήφθη" : "Έγκριση"}</Button>
           </div>
+        </div>
+      )}
+      <Card className="overflow-hidden rounded-[20px] border-border p-0 shadow-none">
+        <CardHeader className="gap-4 border-b border-border px-5 py-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2.5">
+              <span className="grid size-8 place-items-center rounded-[10px] bg-[#0b0b0b] text-accent"><CreditCard className="size-[15px]" /></span>
+              <div><CardTitle className="text-[15px] font-extrabold">Ιστορικό πληρωμών</CardTitle><p className="text-xs text-muted-foreground">Οι απορριφθείσες συμπτύσσονται · ενέργειες στο ⋯</p></div>
+            </div>
           <Dialog open={open} onOpenChange={openPaymentDialog}>
-            <DialogTrigger render={<Button>Νέα Πληρωμή</Button>} />
+            <DialogTrigger render={<Button className="h-[34px] rounded-full bg-[#0b0b0b] px-4 text-[13px] font-extrabold text-white hover:bg-[#252525]"><Plus className="mr-1.5 size-4" />Νέα πληρωμή</Button>} />
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>Νέα Πληρωμή</DialogTitle>
@@ -2958,48 +2939,51 @@ function PaymentsTab({
               </form>
             </DialogContent>
           </Dialog>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {([
+              ["all", `Όλες ${payments.length}`],
+              ["pending", `Εκκρεμείς ${pendingPayments.length}`],
+              ["approved", `Εγκρίθηκαν ${approvedPayments.length}`],
+              ["rejected", `Απορρίφθηκαν ${rejectedPayments.length}`],
+            ] as const).map(([value, label]) => <button key={value} type="button" onClick={() => { setPaymentFilter(value); setShowAllPayments(false); }} className={cn("h-[30px] rounded-full px-3 text-xs font-extrabold", paymentFilter === value ? "bg-[#0b0b0b] text-white" : "bg-muted text-[#555] hover:bg-muted/70")}>{label}</button>)}
+          </div>
         </CardHeader>
 
+      <div className="px-5 pb-5">
       <Table>
-        <TableHeader className="border-b border-slate-200 bg-slate-50 text-xs font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-800 dark:text-slate-400">
+        <TableHeader className="border-b border-border bg-transparent text-[10px] font-extrabold tracking-[.6px] text-muted-foreground">
           <TableRow>
-            <TableHead className="px-5 py-4">Ημερομηνία</TableHead>
-            <TableHead className="px-5 py-4">Ποσό</TableHead>
-            <TableHead className="px-5 py-4">Τρόπος</TableHead>
-            <TableHead className="px-5 py-4">Status</TableHead>
-            <TableHead className="px-5 py-4">Αποδεικτικό</TableHead>
-            <TableHead className="px-5 py-4">Σημειώσεις</TableHead>
-            <TableHead className="px-5 py-4">Ενέργειες</TableHead>
+            <TableHead className="px-2 py-2">ΗΜ/ΝΙΑ</TableHead>
+            <TableHead className="px-2 py-2">ΠΟΣΟ</TableHead>
+            <TableHead className="px-2 py-2">ΤΡΟΠΟΣ</TableHead>
+            <TableHead className="px-2 py-2">STATUS</TableHead>
+            <TableHead className="px-2 py-2">ΑΠΟΔΕΙΚΤΙΚΟ · ΣΗΜΕΙΩΣΗ</TableHead>
+            <TableHead className="px-2 py-2 text-right">⋯</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody className="divide-y divide-slate-100 dark:divide-slate-800">
-          {payments.map((payment) => (
+          {visiblePayments.map((payment) => (
             <TableRow key={payment.id} className="align-top">
-              <TableCell className="whitespace-normal px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">{formatGreekPaymentDate(payment.paid_at || payment.created_at)}</TableCell>
-              <TableCell className="whitespace-normal px-5 py-4 font-bold text-slate-950 dark:text-slate-50">{euroAmount(payment.amount)}</TableCell>
-              <TableCell className="whitespace-normal px-5 py-4 font-semibold text-slate-700 dark:text-slate-200">
+              <TableCell className="whitespace-nowrap px-2 py-[11px] text-[13px] font-extrabold">{formatGreekPaymentDate(payment.paid_at || payment.created_at)}</TableCell>
+              <TableCell className="whitespace-nowrap px-2 py-[11px] text-[13px] font-extrabold">{euroAmount(payment.amount)}</TableCell>
+              <TableCell className="whitespace-nowrap px-2 py-[11px] text-[13px]">
                 {paymentMethodLabel(payment.method)}
               </TableCell>
-              <TableCell className="whitespace-normal px-5 py-4">
+              <TableCell className="whitespace-nowrap px-2 py-[11px]">
                 <PaymentStatus status={payment.status} />
               </TableCell>
-              <TableCell className="whitespace-normal px-5 py-4">
-                {payment.proof_url ? (
-                  <Button asChild type="button" variant="outline" size="sm" className="h-8 rounded-full px-3 text-xs font-bold">
-                    <a href={resolveMediaUrl(payment.proof_url)} target="_blank" rel="noreferrer"><FileText className="mr-1.5 h-3.5 w-3.5" />Έμβασμα</a>
-                  </Button>
-                ) : payment.method === "bank_transfer" || payment.method === "bank" ? <span className="text-xs text-muted-foreground">Δεν ανέβηκε αποδεικτικό εμβάσματος</span> : <span className="text-xs text-muted-foreground">—</span>}
+              <TableCell className="max-w-56 px-2 py-[11px]">
+                <div className="flex min-w-0 items-center gap-2 text-[12px] text-muted-foreground">
+                  {payment.proof_url ? <a className="shrink-0 font-extrabold underline underline-offset-2 hover:text-foreground" href={resolveMediaUrl(payment.proof_url)} target="_blank" rel="noreferrer">Αποδεικτικό</a> : <span className="shrink-0">—</span>}
+                  {clientPaymentNote(payment.notes) && <Tooltip><TooltipTrigger render={<span className="min-w-0 cursor-default truncate" />}>{clientPaymentNote(payment.notes)}</TooltipTrigger><TooltipContent>{clientPaymentNote(payment.notes)}</TooltipContent></Tooltip>}
+                </div>
               </TableCell>
-              <TableCell className="max-w-56 whitespace-normal px-5 py-4">
-                {clientPaymentNote(payment.notes) ? (
-                  <Tooltip>
-                    <TooltipTrigger render={<span className="block cursor-default truncate text-sm text-muted-foreground" />}>{clientPaymentNote(payment.notes)}</TooltipTrigger>
-                    <TooltipContent>{clientPaymentNote(payment.notes)}</TooltipContent>
-                  </Tooltip>
-                ) : <span className="text-muted-foreground">-</span>}
-              </TableCell>
-              <TableCell className="whitespace-normal px-5 py-4 [&>div>button[aria-label]]:hidden">
+              <TableCell className="whitespace-nowrap px-2 py-[11px] [&>div>button[aria-label]]:hidden">
                 <div className="flex flex-wrap items-center gap-2">
+                  {["completed", "confirmed", "paid"].includes(String(payment.status || "").toLowerCase()) && (
+                    <Button type="button" variant="outline" onClick={() => setReceiptPayment(payment)} className="h-8 rounded-full px-3 text-xs font-extrabold"><FileText className="mr-1.5 size-3.5" />Απόδειξη</Button>
+                  )}
                   {payment.status === "pending" && (
                     <>
                     <Button
@@ -3028,13 +3012,21 @@ function PaymentsTab({
           ))}
           {!payments.length && (
             <TableRow>
-              <TableCell colSpan={7} className="whitespace-normal px-5 py-10 text-center font-semibold text-slate-500 dark:text-slate-400">
+                <TableCell colSpan={6} className="whitespace-normal px-2 py-10 text-center text-sm font-semibold text-muted-foreground">
                 Δεν υπάρχουν πληρωμές ακόμα.
               </TableCell>
             </TableRow>
           )}
         </TableBody>
       </Table>
+      {payments.length > 9 && (
+        <div className="flex justify-center border-t border-border p-4">
+          <Button type="button" variant="outline" onClick={() => setShowAllPayments((current) => !current)} className="h-[34px] rounded-full px-4 text-xs font-extrabold">
+            {showAllPayments ? "Λιγότερες" : `Παλαιότερες (${payments.length - 9})`}
+          </Button>
+        </div>
+      )}
+      </div>
       </Card>
       <AlertDialog open={Boolean(paymentToDelete)} onOpenChange={(open) => !open && setPaymentToDelete(null)}>
         <AlertDialogContent>
@@ -3052,8 +3044,80 @@ function PaymentsTab({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <Dialog open={Boolean(receiptPayment)} onOpenChange={(nextOpen) => !nextOpen && setReceiptPayment(null)}>
+        <DialogContent className="max-w-[560px] rounded-[24px] p-0">
+          {receiptPayment && <PaymentReceipt client={client} payment={receiptPayment} />}
+        </DialogContent>
+      </Dialog>
       </div>
     </TooltipProvider>
+  );
+}
+
+function PaymentSummaryCards({ client }: { client: ClientRecord }) {
+  const payments = client.payments || [];
+  const approved = payments.filter((payment) => ["completed", "confirmed", "paid"].includes(String(payment.status || "").toLowerCase()));
+  const pending = payments.filter((payment) => ["pending", "pending_payment"].includes(String(payment.status || "").toLowerCase()));
+  const paidTotal = approved.reduce((total, payment) => total + Number(payment.amount || 0), 0);
+  const meta = client.subscription ? subscriptionStatusMeta(client.subscription.status, client.subscription.end_date) : null;
+  const upcomingCount = client.upcomingSubscriptions?.length || (client.upcomingSubscription ? 1 : 0);
+  const items = [
+    ["Συνδρομή", client.subscription?.plan_name || "—", meta ? `${meta.label} · ${daysRemaining(client.subscription?.end_date)}` : "Δεν υπάρχει ενεργή συνδρομή"],
+    ["Πληρωμένα συνολικά", euroAmount(paidTotal), `${approved.length} εγκεκριμένες πληρωμές`],
+    ["Επόμενες συνδρομές", upcomingCount.toLocaleString("el-GR"), "πληρωμένες · ενεργοποίηση στη σειρά"],
+    ["Εκκρεμείς πληρωμές", pending.length.toLocaleString("el-GR"), "χρειάζονται επιβεβαίωση"],
+  ];
+  return <div className="flex flex-wrap gap-4">{items.map(([label, value, hint]) => <Card key={label} className="min-w-[220px] flex-1 rounded-[20px] border-border shadow-none"><CardContent className="flex flex-col gap-1 p-5"><span className="text-xs font-bold text-muted-foreground">{label}</span><b className="text-[26px] font-extrabold italic tracking-[-.6px]">{value}</b><small className="text-xs text-muted-foreground">{hint}</small></CardContent></Card>)}</div>;
+}
+
+function UpcomingSubscriptionsCard({ client }: { client: ClientRecord }) {
+  const subscriptions = client.upcomingSubscriptions?.length
+    ? client.upcomingSubscriptions
+    : client.upcomingSubscription ? [client.upcomingSubscription] : [];
+
+  return (
+    <Card className="min-w-0 rounded-[20px] border-border p-0 shadow-none">
+      <CardContent className="flex flex-col gap-[14px] p-5">
+        <div className="flex items-center gap-2.5">
+          <span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-[#0b0b0b] text-accent"><CalendarDays className="size-[15px]" /></span>
+          <span className="min-w-0 flex-1"><b className="block text-[15px]">Επόμενες συνδρομές</b><small className="block text-xs text-muted-foreground">Ενεργοποιούνται με τη σειρά</small></span>
+        </div>
+        {subscriptions.length ? subscriptions.map((subscription, index) => (
+          <div key={subscription.id ?? `${subscription.start_date}-${index}`} className="flex items-center gap-2.5 rounded-xl bg-muted px-3 py-2.5">
+            <span className="grid size-[22px] shrink-0 place-items-center rounded-full bg-[#0b0b0b] text-[11px] font-extrabold text-accent">{index + 1}</span>
+            <span className="min-w-0 flex-1"><b className="block truncate text-[13px]">{subscription.plan_name || "Συνδρομή"}</b><small className="block text-[11px] text-muted-foreground">{shortDate(subscription.start_date)} → {shortDate(subscription.end_date)}</small></span>
+            <Badge className="h-6 shrink-0 rounded-full bg-[var(--sp-lime-soft)] px-2.5 text-[11px] font-extrabold text-[#2f5200] hover:bg-[var(--sp-lime-soft)]">Πληρωμένο</Badge>
+          </div>
+        )) : (
+          <div className="rounded-xl bg-muted/70 px-3 py-3 text-[13px] text-muted-foreground">Δεν υπάρχουν επόμενες πληρωμένες συνδρομές.</div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PaymentReceipt({ client, payment }: { client: ClientRecord; payment: Payment }) {
+  const issuedAt = payment.paid_at || payment.created_at;
+  return (
+    <div className="overflow-hidden rounded-[24px] bg-card">
+      <div className="flex items-start justify-between bg-[#0b0b0b] px-7 py-6 text-white">
+        <div><p className="text-[11px] font-extrabold tracking-[1px] text-neutral-400">SP TEAM</p><h2 className="mt-1 text-[24px] font-extrabold italic">Απόδειξη πληρωμής</h2></div>
+        <span className="rounded-full bg-accent px-3 py-1.5 text-[11px] font-extrabold text-accent-foreground">#{payment.id}</span>
+      </div>
+      <div className="space-y-5 p-7">
+        <div className="grid gap-4 rounded-[16px] bg-muted/70 p-4 sm:grid-cols-2">
+          <div><p className="text-[10px] font-extrabold tracking-[.7px] text-muted-foreground">ΠΕΛΑΤΗΣ</p><p className="mt-1 text-sm font-extrabold">{client.full_name || "—"}</p><p className="mt-1 text-xs text-muted-foreground">{client.email || "—"}{client.phone ? ` · ${client.phone}` : ""}</p></div>
+          <div><p className="text-[10px] font-extrabold tracking-[.7px] text-muted-foreground">ΗΜΕΡΟΜΗΝΙΑ</p><p className="mt-1 text-sm font-extrabold">{formatGreekPaymentDate(issuedAt)}</p><p className="mt-1 text-xs text-muted-foreground">{paymentMethodLabel(payment.method)}</p></div>
+        </div>
+        <div className="space-y-3 border-y border-border py-4 text-sm">
+          <p className="flex justify-between gap-4"><span className="text-muted-foreground">Ποσό</span><b className="text-[22px] font-extrabold italic">{euroAmount(payment.amount)}</b></p>
+          <p className="flex justify-between gap-4"><span className="text-muted-foreground">Κατάσταση</span><PaymentStatus status={payment.status} /></p>
+          {payment.reference_number && <p className="flex justify-between gap-4"><span className="text-muted-foreground">Κωδικός αναφοράς</span><b className="font-mono text-xs">{payment.reference_number}</b></p>}
+        </div>
+        {payment.proof_url && <a className="inline-flex h-10 items-center gap-2 rounded-full border border-foreground px-4 text-xs font-extrabold" href={resolveMediaUrl(payment.proof_url)} target="_blank" rel="noreferrer"><FileText className="size-4" />Προβολή αποδεικτικού</a>}
+        <p className="text-xs leading-5 text-muted-foreground">Η απόδειξη περιλαμβάνει τα στοιχεία του πελάτη και την καταχώριση πληρωμής στην εφαρμογή.</p>
+      </div>
+    </div>
   );
 }
 
@@ -3067,7 +3131,7 @@ function PaymentStatus({ status }: { status?: string }) {
   };
   const [label, className] = meta[status || ""] || [status || "-", "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"];
 
-  return <Badge className={`h-auto rounded-md px-3 py-1 text-sm font-bold ${className}`}>{label}</Badge>;
+  return <Badge className={`h-6 rounded-full px-2.5 text-[11px] font-extrabold ${className}`}>{label}</Badge>;
 }
 
 // ---------------------------------------------------------------------------
@@ -3785,6 +3849,7 @@ function PointsTab({ clientId }: { clientId: string }) {
   const [data, setData] = useState<ClientPointsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showAllHistory, setShowAllHistory] = useState(false);
 
   const [addOpen, setAddOpen] = useState(false);
   const [addPoints, setAddPoints] = useState("100");
@@ -3843,7 +3908,30 @@ function PointsTab({ clientId }: { clientId: string }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      <Card className="rounded-[20px] border-border p-0 shadow-none">
+        <CardContent className="flex flex-col gap-[14px] p-5">
+          <div className="flex items-center gap-2.5"><span className="grid size-8 shrink-0 place-items-center rounded-[10px] bg-[#0b0b0b] text-accent"><Coins className="size-[15px]" /></span><span className="min-w-0 flex-1"><b className="block text-[15px]">Πόντοι</b><small className="block text-xs text-muted-foreground">{data.availablePoints.toLocaleString("el-GR")} διαθέσιμοι ≈ {(data.availablePoints / 100).toLocaleString("el-GR", { maximumFractionDigits: 2 })} €</small></span><Button type="button" onClick={() => setAddOpen(true)} className="h-[34px] shrink-0 rounded-full bg-[#0b0b0b] px-3 text-xs font-extrabold text-white hover:bg-[#252525]"><Plus className="mr-1 size-4" />Πόντοι</Button></div>
+          <div className="flex h-2 overflow-hidden rounded-full gap-0.5"><span className="bg-accent" style={{ width: `${data.totalPoints ? Math.min(100, (data.availablePoints / data.totalPoints) * 100) : 0}%` }} /><span className="flex-1 bg-[#0b0b0b]" /></div>
+          <div className="flex justify-between text-[11px] text-muted-foreground"><span>■ Διαθέσιμοι {data.availablePoints.toLocaleString("el-GR")}</span><span>■ Εξαργυρωμένοι {data.usedPoints.toLocaleString("el-GR")}</span></div>
+          {!data.transactions.length ? (
+            <div className="flex min-h-32 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
+              <Target className="h-8 w-8" />
+              <p className="text-sm">Δεν υπάρχει ιστορικό πόντων ακόμα.</p>
+            </div>
+          ) : (
+            <div className="space-y-0">
+              {(showAllHistory ? data.transactions : data.transactions.slice(0, 5)).map((tx) => {
+                const meta = pointsTypeMeta[tx.type] ?? { label: tx.type, dotClass: "bg-slate-400" };
+                const signedPoints = tx.type === "redeemed" ? -Math.abs(tx.points) : Math.abs(tx.points);
+                return <div key={tx.id} className="flex items-center gap-2.5 border-t border-border py-3 first:border-t-0"><span className={`h-2 w-2 shrink-0 rounded-full ${meta.dotClass}`} /><span className="min-w-0 flex-1"><b className="block truncate text-[13px]">{tx.description || meta.label}</b><small className="block truncate text-[11px] text-muted-foreground">{formatGreekPaymentDate(tx.created_at)}</small></span><b className={cn("shrink-0 text-sm", signedPoints < 0 ? "text-foreground" : "text-emerald-700 dark:text-accent")}>{signedPoints > 0 ? "+" : ""}{signedPoints.toLocaleString("el-GR")}</b></div>;
+              })}
+            </div>
+          )}
+          {data.transactions.length > 5 && <Button type="button" variant="ghost" onClick={() => setShowAllHistory((current) => !current)} className="h-auto justify-start p-0 text-xs font-extrabold hover:bg-transparent">{showAllHistory ? "Λιγότερες κινήσεις" : "Όλο το ιστορικό →"}</Button>}
+        </CardContent>
+      </Card>
+      <div className="hidden">
       <div className="grid gap-4 sm:grid-cols-3">
         <Card className="p-5">
           <p className="text-sm text-muted-foreground">Σύνολο πόντων</p>
@@ -3900,6 +3988,7 @@ function PointsTab({ clientId }: { clientId: string }) {
         </CardContent>
       </Card>
 
+      </div>
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>
           <DialogHeader>

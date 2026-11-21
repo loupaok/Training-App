@@ -1,4 +1,4 @@
-import { getNativePreference, nativeStorageKeys } from "@/lib/native/preferences";
+import { getNativePreference, isNativePlatform, nativeStorageKeys } from "@/lib/native/preferences";
 
 const localBrowserApiBase = typeof window !== "undefined"
   && window.location.protocol === "http:"
@@ -15,9 +15,11 @@ export interface ApiRequestOptions extends RequestInit {
 class ApiError extends Error {}
 
 async function request<T = unknown>(endpoint: string, options: ApiRequestOptions = {}): Promise<T> {
-  const token = await getNativePreference(nativeStorageKeys.accessToken);
+  const native = isNativePlatform();
+  const token = native ? await getNativePreference(nativeStorageKeys.accessToken) : null;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...(native ? { "X-Client-Platform": "native" } : {}),
     ...options.headers,
   };
 
@@ -70,8 +72,9 @@ export const api = {
   },
 
   async upload<T = unknown>(endpoint: string, formData: FormData, method: "POST" | "PUT" = "POST"): Promise<T> {
-    const token = await getNativePreference(nativeStorageKeys.accessToken);
-    const headers: Record<string, string> = {};
+    const native = isNativePlatform();
+    const token = native ? await getNativePreference(nativeStorageKeys.accessToken) : null;
+    const headers: Record<string, string> = native ? { "X-Client-Platform": "native" } : {};
 
     if (token) {
       headers.Authorization = `Bearer ${token}`;

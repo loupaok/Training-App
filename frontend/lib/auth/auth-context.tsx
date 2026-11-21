@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api/client";
-import { getNativePreference, nativeStorageKeys, removeNativePreference, setNativePreference } from "@/lib/native/preferences";
+import { getNativePreference, isNativePlatform, nativeStorageKeys, removeNativePreference, setNativePreference } from "@/lib/native/preferences";
 import { registerPushToken } from "@/lib/pushNotifications";
 import type { AuthResult, AuthUser } from "@/types/auth";
 
@@ -28,6 +28,10 @@ async function authFetch(endpoint: string, options: RequestInit = {}) {
     return await fetch(`${API_BASE_URL}${endpoint}`, {
       ...options,
       signal: controller.signal,
+      headers: {
+        ...(isNativePlatform() ? { "X-Client-Platform": "native" } : {}),
+        ...(options.headers || {}),
+      },
     });
   } finally {
     window.clearTimeout(timeoutId);
@@ -55,7 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([getNativePreference(nativeStorageKeys.accessToken), getNativePreference(nativeStorageKeys.user)]).then(([storedToken, storedUser]) => {
+    const native = isNativePlatform();
+    void Promise.all([native ? getNativePreference(nativeStorageKeys.accessToken) : Promise.resolve(null), getNativePreference(nativeStorageKeys.user)]).then(([storedToken, storedUser]) => {
       if (cancelled) return;
       setToken(storedToken);
       try { setUser(storedUser ? JSON.parse(storedUser) as AuthUser : null); } catch { setUser(null); }
@@ -66,6 +71,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!storageReady) return;
+    if (!isNativePlatform()) {
+      void removeNativePreference(nativeStorageKeys.accessToken);
+      void removeNativePreference(nativeStorageKeys.refreshToken);
+      return;
+    }
     if (token) void setNativePreference(nativeStorageKeys.accessToken, token);
     else void removeNativePreference(nativeStorageKeys.accessToken);
   }, [storageReady, token]);
@@ -78,7 +88,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Visitors do not need a profile refresh on public auth pages. An existing
     // session does: without it, a signed-in client could reopen /register and
     // see an old wizard draft instead of being redirected to their account.
-    if ((pathname === "/login" || pathname === "/register") && !token) {
+    const native = isNativePlatform();
+    // On public auth pages, a visitor without a cached session has no reason
+    // to call /auth/me or /auth/refresh. This avoids expected 401/400 noise
+    // while an existing signed-in browser session still gets refreshed.
+    if ((pathname === "/login" || pathname === "/register") && !token && !user) {
       setRefreshingProfile(false);
       return () => {
         ignore = true;
@@ -87,10 +101,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const loadMe = async (allowRefresh = true): Promise<{ user: AuthUser }> => {
       const headers: Record<string, string> = {};
-      const storedToken = await getNativePreference(nativeStorageKeys.accessToken);
-      const storedRefreshToken = await getNativePreference(nativeStorageKeys.refreshToken);
+      const storedToken = native ? await getNativePreference(nativeStorageKeys.accessToken) : null;
+      const storedRefreshToken = native ? await getNativePreference(nativeStorageKeys.refreshToken) : null;
 
-      if (!storedToken && !storedRefreshToken) {
+      if (native && !storedToken && !storedRefreshToken) {
         throw new Error("No stored session");
       }
 
@@ -102,7 +116,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        if (!allowRefresh || !storedRefreshToken) {
+        // Missing cookies return 401. Only an invalid/expired access token
+        // should attempt a refresh; a visitor must not call refresh at all.
+        if (!allowRefresh || response.status === 401 || (native && !storedRefreshToken)) {
           throw new Error("Profile refresh failed");
         }
 
@@ -110,11 +126,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refreshToken: storedRefreshToken }),
+          body: JSON.stringify(native ? { refreshToken: storedRefreshToken } : {}),
         });
         const refreshData = await refreshResponse.json().catch(() => ({}));
         if (!refreshResponse.ok) throw new Error(refreshData.message || "Profile refresh failed");
-        if (refreshData.accessToken) {
+        if (native && refreshData.accessToken) {
           await setNativePreference(nativeStorageKeys.accessToken, refreshData.accessToken);
           setToken(refreshData.accessToken);
         }
@@ -156,10 +172,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json();
       if (response.ok) {
-        await setNativePreference(nativeStorageKeys.accessToken, data.accessToken);
-        if (data.refreshToken) await setNativePreference(nativeStorageKeys.refreshToken, data.refreshToken);
+        const native = isNativePlatform();
+        if (native) {
+          await setNativePreference(nativeStorageKeys.accessToken, data.accessToken);
+          if (data.refreshToken) await setNativePreference(nativeStorageKeys.refreshToken, data.refreshToken);
+        }
         await setNativePreference(nativeStorageKeys.user, JSON.stringify(data.user));
-        setToken(data.accessToken);
+        setToken(native ? data.accessToken : null);
         setUser(data.user);
         void registerPushToken();
         return { success: true, redirectTo: data.redirectTo || getAuthRedirect(data.user) };
@@ -184,11 +203,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json();
       if (response.ok) {
+        const native = isNativePlatform();
         const accessToken = data.accessToken || data.token;
-        await setNativePreference(nativeStorageKeys.accessToken, accessToken);
-        if (data.refreshToken) await setNativePreference(nativeStorageKeys.refreshToken, data.refreshToken);
+        if (native && accessToken) await setNativePreference(nativeStorageKeys.accessToken, accessToken);
+        if (native && data.refreshToken) await setNativePreference(nativeStorageKeys.refreshToken, data.refreshToken);
         if (data.user) await setNativePreference(nativeStorageKeys.user, JSON.stringify(data.user));
-        setToken(accessToken);
+        setToken(native ? accessToken : null);
         if (data.user) setUser(data.user);
         void registerPushToken();
         return { success: true, redirectTo: data.redirectTo || getAuthRedirect(data.user) };
@@ -202,12 +222,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    const refreshToken = await getNativePreference(nativeStorageKeys.refreshToken);
+    const native = isNativePlatform();
+    const refreshToken = native ? await getNativePreference(nativeStorageKeys.refreshToken) : null;
     authFetch("/auth/logout", {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
+      body: JSON.stringify(native && refreshToken ? { refreshToken } : {}),
     }).catch(() => {});
 
     await Promise.all([

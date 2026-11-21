@@ -17,7 +17,10 @@ function getRequestToken(req) {
 }
 
 function wantsHtml(req) {
-  if (req.originalUrl?.startsWith('/api/')) return false;
+  // Uploaded media is fetched by <img>, PDF viewers and native clients.
+  // Redirecting an unauthenticated media request to /login turns a clear 401
+  // into a misleading 404 and can break client-side media handling.
+  if (req.originalUrl?.startsWith('/api/') || req.originalUrl?.startsWith('/uploads/')) return false;
   return req.accepts(['html', 'json']) === 'html';
 }
 
@@ -46,23 +49,6 @@ export const isAuthenticated = async (req, res, next) => {
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     const connection = await pool.getConnection();
-
-    for (const statement of [
-      'ALTER TABLE users ADD COLUMN last_seen_at TIMESTAMP NULL',
-      "ALTER TABLE users ADD COLUMN status ENUM('pending_payment', 'active', 'expired') DEFAULT 'pending_payment'",
-      "ALTER TABLE users ADD COLUMN payment_method ENUM('bank', 'stripe') DEFAULT 'bank'",
-      'ALTER TABLE users ADD COLUMN approved_at TIMESTAMP NULL',
-      'ALTER TABLE users ADD COLUMN approved_by INT NULL',
-      'ALTER TABLE users ADD COLUMN first_name VARCHAR(100)',
-      'ALTER TABLE users ADD COLUMN last_name VARCHAR(100)',
-      'ALTER TABLE users ADD COLUMN permissions TEXT NULL'
-    ]) {
-      try {
-        await connection.query(statement);
-      } catch (error) {
-        if (error.code !== 'ER_DUP_FIELDNAME') throw error;
-      }
-    }
 
     const [rows] = await connection.query(
       `SELECT id, email, role, is_active, permissions,

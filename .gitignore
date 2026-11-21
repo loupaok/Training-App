@@ -8,8 +8,9 @@ firebase-credentials*.json
 
 # Dependencies
 node_modules/
-package-lock.json
+/package-lock.json
 yarn.lock
+.npm-cache/
 
 # Build outputs
 dist/

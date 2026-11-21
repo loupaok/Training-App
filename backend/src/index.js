@@ -38,6 +38,7 @@ import nutritionCycleRoutes from './routes/nutrition-cycle.js';
 import clientNutritionCycleRoutes from './routes/client-nutrition-cycle.js';
 import discordSettingsRoutes from './routes/discord-settings.js';
 import { authenticateToken, isClient, isCoach } from './middleware/auth.js';
+import { ensureAuthSchema } from './routes/auth.js';
 
 dotenv.config();
 
@@ -94,7 +95,7 @@ app.use(cors({
     return callback(null, false);
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Client-Platform'],
   credentials: true
 }));
 app.use(helmet({
@@ -111,7 +112,37 @@ app.post('/api/payments/stripe/webhook', express.raw({ type: 'application/json' 
 app.use(express.json({ limit: bodyLimit }));
 app.use(express.urlencoded({ extended: true, limit: bodyLimit }));
 
-// Serve uploaded files
+// Progress photos, onboarding documents and payment proofs contain personal
+// data. Keep the public media library (branding, exercises and foods) public,
+// but require the owning client or a coach/admin for these private folders.
+function authorizePrivateUpload(req, res, next) {
+  let relativePath;
+  try {
+    relativePath = decodeURIComponent(req.path || '')
+      .replace(/\\/g, '/')
+      .replace(/^\/+/, '');
+  } catch {
+    return res.status(400).json({ message: 'Invalid upload path' });
+  }
+
+  const segments = relativePath.split('/');
+  if (segments.some((segment) => !segment || segment === '.' || segment === '..' || segment.includes('%'))) {
+    return res.status(400).json({ message: 'Invalid upload path' });
+  }
+
+  const privatePath = /^(?:media\/progress|payments|onboarding)\/(\d+)\//.exec(relativePath);
+  if (!privatePath) return next();
+
+  return authenticateToken(req, res, () => {
+    const ownerId = Number(privatePath[1]);
+    const canAccess = ['admin', 'coach'].includes(req.user?.role) || req.user?.id === ownerId;
+    if (!canAccess) return res.status(403).json({ message: 'You do not have access to this file' });
+    return next();
+  });
+}
+
+// Serve uploaded files. Private folders are protected by authorizePrivateUpload.
+app.use('/uploads', authorizePrivateUpload);
 app.use('/uploads', express.static('uploads', {
   setHeaders(res) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -138,6 +169,7 @@ export const pool = mysql.createPool({
 async function testConnection() {
   try {
     const connection = await pool.getConnection();
+    await ensureAuthSchema(connection);
     console.log('✓ Database connected successfully');
     connection.release();
   } catch (err) {

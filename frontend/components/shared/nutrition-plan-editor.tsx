@@ -463,7 +463,7 @@ export function NutritionPlanEditor({
   const isOffTarget = (diff: number | null) => diff != null && Math.abs(diff) > 10;
 
   return (
-    <Card className="p-0">
+    <Card className="!overflow-visible p-0">
       <PlanHeader title={title} subtitle={subtitle} onSave={onSave} onCreateNew={onCreateNew} saving={saving} />
 
       {/* Full-width, above the resizable split — plan-level fields, not scoped to either panel */}
@@ -499,7 +499,7 @@ export function NutritionPlanEditor({
       </div>
 
       <DndContext sensors={dndSensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <ResizablePanelGroup orientation="horizontal" className="min-h-130">
+        <ResizablePanelGroup orientation="horizontal" className="nutrition-editor-panels min-h-130 !overflow-visible items-start">
         {/* LEFT 70% — meals, unchanged */}
         <ResizablePanel defaultSize="70" minSize="50">
       <div className="space-y-6 p-6 pb-24">
@@ -681,12 +681,8 @@ export function NutritionPlanEditor({
         <ResizableHandle withHandle />
 
         {/* RIGHT 30% — food library, new */}
-        <ResizablePanel
-          defaultSize="30"
-          minSize="22"
-          className="flex flex-col border-l border-slate-200 dark:border-slate-800"
-          style={{ position: "sticky", top: "4rem", alignSelf: "flex-start", height: "calc(100vh - 4rem)", overflow: "hidden" }}
-        >
+          <ResizablePanel defaultSize="30" minSize="22" className="min-w-0 self-start">
+            <aside className="sticky top-16 flex h-[calc(100dvh-4rem)] max-h-[calc(100dvh-4rem)] min-w-0 flex-col overflow-hidden border-l border-slate-200 dark:border-slate-800">
           <div className="space-y-3 border-b border-slate-200 p-3 dark:border-slate-800">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -730,7 +726,8 @@ export function NutritionPlanEditor({
               <div className="p-4 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">Δεν βρέθηκε τρόφιμο.</div>
             )}
           </div>
-        </ResizablePanel>
+            </aside>
+          </ResizablePanel>
       </ResizablePanelGroup>
 
       <DragOverlay>
