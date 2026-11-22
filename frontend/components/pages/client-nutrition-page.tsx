@@ -120,29 +120,30 @@ function NutritionTargetsSummary({ plan, totals }: { plan: NonNullable<Nutrition
     fats: numberValue(plan.fat_g) || totals.fats,
   }
   const items = [
-    { label: "Θερμίδες", value: totals.calories, target: goals.calories, unit: "kcal", color: "bg-foreground", valueClass: "text-[26px]" },
-    { label: "Πρωτεΐνη", value: totals.protein, target: goals.protein, unit: "g", color: "bg-accent", valueClass: "text-[22px]" },
-    { label: "Υδατάνθρακες", value: totals.carbs, target: goals.carbs, unit: "g", color: "bg-foreground", valueClass: "text-[22px]" },
+    { label: "Θερμίδες", value: totals.calories, target: goals.calories, unit: "kcal", color: "bg-[#0b0b0b]", valueClass: "text-[26px]" },
+    { label: "Πρωτεΐνη", value: totals.protein, target: goals.protein, unit: "g", color: "bg-[#b0f90c]", valueClass: "text-[22px]" },
+    { label: "Υδατάνθρακες", value: totals.carbs, target: goals.carbs, unit: "g", color: "bg-[#0b0b0b]", valueClass: "text-[22px]" },
     { label: "Λίπος", value: totals.fats, target: goals.fats, unit: "g", color: "bg-[#c8c8c4]", valueClass: "text-[22px]" },
   ]
 
-  return <Card className="overflow-hidden rounded-[20px] border-border bg-card shadow-none">
+  return <Card className="overflow-hidden rounded-[20px] border-[#e6e6e2] bg-white text-[#0b0b0b] shadow-none">
     <CardContent className="flex flex-col gap-3 px-1 pb-4 pt-[18px]">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-[18px]">
         <b className="text-[15px]">Ημέρα · σύνολο vs στόχος</b>
         <span className="ml-auto inline-flex items-center gap-1 text-[12px] font-extrabold text-foreground">Υπολογισμός στόχων από βάρος & στόχο <ChevronRight className="h-[13px] w-[13px] stroke-[2.4]" /></span>
       </div>
-      <div className="grid grid-cols-1 divide-y divide-border sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+      <div className="grid grid-cols-1 divide-y divide-[#f0f0ee] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
         {items.map((item) => {
           const target = Math.max(0, item.target)
-          const percentage = target ? Math.min(100, Math.round((item.value / target) * 100)) : 0
-          const remaining = Math.max(0, target - item.value)
+          const rawPercentage = target ? Math.round((item.value / target) * 100) : 0
+          const percentage = Math.min(100, Math.max(0, rawPercentage))
+          const remaining = target - item.value
           const format = (value: number) => Math.round(value).toLocaleString("el-GR")
-          return <div key={item.label} className="min-w-0 space-y-2 px-[18px] py-3 first:pt-1 sm:first:py-0 sm:[&:nth-child(2)]:py-0 xl:py-0 xl:[&:nth-child(2)]:py-0">
-            <div className="flex items-baseline justify-between gap-2"><b className="text-[12px] text-[#6a6a6a]">{item.label}</b><span className="inline-flex h-[26px] items-center gap-1 rounded-[8px] border border-border px-2 text-[12px] font-extrabold"><span className="font-semibold text-[#8a8a8a]">στόχος</span>{format(target)}</span></div>
-            <p className={`${item.valueClass} font-extrabold leading-none tracking-[-.5px]`}>{format(item.value)} <span className="text-[13px] font-semibold tracking-normal text-[#8a8a8a]">/ {format(target)} {item.unit}</span></p>
-            <div className="h-2 overflow-hidden rounded-full bg-muted"><span className={`block h-full rounded-full ${item.color}`} style={{ width: `${percentage}%` }} /></div>
-            <small className="block text-[11px] text-[#8a8a8a]">{remaining > 0 ? `υπολείπονται ${format(remaining)} ${item.unit}` : "έφτασες τον στόχο"} · {percentage}%</small>
+          return <div key={item.label} className="min-w-0 space-y-2 px-[18px] py-3 first:pt-1 sm:first:py-0 sm:[&:nth-child(2)]:py-0 xl:border-l xl:border-[#f0f0ee] xl:first:border-l-0 xl:py-0 xl:[&:nth-child(2)]:py-0">
+            <div className="flex items-baseline justify-between gap-2"><b className="text-[12px] text-[#6a6a6a]">{item.label}</b><span className="inline-flex h-[26px] items-center gap-1 rounded-[8px] border border-[#e2e2de] px-2 text-[12px] font-extrabold"><span className="font-semibold text-[#8a8a8a]">στόχος</span>{target ? format(target) : "—"}</span></div>
+            <p className={`${item.valueClass} font-extrabold leading-none tracking-[-.5px]`}>{format(item.value)} <span className="text-[13px] font-semibold tracking-normal text-[#8a8a8a]">/ {target ? format(target) : "—"} {item.unit}</span></p>
+            <div className="h-2 overflow-hidden rounded-full bg-[#ececea]"><span className={`block h-full rounded-full ${item.color}`} style={{ width: `${percentage}%` }} /></div>
+            <small className="block text-[11px] text-[#8a8a8a]">{target ? remaining >= 0 ? `υπολείπονται ${format(remaining)} ${item.unit}` : `υπέρβαση ${format(Math.abs(remaining))} ${item.unit}` : "δεν έχει οριστεί στόχος"}{target ? ` · ${rawPercentage}%` : ""}</small>
           </div>
         })}
       </div>

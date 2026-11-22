@@ -16,6 +16,7 @@ import {
   Plus,
   Trash2,
   ChevronDown,
+  ChevronRight,
   Search,
   AlertTriangle,
   ImageOff,
@@ -450,11 +451,6 @@ export function NutritionPlanEditor({
   );
 
   // The summary is calculated from the foods in all meals, so it always stays in sync.
-  const proteinKcal = totals.proteinG * 4;
-  const carbsKcal = totals.carbsG * 4;
-  const fatKcal = totals.fatG * 9;
-  const macroKcalTotal = proteinKcal + carbsKcal + fatKcal;
-
   const pctDiff = (actual: number, target: string | number): number | null => {
     const targetNum = Number(target);
     if (!targetNum) return null;
@@ -471,19 +467,19 @@ export function NutritionPlanEditor({
         <Field label="Τίτλος" value={plan.title} onChange={(value) => setPlan({ ...plan, title: value })} />
 
         {/* Automatically calculated from the foods assigned to the meals below. */}
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-800">
-          <div className="grid gap-6 lg:grid-cols-[auto_1fr]">
-            <div>
-              <div className="text-xs font-bold text-slate-500 dark:text-slate-400">Ημερήσιο Σύνολο</div>
-              <div className="mt-1 text-4xl font-bold dark:text-slate-50">
-                {Math.round(totals.calories)} <span className="text-base font-semibold text-slate-500 dark:text-slate-400">kcal</span>
-              </div>
-            </div>
-            <div className="space-y-2.5">
-              <MacroBar label="Πρωτεΐνη" grams={totals.proteinG} kcal={proteinKcal} totalKcal={macroKcalTotal} colorClassName="bg-blue-500" />
-              <MacroBar label="Υδατάνθρακες" grams={totals.carbsG} kcal={carbsKcal} totalKcal={macroKcalTotal} colorClassName="bg-amber-500" />
-              <MacroBar label="Λίπη" grams={totals.fatG} kcal={fatKcal} totalKcal={macroKcalTotal} colorClassName="bg-rose-500" />
-            </div>
+        <div className="flex flex-col gap-3 rounded-[20px] border border-[#e6e6e2] bg-white px-1 pb-4 pt-[18px] text-[#0b0b0b] shadow-none">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-[18px]">
+            <span className="text-[15px] font-extrabold">Ημέρα · σύνολο vs στόχος</span>
+            <span className="ml-auto inline-flex items-center gap-1 text-[12px] font-extrabold text-[#0b0b0b]">
+              Υπολογισμός στόχων από βάρος & στόχο
+              <ChevronRight className="size-[13px] stroke-[2.4]" />
+            </span>
+          </div>
+          <div className="grid grid-cols-1 divide-y divide-[#f0f0ee] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+            <DayGoalMetric label="Θερμίδες" actual={totals.calories} target={Number(plan.dailyCalories) || totals.calories} unit="kcal" barClassName="bg-[#0b0b0b]" prominent />
+            <DayGoalMetric label="Πρωτεΐνη" actual={totals.proteinG} target={Number(plan.proteinG) || totals.proteinG} unit="g" barClassName="bg-[#b0f90c]" />
+            <DayGoalMetric label="Υδατάνθρακες" actual={totals.carbsG} target={Number(plan.carbsG) || totals.carbsG} unit="g" barClassName="bg-[#0b0b0b]" />
+            <DayGoalMetric label="Λίπος" actual={totals.fatG} target={Number(plan.fatG) || totals.fatG} unit="g" barClassName="bg-[#c8c8c4]" />
           </div>
         </div>
 
@@ -773,6 +769,60 @@ function MacroBar({
         </span>
       </div>
       <Progress value={pct} indicatorClassName={colorClassName} className="mt-1" />
+    </div>
+  );
+}
+
+function formatNutritionNumber(value: number) {
+  return value.toLocaleString("el-GR", { maximumFractionDigits: 1 });
+}
+
+function DayGoalMetric({
+  label,
+  actual,
+  target,
+  unit,
+  barClassName,
+  prominent = false,
+}: {
+  label: string;
+  actual: number;
+  target: string | number;
+  unit: string;
+  barClassName: string;
+  prominent?: boolean;
+}) {
+  const targetValue = Number(target) || 0;
+  const percentage = targetValue > 0 ? Math.round((actual / targetValue) * 100) : 0;
+  const barPercentage = Math.min(100, Math.max(0, percentage));
+  const remaining = targetValue - actual;
+  const hasTarget = targetValue > 0;
+
+  return (
+    <div className="flex min-w-0 flex-col gap-2 px-[18px] py-3 sm:py-0 xl:border-l xl:border-[#f0f0ee] xl:first:border-l-0 xl:py-0">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[12px] font-extrabold text-[#6a6a6a]">{label}</span>
+        <span className="inline-flex h-[26px] shrink-0 items-center gap-1 rounded-[8px] border border-[#e2e2de] px-2 text-[12px] font-extrabold text-[#0b0b0b]">
+          <span className="font-semibold text-[#8a8a8a]">στόχος</span>
+          {hasTarget ? formatNutritionNumber(targetValue) : "—"}
+        </span>
+      </div>
+      <span className={cn("font-extrabold leading-none tracking-[-0.5px]", prominent ? "text-[26px]" : "text-[22px]")}>
+        {formatNutritionNumber(actual)}{" "}
+        <span className="text-[13px] font-semibold tracking-normal text-[#8a8a8a]">
+          / {hasTarget ? formatNutritionNumber(targetValue) : "—"} {unit}
+        </span>
+      </span>
+      <div className="h-2 overflow-hidden rounded-full bg-[#ececea]">
+        <div className={cn("h-full rounded-full transition-[width]", barClassName)} style={{ width: `${barPercentage}%` }} />
+      </div>
+      <span className="text-[11px] text-[#8a8a8a]">
+        {hasTarget
+          ? remaining >= 0
+            ? `υπολείπονται ${formatNutritionNumber(remaining)} ${unit} · ${percentage}%`
+            : `υπέρβαση ${formatNutritionNumber(Math.abs(remaining))} ${unit} · ${percentage}%`
+          : "δεν έχει οριστεί στόχος"}
+      </span>
     </div>
   );
 }
