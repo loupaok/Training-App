@@ -476,10 +476,10 @@ export function NutritionPlanEditor({
             </span>
           </div>
           <div className="grid grid-cols-1 divide-y divide-[#f0f0ee] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
-            <DayGoalMetric label="Θερμίδες" actual={totals.calories} target={Number(plan.dailyCalories) || totals.calories} unit="kcal" barClassName="bg-[#0b0b0b]" prominent />
-            <DayGoalMetric label="Πρωτεΐνη" actual={totals.proteinG} target={Number(plan.proteinG) || totals.proteinG} unit="g" barClassName="bg-[#b0f90c]" />
-            <DayGoalMetric label="Υδατάνθρακες" actual={totals.carbsG} target={Number(plan.carbsG) || totals.carbsG} unit="g" barClassName="bg-[#0b0b0b]" />
-            <DayGoalMetric label="Λίπος" actual={totals.fatG} target={Number(plan.fatG) || totals.fatG} unit="g" barClassName="bg-[#c8c8c4]" />
+            <DayGoalMetric label="Θερμίδες" actual={totals.calories} target={plan.dailyCalories} unit="kcal" barClassName="bg-[#0b0b0b]" prominent />
+            <DayGoalMetric label="Πρωτεΐνη" actual={totals.proteinG} target={plan.proteinG} unit="g" barClassName="bg-[#b0f90c]" />
+            <DayGoalMetric label="Υδατάνθρακες" actual={totals.carbsG} target={plan.carbsG} unit="g" barClassName="bg-[#0b0b0b]" />
+            <DayGoalMetric label="Λίπος" actual={totals.fatG} target={plan.fatG} unit="g" barClassName="bg-[#e8b44a]" />
           </div>
         </div>
 
@@ -802,27 +802,25 @@ function DayGoalMetric({
     <div className="flex min-w-0 flex-col gap-2 px-[18px] py-3 sm:py-0 xl:border-l xl:border-[#f0f0ee] xl:first:border-l-0 xl:py-0">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[12px] font-extrabold text-[#6a6a6a]">{label}</span>
-        <span className="inline-flex h-[26px] shrink-0 items-center gap-1 rounded-[8px] border border-[#e2e2de] px-2 text-[12px] font-extrabold text-[#0b0b0b]">
+        {hasTarget && <span className="inline-flex h-[26px] shrink-0 items-center gap-1 rounded-[8px] border border-[#e2e2de] px-2 text-[12px] font-extrabold text-[#0b0b0b]">
           <span className="font-semibold text-[#8a8a8a]">στόχος</span>
-          {hasTarget ? formatNutritionNumber(targetValue) : "—"}
-        </span>
+          {formatNutritionNumber(targetValue)}
+        </span>}
       </div>
       <span className={cn("font-extrabold leading-none tracking-[-0.5px]", prominent ? "text-[26px]" : "text-[22px]")}>
         {formatNutritionNumber(actual)}{" "}
-        <span className="text-[13px] font-semibold tracking-normal text-[#8a8a8a]">
-          / {hasTarget ? formatNutritionNumber(targetValue) : "—"} {unit}
-        </span>
+        <span className="text-[13px] font-semibold tracking-normal text-[#8a8a8a]">{hasTarget ? `/ ${formatNutritionNumber(targetValue)} ${unit}` : unit}</span>
       </span>
       <div className="h-2 overflow-hidden rounded-full bg-[#ececea]">
-        <div className={cn("h-full rounded-full transition-[width]", barClassName)} style={{ width: `${barPercentage}%` }} />
+        <div className={cn("h-full rounded-full transition-[width]", barClassName)} style={{ width: hasTarget ? `${barPercentage}%` : "100%" }} />
       </div>
-      <span className="text-[11px] text-[#8a8a8a]">
-        {hasTarget
-          ? remaining >= 0
+      {hasTarget && <>
+        <span className="text-[11px] text-[#8a8a8a]">
+          {remaining >= 0
             ? `υπολείπονται ${formatNutritionNumber(remaining)} ${unit} · ${percentage}%`
-            : `υπέρβαση ${formatNutritionNumber(Math.abs(remaining))} ${unit} · ${percentage}%`
-          : "δεν έχει οριστεί στόχος"}
-      </span>
+            : `υπέρβαση ${formatNutritionNumber(Math.abs(remaining))} ${unit} · ${percentage}%`}
+        </span>
+      </>}
     </div>
   );
 }
