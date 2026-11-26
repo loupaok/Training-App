@@ -14,34 +14,24 @@ import {
 } from "@dnd-kit/core";
 import {
   Plus,
-  Trash2,
   ChevronDown,
   ChevronRight,
   Search,
   AlertTriangle,
   ImageOff,
-  Coffee,
-  UtensilsCrossed,
-  Cookie,
-  Moon,
-  Zap,
-  Dumbbell,
-  Utensils,
-  type LucideIcon,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Progress } from "@/components/ui/progress";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { resolveMediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
-import { Field, PlanHeader, PlanHistory, SelectField, type PlanHistoryRow } from "@/components/shared/plan-editor-ui";
+import { Field, PlanHeader, PlanHistory, type PlanHistoryRow } from "@/components/shared/plan-editor-ui";
 
 // ---------------------------------------------------------------------------
 // Types, defaults, normalize — UNCHANGED from the current file, except:
@@ -200,16 +190,6 @@ const MEAL_TYPE_OPTIONS: [string, string][] = [
   ["other", "Άλλο"],
 ];
 
-const MEAL_ICONS: Record<string, LucideIcon> = {
-  breakfast: Coffee,
-  lunch: UtensilsCrossed,
-  snack: Cookie,
-  dinner: Moon,
-  pre_workout: Zap,
-  post_workout: Dumbbell,
-  other: Utensils,
-};
-
 const FOOD_LIBRARY_CATEGORIES: { key: string; label: string }[] = [
   { key: "all", label: "Όλα" },
   { key: "meat", label: "Κρέατα" },
@@ -312,13 +292,6 @@ export function NutritionPlanEditor({
     });
   };
 
-  const addMeal = () => {
-    setPlan((current) => ({
-      ...current,
-      meals: [...current.meals, { mealType: "other", title: "Γεύμα", notes: "", foods: [{ foodName: "", quantity: "", calories: "", proteinG: "", carbsG: "", fatG: "" }] }],
-    }));
-  };
-
   const addFood = (mealIndex: number) => {
     updateMeal(mealIndex, {
       foods: [...plan.meals[mealIndex].foods, { foodName: "", quantity: "", calories: "", proteinG: "", carbsG: "", fatG: "" }],
@@ -359,6 +332,11 @@ export function NutritionPlanEditor({
       return;
     }
     updateFood(mealIndex, foodIndex, { quantity: value });
+  };
+
+  const adjustFoodQuantity = (mealIndex: number, foodIndex: number, change: number) => {
+    const currentValue = Number(plan.meals[mealIndex]?.foods[foodIndex]?.quantity) || 0;
+    updateFoodQuantity(mealIndex, foodIndex, String(Math.max(0, currentValue + change)));
   };
 
   // Manually editing the name text moves a row back to freeform (no longer tied to a library entry).
@@ -500,162 +478,67 @@ export function NutritionPlanEditor({
         <ResizablePanel defaultSize="70" minSize="50">
       <div className="space-y-6 p-6 pb-24">
         {plan.meals.map((meal, mealIndex) => {
-          const MealIcon = MEAL_ICONS[meal.mealType] || Utensils;
+          const mealTotals = meal.foods.reduce(
+            (sum, food) => ({
+              calories: sum.calories + (Number(food.calories) || 0),
+              protein: sum.protein + (Number(food.proteinG) || 0),
+              carbs: sum.carbs + (Number(food.carbsG) || 0),
+              fat: sum.fat + (Number(food.fatG) || 0),
+            }),
+            { calories: 0, protein: 0, carbs: 0, fat: 0 },
+          );
+          const mealName = meal.title || MEAL_TYPE_OPTIONS.find(([value]) => value === meal.mealType)?.[1] || `Γεύμα ${mealIndex + 1}`;
+          const isOpen = openMeals[mealIndex] ?? true;
+          const hasFood = meal.foods.some((food) => String(food.foodName || "").trim());
           return (
             <MealDropZone key={mealIndex} mealIndex={mealIndex}>
-            <Collapsible open={openMeals[mealIndex] ?? true} onOpenChange={(open) => setMealOpen(mealIndex, open)}>
-            <Card>
-              <CardHeader>
-                <div className="flex flex-wrap items-start justify-between gap-3">
+            <Collapsible open={isOpen} onOpenChange={(open) => setMealOpen(mealIndex, open)}>
+            <Card className={cn(
+              "overflow-hidden bg-white shadow-none",
+              isOpen
+                ? "rounded-[20px] border-2 border-[#0b0b0b] ring-4 ring-[#b0f90c]/45"
+                : "rounded-[18px] border border-[#e6e6e2]",
+            )}>
+              <CardHeader className="gap-0 p-0">
+                <div className="flex min-h-[50px] flex-wrap items-center gap-2 px-3 py-2">
                   <CollapsibleTrigger
                     render={
-                      <button type="button" className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400">
-                          <MealIcon className="h-5 w-5" />
+                      <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                        <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-[9px] text-xs font-extrabold", isOpen ? "bg-accent text-accent-foreground" : "bg-[#f4f4f2] text-[#6a6a6a]")}>{mealIndex + 1}</span>
+                        <span className="min-w-0">
+                          <span className="block truncate text-[14px] font-extrabold">{mealName}</span>
+                          {!hasFood && <span className="block truncate text-[10px] font-extrabold text-[#8a5a00]">Κενό γεύμα</span>}
                         </span>
-                        <CardTitle className="flex items-center gap-2"><ChevronDown className="h-4 w-4 shrink-0 transition-transform data-panel-open:rotate-180" />Γεύμα {mealIndex + 1}</CardTitle>
                       </button>
                     }
                   />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => removeMeal(mealIndex)}
-                    aria-label="Διαγραφή γεύματος"
-                    className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="mt-3 max-w-xs">
-                  <SelectField label="Τύπος γεύματος" value={meal.mealType} onChange={(value) => updateMeal(mealIndex, { mealType: value })} options={MEAL_TYPE_OPTIONS} />
+                  {hasFood ? <div className="ml-auto hidden items-center gap-1.5 lg:flex"><p className="mr-1 whitespace-nowrap text-[16px] font-extrabold">{Math.round(mealTotals.calories)} <span className="text-[11px] font-semibold text-[#8a8a8a]">kcal</span></p>{[["Π", mealTotals.protein], ["Υ", mealTotals.carbs], ["Λ", mealTotals.fat]].map(([label, value]) => <span key={String(label)} className="rounded-full bg-[#f4f4f2] px-2 py-1 text-[11px] font-extrabold text-[#3a3a3a]">{label} {Math.round(Number(value))}</span>)}</div> : <div className="ml-auto flex items-center gap-2"><Button type="button" variant="outline" className="h-[34px] rounded-full border-[#d6d6d2] px-3 text-xs font-extrabold" onClick={() => setMealOpen(mealIndex, true)}>Πρότυπο γεύματος</Button><Button type="button" className="h-[34px] rounded-full bg-[#0b0b0b] px-3 text-xs font-extrabold text-white hover:bg-[#262626]" onClick={() => { addFood(mealIndex); setMealOpen(mealIndex, true); }}>Τρόφιμα</Button></div>}
+                  <button type="button" onClick={() => { if (window.confirm(`Να διαγραφεί το γεύμα «${mealName}»;`)) removeMeal(mealIndex); }} aria-label="Διαγραφή γεύματος" className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-[#d6d6d2] text-lg leading-none text-[#8a8a8a] transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600">×</button>
                 </div>
               </CardHeader>
 
               <CollapsibleContent>
-              <CardContent>
-                <Field compact label="Οδηγίες γεύματος" value={meal.notes} onChange={(value) => updateMeal(mealIndex, { notes: value })} />
-
-                <Collapsible defaultOpen className="mt-4">
-                  <CollapsibleTrigger
-                    render={
-                      <button type="button" className="flex w-full items-center justify-between gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
-                        <span>Τρόφιμα ({meal.foods.length})</span>
-                        <ChevronDown className="h-4 w-4 shrink-0 transition-transform data-panel-open:rotate-180" />
-                      </button>
-                    }
-                  />
-                  <CollapsibleContent className="mt-3">
-                    <div className="overflow-x-auto rounded-md border border-slate-200 dark:border-slate-800">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="min-w-56">Τρόφιμο</TableHead>
-                            <TableHead className="w-28">Ποσότητα</TableHead>
-                            <TableHead className="w-20">Kcal</TableHead>
-                            <TableHead className="w-20">Πρωτ.</TableHead>
-                            <TableHead className="w-20">Υδ.</TableHead>
-                            <TableHead className="w-20">Λίπη</TableHead>
-                            <TableHead className="w-12" />
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {meal.foods.map((food, foodIndex) => (
-                            <TableRow key={foodIndex}>
-                              <TableCell className="align-top">
-                                <div className="flex items-start gap-2">
-                                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-slate-100 dark:bg-slate-800">
-                                    {findLibraryFoodImage(food, foods) ? (
-                                      // eslint-disable-next-line @next/next/no-img-element
-                                      <img src={resolveMediaUrl(findLibraryFoodImage(food, foods))} alt="" className="h-full w-full object-cover" />
-                                    ) : (
-                                      <ImageOff className="h-4 w-4 text-slate-300 dark:text-slate-600" />
-                                    )}
-                                  </span>
-                                  <FoodPicker
-                                    foods={foods}
-                                    food={food}
-                                    onChangeName={(value) => updateFoodName(mealIndex, foodIndex, value)}
-                                    onSelectFood={(libraryFood) => selectFoodFromLibrary(mealIndex, foodIndex, libraryFood)}
-                                  />
-                                </div>
-                              </TableCell>
-                              <TableCell className="align-top">
-                                <div className="flex items-center gap-1">
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    step="0.1"
-                                    inputMode="decimal"
-                                    value={food.quantity}
-                                    onChange={(event) => updateFoodQuantity(mealIndex, foodIndex, event.target.value)}
-                                    placeholder="π.χ. 150"
-                                    className="h-9 min-w-0 text-sm"
-                                  />
-                                  <span className="text-sm font-medium text-muted-foreground">g</span>
-                                </div>
-                              </TableCell>
-                              <TableCell className="align-top">
-                                <Input
-                                  type="number"
-                                  value={food.calories}
-                                  onChange={(event) => updateFood(mealIndex, foodIndex, { calories: event.target.value })}
-                                  className="h-9 text-sm"
-                                />
-                              </TableCell>
-                              <TableCell className="align-top">
-                                <Input
-                                  type="number"
-                                  value={food.proteinG}
-                                  onChange={(event) => updateFood(mealIndex, foodIndex, { proteinG: event.target.value })}
-                                  className="h-9 text-sm"
-                                />
-                              </TableCell>
-                              <TableCell className="align-top">
-                                <Input
-                                  type="number"
-                                  value={food.carbsG}
-                                  onChange={(event) => updateFood(mealIndex, foodIndex, { carbsG: event.target.value })}
-                                  className="h-9 text-sm"
-                                />
-                              </TableCell>
-                              <TableCell className="align-top">
-                                <Input
-                                  type="number"
-                                  value={food.fatG}
-                                  onChange={(event) => updateFood(mealIndex, foodIndex, { fatG: event.target.value })}
-                                  className="h-9 text-sm"
-                                />
-                              </TableCell>
-                              <TableCell className="align-top">
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  onClick={() => removeFood(mealIndex, foodIndex)}
-                                  aria-label="Διαγραφή τροφίμου"
-                                  className="text-red-600 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-500/10"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => addFood(mealIndex)}
-                      className="mt-3 h-9 gap-2 text-sm font-bold text-slate-700 hover:border-red-200 hover:text-red-600 dark:text-slate-200 dark:hover:border-red-500/30 dark:hover:text-red-400"
-                    >
-                      <Plus className="h-4 w-4" />
-                      Προσθήκη τροφίμου
-                    </Button>
-                  </CollapsibleContent>
-                </Collapsible>
+              <CardContent className="gap-0 px-0 pb-0">
+                <div className="border-t border-[#f3f3f1] bg-[#fafaf8] px-4 py-3">
+                  <Field compact label="Όνομα γεύματος (π.χ. Πρωινό)" value={meal.title} onChange={(value) => updateMeal(mealIndex, { title: value })} />
+                </div>
+                <div className="overflow-x-auto border-y border-[#f3f3f1]">
+                  <div className="min-w-[620px]">
+                    <div className="grid grid-cols-[minmax(0,1fr)_104px_56px_52px_52px_52px_26px] gap-2 bg-[#fafaf8] px-4 py-1.5 text-[10px] font-extrabold tracking-[.6px] text-[#8a8a8a]"><span className="pl-1">ΤΡΟΦΙΜΟ</span><span className="text-center">ΠΟΣΟΤΗΤΑ</span><span className="text-right">KCAL</span><span className="text-right">Π</span><span className="text-right">Υ</span><span className="text-right">Λ</span><span /></div>
+                    {meal.foods.map((food, foodIndex) => (
+                      <div key={foodIndex} className="grid grid-cols-[minmax(0,1fr)_104px_56px_52px_52px_52px_26px] items-center gap-2 border-t border-[#f3f3f1] px-4 py-2">
+                        <div className="flex min-w-0 items-center gap-2.5"><span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-[9px] bg-[#f4f4f2]">{findLibraryFoodImage(food, foods) ? <img src={resolveMediaUrl(findLibraryFoodImage(food, foods))} alt="" className="h-full w-full object-cover" /> : <ImageOff className="h-4 w-4 text-[#c8c8c4]" />}</span><div className="min-w-0 flex-1"><FoodPicker foods={foods} food={food} onChangeName={(value) => updateFoodName(mealIndex, foodIndex, value)} onSelectFood={(libraryFood) => selectFoodFromLibrary(mealIndex, foodIndex, libraryFood)} /></div></div>
+                        <div className="flex h-[34px] items-center overflow-hidden rounded-[10px] border border-[#e2e2de]"><button type="button" onClick={() => adjustFoodQuantity(mealIndex, foodIndex, -10)} className="w-[26px] text-center font-extrabold text-[#8a8a8a] hover:bg-[#f4f4f2]">−</button><Input type="number" min="0" step="0.1" inputMode="decimal" value={food.quantity} onChange={(event) => updateFoodQuantity(mealIndex, foodIndex, event.target.value)} className="h-full min-w-0 border-0 px-0 text-center text-sm font-extrabold shadow-none focus-visible:ring-0" /><span className="pr-1.5 text-[11px] font-semibold text-[#8a8a8a]">g</span><button type="button" onClick={() => adjustFoodQuantity(mealIndex, foodIndex, 10)} className="w-[26px] text-center font-extrabold text-[#8a8a8a] hover:bg-[#f4f4f2]">+</button></div>
+                        {(["calories", "proteinG", "carbsG", "fatG"] as const).map((key, index) => <Input key={key} type="number" value={food[key]} onChange={(event) => updateFood(mealIndex, foodIndex, { [key]: event.target.value })} className={cn("h-[34px] border-0 bg-transparent px-0 text-right text-[13px] shadow-none focus-visible:ring-0", index === 0 ? "font-extrabold text-[#0b0b0b]" : "text-[#555555]")} />)}
+                        <button type="button" onClick={() => removeFood(mealIndex, foodIndex)} aria-label="Διαγραφή τροφίμου" className="text-right text-lg leading-none text-[#b5b5b5] hover:text-red-600">×</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2.5 bg-[#fafaf8] px-4 py-3">
+                  <button type="button" onClick={() => addFood(mealIndex)} className="flex h-[38px] min-w-[260px] flex-1 items-center rounded-[12px] border-[1.5px] border-dashed border-[#cfcfcb] bg-white px-3 text-left text-[13px] font-semibold text-[#8a8a8a] transition-colors hover:border-[#0b0b0b]">Πρόσθεσε τρόφιμο… (γράψε ή σύρε από δεξιά)</button>
+                </div>
+                <div className="border-t border-[#f3f3f1] bg-white px-4 py-3"><Field compact label="Οδηγία γεύματος" value={meal.notes} onChange={(value) => updateMeal(mealIndex, { notes: value })} /></div>
               </CardContent>
               </CollapsibleContent>
             </Card>
@@ -663,11 +546,6 @@ export function NutritionPlanEditor({
             </MealDropZone>
           );
         })}
-
-        <Button type="button" variant="outline" onClick={addMeal} className="h-11 gap-2 px-5 text-sm font-bold text-slate-700 hover:border-red-200 hover:text-red-600 dark:text-slate-200 dark:hover:border-red-500/30 dark:hover:text-red-400">
-          <Plus className="h-4 w-4" />
-          Προσθήκη γεύματος
-        </Button>
 
         {afterMeals}
         <PlanHistory rows={history} countLabel={(row) => (row.daily_calories ? `${row.daily_calories} kcal` : "-")} />
@@ -677,8 +555,8 @@ export function NutritionPlanEditor({
         <ResizableHandle withHandle />
 
         {/* RIGHT 30% — food library, new */}
-          <ResizablePanel defaultSize="30" minSize="22" className="min-w-0 self-start">
-            <aside className="sticky top-16 flex h-[calc(100dvh-4rem)] max-h-[calc(100dvh-4rem)] min-w-0 flex-col overflow-hidden border-l border-slate-200 dark:border-slate-800">
+          <ResizablePanel defaultSize="30" minSize="22" className="min-w-0 self-start !overflow-visible">
+            <aside className="sticky top-16 flex h-[calc(100dvh-4rem)] max-h-[calc(100dvh-4rem)] min-w-0 flex-col overflow-hidden border-l border-[#e6e6e2] bg-white">
           <div className="space-y-3 border-b border-slate-200 p-3 dark:border-slate-800">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -698,8 +576,8 @@ export function NutritionPlanEditor({
                   className={cn(
                     "rounded-full border px-2.5 py-1 text-xs font-bold transition-colors",
                     libraryCategory === category.key
-                      ? "border-red-500 bg-red-500 text-white"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300",
+                      ? "border-[#0b0b0b] bg-[#0b0b0b] text-white"
+                      : "border-[#e2e2de] bg-white text-[#555555] hover:border-[#0b0b0b]",
                   )}
                 >
                   {category.label}
@@ -985,7 +863,7 @@ function LibraryFoodRow({
             <button
               type="button"
               aria-label="Προσθήκη σε γεύμα"
-              className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-400 dark:hover:bg-red-500/20"
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#0b0b0b] text-accent transition-colors hover:bg-[#262626] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent/30"
             />
           }
         >
@@ -1026,7 +904,7 @@ function MealDropZone({ mealIndex, children }: { mealIndex: number; children: Re
   return (
     <div
       ref={setNodeRef}
-      className={cn("rounded-lg transition-shadow", isOver && "ring-2 ring-red-400 ring-offset-2 dark:ring-offset-slate-900")}
+      className={cn("rounded-lg transition-shadow", isOver && "ring-2 ring-accent ring-offset-2")}
     >
       {children}
     </div>

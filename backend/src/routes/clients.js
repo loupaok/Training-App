@@ -13,7 +13,7 @@ import { sendMail } from '../lib/mailer.js';
 import { insertTrainingPlanDays } from './trainingPlans.js';
 import { insertNutritionPlanMeals } from './nutritionPlans.js';
 import { getFullTrainingTemplate, getFullNutritionTemplate } from './templates.js';
-import { ensureClientActivityLogSchema, logClientActivity } from '../lib/client-activity-log.js';
+import { ensureClientActivityLogSchema, logActivity, logClientActivity } from '../lib/client-activity-log.js';
 import { ensureQuestionnaireSchema, syncUpdateDayQuestionnaireAnswer } from './questionnaire.js';
 import { awardPoints } from './points.js';
 import { ensureDiscordSchema } from './discord.js';
@@ -1731,6 +1731,19 @@ router.post('/me/billing', authorizeRole(['client']), [
       });
     }
 
+    await logActivity(connection, {
+      clientId: req.user.id,
+      category: 'payment',
+      type: 'payment.requested',
+      actor: 'client',
+      actorUserId: req.user.id,
+      title: `Payment request · ${selectedPackage.label}`,
+      detail: `${paymentMethod} · ${Number(selectedPackage.price || 0).toFixed(2)} ${selectedPackage.currency || 'EUR'}`,
+      status: 'pending',
+      ref: { kind: 'payment', id: paymentResult.insertId },
+      meta: { method: paymentMethod, amount: selectedPackage.price, currency: selectedPackage.currency || 'EUR' },
+    });
+
     await connection.commit();
     connection.release();
 
@@ -2032,6 +2045,18 @@ router.post('/me/billing-proof', authorizeRole(['client']), (req, res, next) => 
       title: 'Το αποδεικτικό πληρωμής στάλθηκε',
       body: 'Ο coach θα ελέγξει την πληρωμή σου και θα ενεργοποιήσει τη συνδρομή σου.',
       linkUrl: '/client-billing',
+    });
+
+    await logActivity(connection, {
+      clientId: req.user.id,
+      category: 'payment',
+      type: 'payment.proof_uploaded',
+      actor: 'client',
+      actorUserId: req.user.id,
+      title: 'Payment proof uploaded',
+      detail: clientNote || null,
+      status: 'pending',
+      ref: { kind: 'payment', id: payments[0].id },
     });
 
     connection.release();
@@ -2556,14 +2581,18 @@ router.get('/:id/log', authorizeRole(['coach', 'admin', 'moderator']), async (re
     await ensureClientActivityLogSchema(connection);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
     const offset = Math.max(0, Number(req.query.offset) || 0);
+    const category = ['update', 'workout', 'payment', 'points', 'plan', 'message', 'account'].includes(String(req.query.category))
+      ? String(req.query.category)
+      : null;
     const [rows] = await connection.query(
-      `SELECT id, action, performed_by AS performedBy, performed_by_name AS performedByName,
-              details, created_at AS createdAt
-       FROM client_activity_log
-       WHERE client_id = ?
+      `SELECT id, title AS action, actor_user_id AS performedBy, detail AS details,
+              category, type, actor, status, ref_kind AS refKind, ref_id AS refId, meta,
+              created_at AS createdAt
+       FROM activity_events
+       WHERE client_id = ? ${category ? 'AND category = ?' : ''}
        ORDER BY created_at DESC, id DESC
        LIMIT ? OFFSET ?`,
-      [clientId, limit, offset]
+      category ? [clientId, category, limit, offset] : [clientId, limit, offset]
     );
     res.json(rows);
   } catch (error) {
@@ -3664,10 +3693,14 @@ router.post('/me/messages', authorizeRole(['client']), [
     const [[clientRow]] = await connection.query('SELECT full_name FROM users WHERE id = ?', [req.user.id]);
     const clientName = clientRow?.full_name || 'πελάτη';
 
-    await connection.query(
+    const [messageResult] = await connection.query(
       `INSERT INTO messages (client_id, coach_id, sender_role, body) VALUES (?, ?, 'client', ?)`,
       [req.user.id, coachId, req.body.message.trim()]
     );
+    await logActivity(connection, {
+      clientId: req.user.id, category: 'message', type: 'message.received', actor: 'client', actorUserId: req.user.id,
+      title: 'Νέο μήνυμα', status: 'pending', ref: { kind: 'message', id: messageResult.insertId },
+    });
     await notifyUser(connection, coachId, {
       clientId: req.user.id,
       type: 'client_message',
@@ -3848,9 +3881,19 @@ router.post('/:id/messages', authorizeRoleOrPermission(['coach', 'admin'], 'mess
     await ensureMessagesSchema(connection);
     const [[coachRow]] = await connection.query('SELECT full_name FROM users WHERE id = ?', [req.user.id]);
     const coachName = coachRow?.full_name || 'coach';
-    await connection.query(
+    const [messageResult] = await connection.query(
       `INSERT INTO messages (client_id, coach_id, sender_role, body) VALUES (?, ?, 'coach', ?)`,
       [req.params.id, req.user.id, req.body.message.trim()]
+    );
+    await logActivity(connection, {
+      clientId: Number(req.params.id), category: 'message', type: 'message.sent', actor: 'coach', actorUserId: req.user.id,
+      title: 'Απάντηση coach', status: 'done', ref: { kind: 'message', id: messageResult.insertId },
+    });
+    await connection.query(
+      `UPDATE activity_events
+       SET status = 'done'
+       WHERE client_id = ? AND category = 'message' AND status = 'pending'`,
+      [req.params.id],
     );
     await notifyUser(connection, req.params.id, {
       type: 'coach_message',
@@ -4252,6 +4295,12 @@ router.post('/:id/approve-payment', authorizeRoleOrPermission(['coach', 'admin']
       performedBy: req.user.id,
       details: `Payment #${payments[0].id} approved`,
     });
+    await connection.query(
+      `UPDATE activity_events
+       SET status = 'done'
+       WHERE client_id = ? AND category = 'payment' AND ref_kind = 'payment' AND ref_id = ? AND status = 'pending'`,
+      [clientId, String(payments[0].id)],
+    );
 
     await connection.commit();
     try {
@@ -4361,6 +4410,12 @@ router.post('/:id/reject-payment', authorizeRoleOrPermission(['coach', 'admin'],
       performedBy: req.user.id,
       details: `Payment #${paymentId} rejected`,
     });
+    await connection.query(
+      `UPDATE activity_events
+       SET status = 'problem'
+       WHERE client_id = ? AND category = 'payment' AND ref_kind = 'payment' AND ref_id = ? AND status = 'pending'`,
+      [clientId, String(paymentId)],
+    );
 
     await connection.commit();
     connection.release();

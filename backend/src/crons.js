@@ -6,6 +6,7 @@ import { updateReminderEmail } from './lib/email-templates.js';
 import { ensureSettingsSchema } from './routes/settings.js';
 import { notifyUser } from './routes/clients.js';
 import { awardBirthdayPoints, awardLoyaltyMilestones, ensurePointsSchema } from './routes/points.js';
+import { ensureClientActivityLogSchema, logActivity } from './lib/client-activity-log.js';
 
 // ─── CRON 1 ──────────────────────────────────────────────────────────────────
 // Daily 00:05 — update subscription statuses
@@ -185,7 +186,10 @@ async function runUpdateReminder() {
   let connection;
   try {
     connection = await pool.getConnection();
-    const todayDayOfWeek = new Date().getDay();
+    await ensureClientActivityLogSchema(connection);
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const todayDayOfWeek = yesterday.getDay();
     const weekStart = getCurrentWeekStart();
 
     const [dueClients] = await connection.query(
@@ -202,6 +206,16 @@ async function runUpdateReminder() {
 
     for (const client of dueClients) {
       const name = client.full_name || client.email;
+      const [[alreadyLogged]] = await connection.query(
+        `SELECT id FROM activity_events WHERE client_id = ? AND type = 'update.missed' AND ref_id = ? LIMIT 1`,
+        [client.id, weekStart],
+      );
+      if (!alreadyLogged) {
+        await logActivity(connection, {
+          clientId: client.id, category: 'update', type: 'update.missed', actor: 'system',
+          title: 'Δεν έστειλε update', status: 'problem', ref: { kind: 'update', id: weekStart }, meta: { weekStart },
+        });
+      }
       // /client/update (a dedicated submission page) doesn't exist yet — this
       // build never included one, so the reminder links to the real client
       // dashboard instead of a route that would 404.

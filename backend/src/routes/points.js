@@ -5,6 +5,7 @@ import { pool } from '../index.js';
 import { authenticateToken, authorizeRole } from '../middleware/auth.js';
 import { wcRequest, createCoupon, getCoupon, deleteCoupon } from '../lib/woocommerce.js';
 import { sendMail } from '../lib/mailer.js';
+import { logActivity } from '../lib/client-activity-log.js';
 
 const router = express.Router();
 
@@ -116,6 +117,11 @@ async function awardRulePoints(connection, { clientId, points, referenceType, re
   await notifyUser(connection, clientId, {
     clientId, type: 'points_earned', title: `🎯 ${title}`,
     body: `${description} +${reward} πόντοι.`, linkUrl: '/client-points',
+  });
+  await logActivity(connection, {
+    clientId, category: 'points', type: 'points.awarded', actor: 'system',
+    title: `+${reward} πόντοι`, detail: description, status: 'done',
+    meta: { points: reward, referenceType, referenceId },
   });
   return true;
 }
@@ -595,6 +601,18 @@ router.post('/award', authenticateToken, authorizeRole(['coach', 'admin']), [
       });
     }
 
+    await logActivity(connection, {
+      clientId,
+      category: 'points',
+      type: points > 0 ? 'points.adjusted_up' : 'points.adjusted_down',
+      actor: 'coach',
+      actorUserId: req.user.id,
+      title: `${points > 0 ? '+' : ''}${points} points`,
+      detail: description || null,
+      status: 'done',
+      meta: { points, manual: true },
+    });
+
     const payload = await getClientPointsPayload(connection, clientId);
     connection.release();
     res.status(201).json(payload);
@@ -665,6 +683,18 @@ router.post('/redeem', authenticateToken, authorizeRole(['client']), [
       [req.user.id, pointsToRedeem, `Coupon ${couponCode}`, couponCode, coupon?.id || null, expiryDate]
     );
     await connection.commit();
+
+    await logActivity(connection, {
+      clientId: req.user.id,
+      category: 'points',
+      type: 'points.redeemed',
+      actor: 'client',
+      actorUserId: req.user.id,
+      title: `Coupon redemption · ${pointsToRedeem} points`,
+      detail: couponCode,
+      status: 'done',
+      meta: { points: pointsToRedeem, discount, couponCode },
+    });
 
     try {
       await sendMail({

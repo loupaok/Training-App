@@ -4,7 +4,7 @@ import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent, 
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, CalendarDays, ChevronLeft, ChevronRight, Clock, Gift, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, Plus, X, FileText, Target, MoreHorizontal, Coins, CreditCard, Activity, Lock, type LucideIcon } from "lucide-react";
+import { AlertTriangle, Apple, Bell, CalendarDays, Camera, Check, ChevronLeft, ChevronRight, Clock, Dumbbell, Euro, Gift, MessageSquare, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, Plus, X, FileText, Target, MoreHorizontal, Coins, CreditCard, Activity, Lock, type LucideIcon } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -256,10 +256,17 @@ interface StatusMetaResult {
 interface ClientActivityLogEntry {
   id: number | string;
   action: string;
-  performedBy: number | string;
+  performedBy?: number | string | null;
   performedByName?: string | null;
   details?: string | null;
   createdAt?: string | null;
+  category?: "update" | "workout" | "payment" | "points" | "plan" | "message" | "account";
+  type?: string;
+  actor?: "client" | "coach" | "system";
+  status?: "pending" | "done" | "problem" | null;
+  refKind?: "update" | "payment" | "message" | "workout" | "plan" | null;
+  refId?: string | null;
+  meta?: Record<string, unknown> | string | null;
 }
 
 interface RegistrationQuestionnaireAnswer {
@@ -956,9 +963,8 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
 
           </Tabs>
           <Sheet open={activityOpen} onOpenChange={setActivityOpen}>
-            <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
-              <SheetHeader><SheetTitle>Δραστηριότητα</SheetTitle></SheetHeader>
-              <ActivityLogTab clientId={clientId} active={activityOpen} />
+            <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:w-[460px] sm:max-w-[460px]">
+              <ActivityLogTab clientId={clientId} clientName={client.full_name || client.email || "Πελάτης"} active={activityOpen} onClose={() => setActivityOpen(false)} />
             </SheetContent>
           </Sheet>
         </div>
@@ -1101,8 +1107,8 @@ function OverviewDashboard({
 
   useEffect(() => {
     let active = true;
-    api.get<ClientActivityLogEntry[]>(`/clients/${clientId}/log?limit=4&offset=0`)
-      .then((rows) => { if (active) setActivities(rows.slice(0, 4)); })
+    api.get<ClientActivityLogEntry[]>(`/clients/${clientId}/log?limit=5&offset=0`)
+      .then((rows) => { if (active) setActivities(rows.slice(0, 5)); })
       .catch(() => { if (active) setActivities([]); });
     return () => { active = false; };
   }, [clientId]);
@@ -1231,7 +1237,7 @@ function OverviewDashboard({
               <Button type="button" variant="ghost" onClick={onOpenActivity} className="h-auto shrink-0 gap-0.5 rounded-none px-0 text-xs font-extrabold hover:bg-transparent">Όλα <ChevronRight className="h-[13px] w-[13px] stroke-[2.4]" /></Button>
             </div>
             <div className="-mt-1.5 flex flex-col">
-              {activities.map((entry) => <ActivityPreviewRow key={entry.id} color={activityDotClass(entry)} title={activityLabel(entry)} meta={`${entry.performedByName || "Πελάτης"} · ${formatDate(entry.createdAt)}`} />)}
+              {activities.map((entry, index) => <ActivityPreviewRow key={entry.id} entry={entry} bordered={index > 0} clientId={clientId} />)}
               {!activities.length && <p className="py-2 text-sm text-muted-foreground">Δεν υπάρχει πρόσφατη δραστηριότητα.</p>}
             </div>
           </CardContent>
@@ -1241,8 +1247,8 @@ function OverviewDashboard({
   );
 }
 
-function ActivityPreviewRow({ color, title, meta }: { color: string; title: string; meta: string }) {
-  return <div className="flex gap-2.5 py-2"><span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", color)} /><span className="min-w-0"><b className="block text-[13px] leading-5">{title}</b><small className="block text-[11px] text-muted-foreground">{meta}</small></span></div>;
+function ActivityPreviewRow({ entry, bordered, clientId }: { entry: ClientActivityLogEntry; bordered: boolean; clientId: string }) {
+  return <ActivityEventRow entry={entry} bordered={bordered} clientId={clientId} showDate />;
 }
 
 function WeightMetric({ label, value, accent = false, muted = false }: { label: string; value: string; accent?: boolean; muted?: boolean }) {
@@ -3556,6 +3562,45 @@ function ActivityLogSkeleton() {
   );
 }
 
+function activityDateGroup(value?: string | null): string {
+  if (!value) return "Παλαιότερα";
+  const date = new Date(value);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === today.toDateString()) return "Σήμερα";
+  if (date.toDateString() === yesterday.toDateString()) return "Χθες";
+  return new Intl.DateTimeFormat("el-GR", { day: "numeric", month: "short" }).format(date);
+}
+
+function activityTime(value?: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("el-GR", { hour: "2-digit", minute: "2-digit" }).format(date);
+}
+
+function ActivityPointsIcon({ className }: { className?: string }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}><circle cx="9" cy="9" r="6" /><path d="M15.5 9.5A6 6 0 1 1 9.5 15.5" /></svg>;
+}
+
+function ActivityEventRow({ entry, bordered, clientId, showDate = false }: { entry: ClientActivityLogEntry; bordered: boolean; clientId: string; showDate?: boolean }) {
+  const category = entry.category || "account";
+  const Icon = entry.status === "problem" ? Bell : category === "workout" ? Dumbbell : category === "message" ? MessageSquare : category === "plan" ? Apple : category === "update" ? Camera : category === "points" ? ActivityPointsIcon : category === "payment" ? Euro : Sparkles;
+  const tile = entry.status === "problem" ? "bg-[#fdecec] text-[#b42318]" : category === "payment" ? "bg-[#fff4dc] text-[#8a5a00]" : category === "points" ? "bg-[#f1fbd6] text-[#2f5200]" : category === "plan" ? "bg-[#eef0ff] text-[#3b3fa8]" : category === "update" ? "bg-accent text-accent-foreground" : category === "workout" ? "bg-[#0b0b0b] text-accent" : "bg-[#f4f4f2] text-[#0b0b0b]";
+  const actorLabel = entry.actor === "coach" ? "Coach" : entry.actor === "system" ? "Σύστημα" : "Πελάτης";
+  const actionHref = entry.refKind === "update" && entry.refId
+    ? `/coach/updates?id=${entry.refId}`
+    : category === "message"
+      ? `/clients/${clientId}?tab=messages`
+      : category === "payment"
+        ? `/clients/${clientId}?tab=payments`
+        : null;
+  const isPendingAction = entry.status === "pending" && (category === "message" || category === "payment");
+  const actionLabel = category === "message" && entry.status === "pending" ? "Απάντηση" : category === "payment" && entry.status === "pending" ? "Παρελήφθη" : "Άνοιγμα";
+  return <div className={`flex items-center gap-3 py-[11px] ${bordered ? "border-t border-[#f3f3f1]" : ""}`}><span className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[11px] ${tile}`}><Icon className="h-[15px] w-[15px] stroke-[2.2]" /></span><span className="min-w-0 flex-1"><b className={`block truncate text-[14px] ${entry.status === "problem" ? "text-[#b42318]" : ""}`}>{activityLabel(entry)}</b><small className="block text-[12px] text-[#8a8a8a]">{actorLabel} · {showDate ? `${activityDateGroup(entry.createdAt)} · ` : ""}{activityTime(entry.createdAt)}</small></span>{actionHref && <Link href={actionHref} className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-[12px] font-extrabold ${isPendingAction ? "bg-accent text-accent-foreground" : "text-[#0b0b0b] hover:underline"}`}>{category === "payment" && entry.status === "pending" && <Check className="h-3 w-3 stroke-[2.6]" />}{actionLabel}{!isPendingAction && <ChevronRight className="h-[13px] w-[13px] stroke-[2.4]" />}</Link>}</div>;
+}
+
 type PointsTransaction = {
   id: number;
   type: "earned" | "redeemed" | "expired" | "adjusted";
@@ -4020,40 +4065,50 @@ function PointsTab({ clientId }: { clientId: string }) {
   );
 }
 
-function ActivityLogTab({ clientId, active }: { clientId: string; active: boolean }) {
+function ActivityLogTab({ clientId, clientName, active, onClose }: { clientId: string; clientName: string; active: boolean; onClose: () => void }) {
   const [entries, setEntries] = useState<ClientActivityLogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [loadedClientId, setLoadedClientId] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState("");
+  const [category, setCategory] = useState<"all" | "update" | "payment" | "message">("all");
+  const requestVersion = useRef(0);
 
   useEffect(() => {
-    if (!active || loadedClientId === clientId) return;
+    if (!active) return;
 
+    const version = ++requestVersion.current;
     setLoading(true);
     setError("");
     api
-      .get<ClientActivityLogEntry[]>(`/clients/${clientId}/log?limit=20&offset=0`)
+      .get<ClientActivityLogEntry[]>(`/clients/${clientId}/log?limit=20&offset=0${category === "all" ? "" : `&category=${category}`}`)
       .then((rows) => {
+        if (version !== requestVersion.current) return;
         setEntries(rows);
         setHasMore(rows.length === 20);
-        setLoadedClientId(clientId);
       })
       .catch((requestError) => {
+        if (version !== requestVersion.current) return;
         setEntries([]);
         setHasMore(false);
-        setLoadedClientId(clientId);
         setError(requestError instanceof Error ? requestError.message : "Δεν φορτώθηκε το ιστορικό.");
       })
-      .finally(() => setLoading(false));
-  }, [active, clientId, loadedClientId]);
+      .finally(() => {
+        if (version === requestVersion.current) setLoading(false);
+      });
+  }, [active, clientId, category]);
+
+  // Keep the tab accurate even if an older server response arrives from a
+  // development hot reload or a proxy cache.
+  const visibleEntries = category === "all"
+    ? entries
+    : entries.filter((entry) => entry.category === category);
 
   const loadMore = async () => {
     setLoadingMore(true);
     setError("");
     try {
-      const rows = await api.get<ClientActivityLogEntry[]>(`/clients/${clientId}/log?limit=20&offset=${entries.length}`);
+      const rows = await api.get<ClientActivityLogEntry[]>(`/clients/${clientId}/log?limit=20&offset=${entries.length}${category === "all" ? "" : `&category=${category}`}`);
       setEntries((current) => [...current, ...rows]);
       setHasMore(rows.length === 20);
     } catch (requestError) {
@@ -4064,34 +4119,23 @@ function ActivityLogTab({ clientId, active }: { clientId: string; active: boolea
   };
 
   return (
-    <Card className="p-6">
-      <CardHeader className="p-0">
-        <CardTitle className="text-lg font-semibold">Ιστορικό Δραστηριότητας</CardTitle>
-      </CardHeader>
-
-      <CardContent className="p-0 pt-6">
+    <div className="flex min-h-full flex-col bg-white text-[#0b0b0b]">
+      <div className="border-b border-[#f0f0ee] px-6 pb-4 pt-[22px]">
+        <div className="flex items-center gap-3"><Button type="button" variant="ghost" size="icon-sm" onClick={onClose} className="-ml-2 h-[34px] w-[34px] rounded-full sm:hidden"><ChevronLeft className="h-5 w-5" /></Button><div className="min-w-0 flex-1"><SheetTitle className="text-[20px] font-extrabold tracking-[-.3px]">Δραστηριότητα</SheetTitle><p className="mt-0.5 truncate text-[12px] text-[#6a6a6a]">{clientName}</p></div><Button type="button" variant="outline" size="icon-sm" onClick={onClose} className="hidden h-[34px] w-[34px] rounded-full border-[#d6d6d2] sm:inline-flex"><X className="h-4 w-4" /></Button></div>
+        <div className="mt-4 flex gap-1.5">{([['all', 'Όλα'], ['update', 'Updates'], ['payment', 'Πληρωμές'], ['message', 'Μηνύματα']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setCategory(value)} className={`h-8 rounded-full px-3.5 text-[13px] font-extrabold transition-colors ${category === value ? "bg-[#0b0b0b] text-white" : "bg-[#f4f4f2] text-[#3a3a3a] hover:bg-[#e8e8e5]"}`}>{label}</button>)}</div>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         {loading ? (
           <ActivityLogSkeleton />
-        ) : !entries.length ? (
+        ) : !visibleEntries.length ? (
           <div className="flex min-h-48 flex-col items-center justify-center gap-3 text-center text-muted-foreground">
             <Clock className="h-8 w-8" />
             <p className="text-sm">{error || "Δεν υπάρχει ιστορικό ακόμα"}</p>
           </div>
         ) : (
           <>
-            <ScrollArea className="h-[34rem] pr-4">
-              <div className="relative ml-2 border-l border-border pl-6">
-                {entries.map((entry) => (
-                  <div key={entry.id} className="relative pb-7 last:pb-1">
-                    <span className={`absolute -left-[1.84rem] top-1.5 h-3 w-3 rounded-full ring-4 ring-background ${activityDotClass(entry)}`} />
-                    <p className="text-sm font-medium text-foreground">{activityLabel(entry)}</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Από: {entry.performedByName || "-"}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {relativeTime(entry.createdAt)} · {formatDateTime(entry.createdAt)}
-                    </p>
-                  </div>
-                ))}
-              </div>
+            <div className="flex flex-col">
+              {visibleEntries.map((entry, index) => <div key={entry.id}>{(index === 0 || activityDateGroup(visibleEntries[index - 1]?.createdAt) !== activityDateGroup(entry.createdAt)) && <p className={`pb-0.5 text-[12px] font-extrabold text-[#8a8a8a] ${index > 0 ? "pt-4" : ""}`}>{activityDateGroup(entry.createdAt)}</p>}<ActivityEventRow entry={entry} clientId={clientId} bordered={index > 0 && activityDateGroup(visibleEntries[index - 1]?.createdAt) === activityDateGroup(entry.createdAt)} /></div>)}
 
               {error && <p className="mt-4 text-sm text-destructive">{error}</p>}
 
@@ -4102,11 +4146,11 @@ function ActivityLogTab({ clientId, active }: { clientId: string; active: boolea
                   </Button>
                 </div>
               )}
-            </ScrollArea>
+            </div>
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 

@@ -13,6 +13,7 @@ import { optimizeUploadedImages } from '../utils/image-optimization.js';
 import { awardWeeklyUpdatePoints, ensurePointsSchema } from './points.js';
 import { defaultUpdateForm } from '../lib/update-form/default-form.js';
 import { computeScore, isVisible, validateStep } from '../lib/update-form/logic.js';
+import { logActivity } from '../lib/client-activity-log.js';
 
 const router = express.Router();
 // Bump this only when the shipped default questionnaire changes. Existing
@@ -1321,6 +1322,17 @@ router.post('/submit-form', authorizeRole(['client']), upload.array('files', 12)
       console.error('Weekly update media-library sync failed:', mediaError);
     }
     const pointsResult = await awardWeeklyUpdatePoints(connection, { clientId: req.user.id, updateId, weekStart, timely: timing.isTimely });
+    await logActivity(connection, {
+      clientId: req.user.id,
+      category: 'update',
+      type: 'update.submitted',
+      actor: 'client',
+      actorUserId: req.user.id,
+      title: `Weekly update · σκορ ${result.score}/100`,
+      status: 'done',
+      ref: { kind: 'update', id: updateId },
+      meta: { score: result.score, onTime: timing.isTimely, points: Number(pointsResult?.points || 0) },
+    });
     // Keep the coach workflow connected to the versioned update: the
     // notification opens this exact submission rather than the generic list.
     try {

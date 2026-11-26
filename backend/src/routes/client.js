@@ -12,6 +12,7 @@ import { getEmailTemplate, sendMail } from '../lib/mailer.js';
 import { updateNotificationEmail } from '../lib/email-templates.js';
 import { ensureCycleSchema } from './cycles.js';
 import { optimizeUploadedImages } from '../utils/image-optimization.js';
+import { logActivity } from '../lib/client-activity-log.js';
 
 const router = express.Router();
 router.use(authorizeRole(['client']));
@@ -400,6 +401,17 @@ router.post('/workout/complete', async (req, res) => {
       }
       return res.status(404).json({ message: 'Active workout not found.' });
     }
+    await logActivity(connection, {
+      clientId: req.user.id,
+      category: 'workout',
+      type: 'workout.completed',
+      actor: 'client',
+      actorUserId: req.user.id,
+      title: `Ολοκλήρωσε προπόνηση · ${Math.round(durationSeconds / 60)}′`,
+      status: 'done',
+      ref: { kind: 'workout', id: workoutLogId },
+      meta: { durationSeconds, totalSetsCompleted, totalVolumeKg },
+    });
     res.json({ success: true, summary: { durationSeconds, totalSetsCompleted, totalVolumeKg } });
   } catch (error) { console.error(error); res.status(500).json({ message: 'Server error' }); } finally { connection.release(); }
 });

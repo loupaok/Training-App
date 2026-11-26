@@ -39,6 +39,7 @@ import clientNutritionCycleRoutes from './routes/client-nutrition-cycle.js';
 import discordSettingsRoutes from './routes/discord-settings.js';
 import { authenticateToken, isClient, isCoach } from './middleware/auth.js';
 import { ensureAuthSchema } from './routes/auth.js';
+import { ensureClientActivityLogSchema } from './lib/client-activity-log.js';
 
 dotenv.config();
 
@@ -170,6 +171,7 @@ async function testConnection() {
   try {
     const connection = await pool.getConnection();
     await ensureAuthSchema(connection);
+    await ensureClientActivityLogSchema(connection);
     console.log('✓ Database connected successfully');
     connection.release();
   } catch (err) {
