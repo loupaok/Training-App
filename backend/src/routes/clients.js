@@ -14,6 +14,7 @@ import { insertTrainingPlanDays } from './trainingPlans.js';
 import { insertNutritionPlanMeals } from './nutritionPlans.js';
 import { getFullTrainingTemplate, getFullNutritionTemplate } from './templates.js';
 import { ensureClientActivityLogSchema, logActivity, logClientActivity } from '../lib/client-activity-log.js';
+import { supplementDetail } from '../lib/plan-activity.js';
 import { ensureQuestionnaireSchema, syncUpdateDayQuestionnaireAnswer } from './questionnaire.js';
 import { awardPoints } from './points.js';
 import { ensureDiscordSchema } from './discord.js';
@@ -729,6 +730,9 @@ async function ensureClientDetailColumns(connection) {
     'ALTER TABLE clients ADD COLUMN demo_updates_enabled TINYINT(1) NOT NULL DEFAULT 0',
     "ALTER TABLE clients ADD COLUMN progress_photo_social_consent ENUM('yes', 'no') NULL",
     'ALTER TABLE clients ADD COLUMN progress_photo_social_consent_at DATETIME NULL',
+    'ALTER TABLE clients ADD COLUMN city VARCHAR(120) NULL',
+    'ALTER TABLE clients ADD COLUMN eshop_access TINYINT(1) NOT NULL DEFAULT 1',
+    'ALTER TABLE clients ADD COLUMN cycle_protocol_visible_to_client TINYINT(1) NOT NULL DEFAULT 1',
   ]) {
     try {
       await connection.query(statement);
@@ -2571,6 +2575,346 @@ async function canAccessClientActivity(connection, user, clientId) {
   return { allowed: true };
 }
 
+// ---------------------------------------------------------------------------
+// Profile tab — aggregated read model + settings/profile mutations.
+// Everything here reads from the models above (registration questionnaire,
+// onboarding_forms, clients/users, update_schedule, activity_events); none of
+// it introduces a second copy of client data.
+// ---------------------------------------------------------------------------
+
+const UPDATE_DAY_LABELS = { 1: 'Δευτέρα', 2: 'Τρίτη', 3: 'Τετάρτη', 4: 'Πέμπτη', 5: 'Παρασκευή', 6: 'Σάββατο' };
+function updateDayLabel(day) {
+  return UPDATE_DAY_LABELS[Number(day)] || 'Δεν ορίστηκε';
+}
+
+const PROFILE_FIELD_LABELS = {
+  fullName: 'Ονοματεπώνυμο',
+  email: 'Email',
+  phone: 'Τηλέφωνο',
+  dateOfBirth: 'Ημερομηνία γέννησης',
+  gender: 'Φύλο',
+  city: 'Πόλη',
+  discordId: 'Discord',
+  fitnessGoal: 'Κύριος στόχος',
+};
+
+const NEGATIVE_HEALTH_ANSWERS = new Set(['οχι', 'όχι', 'καμια', 'καμία', 'κανενα', 'κανένα', 'κανεις', 'κανείς', 'τιποτα', 'τίποτα', 'no', 'none', 'n/a', '-']);
+
+function isFlaggedHealthAnswer(value) {
+  const text = String(value || '').trim();
+  if (!text) return false;
+  return !NEGATIVE_HEALTH_ANSWERS.has(text.toLocaleLowerCase('el-GR'));
+}
+
+function calculateBmi(heightCm, weightKg) {
+  const height = Number(heightCm);
+  const weight = Number(weightKg);
+  if (!Number.isFinite(height) || height <= 0 || !Number.isFinite(weight) || weight <= 0) return null;
+  const meters = height / 100;
+  return Math.round((weight / (meters * meters)) * 10) / 10;
+}
+
+// The coach questionnaire (questionnaire_questions/answers) has no grouping
+// column by default. We classify the current fixed question set once so the
+// Profile tab can group answers into Προπόνηση / Διατροφή / Υγεία & lifestyle
+// without guessing at render time, and tag the three health-related ones with
+// the existing standard_key mechanism (already used for update_day) so the
+// health banner can look them up reliably.
+async function ensureProfileQuestionnaireCategories(connection) {
+  try {
+    await connection.query("ALTER TABLE questionnaire_questions ADD COLUMN category ENUM('training', 'nutrition', 'health') NULL");
+  } catch (error) {
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
+  }
+
+  const classification = [
+    ['Υπάρχει κάποιο πρόβλημα υγείας, τραυματισμός ή πόνος;', 'health', 'health_injury'],
+    ['Παίρνεις κάποια φαρμακευτική αγωγή;', 'health', 'health_medication'],
+    ['Έχεις κάνει ή κάνεις χρήση αναβολικών ή άλλων ουσιών ενίσχυσης απόδοσης;', 'health', null],
+    ['Έχεις αλλεργίες, δυσανεξίες ή τροφές που αποφεύγεις;', 'nutrition', 'health_allergy'],
+    ['Πώς είναι περίπου η διατροφή σου τώρα;', 'nutrition', null],
+    ['Πώς προπονείσαι τώρα και πόσο καιρό;', 'training', null],
+    ['Πώς είναι ο ύπνος σου;', 'health', null],
+    ['Πώς είναι η εργασία και η καθημερινότητά σου;', 'health', null],
+    ['Πώς μας βρήκες και τι σε έκανε να επιλέξεις εμένα για τη συνεργασία;', null, 'how_found_us'],
+    ['Υπάρχει κάτι άλλο που πρέπει να γνωρίζω;', 'health', null],
+  ];
+  for (const [question, category, standardKey] of classification) {
+    if (category) {
+      await connection.query('UPDATE questionnaire_questions SET category = ? WHERE question = ? AND category IS NULL', [category, question]);
+    }
+    if (standardKey) {
+      await connection.query('UPDATE questionnaire_questions SET standard_key = ? WHERE question = ? AND standard_key IS NULL', [standardKey, question]);
+    }
+  }
+}
+
+// Shared by the Profile tab banner and (separately, not wired up yet) the
+// training/nutrition plan builders, so both read the exact same flags.
+export async function getClientHealthFlags(connection, clientId) {
+  await ensureQuestionnaireSchema(connection);
+  await ensureProfileQuestionnaireCategories(connection);
+
+  const [questionRows] = await connection.query(
+    `SELECT qq.standard_key, qa.answer
+     FROM questionnaire_questions qq
+     LEFT JOIN questionnaire_answers qa ON qa.question_id = qq.id AND qa.client_id = ?
+     WHERE qq.is_active = TRUE AND qq.standard_key IN ('health_injury', 'health_medication', 'health_allergy')`,
+    [clientId]
+  );
+  const byKey = Object.fromEntries(questionRows.map((row) => [row.standard_key, row.answer]));
+
+  let onboarding = null;
+  try {
+    const [rows] = await connection.query('SELECT injuries, health_problem FROM onboarding_forms WHERE client_id = ? LIMIT 1', [clientId]);
+    onboarding = rows[0] || null;
+  } catch (error) {
+    if (error.code !== 'ER_NO_SUCH_TABLE') throw error;
+  }
+
+  const flags = [];
+  const injuryAnswer = byKey.health_injury || onboarding?.injuries || onboarding?.health_problem;
+  if (isFlaggedHealthAnswer(injuryAnswer)) flags.push({ type: 'injury', label: 'Τραυματισμός', detail: String(injuryAnswer).trim() });
+  if (isFlaggedHealthAnswer(byKey.health_allergy)) flags.push({ type: 'allergy', label: 'Αλλεργία', detail: String(byKey.health_allergy).trim() });
+  if (isFlaggedHealthAnswer(byKey.health_medication)) flags.push({ type: 'medication', label: 'Φάρμακα', detail: String(byKey.health_medication).trim() });
+  return flags;
+}
+
+// Extracted from the (pre-existing) GET /:id/files handler so the Profile
+// tab's "Αρχεία & φωτογραφίες" card and the messages attachment picker read
+// from the exact same aggregation instead of two copies of this query.
+async function getClientFiles(connection, clientId) {
+  const files = [];
+  const addRows = (rows, type, section, source) => rows.forEach((row) => {
+    if (!row.url) return;
+    const resolvedType = row.file_type === 'video' ? 'video' : row.file_type === 'pdf' ? 'other' : type;
+    files.push({
+      id: `${section}-${row.id}`,
+      type: resolvedType,
+      section: resolvedType === 'other' && section !== 'payment-proof' ? 'document' : section === 'intake' ? 'registration' : section === 'payment-proof' ? 'document' : 'update',
+      source: section === 'payment-proof' ? 'payment' : 'coach',
+      url: row.url.startsWith('/') ? row.url : `/${row.url}`,
+      name: row.name || row.original_name || null,
+      createdAt: row.created_at || row.submitted_at || null,
+      updateId: row.update_id || null,
+      paymentId: row.payment_id || null,
+      weightKg: row.weight_kg ?? null,
+      linkUrl: type === 'proof' ? `/clients/${clientId}?tab=payments` : `/clients/${clientId}?tab=progress`,
+    });
+  });
+
+  try {
+    const [rows] = await connection.query(
+      `SELECT wuf.id, wuf.file_url AS url, wuf.file_type, wuf.original_name, wuf.created_at, wuf.update_id,
+              wu.submitted_at
+       FROM weekly_update_files wuf
+       LEFT JOIN weekly_updates wu ON wu.id = wuf.update_id
+       WHERE wu.client_id = ?
+       ORDER BY wuf.created_at DESC`,
+      [clientId]
+    );
+    addRows(rows, 'photo', 'update-file');
+  } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+
+  try {
+    const [rows] = await connection.query(
+      `SELECT pp.id, pp.photo_url AS url, pp.created_at, pp.progress_update_id AS update_id,
+              pu.submitted_at, pu.weight_kg
+       FROM progress_photos pp
+       LEFT JOIN progress_updates pu ON pu.id = pp.progress_update_id
+       WHERE pp.client_id = ?
+       ORDER BY pp.created_at DESC`,
+      [clientId]
+    );
+    addRows(rows, 'photo', 'progress-photo');
+  } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+
+  try {
+    await ensurePaymentProofColumns(connection);
+    const [rows] = await connection.query(
+      `SELECT id, proof_url AS url, proof_uploaded_at AS created_at, id AS payment_id
+       FROM payments WHERE client_id = ? AND proof_url IS NOT NULL AND TRIM(proof_url) <> ''
+       ORDER BY proof_uploaded_at DESC`,
+      [clientId]
+    );
+    addRows(rows, 'proof', 'payment-proof');
+  } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+
+  try {
+    const [rows] = await connection.query(
+      `SELECT id, file_url AS url, file_type, original_name, created_at
+       FROM client_intake_files WHERE client_id = ? ORDER BY created_at DESC`,
+      [clientId]
+    );
+    addRows(rows, 'other', 'intake');
+  } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+
+  const seen = new Set();
+  return files.filter((file) => !seen.has(file.url) && seen.add(file.url)).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+}
+
+async function logProfileChange(connection, { clientId, performedBy, title, detail, type = 'profile.updated' }) {
+  const [rows] = performedBy ? await connection.query('SELECT role FROM users WHERE id = ? LIMIT 1', [performedBy]) : [[]];
+  const actor = rows[0]?.role === 'client' ? 'client' : 'coach';
+  await logActivity(connection, { clientId, actor, actorUserId: performedBy || null, category: 'account', type, title, detail });
+}
+
+export async function getClientProfile(clientIdInput, options = {}) {
+  const clientId = Number(clientIdInput);
+  const connection = options.connection || await pool.getConnection();
+  try {
+    await ensureOnboardingSchema(connection);
+    await ensureQuestionnaireSchema(connection);
+    await ensureClientDetailColumns(connection);
+    await ensureDiscordSchema(connection);
+    await ensureProfileQuestionnaireCategories(connection);
+
+    const [[row]] = await connection.query(
+      `SELECT u.id, u.email, u.full_name, u.created_at, u.last_seen_at, u.is_active,
+              u.discord_username AS discord_oauth_username,
+              c.phone, c.date_of_birth, c.gender, c.city, c.discord_id,
+              c.fitness_goal, c.target_weight_kg, c.weight_kg, c.height_cm,
+              c.eshop_access, c.cycle_protocol_visible_to_client, c.deleted_at,
+              cc.coach_id, coach.full_name AS coach_name
+       FROM users u
+       LEFT JOIN clients c ON c.user_id = u.id
+       LEFT JOIN coach_clients cc ON cc.client_id = u.id AND cc.status = 'active'
+       LEFT JOIN users coach ON coach.id = cc.coach_id
+       WHERE u.id = ? AND u.role = 'client'
+       LIMIT 1`,
+      [clientId]
+    );
+    if (!row) return null;
+
+    const registrationBody = await getRegistrationBodyFallback(connection, clientId);
+    const [scheduleRows] = await connection.query(
+      'SELECT day_of_week, reminder_enabled FROM update_schedule WHERE client_id = ? LIMIT 1',
+      [clientId]
+    );
+    const [weeklyRows] = await connection.query(
+      'SELECT weight_kg, submitted_at FROM weekly_updates WHERE client_id = ? ORDER BY submitted_at DESC LIMIT 1',
+      [clientId]
+    );
+    const [firstWeightRows] = await connection.query(
+      `SELECT weight_kg, submitted_at FROM weekly_updates WHERE client_id = ? AND weight_kg IS NOT NULL
+       ORDER BY submitted_at ASC LIMIT 1`,
+      [clientId]
+    );
+    const [onboardingRows] = await connection.query('SELECT * FROM onboarding_forms WHERE client_id = ? LIMIT 1', [clientId]);
+    const onboarding = onboardingRows[0] || null;
+
+    const [questionRows] = await connection.query(
+      `SELECT qq.id AS question_id, qq.question, qq.type, qq.options, qq.category, qq.standard_key, qa.answer
+       FROM questionnaire_questions qq
+       LEFT JOIN questionnaire_answers qa ON qa.question_id = qq.id AND qa.client_id = ?
+       WHERE qq.is_active = TRUE
+       ORDER BY qq.sort_order ASC, qq.id ASC`,
+      [clientId]
+    );
+    const howFoundUsAnswer = questionRows.find((q) => q.standard_key === 'how_found_us')?.answer || null;
+    const questionnaire = questionRows
+      .filter((q) => q.standard_key !== 'update_day' && q.standard_key !== 'how_found_us')
+      .map((q) => ({
+        questionId: q.question_id,
+        question: q.question,
+        answer: q.answer,
+        type: q.type,
+        category: q.category || 'health',
+      }));
+
+    let referral = null;
+    try {
+      const [referralRows] = await connection.query(
+        `SELECT description FROM points_transactions
+         WHERE client_id = ? AND type = 'earned' AND (description LIKE '%σύστασ%' OR description LIKE '%σύσταση%' OR description LIKE '%referral%')
+         ORDER BY created_at DESC LIMIT 1`,
+        [clientId]
+      );
+      referral = referralRows[0]?.description || null;
+    } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+
+    const heightCm = row.height_cm || registrationBody.heightCm || null;
+    const currentWeightKg = row.weight_kg ?? weeklyRows[0]?.weight_kg ?? registrationBody.weightKg ?? null;
+    const initialWeightKg = firstWeightRows[0]?.weight_kg ?? registrationBody.weightKg ?? row.weight_kg ?? null;
+    const targetWeightKg = row.target_weight_kg ?? registrationBody.targetWeightKg ?? null;
+
+    const healthFlags = await getClientHealthFlags(connection, clientId);
+    const [auditRows] = await connection.query(
+      `SELECT id, title AS action, actor_user_id AS performedBy, detail AS details,
+              category, type, actor, created_at AS createdAt
+       FROM activity_events
+       WHERE client_id = ? AND category = 'account'
+       ORDER BY created_at DESC, id DESC
+       LIMIT 20`,
+      [clientId]
+    );
+
+    return {
+      basic: {
+        fullName: row.full_name,
+        email: row.email,
+        phone: row.phone,
+        dateOfBirth: row.date_of_birth,
+        age: calculateAge(row.date_of_birth),
+        gender: row.gender,
+        city: row.city,
+        discordId: row.discord_id,
+        discordConnected: Boolean(row.discord_oauth_username),
+        howFoundUs: howFoundUsAnswer || onboarding?.selected_package || null,
+        referral,
+      },
+      body: {
+        heightCm,
+        bmi: calculateBmi(heightCm, currentWeightKg),
+        initialWeightKg,
+        initialWeightDate: firstWeightRows[0]?.submitted_at || null,
+        currentWeightKg,
+        currentWeightDate: weeklyRows[0]?.submitted_at || null,
+        weightDeltaFromInitial: Number.isFinite(Number(currentWeightKg)) && Number.isFinite(Number(initialWeightKg))
+          ? Math.round((Number(currentWeightKg) - Number(initialWeightKg)) * 10) / 10
+          : null,
+      },
+      goal: {
+        fitnessGoal: row.fitness_goal || registrationBody.goal || null,
+        targetWeightKg,
+        remainingToGoalKg: Number.isFinite(Number(currentWeightKg)) && Number.isFinite(Number(targetWeightKg))
+          ? Math.round((Number(currentWeightKg) - Number(targetWeightKg)) * 10) / 10
+          : null,
+        activityLevel: [onboarding?.occupation_schedule, onboarding?.cardio_sessions_per_week ? `${onboarding.cardio_sessions_per_week} cardio/εβδ.` : null]
+          .filter(Boolean).join(' · ') || null,
+        // Not tracked anywhere in the data model today (no questionnaire question or
+        // column holds a goal "time horizon" or free-text motivation) — surfaced as
+        // null rather than guessed. Add a question/column first if these are needed.
+        timeHorizon: null,
+        motivation: null,
+      },
+      questionnaire,
+      healthFlags,
+      settings: {
+        updateDayOfWeek: scheduleRows[0]?.day_of_week ?? onboarding?.update_day ?? null,
+        reminderEnabled: scheduleRows[0]?.reminder_enabled === undefined ? true : Boolean(scheduleRows[0]?.reminder_enabled),
+        coachId: row.coach_id || null,
+        coachName: row.coach_name || null,
+        cycleProtocolVisible: Boolean(row.cycle_protocol_visible_to_client),
+        eshopAccess: Boolean(row.eshop_access),
+      },
+      files: await getClientFiles(connection, clientId),
+      account: {
+        memberSince: row.created_at,
+        lastLoginAt: row.last_seen_at,
+        // No device/user-agent is captured anywhere in the app today (only the
+        // last_seen_at timestamp) — left null rather than fabricated.
+        lastLoginDevice: null,
+        isActive: Boolean(row.is_active),
+        deletedAt: row.deleted_at,
+      },
+      audit: auditRows,
+    };
+  } finally {
+    if (!options.connection) connection.release();
+  }
+}
+
 router.get('/:id/log', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
   const connection = await pool.getConnection();
   try {
@@ -2581,7 +2925,7 @@ router.get('/:id/log', authorizeRole(['coach', 'admin', 'moderator']), async (re
     await ensureClientActivityLogSchema(connection);
     const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
     const offset = Math.max(0, Number(req.query.offset) || 0);
-    const category = ['update', 'workout', 'payment', 'points', 'plan', 'message', 'account'].includes(String(req.query.category))
+    const category = ['update', 'workout', 'payment', 'points', 'plan', 'account'].includes(String(req.query.category))
       ? String(req.query.category)
       : null;
     const [rows] = await connection.query(
@@ -2589,7 +2933,7 @@ router.get('/:id/log', authorizeRole(['coach', 'admin', 'moderator']), async (re
               category, type, actor, status, ref_kind AS refKind, ref_id AS refId, meta,
               created_at AS createdAt
        FROM activity_events
-       WHERE client_id = ? ${category ? 'AND category = ?' : ''}
+       WHERE client_id = ? AND category <> 'message' ${category ? 'AND category = ?' : ''}
        ORDER BY created_at DESC, id DESC
        LIMIT ? OFFSET ?`,
       category ? [clientId, category, limit, offset] : [clientId, limit, offset]
@@ -3023,6 +3367,12 @@ router.patch('/:id/supplements/toggle', authorizeRole(['coach', 'admin', 'modera
 
     const enabled = req.body.enabled ? 1 : 0;
     await connection.query('UPDATE clients SET supplements_enabled = ? WHERE user_id = ?', [enabled, clientId]);
+    await logActivity(connection, {
+      clientId, category: 'plan', type: 'supplements.toggled', actor: 'coach', actorUserId: req.user.id,
+      title: enabled ? 'Ενεργοποιήθηκαν τα συμπληρώματα' : 'Απενεργοποιήθηκαν τα συμπληρώματα',
+      detail: enabled ? 'Ο πελάτης βλέπει ξανά την ενότητα συμπληρωμάτων' : 'Η ενότητα συμπληρωμάτων κρύφτηκε από τον πελάτη',
+      meta: { planType: 'supplements' },
+    });
 
     try {
       await notifyUser(connection, clientId, {
@@ -3057,6 +3407,12 @@ router.put('/:id/supplements/notes', authorizeRole(['coach', 'admin', 'moderator
 
     const generalNotes = optionalText(req.body.generalNotes, 4000);
     await connection.query('UPDATE clients SET supplements_notes = ? WHERE user_id = ?', [generalNotes, clientId]);
+    await logActivity(connection, {
+      clientId, category: 'plan', type: 'supplements.notes_changed', actor: 'coach', actorUserId: req.user.id,
+      title: 'Ενημερώθηκαν οι οδηγίες συμπληρωμάτων',
+      detail: generalNotes ? 'Άλλαξαν οι γενικές οδηγίες' : 'Αφαιρέθηκαν οι γενικές οδηγίες',
+      meta: { planType: 'supplements' },
+    });
     res.json({ generalNotes: generalNotes || '' });
   } catch (error) {
     console.error(error);
@@ -3087,6 +3443,11 @@ router.post('/:id/supplements', authorizeRole(['coach', 'admin', 'moderator']), 
       [clientId, req.user.id, name, doseAmount, doseUnit, timesPerDay, link]
     );
     const [[supplement]] = await connection.query(`SELECT ${SUPPLEMENT_COLUMNS} FROM client_supplements WHERE id = ?`, [result.insertId]);
+    await logActivity(connection, {
+      clientId, category: 'plan', type: 'supplements.added', actor: 'coach', actorUserId: req.user.id,
+      title: 'Προστέθηκε συμπλήρωμα', detail: supplementDetail('added', name),
+      ref: { kind: 'plan', id: supplement.id }, meta: { planType: 'supplements' },
+    });
     await notifySupplementChange(connection, clientId, 'added', name);
     res.status(201).json(supplement);
   } catch (error) {
@@ -3105,6 +3466,7 @@ router.put('/:id/supplements/:supplementId', authorizeRole(['coach', 'admin', 'm
     const access = await canAccessClientActivity(connection, req.user, clientId);
     if (!access.allowed) return res.status(access.status).json({ message: access.message });
 
+    const [[previousSupplement]] = await connection.query(`SELECT ${SUPPLEMENT_COLUMNS} FROM client_supplements WHERE id = ? AND client_id = ?`, [req.params.supplementId, clientId]);
     const name = optionalText(req.body.name, 255);
     if (!name) return res.status(400).json({ message: 'Το όνομα του συμπληρώματος είναι υποχρεωτικό.' });
     const doseUnit = DOSE_UNITS.includes(req.body.doseUnit) ? req.body.doseUnit : 'mg';
@@ -3120,6 +3482,11 @@ router.put('/:id/supplements/:supplementId', authorizeRole(['coach', 'admin', 'm
     if (!result.affectedRows) return res.status(404).json({ message: 'Το συμπλήρωμα δεν βρέθηκε.' });
 
     const [[supplement]] = await connection.query(`SELECT ${SUPPLEMENT_COLUMNS} FROM client_supplements WHERE id = ?`, [req.params.supplementId]);
+    await logActivity(connection, {
+      clientId, category: 'plan', type: 'supplements.changed', actor: 'coach', actorUserId: req.user.id,
+      title: 'Ενημερώθηκε συμπλήρωμα', detail: supplementDetail('updated', name, previousSupplement, { name, doseAmount, doseUnit, timesPerDay, link }),
+      ref: { kind: 'plan', id: supplement.id }, meta: { planType: 'supplements' },
+    });
     await notifySupplementChange(connection, clientId, 'updated', name);
     res.json(supplement);
   } catch (error) {
@@ -3142,6 +3509,11 @@ router.delete('/:id/supplements/:supplementId', authorizeRole(['coach', 'admin',
     if (!existing) return res.status(404).json({ message: 'Το συμπλήρωμα δεν βρέθηκε.' });
 
     await connection.query('DELETE FROM client_supplements WHERE id = ? AND client_id = ?', [req.params.supplementId, clientId]);
+    await logActivity(connection, {
+      clientId, category: 'plan', type: 'supplements.removed', actor: 'coach', actorUserId: req.user.id,
+      title: 'Αφαιρέθηκε συμπλήρωμα', detail: supplementDetail('removed', existing.name),
+      ref: { kind: 'plan', id: req.params.supplementId }, meta: { planType: 'supplements' },
+    });
     await notifySupplementChange(connection, clientId, 'removed', existing.name);
     res.json({ message: 'Deleted' });
   } catch (error) {
@@ -3741,71 +4113,266 @@ router.get('/:id/files', authorizeRoleOrPermission(['coach', 'admin'], 'messages
     const access = await canAccessClientActivity(connection, req.user, clientId);
     if (!access.allowed) return res.status(access.status).json({ message: access.message });
 
-    const files = [];
-    const addRows = (rows, type, section) => rows.forEach((row) => {
-      if (!row.url) return;
-      const resolvedType = row.file_type === 'video' ? 'video' : row.file_type === 'pdf' ? 'other' : type;
-      files.push({
-        id: `${section}-${row.id}`,
-        type: resolvedType,
-        url: row.url.startsWith('/') ? row.url : `/${row.url}`,
-        name: row.name || row.original_name || null,
-        createdAt: row.created_at || row.submitted_at || null,
-        updateId: row.update_id || null,
-        paymentId: row.payment_id || null,
-        weightKg: row.weight_kg ?? null,
-        linkUrl: type === 'proof' ? `/clients/${clientId}?tab=payments` : `/clients/${clientId}?tab=progress`,
+    res.json(await getClientFiles(connection, clientId));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+// POST /clients/:id/files — coach/admin uploads a document or photo into this
+// client's folder (same uploads/media/... convention used for registration
+// and weekly-update intake files). The client cannot reach this endpoint —
+// uploading from the Profile tab is coach/admin-only, per spec.
+const profileDocumentUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join('uploads', 'media', 'documents', String(req.params.id));
+      fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (_req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, `${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 15 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const isPhoto = /^image\/(jpeg|png|webp)$/.test(file.mimetype);
+    const isPdf = file.mimetype === 'application/pdf';
+    (isPhoto || isPdf) ? cb(null, true) : cb(new Error('Only JPG/PNG/WEBP or a PDF are allowed'));
+  },
+}).single('file');
+
+router.post('/:id/files', authorizeRole(['coach', 'admin']), (req, res) => {
+  profileDocumentUpload(req, res, async (uploadError) => {
+    if (uploadError) return res.status(400).json({ message: uploadError.message || 'Upload failed' });
+    if (!req.file) return res.status(400).json({ message: 'No file provided' });
+
+    const connection = await pool.getConnection();
+    try {
+      const clientId = Number(req.params.id);
+      const access = await canAccessClientActivity(connection, req.user, clientId);
+      if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+      const fileType = req.file.mimetype === 'application/pdf' ? 'pdf' : 'photo';
+      const fileUrl = `/${path.join('uploads', 'media', 'documents', String(clientId), req.file.filename).replace(/\\/g, '/')}`;
+      await connection.query(
+        'INSERT INTO client_intake_files (client_id, file_url, file_type, original_name) VALUES (?, ?, ?, ?)',
+        [clientId, fileUrl, fileType, req.file.originalname]
+      );
+      await logProfileChange(connection, {
+        clientId, performedBy: req.user.id, type: 'profile.file_uploaded',
+        title: 'Νέο αρχείο ανέβηκε', detail: req.file.originalname,
       });
-    });
+      res.status(201).json({ message: 'Το αρχείο ανέβηκε.' });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: 'Server error' });
+    } finally {
+      connection.release();
+    }
+  });
+});
 
-    try {
-      const [rows] = await connection.query(
-        `SELECT wuf.id, wuf.file_url AS url, wuf.file_type, wuf.original_name, wuf.created_at, wuf.update_id,
-                wu.submitted_at
-         FROM weekly_update_files wuf
-         LEFT JOIN weekly_updates wu ON wu.id = wuf.update_id
-         WHERE wu.client_id = ?
-         ORDER BY wuf.created_at DESC`,
-        [clientId]
+// GET /clients/:id/profile — aggregated read model for the Profile tab.
+router.get('/:id/profile', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    const profile = await getClientProfile(clientId, { connection });
+    if (!profile) return res.status(404).json({ message: 'Client not found' });
+    res.json(profile);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+// PUT /clients/:id/profile — updateClientProfile: personal info + goal/target
+// weight. Every changed field is written to the activity/audit log with its
+// old → new value.
+router.put('/:id/profile', authorizeRole(['coach', 'admin', 'moderator']), [
+  body('fullName').optional().notEmpty(),
+  body('email').optional().isEmail(),
+  body('phone').optional({ nullable: true }).isString(),
+  body('dateOfBirth').optional({ nullable: true }).isString(),
+  body('gender').optional({ nullable: true, checkFalsy: true }).isIn(['male', 'female', 'other']),
+  body('city').optional({ nullable: true }).isString().isLength({ max: 120 }),
+  body('discordId').optional({ nullable: true }).isString(),
+  body('fitnessGoal').optional({ nullable: true }).isString(),
+  body('targetWeightKg').optional({ nullable: true, checkFalsy: true }).isNumeric(),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  if (req.body.dateOfBirth !== undefined) {
+    const normalized = normalizeDateOfBirth(req.body.dateOfBirth);
+    if (req.body.dateOfBirth !== '' && req.body.dateOfBirth !== null && !normalized) {
+      return res.status(400).json({ message: 'Date of birth must use dd/mm/yyyy or yyyy-mm-dd.' });
+    }
+    req.body.dateOfBirth = normalized;
+  }
+
+  const connection = await pool.getConnection();
+  try {
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    await ensureClientDetailColumns(connection);
+    const before = await getClientProfile(clientId, { connection });
+    if (!before) return res.status(404).json({ message: 'Client not found' });
+
+    const userUpdates = [];
+    const userValues = [];
+    if (req.body.fullName !== undefined) { userUpdates.push('full_name = ?'); userValues.push(req.body.fullName); }
+    if (req.body.email !== undefined) { userUpdates.push('email = ?'); userValues.push(req.body.email); }
+    if (userUpdates.length) {
+      userValues.push(clientId);
+      await connection.query(`UPDATE users SET ${userUpdates.join(', ')} WHERE id = ? AND role = 'client'`, userValues);
+    }
+
+    const fieldMap = {
+      phone: 'phone', dateOfBirth: 'date_of_birth', gender: 'gender', city: 'city',
+      discordId: 'discord_id', fitnessGoal: 'fitness_goal', targetWeightKg: 'target_weight_kg',
+    };
+    const updates = [];
+    const values = [];
+    for (const [bodyKey, column] of Object.entries(fieldMap)) {
+      if (req.body[bodyKey] !== undefined) {
+        updates.push(`${column} = ?`);
+        values.push(req.body[bodyKey] === '' ? null : req.body[bodyKey]);
+      }
+    }
+    if (!updates.length && !userUpdates.length) return res.status(400).json({ message: 'No updates provided' });
+    if (updates.length) {
+      values.push(clientId);
+      await connection.query(`UPDATE clients SET ${updates.join(', ')} WHERE user_id = ?`, values);
+    }
+
+    const beforeByField = {
+      fullName: before.basic.fullName, email: before.basic.email, phone: before.basic.phone,
+      dateOfBirth: before.basic.dateOfBirth, gender: before.basic.gender, city: before.basic.city,
+      discordId: before.basic.discordId, fitnessGoal: before.goal.fitnessGoal, targetWeightKg: before.goal.targetWeightKg,
+    };
+    for (const key of ['fullName', 'email', ...Object.keys(fieldMap)]) {
+      if (req.body[key] === undefined) continue;
+      const oldValue = beforeByField[key];
+      const newValue = req.body[key] === '' ? null : req.body[key];
+      if (String(oldValue ?? '') === String(newValue ?? '')) continue;
+      if (key === 'targetWeightKg') {
+        await logProfileChange(connection, {
+          clientId, performedBy: req.user.id, type: 'profile.goal_weight',
+          title: `Στόχος βάρους: ${oldValue ?? '—'} → ${newValue ?? '—'} kg`,
+        });
+      } else {
+        await logProfileChange(connection, {
+          clientId, performedBy: req.user.id, type: `profile.${key}`,
+          title: `${PROFILE_FIELD_LABELS[key] || key} ενημερώθηκε`,
+          detail: `${oldValue ?? '—'} → ${newValue ?? '—'}`,
+        });
+      }
+    }
+
+    res.json({ message: 'Το προφίλ ενημερώθηκε.', profile: await getClientProfile(clientId, { connection }) });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+// PUT /clients/:id/settings — updateClientSettings: update day, coach,
+// reminders, cycle-protocol visibility, eshop access. Saves immediately;
+// every changed field is written to the audit log.
+router.put('/:id/settings', authorizeRole(['coach', 'admin', 'moderator']), [
+  body('updateDay').optional({ nullable: true }).isInt({ min: 1, max: 6 }),
+  body('coachId').optional({ nullable: true }).isInt(),
+  body('reminderEnabled').optional().isBoolean(),
+  body('cycleProtocolVisible').optional().isBoolean(),
+  body('eshopAccess').optional().isBoolean(),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const connection = await pool.getConnection();
+  try {
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    await ensureClientDetailColumns(connection);
+    const before = await getClientProfile(clientId, { connection });
+    if (!before) return res.status(404).json({ message: 'Client not found' });
+
+    if (req.body.updateDay !== undefined && Number(req.body.updateDay) !== Number(before.settings.updateDayOfWeek)) {
+      const day = Number(req.body.updateDay);
+      await connection.query(
+        `INSERT INTO update_schedule (coach_id, client_id, frequency, day_of_week, next_due_date)
+         VALUES (?, ?, 'weekly', ?, ?)
+         ON DUPLICATE KEY UPDATE day_of_week = VALUES(day_of_week), next_due_date = VALUES(next_due_date)`,
+        [before.settings.coachId || req.user.id, clientId, day, nextDateForWeekday(day)]
       );
-      addRows(rows, 'photo', 'update-file');
-    } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+      await logProfileChange(connection, {
+        clientId, performedBy: req.user.id, type: 'settings.update_day',
+        title: `Ημέρα update: ${updateDayLabel(before.settings.updateDayOfWeek)} → ${updateDayLabel(day)}`,
+      });
+    }
 
-    try {
-      const [rows] = await connection.query(
-        `SELECT pp.id, pp.photo_url AS url, pp.created_at, pp.progress_update_id AS update_id,
-                pu.submitted_at, pu.weight_kg
-         FROM progress_photos pp
-         LEFT JOIN progress_updates pu ON pu.id = pp.progress_update_id
-         WHERE pp.client_id = ?
-         ORDER BY pp.created_at DESC`,
-        [clientId]
+    if (req.body.reminderEnabled !== undefined && Boolean(req.body.reminderEnabled) !== Boolean(before.settings.reminderEnabled)) {
+      await connection.query(
+        `INSERT INTO update_schedule (coach_id, client_id, frequency, reminder_enabled)
+         VALUES (?, ?, 'weekly', ?)
+         ON DUPLICATE KEY UPDATE reminder_enabled = VALUES(reminder_enabled)`,
+        [before.settings.coachId || req.user.id, clientId, req.body.reminderEnabled ? 1 : 0]
       );
-      addRows(rows, 'photo', 'progress-photo');
-    } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+      await logProfileChange(connection, {
+        clientId, performedBy: req.user.id, type: 'settings.reminder',
+        title: `Υπενθύμιση update: ${req.body.reminderEnabled ? 'Ενεργή' : 'Ανενεργή'}`,
+      });
+    }
 
-    try {
-      await ensurePaymentProofColumns(connection);
-      const [rows] = await connection.query(
-        `SELECT id, proof_url AS url, proof_uploaded_at AS created_at, id AS payment_id
-         FROM payments WHERE client_id = ? AND proof_url IS NOT NULL AND TRIM(proof_url) <> ''
-         ORDER BY proof_uploaded_at DESC`,
-        [clientId]
+    if (req.body.coachId !== undefined && Number(req.body.coachId) !== Number(before.settings.coachId)) {
+      const [[newCoach]] = await connection.query("SELECT full_name FROM users WHERE id = ? AND role IN ('coach', 'admin') LIMIT 1", [req.body.coachId]);
+      if (!newCoach) return res.status(400).json({ message: 'Coach not found' });
+      await connection.query("UPDATE coach_clients SET status = 'inactive' WHERE client_id = ? AND status = 'active'", [clientId]);
+      await connection.query(
+        `INSERT INTO coach_clients (coach_id, client_id, status) VALUES (?, ?, 'active')
+         ON DUPLICATE KEY UPDATE status = 'active'`,
+        [req.body.coachId, clientId]
       );
-      addRows(rows, 'proof', 'payment-proof');
-    } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+      await logProfileChange(connection, {
+        clientId, performedBy: req.user.id, type: 'settings.coach',
+        title: `Coach: ${before.settings.coachName || '—'} → ${newCoach.full_name}`,
+      });
+    }
 
-    try {
-      const [rows] = await connection.query(
-        `SELECT id, file_url AS url, original_name, created_at
-         FROM client_intake_files WHERE client_id = ? ORDER BY created_at DESC`,
-        [clientId]
-      );
-      addRows(rows, 'other', 'intake');
-    } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+    if (req.body.cycleProtocolVisible !== undefined && Boolean(req.body.cycleProtocolVisible) !== Boolean(before.settings.cycleProtocolVisible)) {
+      await connection.query('UPDATE clients SET cycle_protocol_visible_to_client = ? WHERE user_id = ?', [req.body.cycleProtocolVisible ? 1 : 0, clientId]);
+      await logProfileChange(connection, {
+        clientId, performedBy: req.user.id, type: 'settings.cycle_protocol_visible',
+        title: `Cycle Protocol ορατό στον πελάτη: ${req.body.cycleProtocolVisible ? 'Ναι' : 'Όχι'}`,
+      });
+    }
 
-    const seen = new Set();
-    res.json(files.filter((file) => !seen.has(file.url) && seen.add(file.url)).sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)));
+    if (req.body.eshopAccess !== undefined && Boolean(req.body.eshopAccess) !== Boolean(before.settings.eshopAccess)) {
+      await connection.query('UPDATE clients SET eshop_access = ? WHERE user_id = ?', [req.body.eshopAccess ? 1 : 0, clientId]);
+      await logProfileChange(connection, {
+        clientId, performedBy: req.user.id, type: 'settings.eshop_access',
+        title: `Πρόσβαση στο eshop: ${req.body.eshopAccess ? 'Ναι' : 'Όχι'}`,
+      });
+    }
+
+    res.json({ message: 'Οι ρυθμίσεις αποθηκεύτηκαν.', profile: await getClientProfile(clientId, { connection }) });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
