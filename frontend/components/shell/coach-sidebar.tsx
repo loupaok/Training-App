@@ -156,7 +156,7 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
                     )}
                   </button>
                   {!collapsed && isOpen && (
-                    <div className="ml-4 mt-1 flex max-h-[320px] flex-col gap-1 overflow-y-auto border-l border-white/10 pl-3 [scrollbar-width:thin]">
+                    <div className="ml-4 mt-1 flex flex-col gap-1 border-l border-white/10 pl-3">
                       {section.children
                         .filter((child) => !child.adminOnly || isAdmin || (child.key === "manual-notifications" && canSendAnnouncements))
                         .map((child) =>
