@@ -104,7 +104,7 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-transparent bg-[var(--sp-sidebar)] text-white transition-[width] duration-200 dark:border-[#232323] lg:flex",
+        "fixed inset-y-0 left-0 z-40 hidden flex-col border-r border-transparent bg-[var(--sp-sidebar)] text-white will-change-[width] transition-[width] duration-200 dark:border-[#232323] lg:flex",
         collapsed ? "w-16" : "w-[248px]",
       )}
     >
@@ -124,7 +124,7 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
         </Button>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
+      <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
         {orderedSections
           .filter((section) =>
             (!section.coachOrAdminOnly || canSeeCoachSettings || (section.key === "management" && canSendAnnouncements)) &&
@@ -156,7 +156,7 @@ export function CoachSidebar({ user, logout, collapsed, onToggle }: CoachSidebar
                     )}
                   </button>
                   {!collapsed && isOpen && (
-                    <div className="ml-4 mt-1 flex flex-col gap-1 border-l border-white/10 pl-3">
+                    <div className="ml-4 mt-1 flex max-h-[320px] flex-col gap-1 overflow-y-auto border-l border-white/10 pl-3 [scrollbar-width:thin]">
                       {section.children
                         .filter((child) => !child.adminOnly || isAdmin || (child.key === "manual-notifications" && canSendAnnouncements))
                         .map((child) =>
