@@ -174,7 +174,7 @@ function CoachProfileContent() {
           <Card>
             <CardHeader>
               <CardTitle>Εμφάνιση</CardTitle>
-              <CardDescription>Μέγεθος γραμματοσειράς για όλη την εφαρμογή.</CardDescription>
+              <CardDescription>Προτίμηση μεγέθους γραμματοσειράς για το περιεχόμενο του λογαριασμού.</CardDescription>
             </CardHeader>
             <CardContent>
               <ToggleGroup

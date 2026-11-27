@@ -126,6 +126,12 @@ export interface LibraryFood {
   imageUrl?: string;
 }
 
+export interface PlanHealthFlag {
+  type: "injury" | "allergy" | "medication";
+  label: string;
+  detail: string;
+}
+
 export function defaultNutritionPlan(): NutritionPlanState {
   return {
     title: "Πρόγραμμα Διατροφής",
@@ -243,6 +249,7 @@ export function NutritionPlanEditor({
   saving,
   history = [],
   afterMeals,
+  healthFlags = [],
   title = "Πρόγραμμα Διατροφής",
   subtitle = "Ένα ενεργό πρόγραμμα διατροφής για τον πελάτη. Το ανανεώνει μόνο ο admin όταν χρειαστεί.",
 }: {
@@ -254,6 +261,7 @@ export function NutritionPlanEditor({
   saving: boolean;
   history?: PlanHistoryRow[];
   afterMeals?: ReactNode;
+  healthFlags?: PlanHealthFlag[];
   title?: string;
   subtitle?: string;
 }) {
@@ -435,10 +443,17 @@ export function NutritionPlanEditor({
     return ((actual - targetNum) / targetNum) * 100;
   };
   const isOffTarget = (diff: number | null) => diff != null && Math.abs(diff) > 10;
+  const dietaryFlags = healthFlags.filter((flag) => flag.type === "allergy");
 
   return (
     <Card className="!overflow-visible p-0">
       <PlanHeader title={title} subtitle={subtitle} onSave={onSave} onCreateNew={onCreateNew} saving={saving} />
+      {dietaryFlags.length > 0 && (
+        <div role="alert" className="mx-6 mt-6 rounded-[14px] border border-amber-200 border-l-4 border-l-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+          <b className="block font-extrabold">Διατροφικοί περιορισμοί</b>
+          <p className="mt-1 text-xs leading-5">{dietaryFlags.map((flag) => `${flag.label}: ${flag.detail}`).join(" · ")}</p>
+        </div>
+      )}
 
       {/* Full-width, above the resizable split — plan-level fields, not scoped to either panel */}
       <div className="space-y-6 p-6 pb-0">

@@ -13,7 +13,6 @@ import type { AuthUser } from "@/types/auth";
 interface ClientSidebarProps {
   user: AuthUser | null;
   logout: () => Promise<void>;
-  paymentApproved: boolean;
   subscriptionStatus?: string | null;
   daysRemaining?: number | null;
   unreadNotifications?: number;
@@ -25,7 +24,6 @@ interface ClientSidebarProps {
 export function ClientSidebar({
   user,
   logout,
-  paymentApproved,
   subscriptionStatus,
   daysRemaining,
   unreadNotifications = 0,
@@ -34,6 +32,11 @@ export function ClientSidebar({
   onToggle,
 }: ClientSidebarProps) {
   const pathname = usePathname();
+  // A missing dashboard response must never make an active subscription look
+  // locked. Only an actual expired status (or zero remaining days) locks plans.
+  const subscriptionExpired = subscriptionStatus === "expired"
+    || user?.status === "expired"
+    || (typeof daysRemaining === "number" && daysRemaining <= 0);
 
   return (
     <aside
@@ -60,7 +63,7 @@ export function ClientSidebar({
 
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-4">
         {clientNavSections.map((section) => {
-          const isLocked = Boolean(section.locked && !paymentApproved && section.key !== "points");
+          const isLocked = Boolean(section.locked && subscriptionExpired);
           const active = isActivePath(pathname, section.path);
           const Icon = section.icon;
 

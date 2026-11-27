@@ -31,6 +31,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { resolveMediaUrl } from "@/lib/media";
 import { Field, PlanHeader, PlanHistory, SelectField, type PlanHistoryRow } from "@/components/shared/plan-editor-ui";
+import type { PlanHealthFlag } from "@/components/shared/nutrition-plan-editor";
 
 // ---------------------------------------------------------------------------
 // Types, defaults, normalize — UNCHANGED from the current file
@@ -230,6 +231,7 @@ export function TrainingPlanEditor({
   onCreateNew,
   saving,
   history = [],
+  healthFlags = [],
   title = "Πρόγραμμα Προπόνησης",
   subtitle = "Διάλεξε ημέρες, βάλε ασκήσεις από τη βιβλιοθήκη και συμπλήρωσε Σετ, Επαναλ., Tempo και Rest.",
 }: {
@@ -240,6 +242,7 @@ export function TrainingPlanEditor({
   onCreateNew?: () => void;
   saving: boolean;
   history?: PlanHistoryRow[];
+  healthFlags?: PlanHealthFlag[];
   title?: string;
   subtitle?: string;
 }) {
@@ -264,6 +267,7 @@ export function TrainingPlanEditor({
   const visibleDays = (plan.days || []).slice(0, plan.dayCount || plan.days?.length || 1);
   const selectedDay = visibleDays[activeDayIndex] || visibleDays[0];
   const muscleGroups = [...new Set((selectedDay?.exercises || []).map((exercise) => exercise.muscleGroup).filter(Boolean))];
+  const trainingFlags = healthFlags.filter((flag) => flag.type === "injury");
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -420,6 +424,12 @@ export function TrainingPlanEditor({
   return (
     <Card className="p-0">
       <PlanHeader title={title} subtitle={subtitle} onSave={onSave} onCreateNew={onCreateNew} saving={saving} />
+      {trainingFlags.length > 0 && (
+        <div role="alert" className="mx-6 mt-6 rounded-[14px] border border-amber-200 border-l-4 border-l-amber-500 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+          <b className="block font-extrabold">Τραυματισμοί ή πόνοι</b>
+          <p className="mt-1 text-xs leading-5">{trainingFlags.map((flag) => `${flag.label}: ${flag.detail}`).join(" · ")}</p>
+        </div>
+      )}
 
       <div className="space-y-6 p-6">
         {/* Top fields row — same 4 fields/handlers as before, just re-flowed */}

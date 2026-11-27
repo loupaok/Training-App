@@ -15,7 +15,6 @@ export function ClientShell({
   title = "Αρχική",
   user,
   logout,
-  paymentApproved,
   subscriptionStatus,
   daysRemaining,
   unreadNotifications,
@@ -24,7 +23,9 @@ export function ClientShell({
   title?: string;
   user: AuthUser | null;
   logout: () => Promise<void>;
-  paymentApproved: boolean;
+  // Kept temporarily for page compatibility. Navigation access is derived from
+  // the actual subscription state below, never from a loading placeholder.
+  paymentApproved?: boolean;
   subscriptionStatus?: string | null;
   daysRemaining?: number | null;
   unreadNotifications?: number;
@@ -33,6 +34,9 @@ export function ClientShell({
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const subscriptionExpired = subscriptionStatus === "expired"
+    || user?.status === "expired"
+    || (typeof daysRemaining === "number" && daysRemaining <= 0);
 
   useEffect(() => {
     Promise.resolve().then(() => {
@@ -64,7 +68,6 @@ export function ClientShell({
       <ClientSidebar
         user={user}
         logout={logout}
-        paymentApproved={paymentApproved}
         subscriptionStatus={subscriptionStatus}
         daysRemaining={daysRemaining}
         unreadNotifications={unreadNotifications}
@@ -76,7 +79,7 @@ export function ClientShell({
         <AppHeader title={title} user={user} logout={logout} />
         <main data-client-page-content className="min-w-0 flex-1 bg-background p-4 pb-28 sm:p-6 sm:pb-28 lg:p-7">{children}</main>
       </div>
-      <ClientBottomNav paymentApproved={paymentApproved} unreadNotifications={unreadNotifications} unreadMessages={unreadMessages} />
+      <ClientBottomNav subscriptionExpired={subscriptionExpired} unreadNotifications={unreadNotifications} unreadMessages={unreadMessages} />
       <ClientActiveClock />
     </div>
   );

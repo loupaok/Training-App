@@ -19,45 +19,46 @@ interface FontSizeContextValue {
 
 const FontSizeContext = createContext<FontSizeContextValue | undefined>(undefined);
 
-function applyFontSize(size: FontSize) {
-  document.documentElement.style.fontSize = FONT_SIZE_PX[size];
+function applyFontSize(_size: FontSize) {
+  // Tailwind's spacing and typography use rem. Changing the root font-size
+  // therefore resized the entire navigation and every layout, including when
+  // opening a menu. Keep the application chrome at its stable browser base.
+  document.documentElement.style.removeProperty("font-size");
 }
 
 export function FontSizeProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  // Starts at "medium" for SSR-safe hydration; reconciles from localStorage then /auth/me.
+  // The preference is scoped per account so a client's choice cannot leak into
+  // the coach interface on the same browser.
   const [fontSize, setFontSizeState] = useState<FontSize>("medium");
 
   useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem("fontSize") as FontSize | null;
-      if (stored && FONT_SIZE_PX[stored]) {
-        setFontSizeState(stored);
-        applyFontSize(stored);
-      }
-    } catch {
-      // ignore
+    if (!user?.id) {
+      setFontSizeState("medium");
+      applyFontSize("medium");
+      return;
     }
-  }, []);
 
-  useEffect(() => {
-    if (user?.fontSize && FONT_SIZE_PX[user.fontSize]) {
-      setFontSizeState(user.fontSize);
-      applyFontSize(user.fontSize);
-      try {
-        window.localStorage.setItem("fontSize", user.fontSize);
-      } catch {
-        // ignore
-      }
+    const storageKey = `fontSize:${user.id}`;
+    const accountSize = user.fontSize && FONT_SIZE_PX[user.fontSize] ? user.fontSize : null;
+    try {
+      const stored = window.localStorage.getItem(storageKey) as FontSize | null;
+      const next = accountSize || (stored && FONT_SIZE_PX[stored] ? stored : "medium");
+      setFontSizeState(next);
+      applyFontSize(next);
+      window.localStorage.setItem(storageKey, next);
+    } catch {
+      const next = accountSize || "medium";
+      setFontSizeState(next);
+      applyFontSize(next);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.fontSize]);
+  }, [user?.id, user?.fontSize]);
 
   const setFontSize = (size: FontSize) => {
     setFontSizeState(size);
     applyFontSize(size);
     try {
-      window.localStorage.setItem("fontSize", size);
+      if (user?.id) window.localStorage.setItem(`fontSize:${user.id}`, size);
     } catch {
       // ignore
     }

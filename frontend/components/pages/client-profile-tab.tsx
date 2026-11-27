@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  AlertTriangle, Pencil, FileText, KeyRound, Download, UserX, ChevronRight, ImageOff,
+  AlertTriangle, Pencil, FileText, KeyRound, UserX, ChevronRight, ImageOff, Apple, Activity, ShieldCheck,
 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl } from "@/lib/media";
@@ -15,7 +15,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Switch } from "@/components/ui/switch";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -103,6 +102,8 @@ interface ProfileAccount {
   memberSince: string | null;
   lastLoginAt: string | null;
   lastLoginDevice: string | null;
+  privacyAcceptedAt: string | null;
+  termsAcceptedAt: string | null;
   isActive: boolean;
   deletedAt: string | null;
 }
@@ -141,6 +142,13 @@ const UPDATE_DAYS = [
   { value: 5, label: "Παρ" },
   { value: 6, label: "Σαβ" },
 ];
+
+const NEGATIVE_HEALTH_RESPONSES = new Set(["οχι", "όχι", "oxi", "no", "none", "n/a", "-", "καμια", "καμία", "κανενα", "κανένα", "κανεις", "κανείς", "τιποτα", "τίποτα"]);
+
+function isActionableHealthFlag(detail: string | null | undefined) {
+  const answer = String(detail || "").trim().toLocaleLowerCase("el-GR");
+  return Boolean(answer) && !NEGATIVE_HEALTH_RESPONSES.has(answer);
+}
 
 const QUESTIONNAIRE_GROUPS = [
   { key: "training" as const, label: "Προπόνηση" },
@@ -204,19 +212,6 @@ export function ClientProfileTab({
   const [error, setError] = useState("");
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
-  const [exporting, setExporting] = useState(false);
-
-  const exportData = async () => {
-    setExporting(true);
-    try {
-      await api.download(`/clients/${clientId}/export`, `client-${clientId}-export.zip`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Δεν έγινε το export.");
-    } finally {
-      setExporting(false);
-    }
-  };
-
   const load = () => {
     setLoading(true);
     setError("");
@@ -257,17 +252,17 @@ export function ClientProfileTab({
 
   return (
     <div className="space-y-5">
-      {profile.healthFlags.length > 0 && (
+      {profile.healthFlags.filter((flag) => isActionableHealthFlag(flag.detail)).length > 0 && (
         <Alert className="border-l-amber-500 bg-amber-50 dark:bg-amber-500/10">
           <AlertTriangle className="h-4 w-4 text-amber-700 dark:text-amber-400" />
           <AlertTitle className="text-amber-900 dark:text-amber-200">Υγεία & περιορισμοί</AlertTitle>
           <AlertDescription>
             <div className="mt-1 grid gap-x-6 gap-y-1 sm:grid-cols-2">
-              {profile.healthFlags.map((flag) => (
+              {profile.healthFlags.filter((flag) => isActionableHealthFlag(flag.detail)).map((flag) => (
                 <p key={flag.type} className="text-sm text-amber-950 dark:text-amber-100"><b>{flag.label}:</b> {flag.detail}</p>
               ))}
             </div>
-            <p className="mt-2 text-xs text-amber-800/80 dark:text-amber-200/70">Φαίνεται και στον builder προπόνησης/διατροφής.</p>
+            <p className="mt-2 text-xs text-amber-800/80 dark:text-amber-200/70">Οι αλλεργίες εμφανίζονται στη διατροφή και οι τραυματισμοί ή πόνοι στην προπόνηση.</p>
           </AlertDescription>
         </Alert>
       )}
@@ -276,7 +271,7 @@ export function ClientProfileTab({
         <div className="space-y-5">
           <BasicInfoCard profile={profile} clientId={clientId} canEdit={canEdit} isMobile={isMobile} onSaved={setProfile} />
           <BodyGoalCard profile={profile} clientId={clientId} canEdit={canEdit} isMobile={isMobile} onSaved={setProfile} />
-          <QuestionnaireCard questionnaire={profile.questionnaire} isMobile={isMobile} />
+          <QuestionnaireCard questionnaire={profile.questionnaire} isMobile={isMobile} submittedAt={profile.account.memberSince} />
         </div>
 
         <div className="space-y-5">
@@ -318,24 +313,6 @@ export function ClientProfileTab({
                 </Select>
               </div>
 
-              <SettingSwitchRow
-                label="Υπενθύμιση update"
-                checked={profile.settings.reminderEnabled}
-                disabled={!canEdit}
-                onChange={(checked) => saveSettings({ reminderEnabled: checked }, `Η υπενθύμιση ${checked ? "ενεργοποιήθηκε" : "απενεργοποιήθηκε"}.`)}
-              />
-              <SettingSwitchRow
-                label="Cycle Protocol ορατό στον πελάτη"
-                checked={profile.settings.cycleProtocolVisible}
-                disabled={!canEdit}
-                onChange={(checked) => saveSettings({ cycleProtocolVisible: checked }, "Η ορατότητα του Cycle Protocol ενημερώθηκε.")}
-              />
-              <SettingSwitchRow
-                label="Πρόσβαση στο eshop"
-                checked={profile.settings.eshopAccess}
-                disabled={!canEdit}
-                onChange={(checked) => saveSettings({ eshopAccess: checked }, "Η πρόσβαση στο eshop ενημερώθηκε.")}
-              />
             </CardContent>
           </Card>
 
@@ -349,6 +326,19 @@ export function ClientProfileTab({
                 <div><p className="text-xs font-bold text-muted-foreground">Τελευταία σύνδεση</p><p className="mt-1 font-bold">{fmtDateTime(profile.account.lastLoginAt)}</p></div>
               </div>
 
+              <div className="rounded-xl border border-border bg-muted/20 p-3">
+                <div className="flex items-start gap-2.5">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#0b0b0b] text-accent"><ShieldCheck className="h-4 w-4" /></span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-extrabold">Αποδοχή όρων & απορρήτου</p>
+                    <div className="mt-1.5 grid gap-1 text-xs text-muted-foreground sm:grid-cols-2 sm:gap-3">
+                      <span><b className="text-foreground">Όροι χρήσης:</b> {profile.account.termsAcceptedAt ? `Αποδέχθηκε · ${fmtDateTime(profile.account.termsAcceptedAt)}` : "Δεν υπάρχει καταγραφή"}</span>
+                      <span><b className="text-foreground">Πολιτική απορρήτου:</b> {profile.account.privacyAcceptedAt ? `Αποδέχθηκε · ${fmtDateTime(profile.account.privacyAcceptedAt)}` : "Δεν υπάρχει καταγραφή"}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <div className="divide-y rounded-xl border">
                 {canResetPassword && (
                   <div className="flex items-center gap-3 p-3">
@@ -357,11 +347,6 @@ export function ClientProfileTab({
                     <ResetPasswordDialog onResetPassword={onResetPassword} resettingPassword={resettingPassword} />
                   </div>
                 )}
-                <button type="button" disabled={exporting} onClick={() => void exportData()} className="flex w-full items-center gap-3 p-3 text-left hover:bg-muted/50 disabled:opacity-60">
-                  <span className="grid h-9 w-9 place-items-center rounded-[10px] bg-muted"><Download className="h-4 w-4" /></span>
-                  <span className="min-w-0 flex-1"><span className="block text-sm font-bold">Export δεδομένων (GDPR)</span><span className="block text-xs text-muted-foreground">{exporting ? "Προετοιμασία ZIP..." : "Λήψη όλων των δεδομένων σε ZIP"}</span></span>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                </button>
                 {canEdit && profile.account.isActive && (
                   <button type="button" onClick={() => setDeactivateOpen(true)} className="flex w-full items-center gap-3 p-3 text-left hover:bg-red-50 dark:hover:bg-red-500/10">
                     <span className="grid h-9 w-9 place-items-center rounded-[10px] bg-red-50 text-red-600 dark:bg-red-500/10"><UserX className="h-4 w-4" /></span>
@@ -395,15 +380,6 @@ export function ClientProfileTab({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
-  );
-}
-
-function SettingSwitchRow({ label, checked, disabled, onChange }: { label: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <Label className="text-sm font-bold">{label}</Label>
-      <Switch checked={checked} disabled={disabled} onCheckedChange={onChange} />
     </div>
   );
 }
@@ -588,15 +564,64 @@ function BodyGoalCard({ profile, clientId, canEdit, isMobile, onSaved }: { profi
 // Ερωτηματολόγιο εγγραφής
 // ---------------------------------------------------------------------------
 
-function QuestionnaireCard({ questionnaire, isMobile }: { questionnaire: ProfileQuestionnaireItem[]; isMobile: boolean }) {
+function QuestionnaireCard({ questionnaire, isMobile, submittedAt }: { questionnaire: ProfileQuestionnaireItem[]; isMobile: boolean; submittedAt?: string | null }) {
   const [fullFormOpen, setFullFormOpen] = useState(false);
+  const answered = useMemo(() => questionnaire.filter((item) => Boolean(item.answer?.trim())), [questionnaire]);
   const grouped = useMemo(() => {
     return QUESTIONNAIRE_GROUPS.map((group) => ({
       ...group,
-      items: questionnaire.filter((item) => item.category === group.key),
-    }));
-  }, [questionnaire]);
+      items: answered.filter((item) => item.category === group.key),
+    })).filter((group) => group.items.length > 0);
+  }, [answered]);
 
+  const groupIcon = (key: (typeof QUESTIONNAIRE_GROUPS)[number]["key"]) => key === "training" ? QuestionnaireTrainingIcon : key === "nutrition" ? Apple : Activity;
+
+  return (
+    <Card className="gap-0 rounded-[20px] border-border bg-card p-5 shadow-none">
+      <div className="flex items-center gap-2.5">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#0b0b0b] text-accent"><FileText className="h-[15px] w-[15px]" /></span>
+        <span className="min-w-0 flex-1"><b className="block text-[15px] font-extrabold">Ερωτηματολόγιο εγγραφής</b><small className="mt-0.5 block text-[12px] text-[#6a6a6a]">απαντήσεις {submittedAt ? fmtDate(submittedAt) : ""} · μόνο ανάγνωση</small></span>
+        <button type="button" onClick={() => setFullFormOpen(true)} className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[12px] font-extrabold text-[#0b0b0b] hover:underline">Όλες οι απαντήσεις <ChevronRight className="h-[13px] w-[13px] stroke-[2.4]" /></button>
+      </div>
+      <div className="mt-2 flex flex-col">
+        <Accordion key={isMobile ? "mobile" : "desktop"} defaultValue={isMobile ? ["training"] : ["training", "nutrition"]}>
+          {grouped.map((group) => {
+            const Icon = groupIcon(group.key);
+            return (
+              <AccordionItem key={group.key} value={group.key} className="border-t border-[#ececea]">
+                <AccordionTrigger className="min-h-[52px] px-0 py-2.5 hover:bg-transparent hover:no-underline [&>svg]:h-[15px] [&>svg]:w-[15px] [&>svg]:text-[#8a8a8a]">
+                  <span className="flex min-w-0 flex-1 items-center gap-2">
+                    <Icon className="h-[15px] w-[15px] shrink-0 text-[#0b0b0b]" />
+                    <b className="min-w-0 flex-1 text-left text-[14px] font-extrabold">{group.label}</b>
+                    <span className="inline-flex h-6 shrink-0 items-center rounded-full bg-[#f4f4f2] px-2.5 text-[11px] font-extrabold text-[#3a3a3a]">{group.items.length} απαντήσεις</span>
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="pb-0">
+                  {group.items.map((item) => (
+                    <div key={item.questionId} className="flex flex-col gap-1 border-t border-[#f3f3f1] py-2.5 text-[13px] sm:flex-row sm:gap-4">
+                      <span className="shrink-0 text-[12px] text-[#6a6a6a] sm:w-[230px]">{item.question}</span>
+                      <b className="min-w-0 whitespace-pre-wrap font-bold text-[#0b0b0b]">{item.answer || "—"}</b>
+                    </div>
+                  ))}
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
+        </Accordion>
+      </div>
+
+      <Dialog open={fullFormOpen} onOpenChange={setFullFormOpen}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader><DialogTitle>Απαντήσεις εγγραφής</DialogTitle></DialogHeader>
+          <div className="divide-y rounded-xl border">
+            {answered.map((item) => <div key={item.questionId} className="p-3 text-sm"><p className="text-muted-foreground">{item.question}</p><p className="mt-1 whitespace-pre-wrap font-bold">{item.answer}</p></div>)}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+
+  /* Legacy layout intentionally removed in favour of the compact profile card.
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
@@ -644,6 +669,11 @@ function QuestionnaireCard({ questionnaire, isMobile }: { questionnaire: Profile
       </Dialog>
     </Card>
   );
+  */
+}
+
+function QuestionnaireTrainingIcon({ className }: { className?: string }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}><path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11" /></svg>;
 }
 
 // ---------------------------------------------------------------------------

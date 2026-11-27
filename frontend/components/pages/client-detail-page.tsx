@@ -70,6 +70,7 @@ import {
   type NutritionPlanState,
   type RawNutritionPlan,
   type LibraryFood,
+  type PlanHealthFlag,
 } from "@/components/shared/nutrition-plan-editor";
 import { AssignTemplateDialog } from "@/components/shared/assign-template-dialog";
 import { CycleProtocolPanel } from "@/components/shared/cycle-protocol-panel";
@@ -465,6 +466,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [exercises, setExercises] = useState<LibraryExercise[]>([]);
   const [foods, setFoods] = useState<LibraryFood[]>([]);
+  const [healthFlags, setHealthFlags] = useState<PlanHealthFlag[]>([]);
   const [trainingPlan, setTrainingPlan] = useState<TrainingPlanState>(defaultTrainingPlan);
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlanState>(defaultNutritionPlan);
   const [trainingHistory, setTrainingHistory] = useState<PlanHistoryRow[]>([]);
@@ -493,10 +495,12 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
     Promise.all([
       api.get<ClientRecord>(`/clients/${clientId}`),
       api.get<{ unread?: number }>(`/clients/${clientId}/messages/unread-count`).catch(() => ({ unread: 0 })),
+      api.get<{ flags?: PlanHealthFlag[] }>(`/clients/${clientId}/health-flags`).catch(() => ({ flags: [] })),
     ])
-      .then(([clientData, messageCount]) => {
+      .then(([clientData, messageCount, healthFlagsResponse]) => {
         setClient(clientData);
         setUnreadMessages(Number(messageCount.unread || 0));
+        setHealthFlags(Array.isArray(healthFlagsResponse.flags) ? healthFlagsResponse.flags : []);
       })
       .catch((err) => setError(err instanceof Error ? err.message : "Δεν φορτώθηκε ο πελάτης."))
       .finally(() => setLoading(false));
@@ -905,6 +909,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 onCreateNew={createNewTrainingPlan}
                 saving={savingTraining}
                 history={trainingHistory}
+                healthFlags={healthFlags}
               />
               </div>}
 
@@ -930,6 +935,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
                 onCreateNew={createNewNutritionPlan}
                 saving={savingNutrition}
                 history={nutritionHistory}
+                healthFlags={healthFlags}
               />
               </div>}
 
