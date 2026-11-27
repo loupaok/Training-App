@@ -4,7 +4,7 @@ import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent, 
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, Apple, Bell, CalendarDays, Camera, Check, ChevronLeft, ChevronRight, Clock, Dumbbell, Euro, Gift, MessageSquare, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, Plus, X, FileText, Target, MoreHorizontal, Coins, CreditCard, Activity, Lock, type LucideIcon } from "lucide-react";
+import { AlertTriangle, Apple, Bell, CalendarDays, Check, ChevronLeft, ChevronRight, Clock, Dumbbell, Euro, Gift, Sparkles, Star, Trash2, Undo2, GripVertical, Link2, Pencil, Plus, X, FileText, Target, MoreHorizontal, Coins, CreditCard, Activity, Lock, type LucideIcon } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -74,6 +74,7 @@ import {
 import { AssignTemplateDialog } from "@/components/shared/assign-template-dialog";
 import { CycleProtocolPanel } from "@/components/shared/cycle-protocol-panel";
 import { SupplementsPanel } from "@/components/shared/supplements-panel";
+import { ClientProfileTab } from "@/components/pages/client-profile-tab";
 
 const TrainingPlanEditor = dynamic(
   () => import("@/components/shared/training-plan-editor").then((module) => module.TrainingPlanEditor),
@@ -332,6 +333,7 @@ const tabs = [
   { id: "payments", label: "Πληρωμές & Πόντοι" },
   { id: "progress", label: "Πρόοδος" },
   { id: "messages", label: "Μηνύματα" },
+  { id: "profile", label: "Προφίλ" },
 ];
 
 function formatDate(value?: string | null): string {
@@ -961,9 +963,22 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
               <MessagesTab clientId={clientId} onRead={() => setUnreadMessages(0)} />
             </TabsContent>}
 
+            {activeTab === "profile" && <TabsContent value="profile" className="mt-6">
+              <ClientProfileTab
+                clientId={clientId}
+                canEdit={Boolean(user && ["coach", "admin", "moderator"].includes(user.role))}
+                onResetPassword={resetClientPassword}
+                resettingPassword={resettingPassword}
+                canResetPassword={user?.role === "admin"}
+                onSetActive={setClientActive}
+                togglingActive={togglingActive}
+                onOpenActivity={() => setActivityOpen(true)}
+              />
+            </TabsContent>}
+
           </Tabs>
           <Sheet open={activityOpen} onOpenChange={setActivityOpen}>
-            <SheetContent side="right" className="w-full overflow-y-auto p-0 sm:w-[460px] sm:max-w-[460px]">
+            <SheetContent side="right" showCloseButton={false} className="w-full overflow-y-auto p-0 sm:w-[460px] sm:max-w-[460px]">
               <ActivityLogTab clientId={clientId} clientName={client.full_name || client.email || "Πελάτης"} active={activityOpen} onClose={() => setActivityOpen(false)} />
             </SheetContent>
           </Sheet>
@@ -1452,7 +1467,7 @@ function ClientHeader({
   );
 }
 
-function ResetPasswordDialog({
+export function ResetPasswordDialog({
   onResetPassword,
   resettingPassword,
 }: {
@@ -3529,6 +3544,7 @@ function activityDotClass(entry: ClientActivityLogEntry): string {
 }
 
 function activityLabel(entry: ClientActivityLogEntry): string {
+  if (/^(training|nutrition|supplements|cycle)\./.test(entry.type || "")) return entry.action;
   const action = entry.action.toLowerCase();
   const details = entry.details?.toLowerCase() || "";
 
@@ -3584,20 +3600,27 @@ function ActivityPointsIcon({ className }: { className?: string }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}><circle cx="9" cy="9" r="6" /><path d="M15.5 9.5A6 6 0 1 1 9.5 15.5" /></svg>;
 }
 
+function TrainingPlanIcon({ className }: { className?: string }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}><path d="M6.5 6.5v11M17.5 6.5v11M3 9v6M21 9v6M6.5 12h11" /></svg>;
+}
+
+function UpdateActivityIcon({ className }: { className?: string }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}><path d="M3 7h4l2-3h6l2 3h4v13H3z" /><circle cx="12" cy="13" r="4" /></svg>;
+}
+
 function ActivityEventRow({ entry, bordered, clientId, showDate = false }: { entry: ClientActivityLogEntry; bordered: boolean; clientId: string; showDate?: boolean }) {
   const category = entry.category || "account";
-  const Icon = entry.status === "problem" ? Bell : category === "workout" ? Dumbbell : category === "message" ? MessageSquare : category === "plan" ? Apple : category === "update" ? Camera : category === "points" ? ActivityPointsIcon : category === "payment" ? Euro : Sparkles;
-  const tile = entry.status === "problem" ? "bg-[#fdecec] text-[#b42318]" : category === "payment" ? "bg-[#fff4dc] text-[#8a5a00]" : category === "points" ? "bg-[#f1fbd6] text-[#2f5200]" : category === "plan" ? "bg-[#eef0ff] text-[#3b3fa8]" : category === "update" ? "bg-accent text-accent-foreground" : category === "workout" ? "bg-[#0b0b0b] text-accent" : "bg-[#f4f4f2] text-[#0b0b0b]";
+  const isTrainingPlan = entry.type?.startsWith("training.");
+  const Icon = entry.status === "problem" ? Bell : isTrainingPlan ? TrainingPlanIcon : category === "workout" ? Dumbbell : category === "plan" ? Apple : category === "update" ? UpdateActivityIcon : category === "points" ? ActivityPointsIcon : category === "payment" ? Euro : Sparkles;
+  const tile = entry.status === "problem" ? "bg-[#fdecec] text-[#b42318]" : isTrainingPlan || category === "workout" ? "bg-[#0b0b0b] text-accent" : category === "payment" ? "bg-[#fff4dc] text-[#8a5a00]" : category === "points" ? "bg-[#f1fbd6] text-[#2f5200]" : category === "plan" ? "bg-[#eef0ff] text-[#3b3fa8]" : category === "update" ? "bg-accent text-accent-foreground" : "bg-[#f4f4f2] text-[#0b0b0b]";
   const actorLabel = entry.actor === "coach" ? "Coach" : entry.actor === "system" ? "Σύστημα" : "Πελάτης";
   const actionHref = entry.refKind === "update" && entry.refId
     ? `/coach/updates?id=${entry.refId}`
-    : category === "message"
-      ? `/clients/${clientId}?tab=messages`
-      : category === "payment"
+    : category === "payment"
         ? `/clients/${clientId}?tab=payments`
         : null;
-  const isPendingAction = entry.status === "pending" && (category === "message" || category === "payment");
-  const actionLabel = category === "message" && entry.status === "pending" ? "Απάντηση" : category === "payment" && entry.status === "pending" ? "Παρελήφθη" : "Άνοιγμα";
+  const isPendingAction = entry.status === "pending" && category === "payment";
+  const actionLabel = category === "payment" && entry.status === "pending" ? "Παρελήφθη" : "Άνοιγμα";
   return <div className={`flex items-center gap-3 py-[11px] ${bordered ? "border-t border-[#f3f3f1]" : ""}`}><span className={`grid h-[34px] w-[34px] shrink-0 place-items-center rounded-[11px] ${tile}`}><Icon className="h-[15px] w-[15px] stroke-[2.2]" /></span><span className="min-w-0 flex-1"><b className={`block truncate text-[14px] ${entry.status === "problem" ? "text-[#b42318]" : ""}`}>{activityLabel(entry)}</b><small className="block text-[12px] text-[#8a8a8a]">{actorLabel} · {showDate ? `${activityDateGroup(entry.createdAt)} · ` : ""}{activityTime(entry.createdAt)}</small></span>{actionHref && <Link href={actionHref} className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-3 text-[12px] font-extrabold ${isPendingAction ? "bg-accent text-accent-foreground" : "text-[#0b0b0b] hover:underline"}`}>{category === "payment" && entry.status === "pending" && <Check className="h-3 w-3 stroke-[2.6]" />}{actionLabel}{!isPendingAction && <ChevronRight className="h-[13px] w-[13px] stroke-[2.4]" />}</Link>}</div>;
 }
 
@@ -4071,7 +4094,7 @@ function ActivityLogTab({ clientId, clientName, active, onClose }: { clientId: s
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState("");
-  const [category, setCategory] = useState<"all" | "update" | "payment" | "message">("all");
+  const [category, setCategory] = useState<"all" | "plan" | "update" | "payment">("all");
   const requestVersion = useRef(0);
 
   useEffect(() => {
@@ -4122,7 +4145,7 @@ function ActivityLogTab({ clientId, clientName, active, onClose }: { clientId: s
     <div className="flex min-h-full flex-col bg-white text-[#0b0b0b]">
       <div className="border-b border-[#f0f0ee] px-6 pb-4 pt-[22px]">
         <div className="flex items-center gap-3"><Button type="button" variant="ghost" size="icon-sm" onClick={onClose} className="-ml-2 h-[34px] w-[34px] rounded-full sm:hidden"><ChevronLeft className="h-5 w-5" /></Button><div className="min-w-0 flex-1"><SheetTitle className="text-[20px] font-extrabold tracking-[-.3px]">Δραστηριότητα</SheetTitle><p className="mt-0.5 truncate text-[12px] text-[#6a6a6a]">{clientName}</p></div><Button type="button" variant="outline" size="icon-sm" onClick={onClose} className="hidden h-[34px] w-[34px] rounded-full border-[#d6d6d2] sm:inline-flex"><X className="h-4 w-4" /></Button></div>
-        <div className="mt-4 flex gap-1.5">{([['all', 'Όλα'], ['update', 'Updates'], ['payment', 'Πληρωμές'], ['message', 'Μηνύματα']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setCategory(value)} className={`h-8 rounded-full px-3.5 text-[13px] font-extrabold transition-colors ${category === value ? "bg-[#0b0b0b] text-white" : "bg-[#f4f4f2] text-[#3a3a3a] hover:bg-[#e8e8e5]"}`}>{label}</button>)}</div>
+        <div className="mt-4 flex flex-wrap gap-1.5">{([['all', 'Όλα'], ['plan', 'Πλάνα'], ['update', 'Updates'], ['payment', 'Πληρωμές']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setCategory(value)} className={`h-8 rounded-full px-3.5 text-[13px] font-extrabold transition-colors ${category === value ? "bg-[#0b0b0b] text-white" : "bg-[#f4f4f2] text-[#3a3a3a] hover:bg-[#e8e8e5]"}`}>{label}</button>)}</div>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         {loading ? (

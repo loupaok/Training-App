@@ -2746,7 +2746,9 @@ async function getClientFiles(connection, clientId) {
        FROM client_intake_files WHERE client_id = ? ORDER BY created_at DESC`,
       [clientId]
     );
-    addRows(rows, 'other', 'intake');
+    // Most intake rows are photos (registration/progress); file_type still
+    // forces 'pdf' or 'video' to the right bucket via the ternary above.
+    addRows(rows, 'photo', 'intake');
   } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
 
   const seen = new Set();
@@ -2792,11 +2794,11 @@ export async function getClientProfile(clientIdInput, options = {}) {
       [clientId]
     );
     const [weeklyRows] = await connection.query(
-      'SELECT weight_kg, submitted_at FROM weekly_updates WHERE client_id = ? ORDER BY submitted_at DESC LIMIT 1',
+      'SELECT weight_kg, submitted_at FROM progress_updates WHERE client_id = ? AND weight_kg IS NOT NULL ORDER BY submitted_at DESC LIMIT 1',
       [clientId]
     );
     const [firstWeightRows] = await connection.query(
-      `SELECT weight_kg, submitted_at FROM weekly_updates WHERE client_id = ? AND weight_kg IS NOT NULL
+      `SELECT weight_kg, submitted_at FROM progress_updates WHERE client_id = ? AND weight_kg IS NOT NULL
        ORDER BY submitted_at ASC LIMIT 1`,
       [clientId]
     );
