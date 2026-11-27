@@ -457,6 +457,7 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState("overview");
+  const tabBarRef = useRef<HTMLDivElement>(null);
   const [activePlan, setActivePlan] = useState<"all" | "training" | "nutrition" | "supplements" | "cycle">("all");
   const [activityOpen, setActivityOpen] = useState(false);
   const [paymentDialogRequest, setPaymentDialogRequest] = useState(0);
@@ -519,6 +520,11 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
     if (requestedPlan === "training" || requestedPlan === "nutrition" || requestedPlan === "supplements" || requestedPlan === "cycle") setActivePlan(requestedPlan);
     else if (requestedTab === "plans") setActivePlan("all");
   }, [searchParams]);
+
+  useEffect(() => {
+    const activeTrigger = tabBarRef.current?.querySelector(`[data-tab-trigger="${activeTab}"]`);
+    activeTrigger?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }, [activeTab, loading]);
 
   const selectTab = (nextTab: string) => {
     setActiveTab(nextTab);
@@ -814,12 +820,13 @@ function ClientDetailContent({ clientId }: { clientId: string }) {
 
           <Tabs value={activeTab} onValueChange={selectTab}>
             <Card className="-mt-6 overflow-hidden rounded-b-[20px] rounded-t-none border-0 bg-card shadow-none">
-              <div className="flex min-w-max items-center gap-1 overflow-x-auto bg-card px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <div ref={tabBarRef} className="flex min-w-0 items-center gap-1 overflow-x-auto bg-card px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <TabsList className="h-auto w-auto justify-start gap-1 rounded-none border-0 bg-transparent p-0">
                 {tabs.map((tab) => (
                   <TabsTrigger
                     key={tab.id}
                     value={tab.id}
+                    data-tab-trigger={tab.id}
                     className="h-10 shrink-0 rounded-full px-4 text-sm font-extrabold text-[#555] transition-colors data-active:bg-foreground data-active:text-background hover:bg-muted hover:text-foreground"
                   >
                     {tab.label}

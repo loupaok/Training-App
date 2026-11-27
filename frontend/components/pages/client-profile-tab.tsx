@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { ResetPasswordDialog } from "@/components/pages/client-detail-page";
 
 // ---------------------------------------------------------------------------
@@ -196,6 +197,7 @@ export function ClientProfileTab({
   togglingActive: boolean;
   onOpenActivity: () => void;
 }) {
+  const isMobile = useIsMobile();
   const [profile, setProfile] = useState<ClientProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -259,9 +261,9 @@ export function ClientProfileTab({
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
         <div className="space-y-5">
-          <BasicInfoCard profile={profile} clientId={clientId} canEdit={canEdit} onSaved={setProfile} />
-          <BodyGoalCard profile={profile} clientId={clientId} canEdit={canEdit} onSaved={setProfile} />
-          <QuestionnaireCard questionnaire={profile.questionnaire} />
+          <BasicInfoCard profile={profile} clientId={clientId} canEdit={canEdit} isMobile={isMobile} onSaved={setProfile} />
+          <BodyGoalCard profile={profile} clientId={clientId} canEdit={canEdit} isMobile={isMobile} onSaved={setProfile} />
+          <QuestionnaireCard questionnaire={profile.questionnaire} isMobile={isMobile} />
         </div>
 
         <div className="space-y-5">
@@ -396,7 +398,7 @@ function SettingSwitchRow({ label, checked, disabled, onChange }: { label: strin
 // Βασικά στοιχεία
 // ---------------------------------------------------------------------------
 
-function BasicInfoCard({ profile, clientId, canEdit, onSaved }: { profile: ClientProfile; clientId: string; canEdit: boolean; onSaved: (profile: ClientProfile) => void }) {
+function BasicInfoCard({ profile, clientId, canEdit, isMobile, onSaved }: { profile: ClientProfile; clientId: string; canEdit: boolean; isMobile: boolean; onSaved: (profile: ClientProfile) => void }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(() => ({
@@ -461,7 +463,7 @@ function BasicInfoCard({ profile, clientId, canEdit, onSaved }: { profile: Clien
       </CardContent>
 
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+        <SheetContent side={isMobile ? "bottom" : "right"} className={cn("overflow-y-auto", isMobile ? "max-h-[85vh] w-full" : "w-full sm:max-w-md")}>
           <SheetHeader><SheetTitle>Επεξεργασία βασικών στοιχείων</SheetTitle></SheetHeader>
           <div className="space-y-4 p-4">
             <div className="space-y-1.5"><Label>Ονοματεπώνυμο</Label><Input value={form.fullName} onChange={(e) => setForm((f) => ({ ...f, fullName: e.target.value }))} /></div>
@@ -504,7 +506,7 @@ function Field({ label, value, placeholder = "-", children }: { label: string; v
 // Σώμα & στόχος
 // ---------------------------------------------------------------------------
 
-function BodyGoalCard({ profile, clientId, canEdit, onSaved }: { profile: ClientProfile; clientId: string; canEdit: boolean; onSaved: (profile: ClientProfile) => void }) {
+function BodyGoalCard({ profile, clientId, canEdit, isMobile, onSaved }: { profile: ClientProfile; clientId: string; canEdit: boolean; isMobile: boolean; onSaved: (profile: ClientProfile) => void }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ fitnessGoal: profile.goal.fitnessGoal || "", targetWeightKg: profile.goal.targetWeightKg?.toString() || "" });
@@ -553,7 +555,7 @@ function BodyGoalCard({ profile, clientId, canEdit, onSaved }: { profile: Client
       </CardContent>
 
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+        <SheetContent side={isMobile ? "bottom" : "right"} className={cn("overflow-y-auto", isMobile ? "max-h-[85vh] w-full" : "w-full sm:max-w-md")}>
           <SheetHeader><SheetTitle>Επεξεργασία στόχου</SheetTitle></SheetHeader>
           <div className="space-y-4 p-4">
             <div className="space-y-1.5"><Label>Κύριος στόχος</Label><Input value={form.fitnessGoal} onChange={(e) => setForm((f) => ({ ...f, fitnessGoal: e.target.value }))} /></div>
@@ -572,7 +574,7 @@ function BodyGoalCard({ profile, clientId, canEdit, onSaved }: { profile: Client
 // Ερωτηματολόγιο εγγραφής
 // ---------------------------------------------------------------------------
 
-function QuestionnaireCard({ questionnaire }: { questionnaire: ProfileQuestionnaireItem[] }) {
+function QuestionnaireCard({ questionnaire, isMobile }: { questionnaire: ProfileQuestionnaireItem[]; isMobile: boolean }) {
   const [fullFormOpen, setFullFormOpen] = useState(false);
   const grouped = useMemo(() => {
     return QUESTIONNAIRE_GROUPS.map((group) => ({
@@ -591,7 +593,7 @@ function QuestionnaireCard({ questionnaire }: { questionnaire: ProfileQuestionna
         <Button type="button" variant="ghost" size="sm" onClick={() => setFullFormOpen(true)}>Πλήρης φόρμα</Button>
       </CardHeader>
       <CardContent>
-        <Accordion defaultValue={["training", "nutrition"]}>
+        <Accordion key={isMobile ? "mobile" : "desktop"} defaultValue={isMobile ? ["training"] : ["training", "nutrition"]}>
           {grouped.map((group) => (
             <AccordionItem key={group.key} value={group.key}>
               <AccordionTrigger>
