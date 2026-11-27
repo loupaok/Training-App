@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  AlertTriangle, Pencil, FileText, Upload, KeyRound, Download, UserX, ChevronRight, ImageOff,
+  AlertTriangle, Pencil, FileText, KeyRound, Download, UserX, ChevronRight, ImageOff,
 } from "lucide-react";
 import { api } from "@/lib/api/client";
 import { resolveMediaUrl } from "@/lib/media";
@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Switch } from "@/components/ui/switch";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@/components/ui/sheet";
 import {
@@ -326,7 +327,7 @@ export function ClientProfileTab({
             </CardContent>
           </Card>
 
-          <FilesCard clientId={clientId} files={profile.files} canEdit={canEdit} onUploaded={load} />
+          <FilesCard files={profile.files} />
 
           <Card>
             <CardHeader><CardTitle>Λογαριασμός</CardTitle></CardHeader>
@@ -636,115 +637,96 @@ function QuestionnaireCard({ questionnaire, isMobile }: { questionnaire: Profile
 // Αρχεία & φωτογραφίες
 // ---------------------------------------------------------------------------
 
-const FILE_FILTERS = [
+const PHOTO_FILTERS = [
   { key: "all" as const, label: "Όλα" },
   { key: "registration" as const, label: "Εγγραφή" },
   { key: "update" as const, label: "Updates" },
-  { key: "document" as const, label: "Έγγραφα" },
 ];
 
-function FilesCard({ clientId, files, canEdit, onUploaded }: { clientId: string; files: ProfileFile[]; canEdit: boolean; onUploaded: () => void }) {
-  const [filter, setFilter] = useState<(typeof FILE_FILTERS)[number]["key"]>("all");
-  const [uploading, setUploading] = useState(false);
+function FilesCard({ files }: { files: ProfileFile[] }) {
+  const [photoFilter, setPhotoFilter] = useState<(typeof PHOTO_FILTERS)[number]["key"]>("all");
   const [preview, setPreview] = useState<ProfileFile | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const counts = useMemo(() => {
-    const result: Record<string, number> = { all: files.length };
-    for (const section of ["registration", "update", "document"] as const) result[section] = files.filter((f) => f.section === section).length;
+  const photos = useMemo(() => files.filter((f) => f.type === "photo" || f.type === "video"), [files]);
+  const documents = useMemo(() => files.filter((f) => f.type !== "photo" && f.type !== "video"), [files]);
+
+  const photoCounts = useMemo(() => {
+    const result: Record<string, number> = { all: photos.length };
+    for (const section of ["registration", "update"] as const) result[section] = photos.filter((f) => f.section === section).length;
     return result;
-  }, [files]);
+  }, [photos]);
 
-  const visible = filter === "all" ? files : files.filter((f) => f.section === filter);
-  const photos = visible.filter((f) => f.type === "photo" || f.type === "video");
-  const documents = visible.filter((f) => f.type !== "photo" && f.type !== "video");
+  const visiblePhotos = photoFilter === "all" ? photos : photos.filter((f) => f.section === photoFilter);
 
   const photoGroups = useMemo(() => {
     const groups = new Map<string, ProfileFile[]>();
-    for (const photo of photos) {
+    for (const photo of visiblePhotos) {
       const key = photo.section === "registration" ? "Εγγραφή" : fmtDate(photo.createdAt);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(photo);
     }
     return Array.from(groups.entries());
-  }, [photos]);
-
-  const handleUpload = async (fileList: FileList | null) => {
-    const file = fileList?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      await api.upload(`/clients/${clientId}/files`, formData);
-      toast.success("Το αρχείο ανέβηκε.");
-      onUploaded();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Δεν ανέβηκε το αρχείο.");
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
+  }, [visiblePhotos]);
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-3">
-        <div>
-          <CardTitle>Αρχεία & φωτογραφίες</CardTitle>
-          <CardDescription>μόνο για coach / admin</CardDescription>
-        </div>
-        {canEdit && (
-          <>
-            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={(e) => handleUpload(e.target.files)} />
-            <Button type="button" size="sm" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
-              <Upload className="mr-1.5 h-3.5 w-3.5" />{uploading ? "Ανέβασμα..." : "Ανέβασμα"}
-            </Button>
-          </>
-        )}
+      <CardHeader>
+        <CardTitle>Αρχεία & φωτογραφίες</CardTitle>
+        <CardDescription>μόνο για coach / admin</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex flex-wrap gap-1.5">
-          {FILE_FILTERS.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => setFilter(item.key)}
-              className={cn("h-8 rounded-full px-3 text-xs font-extrabold transition-colors", filter === item.key ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:bg-muted/70")}
-            >
-              {item.label} {counts[item.key] ?? 0}
-            </button>
-          ))}
-        </div>
+      <CardContent>
+        <Tabs defaultValue="photos">
+          <TabsList className="w-full">
+            <TabsTrigger value="photos">Φωτογραφίες <Badge variant="outline" className="ml-1">{photos.length}</Badge></TabsTrigger>
+            <TabsTrigger value="documents">Αρχεία <Badge variant="outline" className="ml-1">{documents.length}</Badge></TabsTrigger>
+          </TabsList>
 
-        {photoGroups.length === 0 && documents.length === 0 && <p className="text-sm text-muted-foreground">Δεν υπάρχουν αρχεία.</p>}
-
-        {photoGroups.map(([group, items]) => (
-          <div key={group}>
-            <p className="mb-1.5 text-xs font-bold text-muted-foreground">{group} <span className="text-muted-foreground/70">· {items.length}</span></p>
-            <div className="flex flex-wrap gap-2">
-              {items.map((item) => (
-                <button key={item.id} type="button" onClick={() => setPreview(item)} className="group relative h-16 w-16 overflow-hidden rounded-lg border bg-muted">
-                  {item.type === "photo" ? (
-                    <img src={resolveMediaUrl(item.url)} alt="" className={cn("h-full w-full object-cover", item.section === "registration" && "grayscale")} />
-                  ) : <span className="grid h-full w-full place-items-center"><ImageOff className="h-4 w-4 text-muted-foreground" /></span>}
+          <TabsContent value="photos" className="space-y-4 pt-4">
+            <div className="flex flex-wrap gap-1.5">
+              {PHOTO_FILTERS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setPhotoFilter(item.key)}
+                  className={cn("h-8 rounded-full px-3 text-xs font-extrabold transition-colors", photoFilter === item.key ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:bg-muted/70")}
+                >
+                  {item.label} {photoCounts[item.key] ?? 0}
                 </button>
               ))}
             </div>
-          </div>
-        ))}
 
-        {documents.length > 0 && (
-          <div className="divide-y rounded-xl border">
-            {documents.map((doc) => (
-              <a key={doc.id} href={resolveMediaUrl(doc.url)} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 transition-colors hover:bg-muted/50">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-muted"><FileText className="h-4 w-4" /></span>
-                <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{doc.name || "Αρχείο"}</span><span className="block text-xs text-muted-foreground">{fmtDate(doc.createdAt)}</span></span>
-                <Badge variant="outline">{doc.source === "payment" ? "πληρωμή" : "coach"}</Badge>
-              </a>
+            {photoGroups.length === 0 && <p className="text-sm text-muted-foreground">Δεν υπάρχουν φωτογραφίες.</p>}
+
+            {photoGroups.map(([group, items]) => (
+              <div key={group}>
+                <p className="mb-1.5 text-xs font-bold text-muted-foreground">{group} <span className="text-muted-foreground/70">· {items.length}</span></p>
+                <div className="flex flex-wrap gap-2">
+                  {items.map((item) => (
+                    <button key={item.id} type="button" onClick={() => setPreview(item)} className="group relative h-16 w-16 overflow-hidden rounded-lg border bg-muted">
+                      {item.type === "photo" ? (
+                        <img src={resolveMediaUrl(item.url)} alt="" className={cn("h-full w-full object-cover", item.section === "registration" && "grayscale")} />
+                      ) : <span className="grid h-full w-full place-items-center"><ImageOff className="h-4 w-4 text-muted-foreground" /></span>}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
-          </div>
-        )}
+          </TabsContent>
+
+          <TabsContent value="documents" className="pt-4">
+            {documents.length === 0 ? <p className="text-sm text-muted-foreground">Δεν υπάρχουν αρχεία.</p> : (
+              <div className="divide-y rounded-xl border">
+                {documents.map((doc) => (
+                  <a key={doc.id} href={resolveMediaUrl(doc.url)} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 transition-colors hover:bg-muted/50">
+                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[10px] bg-muted"><FileText className="h-4 w-4" /></span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold">{doc.name || "Αρχείο"}</span><span className="block text-xs text-muted-foreground">{fmtDate(doc.createdAt)}</span></span>
+                    <Badge variant="outline">{doc.source === "payment" ? "πληρωμή" : "coach"}</Badge>
+                  </a>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
       </CardContent>
 
       <Dialog open={Boolean(preview)} onOpenChange={(open) => !open && setPreview(null)}>
