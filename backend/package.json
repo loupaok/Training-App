@@ -17,6 +17,7 @@
     "seed:media-assets": "node scripts/seed-media-assets.js",
     "backup": "node scripts/backup.js",
     "backup:verify": "node scripts/verify-backup.js",
+    "db:monthly-reviews": "node scripts/ensure-monthly-review-schema.js",
     "test": "node --test"
   },
   "keywords": [

@@ -1,4 +1,5 @@
 export const defaultUpdateForm = {
+  kind: 'weekly',
   steps: [
     { id: 'diet_training', title: 'Διατροφή & προπόνηση', icon: 'apple', questions: [
       { id: 'diet_score', code: '1.1', shortLabel: 'Διατροφή', label: 'Πόσο συνεπής ήσουν στη διατροφή σου;', help: 'Επίλεξε από 1 έως 5.', type: 'scale', display: 'buttons', scaleLabels: ['Δεν το ακολούθησα ουσιαστικά.', 'Το ακολούθησα σε λίγες ημέρες.', 'Το ακολούθησα περίπου τις μισές ημέρες.', 'Το ακολούθησα σχεδόν πλήρως, με μικρές αποκλίσεις.', 'Ακολούθησα πλήρως το συμφωνημένο πλάνο.'], required: true, scored: true, weight: 2, showToCoach: true },

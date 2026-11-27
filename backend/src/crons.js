@@ -7,6 +7,176 @@ import { ensureSettingsSchema } from './routes/settings.js';
 import { notifyUser } from './routes/clients.js';
 import { awardBirthdayPoints, awardLoyaltyMilestones, ensurePointsSchema } from './routes/points.js';
 import { ensureClientActivityLogSchema, logActivity } from './lib/client-activity-log.js';
+import { ensureMonthlyReviewSchema } from './routes/weekly-updates.js';
+
+const MONTHLY_REVIEW_URL = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/client/monthly-review`;
+
+function formatGreekDate(value) {
+  return new Intl.DateTimeFormat('el-GR', { day: 'numeric', month: 'long' }).format(new Date(value));
+}
+
+async function sendMonthlyReviewEmail(client, { reminder = false, dueAt }) {
+  const subject = reminder
+    ? 'Υπενθύμιση: η μηνιαία ανασκόπησή σου λήγει σύντομα'
+    : 'Η μηνιαία ανασκόπησή σου είναι έτοιμη';
+  const body = reminder
+    ? `Γεια σου ${client.full_name || ''},\n\nΣτείλε τη μηνιαία ανασκόπησή σου έως ${formatGreekDate(dueAt)}.\n\n${MONTHLY_REVIEW_URL}`
+    : `Γεια σου ${client.full_name || ''},\n\nΗ μηνιαία ανασκόπησή σου είναι έτοιμη. Θα μας βοηθήσει να καθορίσουμε τα επόμενα βήματα της συνεργασίας σας.\n\n${MONTHLY_REVIEW_URL}`;
+  await sendMail({ to: client.email, subject, html: `<p>${body.replace(/\n/g, '<br>')}</p>` });
+}
+
+async function notifyMonthlyReviewReady(connection, review, client) {
+  await notifyUser(connection, client.id, {
+    clientId: client.id,
+    type: 'monthly_review_ready',
+    title: 'Η μηνιαία ανασκόπησή σου είναι έτοιμη',
+    body: `Ο κύκλος ${review.cycleNo} ολοκληρώθηκε. Στείλε την ανασκόπησή σου έως ${formatGreekDate(review.dueAt)}.`,
+    linkUrl: '/client/monthly-review',
+  });
+  await sendMonthlyReviewEmail(client, { dueAt: review.dueAt });
+  await logActivity(connection, {
+    clientId: client.id,
+    category: 'update',
+    type: 'monthly_review.opened',
+    actor: 'system',
+    title: 'Άνοιξε μηνιαία ανασκόπηση',
+    detail: `Κύκλος ${review.cycleNo} · προθεσμία ${formatGreekDate(review.dueAt)}`,
+    status: 'pending',
+    ref: { kind: 'update', id: review.id },
+    meta: { cycleNo: review.cycleNo, dueAt: review.dueAt },
+  });
+}
+
+async function createMonthlyReview(connection, client, { cycleNo, periodStart, periodEnd, dueAt }) {
+  const [[form]] = await connection.query(
+    "SELECT id FROM update_forms WHERE kind = 'monthly' AND status = 'published' ORDER BY version DESC LIMIT 1",
+  );
+  if (!form) throw new Error('Δεν υπάρχει δημοσιευμένη φόρμα μηνιαίας ανασκόπησης.');
+  const [created] = await connection.query(
+    `INSERT IGNORE INTO monthly_reviews
+      (client_id, cycle_no, period_start, period_end, form_version_id, answers, status, due_at)
+     VALUES (?, ?, ?, ?, ?, '{}', 'open', ?)`,
+    [client.id, cycleNo, periodStart, periodEnd, form.id, dueAt],
+  );
+  if (!created.affectedRows) return null;
+  return { id: created.insertId, cycleNo, dueAt };
+}
+
+// Daily lifecycle for the second, monthly form of the update system. A normal
+// review opens the day after the fourth submitted weekly update of a 28-day
+// subscription cycle. The final subscription review is forced open seven days
+// before expiry so a renewal conversation has time to happen.
+export async function runMonthlyReviewLifecycle() {
+  console.log('[CRON] Running monthly review lifecycle...');
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await ensureMonthlyReviewSchema(connection);
+    await ensureClientActivityLogSchema(connection);
+
+    const [clients] = await connection.query(`
+      SELECT subscription.client_id AS id, user.email, user.full_name,
+             subscription.start_date, subscription.end_date
+      FROM subscriptions subscription
+      INNER JOIN (
+        SELECT client_id, MAX(end_date) AS end_date
+        FROM subscriptions
+        WHERE status IN ('active', 'expiring_soon')
+          AND start_date <= CURDATE() AND end_date >= CURDATE()
+        GROUP BY client_id
+      ) active ON active.client_id = subscription.client_id AND active.end_date = subscription.end_date
+      INNER JOIN users user ON user.id = subscription.client_id
+      WHERE user.role = 'client' AND user.is_active = 1
+    `);
+
+    let opened = 0;
+    for (const client of clients) {
+      const [completedCycles] = await connection.query(`
+        SELECT FLOOR(DATEDIFF(weekly.week_start, ?) / 28) + 1 AS cycle_no,
+               DATE_ADD(?, INTERVAL (FLOOR(DATEDIFF(weekly.week_start, ?) / 28) * 28) DAY) AS period_start,
+               LEAST(DATE_ADD(?, INTERVAL (FLOOR(DATEDIFF(weekly.week_start, ?) / 28) * 28 + 27) DAY), ?) AS period_end,
+               MAX(weekly.submitted_at) AS fourth_update_at,
+               COUNT(*) AS updates_count
+        FROM weekly_updates weekly
+        WHERE weekly.client_id = ? AND weekly.status = 'submitted'
+          AND weekly.week_start >= ? AND weekly.week_start <= ?
+        GROUP BY cycle_no, period_start, period_end
+        HAVING updates_count >= 4 AND DATE_ADD(fourth_update_at, INTERVAL 1 DAY) <= NOW()
+      `, [client.start_date, client.start_date, client.start_date, client.start_date, client.start_date, client.end_date, client.id, client.start_date, client.end_date]);
+
+      for (const cycle of completedCycles) {
+        const [[due]] = await connection.query(
+          "SELECT TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 5 DAY), '23:59:00') AS due_at",
+        );
+        const review = await createMonthlyReview(connection, client, {
+          cycleNo: Number(cycle.cycle_no),
+          periodStart: cycle.period_start,
+          periodEnd: cycle.period_end,
+          dueAt: due.due_at,
+        });
+        if (review) {
+          await notifyMonthlyReviewReady(connection, review, client);
+          opened += 1;
+        }
+      }
+
+      const [[finalWindow]] = await connection.query(
+        `SELECT CURDATE() >= DATE_SUB(?, INTERVAL 7 DAY) AS should_open,
+                GREATEST(1, FLOOR(DATEDIFF(?, ?) / 28) + 1) AS cycle_no,
+                GREATEST(?, DATE_SUB(?, INTERVAL 27 DAY)) AS period_start`,
+        [client.end_date, client.end_date, client.start_date, client.start_date, client.end_date],
+      );
+      if (Number(finalWindow?.should_open)) {
+        const [[due]] = await connection.query(
+          "SELECT LEAST(TIMESTAMP(DATE_ADD(CURDATE(), INTERVAL 5 DAY), '23:59:00'), TIMESTAMP(?, '23:59:00')) AS due_at",
+          [client.end_date],
+        );
+        const review = await createMonthlyReview(connection, client, {
+          cycleNo: Number(finalWindow.cycle_no),
+          periodStart: finalWindow.period_start,
+          periodEnd: client.end_date,
+          dueAt: due.due_at,
+        });
+        if (review) {
+          await notifyMonthlyReviewReady(connection, review, client);
+          opened += 1;
+        }
+      }
+    }
+
+    const [expired] = await connection.query(
+      "UPDATE monthly_reviews SET status = 'expired' WHERE status IN ('open', 'draft') AND due_at < NOW()",
+    );
+
+    const [reminders] = await connection.query(`
+      SELECT review.id, review.cycle_no, review.due_at, user.id AS client_id, user.email, user.full_name
+      FROM monthly_reviews review
+      INNER JOIN users user ON user.id = review.client_id
+      WHERE review.status IN ('open', 'draft')
+        AND DATE(review.due_at) = DATE_ADD(CURDATE(), INTERVAL 2 DAY)
+        AND NOT EXISTS (
+          SELECT 1 FROM monthly_review_deliveries delivery
+          WHERE delivery.review_id = review.id AND delivery.delivery_type = 'reminder'
+        )
+    `);
+    for (const reminder of reminders) {
+      await notifyUser(connection, reminder.client_id, {
+        clientId: reminder.client_id,
+        type: 'monthly_review_reminder',
+        title: 'Η μηνιαία ανασκόπησή σου λήγει σε 2 ημέρες',
+        body: `Στείλε την ανασκόπησή σου έως ${formatGreekDate(reminder.due_at)}.`,
+        linkUrl: '/client/monthly-review',
+      });
+      await sendMonthlyReviewEmail(reminder, { reminder: true, dueAt: reminder.due_at });
+      await connection.query("INSERT IGNORE INTO monthly_review_deliveries (review_id, delivery_type) VALUES (?, 'reminder')", [reminder.id]);
+    }
+    console.log(`[CRON] Monthly reviews — opened: ${opened}, reminders: ${reminders.length}, expired: ${expired.affectedRows}`);
+  } catch (error) {
+    console.error('[CRON] Monthly review lifecycle failed:', error.message);
+  } finally {
+    connection?.release();
+  }
+}
 
 // ─── CRON 1 ──────────────────────────────────────────────────────────────────
 // Daily 00:05 — update subscription statuses
@@ -433,12 +603,14 @@ async function runDiscordRoleSync() {
 }
 
 cron.schedule('* * * * *', () => { void runDiscordRoleSync(); }, { timezone: 'Europe/Athens' });
+cron.schedule('10 8 * * *', () => { void runMonthlyReviewLifecycle(); }, { timezone: 'Europe/Athens' });
 
 const cronJobs = new Map();
 const managedCronJobs = new Map([
   ['update_reminder', runUpdateReminder],
   ['subscription_expiry', runSubscriptionExpiry],
   ['subscription_status', runSubscriptionStatus],
+  ['monthly_review', runMonthlyReviewLifecycle],
 ]);
 
 export async function rescheduleJob(jobKey, hour, minute, isActive, conn) {

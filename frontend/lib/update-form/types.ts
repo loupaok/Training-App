@@ -35,9 +35,19 @@ export interface Question {
 export interface Step { id: string; title: string; icon: string; questions: Question[] }
 export interface ScoreTier { min: number; max: number; title: string; message: string }
 export interface FormDefinition {
+  /** Both weekly updates and monthly reviews use this exact versioned JSON shape. */
+  kind: "weekly" | "monthly";
   steps: Step[];
   scoreTiers: ScoreTier[];
   scoreNote: string;
-  settings: { deadlineTime: string; allowedDays: number[]; photosRequired: boolean; showScoreToClient: boolean };
+  settings: {
+    deadlineTime: string;
+    allowedDays: number[];
+    photosRequired: boolean;
+    showScoreToClient: boolean;
+    /** Monthly-only defaults; ignored by the weekly update. */
+    dueDays?: number;
+    reminderDaysBeforeDue?: number;
+  };
 }
 export type Answers = Record<string, unknown>;

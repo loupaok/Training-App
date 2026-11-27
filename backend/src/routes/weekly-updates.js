@@ -12,6 +12,7 @@ import { registerWeeklyUpdatePhotos } from './media.js';
 import { optimizeUploadedImages } from '../utils/image-optimization.js';
 import { awardWeeklyUpdatePoints, ensurePointsSchema } from './points.js';
 import { defaultUpdateForm } from '../lib/update-form/default-form.js';
+import { defaultMonthlyReviewForm } from '../lib/update-form/default-monthly-review-form.js';
 import { computeScore, isVisible, validateStep } from '../lib/update-form/logic.js';
 import { logActivity } from '../lib/client-activity-log.js';
 
@@ -69,6 +70,7 @@ async function ensurePublishedUpdateForm(connection) {
   await connection.query(`
     CREATE TABLE IF NOT EXISTS update_forms (
       id INT AUTO_INCREMENT PRIMARY KEY,
+      kind ENUM('weekly', 'monthly') NOT NULL DEFAULT 'weekly',
       version INT NOT NULL,
       status ENUM('draft', 'published') NOT NULL,
       definition JSON NOT NULL,
@@ -81,6 +83,30 @@ async function ensurePublishedUpdateForm(connection) {
     )
   `);
 
+  // Older installations had one global draft guard. A monthly form needs its
+  // own draft beside the weekly one, while both still use this single table.
+  await addColumnIfMissing(connection, 'update_forms', 'kind', "kind ENUM('weekly', 'monthly') NOT NULL DEFAULT 'weekly' AFTER id");
+  const [[draftKindColumn]] = await connection.query(`
+    SELECT COLUMN_NAME FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'update_forms' AND COLUMN_NAME = 'draft_kind'
+    LIMIT 1
+  `);
+  if (!draftKindColumn) {
+    await connection.query("ALTER TABLE update_forms ADD COLUMN draft_kind VARCHAR(32) GENERATED ALWAYS AS (IF(status = 'draft', kind, NULL)) STORED");
+  }
+  const [[oldDraftIndex]] = await connection.query(`
+    SELECT INDEX_NAME FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'update_forms' AND INDEX_NAME = 'unique_update_form_draft'
+    LIMIT 1
+  `);
+  if (oldDraftIndex) await connection.query('ALTER TABLE update_forms DROP INDEX unique_update_form_draft');
+  const [[kindDraftIndex]] = await connection.query(`
+    SELECT INDEX_NAME FROM information_schema.STATISTICS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'update_forms' AND INDEX_NAME = 'unique_update_form_draft_kind'
+    LIMIT 1
+  `);
+  if (!kindDraftIndex) await connection.query('ALTER TABLE update_forms ADD UNIQUE INDEX unique_update_form_draft_kind (draft_kind)');
+
   await connection.query(`
     CREATE TABLE IF NOT EXISTS update_form_metadata (
       meta_key VARCHAR(80) PRIMARY KEY,
@@ -89,7 +115,7 @@ async function ensurePublishedUpdateForm(connection) {
   `);
 
   const [[published]] = await connection.query(
-    "SELECT id, version FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1",
+    "SELECT id, version FROM update_forms WHERE kind = 'weekly' AND status = 'published' ORDER BY version DESC LIMIT 1",
   );
   const [[revisionRow]] = await connection.query(
     "SELECT meta_value FROM update_form_metadata WHERE meta_key = 'default_update_form_revision'",
@@ -102,7 +128,7 @@ async function ensurePublishedUpdateForm(connection) {
   const nextVersion = Number(versionRow?.maxVersion || 0) + 1;
 
   const [result] = await connection.query(
-    "INSERT INTO update_forms (version, status, definition, published_at) VALUES (?, 'published', ?, NOW())",
+    "INSERT INTO update_forms (kind, version, status, definition, published_at) VALUES ('weekly', ?, 'published', ?, NOW())",
     [nextVersion, JSON.stringify(defaultUpdateForm)],
   );
   await connection.query(
@@ -115,7 +141,7 @@ async function ensurePublishedUpdateForm(connection) {
   // A stale builder draft would otherwise mask the revised published form.
   // Reset it once as part of this explicit shipped-form migration.
   await connection.query(
-    "UPDATE update_forms SET definition = ?, version = ? WHERE status = 'draft'",
+    "UPDATE update_forms SET definition = ?, version = ? WHERE kind = 'weekly' AND status = 'draft'",
     [JSON.stringify(defaultUpdateForm), nextVersion + 1],
   );
 
@@ -132,9 +158,88 @@ async function ensurePublishedUpdateForm(connection) {
   return result.insertId;
 }
 
+export async function ensureMonthlyReviewSchema(connection) {
+  // Reuse the form storage initialisation, which also upgrades existing
+  // installations from a single weekly draft to one draft per form kind.
+  await ensurePublishedUpdateForm(connection);
+
+  const [[published]] = await connection.query(
+    "SELECT id FROM update_forms WHERE kind = 'monthly' AND status = 'published' ORDER BY version DESC LIMIT 1",
+  );
+  if (!published) {
+    const [[versionRow]] = await connection.query('SELECT COALESCE(MAX(version), 0) AS maxVersion FROM update_forms');
+    await connection.query(
+      "INSERT INTO update_forms (kind, version, status, definition, published_at) VALUES ('monthly', ?, 'published', ?, NOW())",
+      [Number(versionRow?.maxVersion || 0) + 1, JSON.stringify(defaultMonthlyReviewForm)],
+    );
+  }
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS monthly_reviews (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      client_id INT NOT NULL,
+      cycle_no INT NOT NULL,
+      period_start DATE NOT NULL,
+      period_end DATE NOT NULL,
+      form_version_id INT NOT NULL,
+      answers JSON NULL,
+      auto_snapshot JSON NULL,
+      status ENUM('open', 'draft', 'submitted', 'reviewed', 'expired') NOT NULL DEFAULT 'open',
+      due_at DATETIME NOT NULL,
+      submitted_at DATETIME NULL,
+      reviewed_at DATETIME NULL,
+      coach_reply TEXT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY unique_monthly_review_cycle (client_id, cycle_no),
+      KEY idx_monthly_reviews_status_due (status, due_at),
+      CONSTRAINT fk_monthly_reviews_client FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE,
+      CONSTRAINT fk_monthly_reviews_form FOREIGN KEY (form_version_id) REFERENCES update_forms(id)
+    )
+  `);
+  await addColumnIfMissing(connection, 'monthly_reviews', 'auto_snapshot', 'auto_snapshot JSON NULL AFTER answers');
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS monthly_review_deliveries (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      review_id INT NOT NULL,
+      delivery_type ENUM('reminder') NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY unique_monthly_review_delivery (review_id, delivery_type),
+      CONSTRAINT fk_monthly_review_delivery_review
+        FOREIGN KEY (review_id) REFERENCES monthly_reviews(id) ON DELETE CASCADE
+    )
+  `);
+}
+
 function parseFormDefinition(value) {
   if (!value) return null;
   try { return typeof value === 'string' ? JSON.parse(value) : value; } catch { return null; }
+}
+
+function parseJsonValue(value, fallback = {}) {
+  if (!value) return fallback;
+  try { return typeof value === 'string' ? JSON.parse(value) : value; } catch { return fallback; }
+}
+
+function monthlyReviewSummary(updates, workoutCount) {
+  const submitted = updates.map((row) => ({ ...row, answers: parseJsonValue(row.answers) }));
+  const weights = submitted
+    .map((row) => Number(row.answers?.weight_kg))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const scores = submitted
+    .map((row) => Number(row.score))
+    .filter((value) => Number.isFinite(value));
+  const first = weights[0] ?? null;
+  const last = weights.at(-1) ?? null;
+  return {
+    weights: { first, last, delta: first !== null && last !== null ? Number((last - first).toFixed(1)) : null },
+    updates: {
+      completed: submitted.length,
+      expected: 4,
+      averageScore: scores.length ? Math.round(scores.reduce((total, score) => total + score, 0) / scores.length) : null,
+    },
+    workouts: { completed: Number(workoutCount || 0), planned: null },
+  };
 }
 
 function validateFormDefinition(definition, { publish = false } = {}) {
@@ -168,12 +273,12 @@ function validateFormDefinition(definition, { publish = false } = {}) {
 }
 
 async function getOrCreateUpdateDraft(connection) {
-  const [drafts] = await connection.query("SELECT * FROM update_forms WHERE status = 'draft' LIMIT 1");
+  const [drafts] = await connection.query("SELECT * FROM update_forms WHERE kind = 'weekly' AND status = 'draft' LIMIT 1");
   if (drafts[0]) return drafts[0];
-  const [publishedRows] = await connection.query("SELECT * FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1");
+  const [publishedRows] = await connection.query("SELECT * FROM update_forms WHERE kind = 'weekly' AND status = 'published' ORDER BY version DESC LIMIT 1");
   const source = publishedRows[0] || { version: 0, definition: defaultUpdateForm };
   const [created] = await connection.query(
-    "INSERT INTO update_forms (version, status, definition) VALUES (?, 'draft', ?)",
+    "INSERT INTO update_forms (kind, version, status, definition) VALUES ('weekly', ?, 'draft', ?)",
     [Number(source.version || 0) + 1, JSON.stringify(parseFormDefinition(source.definition) || defaultUpdateForm)],
   );
   const [rows] = await connection.query('SELECT * FROM update_forms WHERE id = ?', [created.insertId]);
@@ -593,6 +698,10 @@ export async function ensureWeeklyUpdateSchema(connection) {
   if (!uniqueClientWeek) {
     await connection.query('ALTER TABLE weekly_updates ADD UNIQUE INDEX unique_client_week (client_id, week_start)');
   }
+
+  // Keep the shared form storage and the monthly review table ready whenever
+  // the existing weekly-update schema is initialised.
+  await ensureMonthlyReviewSchema(connection);
 }
 
 const storage = multer.diskStorage({
@@ -1113,6 +1222,135 @@ router.post('/builder/publish', authorizeRole(['coach', 'admin']), async (req, r
   } finally { connection?.release(); }
 });
 
+// Monthly reviews deliberately use the same versioned FormDefinition and
+// validation helpers as weekly updates. Only their lifecycle and cycle
+// snapshot are different.
+router.get('/monthly-review', authorizeRole(['client']), async (req, res) => {
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    await ensureMonthlyReviewSchema(connection);
+    const [[review]] = await connection.query(
+      `SELECT review.*, form.definition, subscription.end_date AS subscriptionEndDate,
+              DATEDIFF(subscription.end_date, CURDATE()) AS daysRemaining
+       FROM monthly_reviews review
+       INNER JOIN update_forms form ON form.id = review.form_version_id
+       LEFT JOIN subscriptions subscription ON subscription.client_id = review.client_id
+         AND subscription.status IN ('active', 'expiring_soon')
+         AND subscription.start_date <= CURDATE() AND subscription.end_date >= CURDATE()
+       WHERE review.client_id = ? AND review.status <> 'expired'
+       ORDER BY review.period_end DESC, review.id DESC LIMIT 1`,
+      [req.user.id],
+    );
+    if (!review) return res.status(404).json({ message: 'Δεν υπάρχει διαθέσιμη μηνιαία ανασκόπηση.' });
+
+    const [updates] = await connection.query(
+      `SELECT week_start, answers, score FROM weekly_updates
+       WHERE client_id = ? AND status = 'submitted'
+         AND week_start >= ? AND week_start <= ?
+       ORDER BY week_start ASC, id ASC`,
+      [req.user.id, review.period_start, review.period_end],
+    );
+    let workoutCount = 0;
+    try {
+      const [[workouts]] = await connection.query(
+        `SELECT COUNT(*) AS total FROM workout_logs
+         WHERE client_id = ? AND completed_at IS NOT NULL
+           AND DATE(completed_at) BETWEEN ? AND ?`,
+        [req.user.id, review.period_start, review.period_end],
+      );
+      workoutCount = Number(workouts?.total || 0);
+    } catch {
+      // Workout logs are optional on older installations; the review remains usable.
+    }
+    res.json({
+      review: {
+        id: review.id,
+        status: review.status,
+        periodStart: review.period_start,
+        periodEnd: review.period_end,
+        dueAt: review.due_at,
+        submittedAt: review.submitted_at,
+        answers: parseJsonValue(review.answers),
+        autoSnapshot: parseJsonValue(review.auto_snapshot),
+      },
+      form: parseFormDefinition(review.definition),
+      summary: monthlyReviewSummary(updates, workoutCount),
+      subscription: review.subscriptionEndDate ? { endDate: review.subscriptionEndDate, daysRemaining: Number(review.daysRemaining) } : null,
+    });
+  } catch (error) {
+    console.error('Monthly review load failed:', error);
+    res.status(500).json({ message: 'Δεν ήταν δυνατή η φόρτωση της μηνιαίας ανασκόπησης.' });
+  } finally { connection?.release(); }
+});
+
+router.put('/monthly-review/:reviewId/draft', authorizeRole(['client']), async (req, res) => {
+  let connection;
+  try {
+    const reviewId = Number(req.params.reviewId);
+    const answers = req.body?.answers;
+    const autoSnapshot = req.body?.autoSnapshot;
+    if (!Number.isInteger(reviewId) || !answers || typeof answers !== 'object' || Array.isArray(answers)) {
+      return res.status(400).json({ message: 'Μη έγκυρο πρόχειρο.' });
+    }
+    connection = await pool.getConnection();
+    await ensureMonthlyReviewSchema(connection);
+    const [result] = await connection.query(
+      `UPDATE monthly_reviews SET answers = ?, auto_snapshot = ?, status = 'draft'
+       WHERE id = ? AND client_id = ? AND status IN ('open', 'draft')`,
+      [JSON.stringify(answers), JSON.stringify(autoSnapshot && typeof autoSnapshot === 'object' ? autoSnapshot : {}), reviewId, req.user.id],
+    );
+    if (!result.affectedRows) return res.status(409).json({ message: 'Η ανασκόπηση δεν μπορεί πλέον να αλλάξει.' });
+    res.json({ savedAt: new Date().toISOString() });
+  } catch (error) {
+    console.error('Monthly review draft failed:', error);
+    res.status(500).json({ message: 'Δεν αποθηκεύτηκε το πρόχειρο.' });
+  } finally { connection?.release(); }
+});
+
+router.post('/monthly-review/:reviewId/submit', authorizeRole(['client']), async (req, res) => {
+  let connection;
+  try {
+    const reviewId = Number(req.params.reviewId);
+    const answers = req.body?.answers;
+    if (!Number.isInteger(reviewId) || !answers || typeof answers !== 'object' || Array.isArray(answers)) {
+      return res.status(400).json({ message: 'Μη έγκυρες απαντήσεις.' });
+    }
+    connection = await pool.getConnection();
+    await ensureMonthlyReviewSchema(connection);
+    const [[review]] = await connection.query(
+      `SELECT review.id, review.status, form.definition
+       FROM monthly_reviews review INNER JOIN update_forms form ON form.id = review.form_version_id
+       WHERE review.id = ? AND review.client_id = ? LIMIT 1`,
+      [reviewId, req.user.id],
+    );
+    if (!review || !['open', 'draft'].includes(review.status)) return res.status(409).json({ message: 'Η ανασκόπηση δεν μπορεί πλέον να υποβληθεί.' });
+    const form = parseFormDefinition(review.definition);
+    const errors = Object.assign({}, ...(form?.steps || []).map((step) => validateStep(step, answers, false)));
+    if (Object.keys(errors).length) return res.status(400).json({ message: 'Συμπλήρωσε τα υποχρεωτικά πεδία.', errors });
+    await connection.query(
+      `UPDATE monthly_reviews SET answers = ?, status = 'submitted', submitted_at = NOW() WHERE id = ?`,
+      [JSON.stringify(answers), reviewId],
+    );
+    await logActivity(connection, {
+      clientId: req.user.id, category: 'update', type: 'monthly_review.submitted', actor: 'client', actorUserId: req.user.id,
+      title: 'Υποβλήθηκε μηνιαία ανασκόπηση', status: 'done', ref: { kind: 'update', id: reviewId },
+    });
+    try {
+      const [[client]] = await connection.query('SELECT full_name, email FROM users WHERE id = ? LIMIT 1', [req.user.id]);
+      await notifyCoaches(connection, {
+        clientId: req.user.id, type: 'monthly_review_submitted', title: 'Νέα μηνιαία ανασκόπηση',
+        body: `${client?.full_name || client?.email || 'Πελάτης'} υπέβαλε τη μηνιαία ανασκόπησή του.`,
+        linkUrl: `/coach/updates?monthlyReview=${reviewId}`,
+      });
+    } catch (notificationError) { console.error('Monthly review coach notification failed:', notificationError); }
+    res.status(201).json({ submittedAt: new Date().toISOString() });
+  } catch (error) {
+    console.error('Monthly review submit failed:', error);
+    res.status(500).json({ message: 'Δεν υποβλήθηκε η μηνιαία ανασκόπηση.' });
+  } finally { connection?.release(); }
+});
+
 router.get('/form', authorizeRole(['client']), async (req, res) => {
   let connection;
   try {
@@ -1133,7 +1371,7 @@ router.get('/form', authorizeRole(['client']), async (req, res) => {
     // after the coach presses “Αποθήκευση”, otherwise the client stays on a
     // stale JSON definition until a new weekly update is created.
     const [publishedRows] = await connection.query(
-      "SELECT id AS formId, definition FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1",
+      "SELECT id AS formId, definition FROM update_forms WHERE kind = 'weekly' AND status = 'published' ORDER BY version DESC LIMIT 1",
     );
     const activeFormRow = publishedRows[0];
     const [[demoClient]] = await connection.query(
@@ -1245,7 +1483,7 @@ router.put('/draft', authorizeRole(['client']), async (req, res) => {
       connection.release();
       return res.status(409).json({ message: 'Το update αυτής της εβδομάδας έχει ήδη υποβληθεί.' });
     }
-    const [[published]] = await connection.query("SELECT id FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1");
+    const [[published]] = await connection.query("SELECT id FROM update_forms WHERE kind = 'weekly' AND status = 'published' ORDER BY version DESC LIMIT 1");
     if (!published) throw new Error('Δεν υπάρχει δημοσιευμένη φόρμα update.');
     const snapshot = req.body?.autoSnapshot && typeof req.body.autoSnapshot === 'object' ? req.body.autoSnapshot : {};
     let updateId = existing?.id;
@@ -1286,7 +1524,7 @@ router.post('/submit-form', authorizeRole(['client']), upload.array('files', 12)
     if (update?.status === 'submitted') return res.status(409).json({ message: 'Το update αυτής της εβδομάδας έχει ήδη υποβληθεί.' });
     let formRow = update;
     if (!formRow) {
-      const [rows] = await connection.query("SELECT id AS formId, definition FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1");
+      const [rows] = await connection.query("SELECT id AS formId, definition FROM update_forms WHERE kind = 'weekly' AND status = 'published' ORDER BY version DESC LIMIT 1");
       formRow = rows[0];
     }
     if (!formRow) throw new Error('Δεν υπάρχει δημοσιευμένη φόρμα update.');
@@ -1414,7 +1652,7 @@ router.post('/submit', authorizeRole(['client']), upload.array('files', 12), asy
 
     const [activeQuestions] = await connection.query('SELECT * FROM update_questions WHERE is_active = 1');
     const [[activeForm]] = await connection.query(
-      "SELECT id, definition FROM update_forms WHERE status = 'published' ORDER BY version DESC LIMIT 1",
+      "SELECT id, definition FROM update_forms WHERE kind = 'weekly' AND status = 'published' ORDER BY version DESC LIMIT 1",
     );
     const formDefinition = typeof activeForm?.definition === 'string'
       ? JSON.parse(activeForm.definition)
