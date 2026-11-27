@@ -14,12 +14,30 @@ import { api } from "@/lib/api/client";
 import { getInitials, resolveMediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
 
-type UpdateAnswer = { question_id: number; answer: string; question: string; type: string; standard_key: string | null };
+type UpdateAnswer = { question_id: number; answer: unknown; question: string; type: string; standard_key: string | null };
 type UpdateFile = { file_url: string; file_type: "photo" | "pdf"; original_name: string };
 type WeeklyUpdate = { id: number; client_id: number; submitted_at: string; week_start: string; is_read: 0 | 1; weekly_score?: number | null; client_name: string; client_email: string; client_photo: string | null; answers: UpdateAnswer[]; files: UpdateFile[] };
 
 function formatDate(value: string) { return new Intl.DateTimeFormat("el-GR", { weekday: "long", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value)); }
-function parseAnswer(answer: UpdateAnswer) { if (answer.type !== "multi_select") return answer.answer || "-"; try { const value = JSON.parse(answer.answer || "[]"); return Array.isArray(value) ? value.join(", ") : String(value); } catch { return answer.answer || "-"; } }
+function parseAnswer(answer: UpdateAnswer) {
+  if (answer.answer === null || answer.answer === undefined || answer.answer === "") return "-";
+  if (typeof answer.answer === "object") {
+    if (Array.isArray(answer.answer)) return answer.answer.join(", ") || "-";
+    const value = answer.answer as Record<string, unknown>;
+    const selectedSlots = Object.entries(value).filter(([, selected]) => Boolean(selected)).map(([slot]) => slot);
+    if (selectedSlots.length) return `Φωτογραφίες: ${selectedSlots.join(", ")}`;
+    return "Συμπληρώθηκε";
+  }
+  if (answer.type !== "multi_select") return String(answer.answer);
+  try {
+    const value = JSON.parse(String(answer.answer));
+    if (Array.isArray(value)) return value.join(", ") || "-";
+    if (value && typeof value === "object") return Object.entries(value).filter(([, selected]) => Boolean(selected)).map(([slot]) => slot).join(", ") || "Συμπληρώθηκε";
+    return String(value || "-");
+  } catch {
+    return String(answer.answer);
+  }
+}
 function Rating({ value }: { value: string }) { const numeric = Math.max(0, Math.min(5, Number(value) || 0)); return <span className="inline-flex gap-0.5">{Array.from({ length: 5 }, (_, index) => <Star key={index} className={cn("h-4 w-4", index < numeric ? "fill-primary text-primary" : "text-muted-foreground/30")} />)}</span>; }
 
 function CoachUpdateDetailContent({ updateId }: { updateId: string }) {
@@ -57,7 +75,7 @@ function CoachUpdateDetailContent({ updateId }: { updateId: string }) {
       {update && <>
         <Card><CardContent className="flex flex-wrap items-center gap-5 p-6"><UserAvatar initials={getInitials(update.client_name || update.client_email)} photoUrl={update.client_photo ? resolveMediaUrl(update.client_photo) : undefined} size="h-14 w-14" /><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-3"><h1 className="text-2xl font-bold">{update.client_name || update.client_email}</h1><Badge variant="secondary">Εβδομαδιαίο update</Badge></div><p className="mt-1 text-sm text-muted-foreground">Υποβλήθηκε {formatDate(update.submitted_at)}</p></div><Button nativeButton={false} render={<Link href={`/clients/${update.client_id}`} />} variant="outline">Άνοιγμα πελάτη</Button></CardContent></Card>
         <section className="grid max-w-md gap-3 sm:grid-cols-2"><Metric label="Βάρος" value={weight ? `${weight} kg` : "-"} icon={Weight} /><Metric label="Σκορ εβδομάδας" value={update.weekly_score != null ? `${update.weekly_score}/100` : "-"} icon={Check} /></section>
-        <Card><CardHeader><CardTitle className="text-lg">Απαντήσεις</CardTitle></CardHeader><CardContent className="space-y-5">{visibleAnswers.map((answer) => <section key={answer.question_id} className="border-b pb-5 last:border-0 last:pb-0"><p className="text-sm font-medium text-muted-foreground">{answer.question}</p>{answer.type === "rating" ? <div className="mt-2"><Rating value={answer.answer} /></div> : <p className="mt-2 whitespace-pre-wrap leading-7">{parseAnswer(answer)}</p>}</section>)}</CardContent></Card>
+        <Card><CardHeader><CardTitle className="text-lg">Απαντήσεις</CardTitle></CardHeader><CardContent className="space-y-5">{visibleAnswers.map((answer) => <section key={answer.question_id} className="border-b pb-5 last:border-0 last:pb-0"><p className="text-sm font-medium text-muted-foreground">{answer.question}</p>{answer.type === "rating" ? <div className="mt-2"><Rating value={String(answer.answer ?? "")} /></div> : <p className="mt-2 whitespace-pre-wrap leading-7">{parseAnswer(answer)}</p>}</section>)}</CardContent></Card>
         {(photos.length > 0 || documents.length > 0) && <Card><CardHeader><CardTitle className="text-lg">Επισυνάψεις</CardTitle></CardHeader><CardContent className="space-y-5">{photos.length > 0 && <div><div className="mb-3 flex items-center gap-2 text-sm font-medium"><ImageIcon className="h-4 w-4" />Φωτογραφίες</div><UpdatePhotoGallery files={photos} /></div>}{documents.length > 0 && <div className="space-y-2">{documents.map((file) => <a key={file.file_url} href={resolveMediaUrl(file.file_url)} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-lg border p-3 font-medium transition-colors hover:bg-muted"><FileText className="h-5 w-5 text-muted-foreground" />{file.original_name || "PDF"}</a>)}</div>}</CardContent></Card>}
       </>}
     </main>

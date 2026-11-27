@@ -2,6 +2,8 @@ import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
+import { logActivity } from '../lib/client-activity-log.js';
+import { summarizeTrainingChanges } from '../lib/plan-activity.js';
 
 const router = express.Router();
 
@@ -274,6 +276,7 @@ router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
     } = req.body;
 
     const coachId = req.user.id;
+    const previousPlan = await getFullTrainingPlan(connection, clientId);
     const [existing] = await connection.query(
       "SELECT id FROM training_plans WHERE client_id = ? AND status = 'active' ORDER BY updated_at DESC, created_at DESC LIMIT 1",
       [clientId]
@@ -307,6 +310,19 @@ router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
     }
 
     await insertTrainingPlanDays(connection, planId, days);
+
+    const activity = summarizeTrainingChanges(createNew ? null : previousPlan, { title, durationWeeks, difficulty, days });
+    await logActivity(connection, {
+      clientId,
+      category: 'plan',
+      type: createNew || !previousPlan ? 'training.created' : 'training.changed',
+      actor: 'coach',
+      actorUserId: coachId,
+      title: activity.title,
+      detail: activity.detail,
+      ref: { kind: 'plan', id: planId },
+      meta: { planType: 'training' },
+    });
 
     await connection.commit();
     try {

@@ -1,6 +1,7 @@
 import express from 'express';
 import { pool } from '../index.js';
 import { authenticateToken, authorizeRole } from '../middleware/auth.js';
+import { logActivity } from '../lib/client-activity-log.js';
 
 const router = express.Router();
 router.use(authenticateToken, authorizeRole(['coach']));
@@ -126,6 +127,7 @@ router.put('/:clientId', async (req, res) => {
     await connection.beginTransaction();
 
     const [existing] = await connection.query('SELECT id FROM cycle_protocols WHERE nutrition_plan_id = ?', [plan.id]);
+    const isNewProtocol = !existing.length;
     let protocolId;
     if (existing.length) {
       protocolId = existing[0].id;
@@ -168,6 +170,17 @@ router.put('/:clientId', async (req, res) => {
     }
 
     await connection.commit();
+    await logActivity(connection, {
+      clientId,
+      category: 'plan',
+      type: isNewProtocol ? 'cycle.created' : 'cycle.changed',
+      actor: 'coach',
+      actorUserId: req.user.id,
+      title: isNewProtocol ? 'Προστέθηκε Cycle Protocol' : 'Ενημερώθηκε Cycle Protocol',
+      detail: `${Boolean(isActive) ? 'Ενεργό' : 'Ανενεργό'} · ${compounds.filter((compound) => compound?.name).length} σκευάσματα · εβδομάδα ${Number(currentWeek) || 1}/${Number(totalWeeks) || 12}`,
+      ref: { kind: 'plan', id: protocolId },
+      meta: { planType: 'cycle' },
+    });
     const protocol = await getProtocolWithCompounds(connection, plan.id);
     res.json({ nutritionPlanId: plan.id, nutritionPlanTitle: plan.title, protocol });
   } catch (error) {
@@ -189,7 +202,16 @@ router.delete('/:clientId', async (req, res) => {
     }
 
     const plan = await getActiveNutritionPlan(connection, clientId);
+    const protocol = plan ? await getProtocolWithCompounds(connection, plan.id) : null;
     if (plan) await connection.query('DELETE FROM cycle_protocols WHERE nutrition_plan_id = ?', [plan.id]);
+    if (protocol) {
+      await logActivity(connection, {
+        clientId, category: 'plan', type: 'cycle.removed', actor: 'coach', actorUserId: req.user.id,
+        title: 'Αφαιρέθηκε Cycle Protocol',
+        detail: `${protocol.compounds?.length || 0} σκευάσματα αφαιρέθηκαν`,
+        ref: { kind: 'plan', id: protocol.id }, meta: { planType: 'cycle' },
+      });
+    }
     res.json({ success: true });
   } catch (error) {
     console.error(error);

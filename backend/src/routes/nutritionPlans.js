@@ -2,6 +2,8 @@ import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole } from '../middleware/auth.js';
+import { logActivity } from '../lib/client-activity-log.js';
+import { summarizeNutritionChanges } from '../lib/plan-activity.js';
 
 const router = express.Router();
 
@@ -194,6 +196,7 @@ router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
     } = req.body;
 
     const coachId = req.user.id;
+    const previousPlan = await getFullNutritionPlan(connection, clientId);
     const [existing] = await connection.query(
       "SELECT id FROM nutrition_plans WHERE client_id = ? AND status = 'active' ORDER BY updated_at DESC, created_at DESC LIMIT 1",
       [clientId]
@@ -227,6 +230,19 @@ router.put('/:clientId/full', authorizeRole(['coach', 'admin']), async (req, res
     }
 
     await insertNutritionPlanMeals(connection, planId, meals);
+
+    const activity = summarizeNutritionChanges(createNew ? null : previousPlan, { title, dailyCalories, proteinG, carbsG, fatG, notes, meals });
+    await logActivity(connection, {
+      clientId,
+      category: 'plan',
+      type: createNew || !previousPlan ? 'nutrition.created' : 'nutrition.changed',
+      actor: 'coach',
+      actorUserId: coachId,
+      title: activity.title,
+      detail: activity.detail,
+      ref: { kind: 'plan', id: planId },
+      meta: { planType: 'nutrition' },
+    });
 
     await connection.commit();
     try {

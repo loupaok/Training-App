@@ -4,6 +4,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import archiver from 'archiver';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../index.js';
 import { authorizeRole, authorizeRoleOrPermission } from '../middleware/auth.js';
@@ -4193,6 +4194,100 @@ router.get('/:id/profile', authorizeRole(['coach', 'admin', 'moderator']), async
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+});
+
+// GET /clients/:id/export — GDPR data export as a ZIP: a data.json with every
+// field this client's profile/settings/payments/updates/audit trail hold,
+// plus the actual photo/document files already referenced by getClientFiles.
+router.get('/:id/export', authorizeRole(['coach', 'admin', 'moderator']), async (req, res) => {
+  const connection = await pool.getConnection();
+  try {
+    const clientId = Number(req.params.id);
+    const access = await canAccessClientActivity(connection, req.user, clientId);
+    if (!access.allowed) return res.status(access.status).json({ message: access.message });
+
+    const profile = await getClientProfile(clientId, { connection });
+    if (!profile) return res.status(404).json({ message: 'Client not found' });
+
+    const [paymentRows] = await connection.query(
+      'SELECT id, amount, currency, method, status, paid_at, created_at FROM payments WHERE client_id = ? ORDER BY created_at DESC',
+      [clientId]
+    );
+    const [subscriptionRows] = await connection.query(
+      'SELECT id, plan_name, price, currency, start_date, end_date, status FROM subscriptions WHERE client_id = ? ORDER BY start_date DESC',
+      [clientId]
+    );
+    const [weeklyRows] = await connection.query(
+      'SELECT id, submitted_at, week_start, score FROM weekly_updates WHERE client_id = ? ORDER BY submitted_at DESC',
+      [clientId]
+    );
+    const [progressRows] = await connection.query(
+      'SELECT id, weight_kg, notes, submitted_at FROM progress_updates WHERE client_id = ? ORDER BY submitted_at DESC',
+      [clientId]
+    );
+    let pointsRows = [];
+    try {
+      [pointsRows] = await connection.query(
+        'SELECT type, points, description, created_at FROM points_transactions WHERE client_id = ? ORDER BY created_at DESC',
+        [clientId]
+      );
+    } catch (error) { if (error.code !== 'ER_NO_SUCH_TABLE') throw error; }
+    const [fullAuditRows] = await connection.query(
+      `SELECT title AS action, detail AS details, category, actor, created_at AS createdAt
+       FROM activity_events WHERE client_id = ? ORDER BY created_at DESC`,
+      [clientId]
+    );
+
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      basic: profile.basic,
+      body: profile.body,
+      goal: profile.goal,
+      questionnaire: profile.questionnaire,
+      healthFlags: profile.healthFlags,
+      settings: profile.settings,
+      account: profile.account,
+      payments: paymentRows,
+      subscriptions: subscriptionRows,
+      weeklyUpdates: weeklyRows,
+      progressUpdates: progressRows,
+      pointsTransactions: pointsRows,
+      auditLog: fullAuditRows,
+    };
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="client-${clientId}-export.zip"`);
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.on('error', (archiveError) => {
+      console.error(archiveError);
+      if (!res.headersSent) res.status(500).json({ message: 'Server error' });
+    });
+    archive.pipe(res);
+    archive.append(JSON.stringify(exportData, null, 2), { name: 'data.json' });
+
+    const seenNames = new Set();
+    for (const file of profile.files) {
+      const absolutePath = path.join(process.cwd(), file.url.replace(/^\//, ''));
+      if (!fs.existsSync(absolutePath)) continue;
+      const folder = file.type === 'photo' || file.type === 'video' ? 'photos' : 'documents';
+      let entryName = `${folder}/${path.basename(absolutePath)}`;
+      if (seenNames.has(entryName)) entryName = `${folder}/${file.id}-${path.basename(absolutePath)}`;
+      seenNames.add(entryName);
+      archive.file(absolutePath, { name: entryName });
+    }
+
+    await archive.finalize();
+    await logProfileChange(connection, {
+      clientId, performedBy: req.user.id, type: 'profile.exported',
+      title: 'Export δεδομένων (GDPR)',
+    });
+  } catch (error) {
+    console.error(error);
+    if (!res.headersSent) res.status(500).json({ message: 'Server error' });
   } finally {
     connection.release();
   }

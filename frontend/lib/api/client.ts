@@ -95,4 +95,34 @@ export const api = {
 
     return data as T;
   },
+
+  async download(endpoint: string, filename: string): Promise<void> {
+    const native = isNativePlatform();
+    const token = native ? await getNativePreference(nativeStorageKeys.accessToken) : null;
+    const headers: Record<string, string> = native ? { "X-Client-Platform": "native" } : {};
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      credentials: "include",
+      headers,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new ApiError(error.message || "Download failed");
+    }
+
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  },
 };

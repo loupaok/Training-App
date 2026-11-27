@@ -204,6 +204,18 @@ export function ClientProfileTab({
   const [error, setError] = useState("");
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  const exportData = async () => {
+    setExporting(true);
+    try {
+      await api.download(`/clients/${clientId}/export`, `client-${clientId}-export.zip`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Δεν έγινε το export.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const load = () => {
     setLoading(true);
@@ -345,10 +357,11 @@ export function ClientProfileTab({
                     <ResetPasswordDialog onResetPassword={onResetPassword} resettingPassword={resettingPassword} />
                   </div>
                 )}
-                <div className="flex items-center gap-3 p-3 opacity-60">
+                <button type="button" disabled={exporting} onClick={() => void exportData()} className="flex w-full items-center gap-3 p-3 text-left hover:bg-muted/50 disabled:opacity-60">
                   <span className="grid h-9 w-9 place-items-center rounded-[10px] bg-muted"><Download className="h-4 w-4" /></span>
-                  <span className="min-w-0 flex-1"><span className="block text-sm font-bold">Export δεδομένων (GDPR)</span><span className="block text-xs text-muted-foreground">Έρχεται στο επόμενο βήμα</span></span>
-                </div>
+                  <span className="min-w-0 flex-1"><span className="block text-sm font-bold">Export δεδομένων (GDPR)</span><span className="block text-xs text-muted-foreground">{exporting ? "Προετοιμασία ZIP..." : "Λήψη όλων των δεδομένων σε ZIP"}</span></span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                </button>
                 {canEdit && profile.account.isActive && (
                   <button type="button" onClick={() => setDeactivateOpen(true)} className="flex w-full items-center gap-3 p-3 text-left hover:bg-red-50 dark:hover:bg-red-500/10">
                     <span className="grid h-9 w-9 place-items-center rounded-[10px] bg-red-50 text-red-600 dark:bg-red-500/10"><UserX className="h-4 w-4" /></span>
